@@ -1,0 +1,134 @@
+# Base stack. Works on any machine with Docker: no reverse proxy, no external
+# networks. Ports are published directly and every host-specific value is an
+# override with a sane default.
+#
+# Machines fronted by Traefik additionally load docker-compose.traefik.yml --
+# see that file's header.
+services:
+    app:
+        build:
+            context: .
+            args:
+                UID: '${UID:-1000}'
+                GID: '${GID:-1000}'
+        image: zyrenn-app:local
+        restart: unless-stopped
+        volumes:
+            - .:/var/www/html
+        # Deliberately unpublished: `web` is the single origin. See docker/nginx.
+        expose:
+            - '8000'
+        depends_on:
+            postgres:
+                condition: service_healthy
+        healthcheck:
+            test:
+                [
+                    'CMD-SHELL',
+                    'php -r "exit(@file_get_contents(''http://127.0.0.1:8000/up'') === false ? 1 : 0);"',
+                ]
+            interval: 10s
+            timeout: 5s
+            retries: 6
+            start_period: 20s
+
+    # The one origin. Fronts the app and the websocket, so a tunnel, a Traefik
+    # route and the LAN address never have to change.
+    web:
+        image: nginx:1.27-alpine
+        restart: unless-stopped
+        volumes:
+            - ./docker/nginx/app.conf:/etc/nginx/conf.d/default.conf:ro
+        ports:
+            - '${APP_PORT:-8000}:8080'
+        depends_on:
+            app:
+                condition: service_healthy
+            # nginx resolves upstreams at startup: without this it can boot
+            # first and refuse with `host not found in upstream "reverb"`.
+            reverb:
+                condition: service_started
+
+    # The websocket. Shares the app image because it IS the app -- reverb:start
+    # boots the same Laravel and reads the same config and channel guards.
+    #
+    # Unpublished on purpose: the browser reaches it through `web`, on the one
+    # origin, so wss rides the same :443 as the page. See docker/nginx.
+    reverb:
+        image: zyrenn-app:local
+        restart: unless-stopped
+        working_dir: /var/www/html
+        volumes:
+            - .:/var/www/html
+        expose:
+            - '8080'
+        depends_on:
+            app:
+                condition: service_healthy
+        command: php artisan reverb:start --host=0.0.0.0 --port=8080
+
+    # Dev-only. While this runs it writes public/hot and Laravel serves assets
+    # from the Vite dev server, which is unreachable from outside this machine.
+    # Left out unless COMPOSE_PROFILES=dev, so the default `up` serves the built
+    # assets in public/build and is safe to expose over a tunnel or IP:PORT.
+    #
+    # Shares the app image because Vite plugins may invoke `php` at build time.
+    vite:
+        profiles: ['dev']
+        image: zyrenn-app:local
+        restart: unless-stopped
+        working_dir: /var/www/html
+        # Real PID 1 for correct signal forwarding and zombie reaping -- helps,
+        # but the trap below is what actually matters (see command).
+        init: true
+        depends_on:
+            - app
+        volumes:
+            - .:/var/www/html
+        environment:
+            # The origin the browser uses to reach Vite. Only differs from the
+            # published port when a proxy is in front.
+            VITE_DEV_ORIGIN: '${VITE_DEV_ORIGIN:-http://localhost:${VITE_PORT:-5173}}'
+        # `npm run dev` puts npm at PID 1 with the real vite process a hop
+        # downstream; a `docker compose stop`/`down` SIGTERM either never
+        # reaches that far down or gets hard-killed on the way, so
+        # laravel-vite-plugin's own exit/SIGTERM handlers -- which delete
+        # public/hot -- never run, and the file goes stale. Rather than
+        # depend on that cleanup path, delete it directly in a trap. ($$ is
+        # Compose's escape for a literal $, so the shell sees $child / $!.)
+        command: >
+            sh -c '
+                npm run dev &
+                child=$$!
+                trap "rm -f public/hot public/fonts-manifest.dev.json; kill -TERM $$child 2>/dev/null" TERM INT
+                wait $$child
+                rm -f public/hot public/fonts-manifest.dev.json
+            '
+        ports:
+            - '${VITE_PORT:-5173}:5173'
+
+    postgres:
+        image: postgres:17-alpine
+        restart: unless-stopped
+        environment:
+            # Read from the app's own .env, so the two can never drift apart.
+            POSTGRES_DB: '${DB_DATABASE:-zyrenn}'
+            POSTGRES_USER: '${DB_USERNAME:-zyrenn}'
+            POSTGRES_PASSWORD: '${DB_PASSWORD:-secret}'
+        ports:
+            # Set FORWARD_DB_PORT in .env when 5432 is already taken on the host.
+            - '${FORWARD_DB_PORT:-5432}:5432'
+        volumes:
+            - pgdata:/var/lib/postgresql/data
+        healthcheck:
+            test:
+                [
+                    'CMD-SHELL',
+                    'pg_isready -U ${DB_USERNAME:-zyrenn} -d ${DB_DATABASE:-zyrenn}',
+                ]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+
+volumes:
+    pgdata:

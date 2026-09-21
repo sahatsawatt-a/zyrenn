@@ -1,0 +1,47 @@
+# Optional overlay for machines running the shared Traefik proxy on an external
+# network named `traefik`. It is NOT loaded by default -- opt in per machine by
+# setting these in .env (gitignored):
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.traefik.yml
+#   APP_HOST=zyrenn.example.test
+#   VITE_HOST=zyrenn-vite.example.test
+#   VITE_DEV_ORIGIN=https://zyrenn-vite.example.test
+#   APP_URL=https://zyrenn.example.test
+#
+# Keep VITE_HOST a single label under the same parent domain as APP_HOST --
+# a *.example.test wildcard cert does not cover vite.zyrenn.example.test.
+services:
+    # This overlay is the moment the app stops being localhost-only, so it is
+    # also where debug output stops being safe: with APP_DEBUG on, any 500
+    # renders a stack trace including config values. A real environment
+    # variable wins over the .env file, so this holds regardless of what the
+    # developer left in there.
+    app:
+        environment:
+            APP_DEBUG: 'false'
+
+    # Routed at the nginx front, never at app directly -- one origin for the page
+    # and the websocket.
+    web:
+        networks: [default, traefik]
+        labels:
+            - 'traefik.enable=true'
+            - 'traefik.docker.network=traefik'
+            - 'traefik.http.routers.zyrenn.rule=Host(`${APP_HOST:?set APP_HOST in .env}`)'
+            - 'traefik.http.routers.zyrenn.entrypoints=websecure'
+            - 'traefik.http.routers.zyrenn.tls=true'
+            - 'traefik.http.services.zyrenn.loadbalancer.server.port=8080'
+
+    vite:
+        networks: [default, traefik]
+        labels:
+            - 'traefik.enable=true'
+            - 'traefik.docker.network=traefik'
+            - 'traefik.http.routers.zyrenn-vite.rule=Host(`${VITE_HOST:?set VITE_HOST in .env}`)'
+            - 'traefik.http.routers.zyrenn-vite.entrypoints=websecure'
+            - 'traefik.http.routers.zyrenn-vite.tls=true'
+            - 'traefik.http.services.zyrenn-vite.loadbalancer.server.port=5173'
+
+networks:
+    traefik:
+        external: true
