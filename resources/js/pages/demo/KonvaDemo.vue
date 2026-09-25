@@ -15,6 +15,7 @@ import { computed, nextTick, onMounted, ref, useTemplateRef, watch } from 'vue';
 // Imported into the page rather than installed with app.use(VueKonva): the
 // plugin would put every Konva shape in the main bundle for one demo.
 import {
+    Arrow,
     Circle,
     Ellipse,
     Group,
@@ -29,15 +30,21 @@ import {
 } from 'vue-konva';
 import InspectorPanel from './konva/InspectorPanel.vue';
 import ShapeLibrary from './konva/ShapeLibrary.vue';
-import type { Item, Tool } from './konva/board';
+import type { Item, Side, Tool } from './konva/board';
 import {
     PATHS,
     POLYGONS,
+    anchorAt,
+    anchorsOf,
     boundsOf,
     boundsOfAll,
     hasText,
+    connectorPoints,
+    isConnectable,
+    isConnector,
     isPath,
     isStroke,
+    nearestSide,
     overlaps,
     polygonPoints,
 } from './konva/board';
@@ -122,9 +129,16 @@ watch(
             return;
         }
 
+        // A connector has no box to resize: it is wherever its ends are
         const nodes = presenting.value
             ? []
             : board.selection.value
+                  .filter(
+                      (id) =>
+                          !isConnector(
+                              board.byId.value.get(id) ?? ({} as Item),
+                          ),
+                  )
                   .map((id) => target.findOne(`#${id}`))
                   .filter((node): node is Konva.Node => !!node);
 
@@ -137,6 +151,7 @@ watch(
 type Draft = { item: Item; originX: number; originY: number } | null;
 
 const draft = ref<Draft>(null);
+const hoveredTarget = ref<string | null>(null);
 const marquee = ref<{
     x: number;
     y: number;
@@ -152,6 +167,34 @@ const pointerOnBoard = () => {
 
     return point ? camera.toBoard(point) : null;
 };
+
+// The shape under a board point, topmost first, ignoring frames and ink so a
+// connector pins itself to something it can sensibly leave from.
+const shapeAt = (point: { x: number; y: number }): Item | null => {
+    for (let index = board.items.value.length - 1; index >= 0; index--) {
+        const item = board.items.value[index];
+
+        if (
+            isConnectable(item) &&
+            overlaps(boundsOf(item), { ...point, width: 1, height: 1 })
+        ) {
+            return item;
+        }
+    }
+
+    return null;
+};
+
+/** The anchor a connector should use when it meets `item` at `point`. */
+const pinTo = (item: Item | null, point: { x: number; y: number }) =>
+    item
+        ? {
+              item: item.id,
+              side: nearestSide(item, point),
+              x: point.x,
+              y: point.y,
+          }
+        : { item: null, side: null as Side | null, x: point.x, y: point.y };
 
 const onPointerDown = (event: Konva.KonvaEventObject<PointerEvent>) => {
     if (presenting.value || panning.value) {
@@ -182,7 +225,13 @@ const onPointerDown = (event: Konva.KonvaEventObject<PointerEvent>) => {
         stroke: strokeColour.value,
     });
 
-    if (isStroke(item)) {
+    if (isConnector(item)) {
+        // Connectors live in board coordinates: their ends decide where they are
+        item.x = 0;
+        item.y = 0;
+        item.from = pinTo(shapeAt(point), point);
+        item.to = { item: null, side: null, x: point.x, y: point.y };
+    } else if (isStroke(item)) {
         item.points = [0, 0];
     } else {
         item.width = 0;
@@ -225,13 +274,34 @@ const onPointerMove = () => {
         return;
     }
 
-    if (current.item.kind === 'arrow') {
-        current.item.points = [
-            0,
-            0,
-            point.x - current.originX,
-            point.y - current.originY,
-        ];
+    if (isConnector(current.item)) {
+        const over = shapeAt(point);
+        hoveredTarget.value = over?.id ?? null;
+
+        const source = current.item.from?.item
+            ? board.byId.value.get(current.item.from.item)
+            : null;
+
+        // It leaves by the side facing the cursor...
+        if (source && current.item.from) {
+            current.item.from.side = nearestSide(source, point);
+        }
+
+        // ...and lands on the side facing where it came from, so the elbow
+        // reads the way it would in any diagram tool.
+        const leaving =
+            source && current.item.from?.side
+                ? anchorAt(source, current.item.from.side)
+                : { x: current.originX, y: current.originY };
+
+        current.item.to = over
+            ? {
+                  item: over.id,
+                  side: nearestSide(over, leaving),
+                  x: point.x,
+                  y: point.y,
+              }
+            : { item: null, side: null, x: point.x, y: point.y };
 
         return;
     }
@@ -276,6 +346,28 @@ const onPointerUp = () => {
 
         item.width = fresh.width;
         item.height = fresh.height;
+    }
+
+    if (isConnector(item)) {
+        hoveredTarget.value = null;
+
+        const from = item.from;
+        const to = item.to;
+        const tiny =
+            Math.hypot(
+                (to?.x ?? 0) - (from?.x ?? 0),
+                (to?.y ?? 0) - (from?.y ?? 0),
+            ) < 12;
+
+        // A stray click, or a loop from a shape back to itself
+        if (tiny || (from?.item && from.item === to?.item)) {
+            return;
+        }
+
+        board.add(item);
+        tool.value = 'select';
+
+        return;
     }
 
     if (isStroke(item) && item.points.length < 4) {
@@ -670,6 +762,8 @@ const strokePoints = (item: Item) => item.points;
 
 const isSelected = (item: Item) => board.selection.value.includes(item.id);
 
+const connectable = computed(() => board.items.value.filter(isConnectable));
+
 // How far a label sits from the top of its shape. A cylinder's lid and a
 // triangle's point leave no room at the edges, so their text starts lower.
 const labelInset = (item: Item): number => {
@@ -934,32 +1028,41 @@ const labelInset = (item: Item): number => {
                             />
 
                             <Line
-                                v-else-if="isStroke(item)"
+                                v-else-if="item.kind === 'draw'"
                                 :config="{
-                                    points: strokePoints(item),
+                                    points: item.points,
                                     stroke: isSelected(item)
                                         ? '#6366f1'
                                         : item.stroke,
                                     strokeWidth: 3,
                                     lineCap: 'round',
                                     lineJoin: 'round',
-                                    tension: item.kind === 'draw' ? 0.4 : 0,
+                                    tension: 0.4,
                                     hitStrokeWidth: 16,
                                 }"
                             />
-                            <!-- Arrow head, drawn as a small triangle on the end -->
-                            <Circle
-                                v-if="
-                                    item.kind === 'arrow' &&
-                                    item.points.length >= 4
-                                "
+
+                            <!-- A connector: elbowed between two anchors, and
+                                 redrawn whenever either shape moves -->
+                            <Arrow
+                                v-else-if="isConnector(item)"
                                 :config="{
-                                    x: item.points[item.points.length - 2],
-                                    y: item.points[item.points.length - 1],
-                                    radius: 5,
+                                    points: connectorPoints(
+                                        item,
+                                        board.byId.value,
+                                    ),
+                                    stroke: isSelected(item)
+                                        ? '#6366f1'
+                                        : item.stroke,
                                     fill: isSelected(item)
                                         ? '#6366f1'
                                         : item.stroke,
+                                    strokeWidth: isSelected(item) ? 3 : 2,
+                                    pointerLength: 10,
+                                    pointerWidth: 9,
+                                    lineCap: 'round',
+                                    lineJoin: 'round',
+                                    hitStrokeWidth: 18,
                                 }"
                             />
 

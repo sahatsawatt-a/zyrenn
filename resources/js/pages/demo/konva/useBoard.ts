@@ -19,7 +19,12 @@ export function useBoard() {
     // Not structuredClone: items.value holds Vue reactive proxies, which it
     // refuses to clone. Items are flat, so a shallow copy plus the point list
     // is the whole job.
-    const copy = (item: Item): Item => ({ ...item, points: [...item.points] });
+    const copy = (item: Item): Item => ({
+        ...item,
+        points: [...item.points],
+        from: item.from ? { ...item.from } : null,
+        to: item.to ? { ...item.to } : null,
+    });
 
     const snapshot = (): Item[] => items.value.map(copy);
 
@@ -97,7 +102,16 @@ export function useBoard() {
         }
 
         commit();
-        items.value = items.value.filter((item) => !ids.includes(item.id));
+        items.value = items.value.filter(
+            (item) =>
+                !ids.includes(item.id) &&
+                // A connector with nothing left to hang off goes too
+                !(
+                    item.kind === 'arrow' &&
+                    ((item.from?.item && ids.includes(item.from.item)) ||
+                        (item.to?.item && ids.includes(item.to.item)))
+                ),
+        );
         selection.value = [];
     };
 

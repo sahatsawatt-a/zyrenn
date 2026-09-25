@@ -45,6 +45,19 @@ export const PATHS: Partial<Record<ItemKind, string>> = {
 
 export const isPath = (kind: ItemKind): boolean => kind in PATHS;
 
+export type Side = 'top' | 'right' | 'bottom' | 'left';
+
+/**
+ * One end of a connector. It either hangs off a shape's anchor, which it then
+ * follows, or floats at a fixed board point.
+ */
+export type Endpoint = {
+    item: string | null;
+    side: Side | null;
+    x: number;
+    y: number;
+};
+
 export type Item = {
     id: string;
     kind: ItemKind;
@@ -57,8 +70,11 @@ export type Item = {
     stroke: string;
     text: string;
     fontSize: number;
-    // Arrow and freehand keep their shape as points relative to x/y
+    // Freehand keeps its shape as points relative to x/y
     points: number[];
+    // Connectors only: where each end is pinned
+    from: Endpoint | null;
+    to: Endpoint | null;
 };
 
 export type Tool = 'select' | ItemKind;
@@ -107,6 +123,13 @@ export const hasText = (item: Item): boolean =>
 export const isStroke = (item: Item): boolean =>
     item.kind === 'arrow' || item.kind === 'draw';
 
+/** A connector: two ends, each either pinned to a shape or to a point. */
+export const isConnector = (item: Item): boolean => item.kind === 'arrow';
+
+/** Shapes a connector is allowed to pin itself to. */
+export const isConnectable = (item: Item): boolean =>
+    item.kind !== 'arrow' && item.kind !== 'draw' && item.kind !== 'frame';
+
 export const makeItem = (
     kind: ItemKind,
     x: number,
@@ -126,6 +149,8 @@ export const makeItem = (
         text: '',
         fontSize: 16,
         points: [],
+        from: null,
+        to: null,
     };
 
     switch (kind) {
@@ -291,4 +316,121 @@ export const polygonPoints = (item: Item): number[] => {
         default:
             return [];
     }
+};
+
+const SIDES: Side[] = ['top', 'right', 'bottom', 'left'];
+
+/** Where a side's anchor sits on a shape, in board coordinates. */
+export const anchorAt = (item: Item, side: Side) => {
+    const { x, y, width, height } = boundsOf(item);
+
+    switch (side) {
+        case 'top':
+            return { x: x + width / 2, y };
+        case 'bottom':
+            return { x: x + width / 2, y: y + height };
+        case 'left':
+            return { x, y: y + height / 2 };
+        default:
+            return { x: x + width, y: y + height / 2 };
+    }
+};
+
+export const anchorsOf = (item: Item) =>
+    SIDES.map((side) => ({ side, ...anchorAt(item, side) }));
+
+/** The anchor of `item` closest to a point -- what a connector should grab. */
+export const nearestSide = (
+    item: Item,
+    point: { x: number; y: number },
+): Side => {
+    let best: Side = 'right';
+    let shortest = Infinity;
+
+    for (const side of SIDES) {
+        const anchor = anchorAt(item, side);
+        const distance = (anchor.x - point.x) ** 2 + (anchor.y - point.y) ** 2;
+
+        if (distance < shortest) {
+            shortest = distance;
+            best = side;
+        }
+    }
+
+    return best;
+};
+
+const endpointAt = (end: Endpoint | null, byId: Map<string, Item>) => {
+    if (!end) {
+        return null;
+    }
+
+    const host = end.item ? byId.get(end.item) : null;
+
+    return host && end.side ? anchorAt(host, end.side) : { x: end.x, y: end.y };
+};
+
+const STUB = 24;
+
+const stubbed = (
+    point: { x: number; y: number },
+    side: Side | null,
+): { x: number; y: number } => {
+    switch (side) {
+        case 'top':
+            return { x: point.x, y: point.y - STUB };
+        case 'bottom':
+            return { x: point.x, y: point.y + STUB };
+        case 'left':
+            return { x: point.x - STUB, y: point.y };
+        case 'right':
+            return { x: point.x + STUB, y: point.y };
+        default:
+            return point;
+    }
+};
+
+/**
+ * A connector's path, in board coordinates: it leaves an anchor along that
+ * side's normal, turns once in the middle and comes back in along the other
+ * anchor's normal -- the elbow routing a diagram tool is expected to draw.
+ * Ends that float take the straight line instead.
+ */
+export const connectorPoints = (
+    item: Item,
+    byId: Map<string, Item>,
+): number[] => {
+    const start = endpointAt(item.from, byId);
+    const end = endpointAt(item.to, byId);
+
+    if (!start || !end) {
+        return [];
+    }
+
+    const fromSide = item.from?.item ? (item.from?.side ?? null) : null;
+    const toSide = item.to?.item ? (item.to?.side ?? null) : null;
+
+    if (!fromSide && !toSide) {
+        return [start.x, start.y, end.x, end.y];
+    }
+
+    const out = stubbed(start, fromSide);
+    const back = stubbed(end, toSide);
+
+    // Turn in the axis the first stub is already travelling along
+    const midpoint =
+        fromSide === 'left' || fromSide === 'right'
+            ? [
+                  { x: (out.x + back.x) / 2, y: out.y },
+                  { x: (out.x + back.x) / 2, y: back.y },
+              ]
+            : [
+                  { x: out.x, y: (out.y + back.y) / 2 },
+                  { x: back.x, y: (out.y + back.y) / 2 },
+              ];
+
+    return [start, out, ...midpoint, back, end].flatMap((point) => [
+        point.x,
+        point.y,
+    ]);
 };
