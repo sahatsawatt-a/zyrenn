@@ -2,7 +2,7 @@
 import { Head } from '@inertiajs/vue3';
 import { useElementSize, useEventListener } from '@vueuse/core';
 import type Konva from 'konva';
-import { computed, ref, useTemplateRef, watch } from 'vue';
+import { computed, onMounted, ref, useTemplateRef, watch } from 'vue';
 // Registered locally rather than through app.use(VueKonva): the plugin would put
 // every Konva shape in the main bundle for the sake of this one page.
 import {
@@ -36,6 +36,8 @@ const newId = () => `n${++nextId}`;
 
 const boxes = ref<NodeBox[]>([]);
 const edges = ref<Edge[]>([]);
+// Declared here because seed() below clears it while setup is still running
+const selectedId = ref<string | null>(null);
 
 const seed = () => {
     nextId = 0;
@@ -181,7 +183,6 @@ const fitView = () => {
 };
 
 // -------------------------------------------------------------- Selection
-const selectedId = ref<string | null>(null);
 const transformerRef = useTemplateRef<{ getNode: () => Konva.Transformer }>(
     'transformerRef',
 );
@@ -201,7 +202,36 @@ watch(
     { flush: 'post' },
 );
 
-const onNodeClick = (id: string, event: Konva.KonvaEventObject<MouseEvent>) => {
+// Konva events bubble, so the layer carries one set of handlers instead of four
+// per node. They are bound on the Konva node rather than with @click and
+// friends: vue-konva components render a fragment, so Vue cannot inherit
+// listeners onto them and warns about it on every mount.
+const nodeLayer = useTemplateRef<{ getNode: () => Konva.Layer }>('nodeLayer');
+
+onMounted(() => {
+    const layer = nodeLayer.value?.getNode();
+
+    layer?.on('dragmove', onNodeDragMove);
+    layer?.on('transformend', onTransformEnd);
+    layer?.on('click tap', onNodeClick);
+});
+const boxIdOf = (event: Konva.KonvaEventObject<unknown>): string | null => {
+    let node: Konva.Node | null = event.target;
+
+    while (node && !boxById.value.has(node.id())) {
+        node = node.getParent();
+    }
+
+    return node?.id() ?? null;
+};
+
+const onNodeClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
+    const id = boxIdOf(event);
+
+    if (!id) {
+        return;
+    }
+
     // Shift-click a second node to connect them, or to break an existing link
     if (event.evt.shiftKey && selectedId.value && selectedId.value !== id) {
         toggleEdge(selectedId.value, id);
@@ -238,11 +268,8 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 });
 
 // ------------------------------------------------------------------ Editing
-const onNodeDragMove = (
-    id: string,
-    event: Konva.KonvaEventObject<DragEvent>,
-) => {
-    const box = boxById.value.get(id);
+const onNodeDragMove = (event: Konva.KonvaEventObject<DragEvent>) => {
+    const box = boxById.value.get(boxIdOf(event) ?? '');
 
     if (box) {
         // Written back on every frame so the edges follow the node as it moves
@@ -251,8 +278,8 @@ const onNodeDragMove = (
     }
 };
 
-const onTransformEnd = (id: string, event: Konva.KonvaEventObject<Event>) => {
-    const box = boxById.value.get(id);
+const onTransformEnd = (event: Konva.KonvaEventObject<Event>) => {
+    const box = boxById.value.get(boxIdOf(event) ?? '');
     const group = event.target;
 
     if (!box) {
@@ -424,7 +451,7 @@ const edgePoints = (edge: Edge): number[] => {
                     />
                 </Layer>
 
-                <Layer>
+                <Layer ref="nodeLayer">
                     <Group
                         v-for="box in boxes"
                         :key="box.id"
@@ -436,10 +463,6 @@ const edgePoints = (edge: Edge): number[] => {
                             height: box.height,
                             draggable: true,
                         }"
-                        @dragmove="onNodeDragMove(box.id, $event)"
-                        @transformend="onTransformEnd(box.id, $event)"
-                        @click="onNodeClick(box.id, $event)"
-                        @tap="onNodeClick(box.id, $event)"
                     >
                         <Rect
                             :config="{
