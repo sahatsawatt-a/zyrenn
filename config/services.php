@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'mcp' => [
+        // Bearer token for the app-level MCP server (/mcp/global); leave empty to disable it
+        'global_token' => env('MCP_GLOBAL_TOKEN'),
+    ],
+
 ];

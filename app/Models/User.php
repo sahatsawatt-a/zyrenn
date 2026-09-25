@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Storage;
 use Laravel\Fortify\Contracts\PasskeyUser;
 use Laravel\Fortify\PasskeyAuthenticatable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use Laravel\Sanctum\HasApiTokens;
 
 /**
  * @property int $id
@@ -34,13 +35,17 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 class User extends Authenticatable implements PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+    use HasApiTokens, HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
 
     /**
      * Sanctum's token table has no foreign key, so remove a user's tokens with them.
      */
     protected static function booted(): void
     {
+        static::deleting(function (User $user) {
+            $user->tokens()->delete();
+        });
+
         // Drive rows go with the database cascade, which skips model events, so drop the bytes here
         static::deleted(function (User $user) {
             Storage::disk(DriveFile::DISK)->deleteDirectory('drive/'.$user->id);
