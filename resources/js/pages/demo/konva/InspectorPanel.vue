@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { BringToFront, Copy, Play, SendToBack, Trash2 } from '@lucide/vue';
 import { computed } from 'vue';
-import type { Item } from './board';
+import type { Item, LineStyle, Routing } from './board';
+import { HEAD_TYPES } from './board';
 import ColourPicker from './ColourPicker.vue';
 
 // Lucidchart's right-hand panel: what is selected, and every property of it in
@@ -21,8 +22,29 @@ const emit = defineEmits<{
     duplicate: [];
     remove: [];
     reorder: ['front' | 'back'];
+    update: [Partial<Item>];
     present: [];
 }>();
+
+const connectors = computed(() =>
+    props.selection.filter((item) => item.kind === 'arrow'),
+);
+
+// Connector controls act on all of them at once; the buttons show the first
+// one's setting, which is what every drawing tool does with a mixed selection.
+const line = computed(() => connectors.value[0] ?? null);
+
+const routings: { value: Routing; label: string }[] = [
+    { value: 'elbow', label: 'Elbow' },
+    { value: 'straight', label: 'Straight' },
+    { value: 'curved', label: 'Curved' },
+];
+
+const styles: { value: LineStyle; label: string }[] = [
+    { value: 'solid', label: '——' },
+    { value: 'dashed', label: '- -' },
+    { value: 'dotted', label: '···' },
+];
 
 const one = computed(() =>
     props.selection.length === 1 ? props.selection[0] : null,
@@ -130,7 +152,129 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                 </label>
             </div>
 
+            <!-- Connector-only controls: how the line is routed and capped -->
+            <div
+                v-if="line"
+                class="inspector-connector"
+                data-test="connector-config"
+            >
+                <p class="inspector-label">Routing</p>
+                <div class="inspector-segments">
+                    <button
+                        v-for="option in routings"
+                        :key="option.value"
+                        type="button"
+                        :class="{ 'is-on': line.routing === option.value }"
+                        :data-test="`routing-${option.value}`"
+                        @click="emit('update', { routing: option.value })"
+                    >
+                        {{ option.label }}
+                    </button>
+                </div>
+
+                <p class="inspector-label">Line</p>
+                <div class="inspector-segments">
+                    <button
+                        v-for="option in styles"
+                        :key="option.value"
+                        type="button"
+                        :class="{ 'is-on': line.lineStyle === option.value }"
+                        :data-test="`style-${option.value}`"
+                        @click="emit('update', { lineStyle: option.value })"
+                    >
+                        {{ option.label }}
+                    </button>
+                </div>
+
+                <label class="inspector-slider">
+                    Thickness
+                    <input
+                        type="range"
+                        min="1"
+                        max="8"
+                        :value="line.lineWidth"
+                        data-test="line-width"
+                        @input="
+                            emit('update', {
+                                lineWidth: Number(
+                                    ($event.target as HTMLInputElement).value,
+                                ),
+                            })
+                        "
+                    />
+                    <span>{{ line.lineWidth }}</span>
+                </label>
+
+                <p class="inspector-label">Ends</p>
+                <div class="inspector-ends">
+                    <label>
+                        Start
+                        <select
+                            :value="line.startHead"
+                            data-test="head-start"
+                            @change="
+                                emit('update', {
+                                    startHead: (
+                                        $event.target as HTMLSelectElement
+                                    ).value as Item['startHead'],
+                                })
+                            "
+                        >
+                            <option
+                                v-for="head in HEAD_TYPES"
+                                :key="head.value"
+                                :value="head.value"
+                            >
+                                {{ head.label }}
+                            </option>
+                        </select>
+                    </label>
+                    <label>
+                        End
+                        <select
+                            :value="line.endHead"
+                            data-test="head-end"
+                            @change="
+                                emit('update', {
+                                    endHead: (
+                                        $event.target as HTMLSelectElement
+                                    ).value as Item['endHead'],
+                                })
+                            "
+                        >
+                            <option
+                                v-for="head in HEAD_TYPES"
+                                :key="head.value"
+                                :value="head.value"
+                            >
+                                {{ head.label }}
+                            </option>
+                        </select>
+                    </label>
+                </div>
+
+                <label class="inspector-slider">
+                    Head size
+                    <input
+                        type="range"
+                        min="6"
+                        max="24"
+                        :value="line.headSize"
+                        data-test="head-size"
+                        @input="
+                            emit('update', {
+                                headSize: Number(
+                                    ($event.target as HTMLInputElement).value,
+                                ),
+                            })
+                        "
+                    />
+                    <span>{{ line.headSize }}</span>
+                </label>
+            </div>
+
             <ColourPicker
+                v-if="!line"
                 :model-value="fill"
                 label="Fill"
                 @update:model-value="emit('paint', $event)"
@@ -246,6 +390,82 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     background-color: var(--background);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
+}
+
+.inspector-connector {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.inspector-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+}
+
+.inspector-segments {
+    display: flex;
+    gap: 2px;
+}
+.inspector-segments button {
+    flex: 1;
+    height: 1.75rem;
+    font-size: 0.6875rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+.inspector-segments button:hover {
+    background-color: var(--muted);
+}
+.inspector-segments button.is-on {
+    color: var(--primary-foreground);
+    background-color: var(--primary);
+    border-color: var(--primary);
+}
+
+.inspector-ends {
+    display: flex;
+    gap: 0.375rem;
+}
+.inspector-ends label {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.6875rem;
+    color: var(--muted-foreground);
+}
+.inspector-ends select {
+    width: 100%;
+    min-width: 0;
+    height: 1.75rem;
+    padding: 0 0.25rem;
+    font-size: 0.6875rem;
+    color: var(--foreground);
+    background-color: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.inspector-slider {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.6875rem;
+    color: var(--muted-foreground);
+}
+.inspector-slider input {
+    flex: 1;
+    min-width: 0;
+}
+.inspector-slider span {
+    width: 1.25rem;
+    text-align: right;
+    color: var(--foreground);
 }
 
 .inspector-line {

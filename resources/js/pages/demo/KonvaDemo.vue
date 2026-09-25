@@ -15,7 +15,6 @@ import { computed, nextTick, onMounted, ref, useTemplateRef, watch } from 'vue';
 // Imported into the page rather than installed with app.use(VueKonva): the
 // plugin would put every Konva shape in the main bundle for one demo.
 import {
-    Arrow,
     Circle,
     Ellipse,
     Group,
@@ -40,10 +39,14 @@ import {
     boundsOfAll,
     hasText,
     connectorPoints,
+    dashFor,
+    headPoints,
+    headsOf,
     isConnectable,
     isConnector,
     isPath,
     isStroke,
+    midpointOf,
     nearestSide,
     overlaps,
     polygonPoints,
@@ -509,6 +512,19 @@ const editorStyle = computed(() => {
 
     const scale = camera.scale.value;
 
+    if (isConnector(item)) {
+        const middle = midpointOf(connectorPath(item));
+
+        return {
+            left: `${(middle.x - 70) * scale + camera.position.value.x}px`,
+            top: `${(middle.y - 11) * scale + camera.position.value.y}px`,
+            width: `${140 * scale}px`,
+            height: `${22 * scale}px`,
+            fontSize: `${13 * scale}px`,
+            textAlign: 'center' as const,
+        };
+    }
+
     return {
         left: `${item.x * scale + camera.position.value.x}px`,
         top: `${item.y * scale + camera.position.value.y}px`,
@@ -523,7 +539,8 @@ const editorStyle = computed(() => {
 const startEditing = (id: string) => {
     const item = board.byId.value.get(id);
 
-    if (!item || !hasText(item)) {
+    // Ink has nowhere to put a label; everything else, connectors included, does
+    if (!item || (!hasText(item) && !isConnector(item))) {
         return;
     }
 
@@ -763,6 +780,14 @@ const strokePoints = (item: Item) => item.points;
 const isSelected = (item: Item) => board.selection.value.includes(item.id);
 
 const connectable = computed(() => board.items.value.filter(isConnectable));
+
+const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
+
+// Close enough for a backing chip: Konva would have to measure the text to do
+// better, and this only has to keep the line out of the words.
+const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
+
+const strokeOf = (item: Item) => (isSelected(item) ? '#6366f1' : item.stroke);
 
 // How far a label sits from the top of its shape. A cylinder's lid and a
 // triangle's point leave no room at the edges, so their text starts lower.
@@ -1042,29 +1067,106 @@ const labelInset = (item: Item): number => {
                                 }"
                             />
 
-                            <!-- A connector: elbowed between two anchors, and
-                                 redrawn whenever either shape moves -->
-                            <Arrow
-                                v-else-if="isConnector(item)"
-                                :config="{
-                                    points: connectorPoints(
+                            <!-- A connector: drawn between two anchors the way
+                                 its own routing, dash and head settings say -->
+                            <template v-else-if="isConnector(item)">
+                                <Line
+                                    :config="{
+                                        points: connectorPath(item),
+                                        stroke: strokeOf(item),
+                                        strokeWidth: item.lineWidth,
+                                        dash: dashFor(item.lineStyle),
+                                        tension:
+                                            item.routing === 'curved' ? 0.5 : 0,
+                                        lineCap: 'round',
+                                        lineJoin: 'round',
+                                        hitStrokeWidth: 18,
+                                    }"
+                                />
+
+                                <!-- Each end's cap, rotated to follow the line -->
+                                <template
+                                    v-for="head in headsOf(
                                         item,
-                                        board.byId.value,
-                                    ),
-                                    stroke: isSelected(item)
-                                        ? '#6366f1'
-                                        : item.stroke,
-                                    fill: isSelected(item)
-                                        ? '#6366f1'
-                                        : item.stroke,
-                                    strokeWidth: isSelected(item) ? 3 : 2,
-                                    pointerLength: 10,
-                                    pointerWidth: 9,
-                                    lineCap: 'round',
-                                    lineJoin: 'round',
-                                    hitStrokeWidth: 18,
-                                }"
-                            />
+                                        connectorPath(item),
+                                    )"
+                                    :key="head.key"
+                                >
+                                    <Circle
+                                        v-if="head.type === 'circle'"
+                                        :config="{
+                                            x: head.x,
+                                            y: head.y,
+                                            radius: item.headSize * 0.4,
+                                            fill: strokeOf(item),
+                                            listening: false,
+                                        }"
+                                    />
+                                    <Line
+                                        v-else
+                                        :config="{
+                                            x: head.x,
+                                            y: head.y,
+                                            rotation: head.rotation,
+                                            points: headPoints(
+                                                head.type,
+                                                item.headSize,
+                                            ),
+                                            closed:
+                                                head.type === 'arrow' ||
+                                                head.type === 'diamond',
+                                            fill:
+                                                head.type === 'arrow' ||
+                                                head.type === 'diamond'
+                                                    ? strokeOf(item)
+                                                    : undefined,
+                                            stroke: strokeOf(item),
+                                            strokeWidth: item.lineWidth,
+                                            lineCap: 'round',
+                                            lineJoin: 'round',
+                                            listening: false,
+                                        }"
+                                    />
+                                </template>
+
+                                <!-- The label sits on a chip so the line does
+                                     not run through the words -->
+                                <Rect
+                                    v-if="item.text"
+                                    :config="{
+                                        x:
+                                            midpointOf(connectorPath(item)).x -
+                                            labelWidth(item) / 2,
+                                        y:
+                                            midpointOf(connectorPath(item)).y -
+                                            11,
+                                        width: labelWidth(item),
+                                        height: 22,
+                                        fill: '#ffffff',
+                                        cornerRadius: 4,
+                                        listening: false,
+                                        opacity: editingId === item.id ? 0 : 1,
+                                    }"
+                                />
+                                <Text
+                                    v-if="item.text"
+                                    :config="{
+                                        text: item.text,
+                                        x:
+                                            midpointOf(connectorPath(item)).x -
+                                            70,
+                                        y:
+                                            midpointOf(connectorPath(item)).y -
+                                            9,
+                                        width: 140,
+                                        fontSize: 13,
+                                        fill: '#0f172a',
+                                        align: 'center',
+                                        listening: false,
+                                        opacity: editingId === item.id ? 0 : 1,
+                                    }"
+                                />
+                            </template>
 
                             <!-- A label sits inside every shape except plain text,
                              which is the label. Double-click any of them. -->
@@ -1192,6 +1294,7 @@ const labelInset = (item: Item): number => {
                 @duplicate="board.duplicate"
                 @remove="removeSelection"
                 @reorder="board.reorder"
+                @update="board.updateSelected"
                 @present="startPresenting"
             />
         </div>

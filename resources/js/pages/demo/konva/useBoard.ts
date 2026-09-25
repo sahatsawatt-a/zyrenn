@@ -161,6 +161,16 @@ export function useBoard() {
         item.text = text;
     };
 
+    /** Apply a partial change to everything selected, as one undo step. */
+    const updateSelected = (patch: Partial<Item>) => {
+        if (!selected.value.length) {
+            return;
+        }
+
+        commit();
+        selected.value.forEach((item) => Object.assign(item, patch));
+    };
+
     const paintStroke = (colour: string) => {
         if (!selected.value.length) {
             return;
@@ -278,6 +288,7 @@ export function useBoard() {
         setText,
         paint,
         paintStroke,
+        updateSelected,
         commit,
         undo,
         redo,

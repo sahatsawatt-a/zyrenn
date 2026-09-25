@@ -58,6 +58,21 @@ export type Endpoint = {
     y: number;
 };
 
+export type Routing = 'elbow' | 'straight' | 'curved';
+
+/** What either end of a connector is capped with. */
+export type HeadType = 'none' | 'arrow' | 'open' | 'circle' | 'diamond' | 'bar';
+
+export const HEAD_TYPES: { value: HeadType; label: string }[] = [
+    { value: 'none', label: 'None' },
+    { value: 'arrow', label: 'Arrow' },
+    { value: 'open', label: 'Open' },
+    { value: 'circle', label: 'Circle' },
+    { value: 'diamond', label: 'Diamond' },
+    { value: 'bar', label: 'Bar' },
+];
+export type LineStyle = 'solid' | 'dashed' | 'dotted';
+
 export type Item = {
     id: string;
     kind: ItemKind;
@@ -72,9 +87,15 @@ export type Item = {
     fontSize: number;
     // Freehand keeps its shape as points relative to x/y
     points: number[];
-    // Connectors only: where each end is pinned
+    // Connectors only: where each end is pinned and how the line is drawn
     from: Endpoint | null;
     to: Endpoint | null;
+    routing: Routing;
+    lineStyle: LineStyle;
+    lineWidth: number;
+    startHead: HeadType;
+    endHead: HeadType;
+    headSize: number;
 };
 
 export type Tool = 'select' | ItemKind;
@@ -151,6 +172,12 @@ export const makeItem = (
         points: [],
         from: null,
         to: null,
+        routing: 'elbow',
+        lineStyle: 'solid',
+        lineWidth: 2,
+        startHead: 'none',
+        endHead: 'arrow',
+        headSize: 10,
     };
 
     switch (kind) {
@@ -407,6 +434,10 @@ export const connectorPoints = (
         return [];
     }
 
+    if (item.routing === 'straight') {
+        return [start.x, start.y, end.x, end.y];
+    }
+
     const fromSide = item.from?.item ? (item.from?.side ?? null) : null;
     const toSide = item.to?.item ? (item.to?.side ?? null) : null;
 
@@ -416,6 +447,12 @@ export const connectorPoints = (
 
     const out = stubbed(start, fromSide);
     const back = stubbed(end, toSide);
+
+    // Curved: leave and arrive along the anchors' normals, and let Konva's
+    // tension round off the two corners into one sweep.
+    if (item.routing === 'curved') {
+        return [start, out, back, end].flatMap((point) => [point.x, point.y]);
+    }
 
     // Turn in the axis the first stub is already travelling along
     const midpoint =
@@ -433,4 +470,122 @@ export const connectorPoints = (
         point.x,
         point.y,
     ]);
+};
+
+/** Dash pattern for a connector's line style. */
+export const dashFor = (style: LineStyle): number[] => {
+    switch (style) {
+        case 'dashed':
+            return [12, 8];
+        case 'dotted':
+            return [1, 7];
+        default:
+            return [];
+    }
+};
+
+/** Halfway along a connector's path, where its label belongs. */
+export const midpointOf = (points: number[]) => {
+    if (points.length < 4) {
+        return { x: 0, y: 0 };
+    }
+
+    const steps: { x: number; y: number }[] = [];
+
+    for (let index = 0; index < points.length; index += 2) {
+        steps.push({ x: points[index], y: points[index + 1] });
+    }
+
+    const lengths = steps
+        .slice(1)
+        .map((point, index) =>
+            Math.hypot(point.x - steps[index].x, point.y - steps[index].y),
+        );
+    const total = lengths.reduce((sum, length) => sum + length, 0);
+
+    let walked = 0;
+
+    for (let index = 0; index < lengths.length; index++) {
+        if (walked + lengths[index] >= total / 2) {
+            const into = (total / 2 - walked) / (lengths[index] || 1);
+
+            return {
+                x:
+                    steps[index].x +
+                    (steps[index + 1].x - steps[index].x) * into,
+                y:
+                    steps[index].y +
+                    (steps[index + 1].y - steps[index].y) * into,
+            };
+        }
+
+        walked += lengths[index];
+    }
+
+    return steps[Math.floor(steps.length / 2)];
+};
+
+/**
+ * Where each end of a connector sits and which way it points, so a head can be
+ * drawn there. Konva's own Arrow draws one shape only; every other cap is a
+ * shape of ours placed here and rotated to match the line.
+ */
+export const headsOf = (item: Item, points: number[]) => {
+    if (points.length < 4) {
+        return [];
+    }
+
+    const degrees = (dx: number, dy: number) =>
+        (Math.atan2(dy, dx) * 180) / Math.PI;
+
+    const [x1, y1, x2, y2] = points;
+    const last = points.length;
+    const [x3, y3, x4, y4] = points.slice(last - 4);
+
+    return [
+        {
+            key: 'start' as const,
+            type: item.startHead,
+            x: x1,
+            y: y1,
+            // Points back out of the line, away from the second point
+            rotation: degrees(x1 - x2, y1 - y2),
+        },
+        {
+            key: 'end' as const,
+            type: item.endHead,
+            x: x4,
+            y: y4,
+            rotation: degrees(x4 - x3, y4 - y3),
+        },
+    ].filter((head) => head.type !== 'none');
+};
+
+/**
+ * A head's outline, drawn pointing along +x from the line's end, so the shape
+ * only has to be rotated into place.
+ */
+export const headPoints = (type: HeadType, size: number): number[] => {
+    const width = size * 0.9;
+
+    switch (type) {
+        case 'arrow':
+        case 'open':
+            return [-size, -width / 2, 0, 0, -size, width / 2];
+        case 'diamond':
+            return [
+                0,
+                0,
+                -size / 2,
+                -width / 2,
+                -size,
+                0,
+                -size / 2,
+                width / 2,
+            ];
+        case 'bar':
+            return [0, -width / 2, 0, width / 2];
+        default:
+            return [];
+    }
 };
