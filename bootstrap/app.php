@@ -18,6 +18,12 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
+        // A proxy terminates TLS and forwards plain http to nginx, so without
+        // reading X-Forwarded-Proto the app builds http:// URLs on an https page
+        // and the browser blocks them as mixed content. `app` publishes no port,
+        // so these headers can only come from `web` on the compose network.
+        $middleware->trustProxies(at: '*');
+
         // Note autosave sends the editor's JSON, where spaces at the edges of text
         // nodes are content (e.g. "Energy is " before a formula or bold word).
         // Runs before routing, so match on method + path rather than route name.
