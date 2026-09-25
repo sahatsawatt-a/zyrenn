@@ -18,6 +18,13 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
+        // Note autosave sends the editor's JSON, where spaces at the edges of text
+        // nodes are content (e.g. "Energy is " before a formula or bold word).
+        // Runs before routing, so match on method + path rather than route name.
+        $middleware->trimStrings(except: [
+            fn (Request $request) => $request->isMethod('PATCH') && $request->is('notes/*'),
+        ]);
+
         $middleware->web(append: [
             HandleAppearance::class,
             HandleInertiaRequests::class,

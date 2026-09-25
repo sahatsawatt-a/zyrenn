@@ -13,6 +13,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 // ---------------------------------
 //      Feature
 // ---------------------------------
+require __DIR__.'/features/notes.php';
 require __DIR__.'/features/drive.php';
 
 // ---------------------------------

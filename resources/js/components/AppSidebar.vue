@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { BookOpen, FolderGit2, LayoutGrid } from '@lucide/vue';
+import {
+    BookOpen,
+    FolderGit2,
+    HardDrive,
+    LayoutGrid,
+    NotebookPen,
+} from '@lucide/vue';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
 import NavMain from '@/components/NavMain.vue';
@@ -14,7 +20,9 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard } from '@/routes';
+import { dashboard, template_sample, tiptap_demo } from '@/routes';
+import { index as driveIndex } from '@/routes/drive';
+import { index as notesIndex } from '@/routes/notes';
 import type { NavItem } from '@/types';
 
 const mainNavItems: NavItem[] = [
@@ -23,19 +31,39 @@ const mainNavItems: NavItem[] = [
         href: dashboard(),
         icon: LayoutGrid,
     },
+    {
+        title: 'Notes',
+        href: notesIndex(),
+        icon: NotebookPen,
+    },
+    {
+        title: 'Drive',
+        href: driveIndex(),
+        icon: HardDrive,
+    },
+    // {
+    //     title: 'Template Sample',
+    //     href: template_sample(),
+    //     icon: LayoutGrid,
+    // },
+    // {
+    //     title: 'Tiptap Demo',
+    //     href: tiptap_demo(),
+    //     icon: LayoutGrid,
+    // },
 ];
 
 const footerNavItems: NavItem[] = [
-    {
-        title: 'Repository',
-        href: 'https://github.com/laravel/vue-starter-kit',
-        icon: FolderGit2,
-    },
-    {
-        title: 'Documentation',
-        href: 'https://laravel.com/docs/starter-kits#vue',
-        icon: BookOpen,
-    },
+    // {
+    //     title: 'Repository',
+    //     href: 'https://github.com/{username}/{repository}',
+    //     icon: FolderGit2,
+    // },
+    // {
+    //     title: 'Documentation',
+    //     href: '',
+    //     icon: BookOpen,
+    // },
 ];
 </script>
 

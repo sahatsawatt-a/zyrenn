@@ -61,6 +61,15 @@ class User extends Authenticatable implements PasskeyUser
         ];
     }
 
+    /**
+     * Get the notes owned by the user.
+     *
+     * @return HasMany<Note, $this>
+     */
+    public function notes(): HasMany
+    {
+        return $this->hasMany(Note::class);
+    }
 
     /**
      * Get the files in the user's Drive.
@@ -82,4 +91,13 @@ class User extends Authenticatable implements PasskeyUser
         return $this->hasMany(DriveFolder::class);
     }
 
+    /**
+     * Get the folders the user files notes in.
+     *
+     * @return HasMany<NoteFolder, $this>
+     */
+    public function noteFolders(): HasMany
+    {
+        return $this->hasMany(NoteFolder::class);
+    }
 }
