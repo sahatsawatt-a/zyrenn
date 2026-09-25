@@ -4,7 +4,7 @@ import { computed } from 'vue';
 import { Activity, ArrowRight, GitBranch, ShieldCheck, Zap } from '@lucide/vue';
 import AppLogoIcon from '@/components/AppLogoIcon.vue';
 import { Button } from '@/components/ui/button';
-import { home, login, register } from '@/routes';
+import { dashboard, login, register } from '@/routes';
 
 const page = usePage();
 
@@ -12,7 +12,7 @@ const isAuthenticated = computed(() => Boolean(page.props.auth.user));
 
 const primaryCta = computed(() =>
     isAuthenticated.value
-        ? { href: home(), label: 'Open Homepage' }
+        ? { href: dashboard(), label: 'Open Homepage' }
         : { href: register(), label: 'Create an account' },
 );
 </script>
@@ -42,7 +42,7 @@ const primaryCta = computed(() =>
                         size="sm"
                         variant="outline"
                     >
-                        <Link :href="home()">Homepage</Link>
+                        <Link :href="dashboard()">Homepage</Link>
                     </Button>
                     <template v-else>
                         <Button as-child size="sm" variant="ghost">
