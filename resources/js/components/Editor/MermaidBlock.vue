@@ -1,0 +1,391 @@
+<template>
+    <node-view-wrapper class="mermaid-block">
+        <!-- Toolbar: diagram type picker + actions -->
+        <div class="mermaid-toolbar" contenteditable="false">
+            <select
+                class="mermaid-type-select"
+                aria-label="Diagram type"
+                :value="detected?.id ?? ''"
+                @change="onTypeChange"
+            >
+                <option v-if="!detected" value="" disabled>
+                    Custom diagram
+                </option>
+                <optgroup
+                    v-for="group in groups"
+                    :key="group.name"
+                    :label="group.name"
+                >
+                    <option
+                        v-for="template in group.templates"
+                        :key="template.id"
+                        :value="template.id"
+                    >
+                        {{ template.label }}
+                    </option>
+                </optgroup>
+            </select>
+
+            <div class="mermaid-actions">
+                <button
+                    v-if="svg && !error"
+                    type="button"
+                    class="mermaid-btn"
+                    title="View full size"
+                    @click="expand"
+                >
+                    Expand
+                </button>
+                <button type="button" class="mermaid-btn" @click="copySource">
+                    {{ copied ? 'Copied!' : 'Copy' }}
+                </button>
+                <button
+                    type="button"
+                    class="mermaid-btn"
+                    @click="isEditing ? finishEditing() : startEditing()"
+                >
+                    {{ isEditing ? 'Done' : 'Edit' }}
+                </button>
+            </div>
+        </div>
+
+        <!-- Source: shown while the cursor is inside the block -->
+        <pre
+            v-show="isEditing"
+            class="mermaid-source"
+        ><node-view-content as="code" /></pre>
+
+        <!-- Live preview -->
+        <div
+            class="mermaid-preview"
+            :class="{ 'can-expand': svg && !error }"
+            contenteditable="false"
+            :title="svg && !error ? 'View full size' : undefined"
+            @mousedown.prevent.stop
+            @click="onPreviewClick"
+        >
+            <p v-if="!source" class="mermaid-hint">
+                Empty diagram — pick a type above or click to write one.
+            </p>
+            <p v-else-if="rendering && !svg && !error" class="mermaid-hint">
+                Rendering…
+            </p>
+            <pre v-else-if="error" class="mermaid-error">{{ error }}</pre>
+            <div v-else class="mermaid-svg" v-html="svg"></div>
+        </div>
+    </node-view-wrapper>
+</template>
+
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { NodeViewWrapper, NodeViewContent, nodeViewProps } from '@tiptap/vue-3';
+import { Selection } from '@tiptap/pm/state';
+import { useDebounceFn, useMutationObserver } from '@vueuse/core';
+import { renderMermaid } from '../../lib/mermaid';
+import { useMediaViewer } from '../../composables/useMediaViewer';
+import { copyToClipboard } from '../../lib/utils';
+import {
+    detectMermaidTemplate,
+    mermaidTemplates,
+} from '../../config/mermaidTemplates';
+import type { MermaidTemplate } from '../../config/mermaidTemplates';
+
+const props = defineProps(nodeViewProps);
+
+const isEditing = ref(false);
+const svg = ref('');
+const error = ref('');
+const rendering = ref(false);
+const copied = ref(false);
+
+const source = computed(() => props.node.textContent.trim());
+const detected = computed(() => detectMermaidTemplate(source.value));
+
+const groups = (['Diagrams', 'Charts'] as const).map((name) => ({
+    name,
+    templates: mermaidTemplates.filter((template) => template.group === name),
+}));
+
+// ------------------------------------------------------------------ Rendering
+let renderToken = 0;
+
+const render = async () => {
+    const token = ++renderToken;
+
+    if (!source.value) {
+        svg.value = '';
+        error.value = '';
+        return;
+    }
+
+    rendering.value = true;
+    const result = await renderMermaid(source.value);
+
+    // A newer render started while this one was queued
+    if (token !== renderToken) return;
+
+    rendering.value = false;
+
+    if (result.ok) {
+        svg.value = result.svg;
+        error.value = '';
+    } else {
+        error.value = result.error;
+    }
+};
+
+const debouncedRender = useDebounceFn(render, 300);
+
+watch(source, () => void debouncedRender());
+
+// Re-render with the matching theme when light/dark mode flips
+useMutationObserver(document.documentElement, () => void render(), {
+    attributes: true,
+    attributeFilter: ['class'],
+});
+
+onMounted(() => void render());
+
+// -------------------------------------------------------------- Edit / preview
+// The source is visible whenever the cursor is inside this block
+const syncEditing = () => {
+    const pos = props.getPos();
+    if (typeof pos !== 'number') return;
+
+    const { from, to } = props.editor.state.selection;
+    isEditing.value = from > pos && to < pos + props.node.nodeSize;
+};
+
+props.editor.on('selectionUpdate', syncEditing);
+onBeforeUnmount(() => {
+    props.editor.off('selectionUpdate', syncEditing);
+});
+
+const startEditing = () => {
+    const pos = props.getPos();
+    if (typeof pos !== 'number') return;
+
+    props.editor
+        .chain()
+        .focus()
+        .setTextSelection(pos + 1 + props.node.content.size)
+        .run();
+};
+
+const finishEditing = () => {
+    const pos = props.getPos();
+    if (typeof pos !== 'number') return;
+
+    const after = pos + props.node.nodeSize;
+    const { doc } = props.editor.state;
+
+    if (after >= doc.content.size) {
+        // Last block in the document: give the cursor somewhere to go
+        props.editor
+            .chain()
+            .insertContentAt(after, { type: 'paragraph' })
+            .focus(after + 1)
+            .run();
+        return;
+    }
+
+    const target = Selection.findFrom(doc.resolve(after), 1, true);
+    props.editor
+        .chain()
+        .focus()
+        .setTextSelection(target?.from ?? after)
+        .run();
+};
+
+const viewer = useMediaViewer();
+
+const expand = () => {
+    viewer.open([
+        {
+            type: 'svg',
+            svg: svg.value,
+            title: detected.value?.label ?? 'Diagram',
+        },
+    ]);
+};
+
+// A rendered diagram opens full size; editing is the Edit button. With nothing
+// to show yet (empty or broken), a click goes to the source instead. The
+// preview's mousedown is cancelled: otherwise the browser drops the caret into
+// the source, and the editor reveals it before the click lands.
+const onPreviewClick = () => {
+    if (svg.value && !error.value) expand();
+    else if (!isEditing.value) startEditing();
+};
+
+// ------------------------------------------------------------------ Templates
+const applyTemplate = (template: MermaidTemplate) => {
+    const pos = props.getPos();
+    if (typeof pos !== 'number') return;
+
+    const { tr, schema } = props.editor.state;
+    tr.replaceWith(
+        pos + 1,
+        pos + 1 + props.node.content.size,
+        schema.text(template.source),
+    );
+    props.editor.view.dispatch(tr);
+};
+
+const onTypeChange = (event: Event) => {
+    const select = event.target as HTMLSelectElement;
+    const template = mermaidTemplates.find((item) => item.id === select.value);
+    if (!template) return;
+
+    // Only ask before replacing something the user actually wrote
+    const isUntouched =
+        !source.value ||
+        mermaidTemplates.some((item) => item.source.trim() === source.value);
+
+    if (
+        !isUntouched &&
+        !window.confirm(
+            `Replace this diagram with the ${template.label} template?`,
+        )
+    ) {
+        select.value = detected.value?.id ?? '';
+        return;
+    }
+
+    applyTemplate(template);
+};
+
+const copySource = async () => {
+    try {
+        await copyToClipboard(props.node.textContent);
+        copied.value = true;
+        setTimeout(() => (copied.value = false), 2000);
+    } catch (err) {
+        console.error('Failed to copy diagram source: ', err);
+    }
+};
+</script>
+
+<style scoped>
+.mermaid-block {
+    margin: 1.5rem 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--card);
+    overflow: hidden;
+}
+
+.mermaid-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--muted);
+    font-family: var(--font-sans);
+    user-select: none;
+}
+
+.mermaid-type-select {
+    background: transparent;
+    border: none;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    outline: none;
+}
+.mermaid-type-select:hover {
+    color: var(--foreground);
+}
+.mermaid-type-select option,
+.mermaid-type-select optgroup {
+    background: var(--card);
+    color: var(--foreground);
+}
+
+.mermaid-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.mermaid-btn {
+    background: var(--background);
+    border: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    padding: 3px 10px;
+    border-radius: var(--radius-sm);
+    transition: all 150ms ease;
+}
+.mermaid-btn:hover {
+    color: var(--foreground);
+    background: var(--accent);
+}
+
+.mermaid-source {
+    margin: 0 !important;
+    padding: 1rem 1.25rem !important;
+    background: #18181c !important;
+    color: #abb2bf;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--border);
+}
+.mermaid-source code {
+    display: block;
+    font-family:
+        'Fira Code', ui-monospace, Monaco, Consolas, monospace !important;
+    font-size: 14px !important;
+    line-height: 1.6 !important;
+    background: transparent !important;
+    color: inherit !important;
+    padding: 0 !important;
+    white-space: pre;
+}
+
+.mermaid-preview {
+    display: flex;
+    justify-content: center;
+    min-height: 6rem;
+    padding: 1.5rem;
+    cursor: pointer;
+    overflow-x: auto;
+}
+.mermaid-preview.can-expand {
+    cursor: zoom-in;
+}
+
+.mermaid-svg {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+.mermaid-svg :deep(svg) {
+    max-width: 100%;
+    height: auto;
+}
+
+.mermaid-hint {
+    align-self: center;
+    margin: 0;
+    font-size: 13px;
+    font-style: italic;
+    color: var(--muted-foreground);
+}
+
+.mermaid-error {
+    width: 100%;
+    margin: 0;
+    padding: 0.75rem;
+    font-family: ui-monospace, Monaco, Consolas, monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    color: var(--destructive);
+    background: color-mix(in oklab, var(--destructive) 8%, transparent);
+    border: 1px solid color-mix(in oklab, var(--destructive) 30%, transparent);
+    border-radius: var(--radius-sm);
+}
+</style>

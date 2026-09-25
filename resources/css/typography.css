@@ -1,0 +1,433 @@
+/* ==========================================================================
+   GLOBAL EDITOR & NODE PLACEHOLDER STYLES
+   ========================================================================== */
+
+/* 1. 💡 SHOW IMMEDIATELY IF BLANK: If the entire editor workspace is empty, show the prompt on the very first line */
+.tiptap.is-editor-empty [data-placeholder]::before {
+    content: attr(data-placeholder);
+    float: left;
+    color: var(--muted-foreground);
+    opacity: 0.6;
+    pointer-events: none;
+    height: 0;
+}
+
+/* 1. Base placeholder prompt for standard empty lines (p, headings, etc.) */
+.tiptap p.is-empty::before,
+.tiptap h1.is-empty::before,
+.tiptap h2.is-empty::before,
+.tiptap h3.is-empty::before,
+.tiptap li.is-empty::before {
+    content: attr(data-placeholder);
+    float: left;
+    color: var(--muted-foreground);
+    opacity: 0.6;
+    pointer-events: none;
+    height: 0;
+}
+
+/* 2. 💡 THE ACTIVE-LINE FIX: Show placeholder text ONLY when the empty element has active cursor focus */
+.tiptap [data-placeholder]:focus::before {
+    content: attr(data-placeholder) !important;
+    float: left;
+    color: var(--muted-foreground) !important;
+    opacity: 0.6;
+    pointer-events: none;
+    height: 0;
+}
+
+/* 2. Strict targeting loop for the custom Callout node content paragraph blocks */
+.tiptap
+    div[data-type='callout']
+    .callout-content
+    p.is-empty:not(:focus)::before {
+    content: "Type '/' for commands..." !important;
+}
+
+.tiptap div[data-type='callout'] .callout-content p.is-empty:focus::before {
+    content: attr(data-placeholder) !important;
+    float: left;
+    color: var(--muted-foreground) !important;
+    opacity: 0.6;
+    pointer-events: none;
+    height: 0;
+}
+
+.tiptap *:focus::before {
+    opacity: 1 !important;
+}
+
+/* ==========================================================================
+   CORE BLOCK ELEMENT TYPOGRAPHY RULES
+   ========================================================================== */
+.tiptap h1 {
+    font-size: 2.25em;
+    font-weight: 700;
+    margin-top: 1.25em;
+    margin-bottom: 0.5em;
+    line-height: 1.2;
+    color: var(--foreground);
+}
+
+.tiptap h2 {
+    font-size: 1.75em;
+    font-weight: 600;
+    margin-top: 1.25em;
+    margin-bottom: 0.4em;
+    line-height: 1.3;
+    color: var(--foreground);
+}
+
+.tiptap h3 {
+    font-size: 1.25em;
+    font-weight: 600;
+    margin-top: 1em;
+    margin-bottom: 0.3em;
+    line-height: 1.4;
+    color: var(--foreground);
+}
+
+.tiptap p {
+    margin: 0.4em 0;
+    line-height: 1.6;
+    font-size: 16px;
+    color: var(--foreground);
+}
+
+/* Inline Code styling (code blocks are styled by CodeBlockView) */
+.tiptap :not(pre) > code {
+    background: var(--muted);
+    color: #eb5757;
+    padding: 0.2em 0.4em;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 85%;
+}
+
+/* ==========================================================================
+   STANDARD LIST ARCHITECTURE SETUP
+   ========================================================================== */
+.tiptap ul {
+    list-style-type: disc !important;
+    padding-left: 1.5rem !important;
+    margin: 0.5rem 0 !important;
+}
+
+.tiptap ol {
+    list-style-type: decimal !important;
+    padding-left: 1.5rem !important;
+    margin: 0.5rem 0 !important;
+}
+
+/* Target standard list items ONLY, explicitly ignoring task list rows */
+.tiptap ul:not([data-type='taskList']) li,
+.tiptap ol li {
+    display: list-item !important;
+    margin-bottom: 0.25rem !important;
+    line-height: 1.6;
+    color: var(--foreground);
+}
+
+/* ==========================================================================
+   TASK LIST RULES
+   ========================================================================== */
+.tiptap ul[data-type='taskList'] {
+    list-style: none !important;
+    padding-left: 0.5rem !important;
+    margin: 0.5rem 0 !important;
+}
+
+.tiptap ul[data-type='taskList'] li {
+    display: block !important;
+    position: relative !important;
+    padding-left: 1.75rem !important;
+    margin-bottom: 0.4rem !important;
+    line-height: 1.6 !important;
+    min-height: 24px;
+}
+
+/* Custom Checkbox Input Elements */
+.tiptap ul[data-type='taskList'] input[type='checkbox'] {
+    appearance: none;
+    background-color: var(--card);
+    margin: 0 !important;
+    font: inherit;
+    color: var(--foreground);
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--foreground);
+    border-radius: 4px;
+
+    position: absolute !important;
+    left: 0 !important;
+    top: 5px !important;
+
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer;
+    transition:
+        background-color 100ms ease,
+        border-color 100ms ease;
+}
+
+.tiptap ul[data-type='taskList'] input[type='checkbox']:hover {
+    background-color: var(--muted);
+}
+
+.tiptap ul[data-type='taskList'] input[type='checkbox']:checked {
+    background-color: var(--primary);
+    border-color: var(--primary);
+}
+
+.tiptap ul[data-type='taskList'] input[type='checkbox']:checked::before {
+    content: '';
+    width: 8px;
+    height: 4px;
+    border-left: 2px solid var(--primary-foreground);
+    border-bottom: 2px solid var(--primary-foreground);
+    transform: rotate(-45deg);
+    margin: 0 !important;
+    position: relative;
+    top: -1px;
+}
+
+/* Task Layout Text Blocks & Hidden Margins Reset */
+.tiptap ul[data-type='taskList'] li > div {
+    display: block !important;
+}
+
+.tiptap ul[data-type='taskList'] li > div > p,
+.tiptap ul[data-type='taskList'] li > label,
+.tiptap ul[data-type='taskList'] li > p {
+    margin: 0 !important;
+    padding: 0 !important;
+    line-height: 1.6 !important;
+}
+
+/* Force Text Strikethrough decoration downward cleanly */
+.tiptap ul[data-type='taskList'] li[data-checked='true'] > div,
+.tiptap ul[data-type='taskList'] li[data-checked='true'] > div > p,
+.tiptap ul[data-type='taskList'] li[data-checked='true'] > p {
+    text-decoration: line-through !important;
+    color: var(--muted-foreground) !important;
+}
+
+/* ==========================================================================
+   CALLOUT INTERACTION & TYPOGRAPHY STYLES 
+   ========================================================================== */
+.tiptap div[data-type='callout'] {
+    display: flex !important;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem !important;
+    margin: 1rem 0 !important;
+    background-color: var(--muted) !important;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+}
+
+.tiptap div[data-type='callout'] .callout-icon {
+    font-size: 1.25rem;
+    line-height: 1.2;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.tiptap div[data-type='callout'] .callout-content {
+    flex: 1;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--foreground);
+}
+
+.tiptap div[data-type='callout'] .callout-content > p {
+    margin-top: 0 !important;
+    margin-bottom: 0.4rem !important;
+}
+
+.tiptap div[data-type='callout'] .callout-content > p:last-child {
+    margin-bottom: 0 !important;
+}
+
+/* ==========================================================================
+   QUOTE & BASIC INTERFACES
+   ========================================================================== */
+.tiptap blockquote {
+    border-left: 4px solid var(--primary) !important;
+    background-color: var(
+        --muted
+    ) !important; /* Uses your theme's oklch(0.262 0.019 285) */
+    padding: 0.6rem 1rem !important;
+    margin: 1.25rem 0 !important;
+    font-style: normal;
+    color: var(--foreground) !important;
+}
+
+.tiptap blockquote p {
+    margin: 0 !important;
+    line-height: 1.6;
+}
+
+/* ==========================================================================
+   HYBRID DARK MODE SYNTAX THEME (One Half Dark Palette Mapping)
+   ========================================================================== */
+.tiptap pre code.hljs {
+    color: #abb2bf !important;
+}
+
+.tiptap .hljs-keyword,
+.tiptap .hljs-selector-tag,
+.tiptap .hljs-built_in,
+.tiptap .hljs-name {
+    color: #c678dd !important; /* Premium Violet Keyword */
+}
+
+.tiptap .hljs-string,
+.tiptap .hljs-selector-attr,
+.tiptap .hljs-selector-pseudo {
+    color: #98c379 !important; /* Sage Green Strings */
+}
+
+.tiptap .hljs-number,
+.tiptap .hljs-literal,
+.tiptap .hljs-variable,
+.tiptap .hljs-template-variable,
+.tiptap .hljs-tag {
+    color: #d19a66 !important; /* Warm Amber Values */
+}
+
+.tiptap .hljs-title,
+.tiptap .hljs-title.function_,
+.tiptap .hljs-class .hljs-title {
+    color: #61afef !important; /* Electric Blue Functions */
+}
+
+.tiptap .hljs-params,
+.tiptap .hljs-attr,
+.tiptap .hljs-attribute {
+    color: #e06c75 !important; /* Crimson Coral Arguments */
+}
+
+.tiptap .hljs-comment,
+.tiptap .hljs-quote {
+    color: #5c6370 !important; /* Professional Muted Slate Comments */
+    font-style: italic;
+}
+
+.tiptap .hljs-regexp,
+.tiptap .hljs-meta {
+    color: #56b6c2 !important;
+}
+
+/* ==========================================================================
+   TABLES
+   ========================================================================== */
+.tiptap .tableWrapper {
+    margin: 1.25rem 0;
+    overflow-x: auto;
+}
+
+.tiptap table {
+    border-collapse: collapse;
+    table-layout: fixed;
+    width: 100%;
+    margin: 0;
+    overflow: hidden;
+}
+
+.tiptap th,
+.tiptap td {
+    position: relative;
+    min-width: 1em;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    vertical-align: top;
+    box-sizing: border-box;
+    color: var(--foreground);
+}
+
+.tiptap th {
+    background-color: var(--muted);
+    font-weight: 600;
+    text-align: left;
+}
+
+.tiptap th > p,
+.tiptap td > p {
+    margin: 0;
+    font-size: 15px;
+}
+
+/* Highlight for multi-cell selections (drag across cells) */
+.tiptap .selectedCell::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: color-mix(in oklab, var(--primary) 12%, transparent);
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* Column resize handle */
+.tiptap .column-resize-handle {
+    position: absolute;
+    top: 0;
+    bottom: -2px;
+    right: -2px;
+    width: 4px;
+    background-color: var(--primary);
+    pointer-events: none;
+}
+
+.tiptap.resize-cursor {
+    cursor: col-resize;
+}
+
+/* Placeholders are noise inside small cells */
+.tiptap td p.is-empty::before,
+.tiptap th p.is-empty::before {
+    content: none !important;
+}
+
+/* ==========================================================================
+   MATH (KaTeX)
+   ========================================================================== */
+.tiptap .tiptap-mathematics-render--editable {
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: background-color 100ms ease;
+}
+.tiptap .tiptap-mathematics-render--editable:hover {
+    background-color: var(--muted);
+}
+
+.tiptap span.tiptap-mathematics-render {
+    padding: 0 2px;
+}
+
+.tiptap div[data-type='block-math'] {
+    margin: 1rem 0;
+    padding: 0.5rem 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    text-align: center;
+}
+
+.tiptap div[data-type='block-math'] .katex-display {
+    margin: 0;
+}
+
+.tiptap .ProseMirror-selectednode.tiptap-mathematics-render {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+}
+
+/* Invalid LaTeX falls back to showing the source */
+.tiptap .inline-math-error,
+.tiptap .block-math-error {
+    font-family: ui-monospace, Monaco, Consolas, monospace;
+    font-size: 0.85em;
+    color: var(--destructive);
+    background-color: color-mix(in oklab, var(--destructive) 8%, transparent);
+}
