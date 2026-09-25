@@ -15,6 +15,7 @@ services:
         restart: unless-stopped
         volumes:
             - .:/var/www/html
+            - ./docker/php/uploads.ini:/usr/local/etc/php/conf.d/zz-uploads.ini:ro
         # Deliberately unpublished: `web` is the single origin. See docker/nginx.
         expose:
             - '8000'

@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import vue from '@vitejs/plugin-vue';
 import laravel from 'laravel-vite-plugin';
 import { bunny } from 'laravel-vite-plugin/fonts';
+import type { Plugin } from 'vite';
 import { defineConfig, lazyPlugins } from 'vite-plus';
 
 // The origin the *browser* uses to reach Vite. It differs from the container's
@@ -12,6 +13,28 @@ import { defineConfig, lazyPlugins } from 'vite-plus';
 const devOrigin = process.env.VITE_DEV_ORIGIN ?? 'http://localhost:5173';
 const devUrl = new URL(devOrigin);
 const devIsSecure = devUrl.protocol === 'https:';
+
+// @inertiajs/vite links SSR'd page CSS using the dev server's first *local*
+// URL (http://localhost:5173) and ignores server.origin, so browsers on other
+// devices (LAN access) request CSS from their own localhost. Report the
+// browser-facing origin as the local URL instead.
+const advertiseDevOrigin: Plugin = {
+    name: 'advertise-dev-origin',
+    configureServer(server) {
+        let resolvedUrls = server.resolvedUrls;
+
+        Object.defineProperty(server, 'resolvedUrls', {
+            configurable: true,
+            get: () => resolvedUrls,
+            set: (urls: typeof resolvedUrls) => {
+                resolvedUrls = urls && {
+                    ...urls,
+                    local: [`${devUrl.origin}/`],
+                };
+            },
+        });
+    },
+};
 
 export default defineConfig({
     plugins: lazyPlugins(() => [
@@ -37,6 +60,7 @@ export default defineConfig({
         wayfinder({
             formVariants: true,
         }),
+        advertiseDevOrigin,
     ]),
     server: {
         host: '0.0.0.0',
