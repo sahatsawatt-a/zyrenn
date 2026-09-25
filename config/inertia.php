@@ -16,7 +16,10 @@ return [
     */
 
     'ssr' => [
-        'enabled' => true,
+        // Off by default: while the Vite dev server is hot, Inertia posts each page to its
+        // /__inertia_ssr endpoint at the URL in public/hot — the host's LAN address, which
+        // the app container can't reach, so every render waited out a 10s HTTP timeout.
+        'enabled' => env('INERTIA_SSR_ENABLED', false),
         'url' => 'http://127.0.0.1:13714',
         // 'bundle' => base_path('bootstrap/ssr/ssr.mjs'),
 
