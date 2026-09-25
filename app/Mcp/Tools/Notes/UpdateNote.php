@@ -12,7 +12,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tools\Annotations\IsIdempotent;
 
 #[IsIdempotent]
-#[Description('Update or move a note. Only the fields you pass change. "markdown" replaces the whole body (read it with get-note first to edit part of it).')]
+#[Description('Update or move a note. Only the fields you pass change. "markdown" replaces the whole body (read it with get-note first to edit part of it). To add a picture, upload it with upload-file and paste the "markdown" line it returns into the body.')]
 class UpdateNote extends NoteTool
 {
     protected function arguments(JsonSchema $schema): array
@@ -57,7 +57,7 @@ class UpdateNote extends NoteTool
         }
 
         if (array_key_exists('folder', $validated)) {
-            $note->folder_id = $this->folderAt($user, $validated['folder'] ?? '', create: true)?->id;
+            $note->folder_id = $this->ensureFolderAt($user, $validated['folder'] ?? '')?->id;
         }
 
         $note->save();
