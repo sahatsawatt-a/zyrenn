@@ -12,10 +12,10 @@ docker compose exec app php artisan test
 docker compose down                      # add -v to drop the database too
 ```
 
-| | |
-| --- | --- |
-| app | <http://localhost:8001> |
-| vite | <http://localhost:5173> (dev profile, HMR) |
+|          |                                                                 |
+| -------- | --------------------------------------------------------------- |
+| app      | <http://localhost:8001>                                         |
+| vite     | <http://localhost:5173> (dev profile, HMR)                      |
 | postgres | `localhost:5434`, database and user `zyrenn`, password `secret` |
 
 Those ports were free when this project was scaffolded; they are recorded in
