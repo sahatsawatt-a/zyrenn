@@ -1,574 +1,1133 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
+import {
+    ChevronLeft,
+    ChevronRight,
+    Minus,
+    Plus,
+    Redo2,
+    Undo2,
+    X,
+} from '@lucide/vue';
 import { useElementSize, useEventListener } from '@vueuse/core';
-import type Konva from 'konva';
-import { computed, onMounted, ref, useTemplateRef, watch } from 'vue';
-// Registered locally rather than through app.use(VueKonva): the plugin would put
-// every Konva shape in the main bundle for the sake of this one page.
+import Konva from 'konva';
+import { computed, nextTick, onMounted, ref, useTemplateRef, watch } from 'vue';
+// Imported into the page rather than installed with app.use(VueKonva): the
+// plugin would put every Konva shape in the main bundle for one demo.
 import {
     Circle,
+    Ellipse,
     Group,
     Layer,
     Line,
+    Path,
     Rect,
     Stage,
+    Star,
     Text,
     Transformer,
 } from 'vue-konva';
+import InspectorPanel from './konva/InspectorPanel.vue';
+import ShapeLibrary from './konva/ShapeLibrary.vue';
+import type { Item, Tool } from './konva/board';
+import {
+    PATHS,
+    POLYGONS,
+    boundsOf,
+    boundsOfAll,
+    hasText,
+    isPath,
+    isStroke,
+    overlaps,
+    polygonPoints,
+} from './konva/board';
+import { useBoard } from './konva/useBoard';
+import { useCamera } from './konva/useCamera';
 
-type NodeBox = {
-    id: string;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    label: string;
-    tone: string;
-};
+const board = useBoard();
 
-type Edge = { from: string; to: string };
-
-// ------------------------------------------------------------------ The scene
-const tones = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444'];
-
-let nextId = 0;
-const newId = () => `n${++nextId}`;
-
-const boxes = ref<NodeBox[]>([]);
-const edges = ref<Edge[]>([]);
-// Declared here because seed() below clears it while setup is still running
-const selectedId = ref<string | null>(null);
-
-const seed = () => {
-    nextId = 0;
-    boxes.value = [
-        {
-            id: newId(),
-            x: 80,
-            y: 120,
-            width: 190,
-            height: 90,
-            label: 'Upload',
-            tone: tones[0],
-        },
-        {
-            id: newId(),
-            x: 360,
-            y: 60,
-            width: 190,
-            height: 90,
-            label: 'Extract text',
-            tone: tones[1],
-        },
-        {
-            id: newId(),
-            x: 360,
-            y: 220,
-            width: 190,
-            height: 90,
-            label: 'Make thumbnail',
-            tone: tones[2],
-        },
-        {
-            id: newId(),
-            x: 650,
-            y: 140,
-            width: 190,
-            height: 90,
-            label: 'Attach to note',
-            tone: tones[3],
-        },
-    ];
-    edges.value = [
-        { from: 'n1', to: 'n2' },
-        { from: 'n1', to: 'n3' },
-        { from: 'n2', to: 'n4' },
-        { from: 'n3', to: 'n4' },
-    ];
-    selectedId.value = null;
-};
-
-seed();
-
-const boxById = computed(
-    () => new Map(boxes.value.map((box) => [box.id, box])),
-);
-
-// ------------------------------------------------------- Stage size and view
+// ------------------------------------------------------------------ Canvas
 const canvas = useTemplateRef<HTMLDivElement>('canvas');
 const { width, height } = useElementSize(canvas);
 
 const stageRef = useTemplateRef<{ getNode: () => Konva.Stage }>('stageRef');
 const stage = () => stageRef.value?.getNode();
 
-const scale = ref(1);
-const position = ref({ x: 0, y: 0 });
+const camera = useCamera(stage, { width, height });
+
+const tool = ref<Tool>('select');
+// What the next shape is drawn with; recolouring a selection updates it too, so
+// the toolbar always shows the colour you last worked in.
+const fillColour = ref('#ffffff');
+const strokeColour = ref('#0f172a');
+
+const paintFill = (colour: string) => {
+    fillColour.value = colour;
+    board.paint(colour);
+};
+
+const paintStroke = (colour: string) => {
+    strokeColour.value = colour;
+    board.paintStroke(colour);
+};
+const presenting = ref(false);
+const spaceHeld = ref(false);
+
+const panning = computed(
+    () => spaceHeld.value || (tool.value === 'select' && presenting.value),
+);
 
 const stageConfig = computed(() => ({
     width: width.value || 1,
     height: height.value || 1,
-    // Dragging the background pans; a draggable node under the pointer wins,
-    // so this does not fight node dragging.
-    draggable: true,
-    scaleX: scale.value,
-    scaleY: scale.value,
-    x: position.value.x,
-    y: position.value.y,
+    // While a tween runs it owns the transform; handing it these every frame
+    // would fight it.
+    ...(camera.animating.value
+        ? {}
+        : {
+              scaleX: camera.scale.value,
+              scaleY: camera.scale.value,
+              x: camera.position.value.x,
+              y: camera.position.value.y,
+          }),
+    draggable: panning.value,
 }));
 
-const onWheel = (event: Konva.KonvaEventObject<WheelEvent>) => {
-    event.evt.preventDefault();
+// A dot grid that tracks the camera costs nothing as a CSS background, and
+// avoids drawing thousands of Konva circles that are never interacted with.
+const gridStyle = computed(() => {
+    const step = 40 * camera.scale.value;
 
-    const target = stage();
-    const pointer = target?.getPointerPosition();
-
-    if (!target || !pointer) {
-        return;
-    }
-
-    const next = Math.min(
-        4,
-        Math.max(0.2, scale.value * (event.evt.deltaY > 0 ? 0.9 : 1.1)),
-    );
-
-    // Keep the point under the cursor fixed while the scale changes
-    const worldX = (pointer.x - position.value.x) / scale.value;
-    const worldY = (pointer.y - position.value.y) / scale.value;
-
-    scale.value = next;
-    position.value = {
-        x: pointer.x - worldX * next,
-        y: pointer.y - worldY * next,
+    return {
+        backgroundImage:
+            'radial-gradient(circle, var(--border) 1px, transparent 1px)',
+        backgroundSize: `${step}px ${step}px`,
+        backgroundPosition: `${camera.position.value.x}px ${camera.position.value.y}px`,
+        opacity: presenting.value ? 0 : 1,
     };
-};
+});
 
-const onStageDragEnd = (event: Konva.KonvaEventObject<DragEvent>) => {
-    if (event.target === stage()) {
-        position.value = { x: event.target.x(), y: event.target.y() };
-    }
-};
-
-const resetView = () => {
-    scale.value = 1;
-    position.value = { x: 0, y: 0 };
-};
-
-const fitView = () => {
-    if (!boxes.value.length || !width.value) {
-        return;
-    }
-
-    const pad = 60;
-    const left = Math.min(...boxes.value.map((box) => box.x));
-    const top = Math.min(...boxes.value.map((box) => box.y));
-    const right = Math.max(...boxes.value.map((box) => box.x + box.width));
-    const bottom = Math.max(...boxes.value.map((box) => box.y + box.height));
-
-    const next = Math.min(
-        4,
-        Math.max(
-            0.2,
-            Math.min(
-                (width.value - pad * 2) / (right - left),
-                (height.value - pad * 2) / (bottom - top),
-            ),
-        ),
-    );
-
-    scale.value = next;
-    position.value = {
-        x: (width.value - (right - left) * next) / 2 - left * next,
-        y: (height.value - (bottom - top) * next) / 2 - top * next,
-    };
-};
-
-// -------------------------------------------------------------- Selection
+// --------------------------------------------------------------- Selection
 const transformerRef = useTemplateRef<{ getNode: () => Konva.Transformer }>(
     'transformerRef',
 );
 
-// The Transformer takes Konva nodes, not state, so it is wired up by hand
-// whenever the selection changes.
 watch(
-    [selectedId, boxes],
+    [board.selection, board.items, presenting],
     () => {
         const transformer = transformerRef.value?.getNode();
-        const target = selectedId.value
-            ? stage()?.findOne(`#${selectedId.value}`)
-            : null;
+        const target = stage();
 
-        transformer?.nodes(target ? [target] : []);
-    },
-    { flush: 'post' },
-);
-
-// Konva events bubble, so the layer carries one set of handlers instead of four
-// per node. They are bound on the Konva node rather than with @click and
-// friends: vue-konva components render a fragment, so Vue cannot inherit
-// listeners onto them and warns about it on every mount.
-const nodeLayer = useTemplateRef<{ getNode: () => Konva.Layer }>('nodeLayer');
-
-onMounted(() => {
-    const layer = nodeLayer.value?.getNode();
-
-    layer?.on('dragmove', onNodeDragMove);
-    layer?.on('transformend', onTransformEnd);
-    layer?.on('click tap', onNodeClick);
-});
-const boxIdOf = (event: Konva.KonvaEventObject<unknown>): string | null => {
-    let node: Konva.Node | null = event.target;
-
-    while (node && !boxById.value.has(node.id())) {
-        node = node.getParent();
-    }
-
-    return node?.id() ?? null;
-};
-
-const onNodeClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
-    const id = boxIdOf(event);
-
-    if (!id) {
-        return;
-    }
-
-    // Shift-click a second node to connect them, or to break an existing link
-    if (event.evt.shiftKey && selectedId.value && selectedId.value !== id) {
-        toggleEdge(selectedId.value, id);
-
-        return;
-    }
-
-    selectedId.value = id;
-};
-
-const onBackgroundClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
-    if (event.target === stage()) {
-        selectedId.value = null;
-    }
-};
-
-useEventListener(window, 'keydown', (event: KeyboardEvent) => {
-    if (event.key === 'Escape') {
-        selectedId.value = null;
-    }
-
-    if (
-        (event.key === 'Delete' || event.key === 'Backspace') &&
-        selectedId.value
-    ) {
-        // Not while typing in the toolbar
-        if (document.activeElement instanceof HTMLInputElement) {
+        if (!transformer || !target) {
             return;
         }
 
-        event.preventDefault();
-        removeSelected();
+        const nodes = presenting.value
+            ? []
+            : board.selection.value
+                  .map((id) => target.findOne(`#${id}`))
+                  .filter((node): node is Konva.Node => !!node);
+
+        transformer.nodes(nodes);
+    },
+    { flush: 'post', deep: true },
+);
+
+// ------------------------------------------------------- Pointer behaviour
+type Draft = { item: Item; originX: number; originY: number } | null;
+
+const draft = ref<Draft>(null);
+const marquee = ref<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+} | null>(null);
+
+let marqueeStart: { x: number; y: number } | null = null;
+let dragOrigin: Map<string, { x: number; y: number }> | null = null;
+
+const pointerOnBoard = () => {
+    const point = stage()?.getPointerPosition();
+
+    return point ? camera.toBoard(point) : null;
+};
+
+const onPointerDown = (event: Konva.KonvaEventObject<PointerEvent>) => {
+    if (presenting.value || panning.value) {
+        return;
+    }
+
+    const point = pointerOnBoard();
+
+    if (!point) {
+        return;
+    }
+
+    const onEmptySpace = event.target === stage();
+
+    if (tool.value === 'select') {
+        if (onEmptySpace) {
+            board.select([]);
+            marqueeStart = point;
+            marquee.value = { x: point.x, y: point.y, width: 0, height: 0 };
+        }
+
+        return;
+    }
+
+    // Every other tool draws something, sized by the drag that follows
+    const item = board.makeItem(tool.value, point.x, point.y, {
+        fill: fillColour.value,
+        stroke: strokeColour.value,
+    });
+
+    if (isStroke(item)) {
+        item.points = [0, 0];
+    } else {
+        item.width = 0;
+        item.height = 0;
+    }
+
+    draft.value = { item, originX: point.x, originY: point.y };
+};
+
+const onPointerMove = () => {
+    const point = pointerOnBoard();
+
+    if (!point) {
+        return;
+    }
+
+    if (marqueeStart) {
+        marquee.value = {
+            x: Math.min(marqueeStart.x, point.x),
+            y: Math.min(marqueeStart.y, point.y),
+            width: Math.abs(point.x - marqueeStart.x),
+            height: Math.abs(point.y - marqueeStart.y),
+        };
+
+        return;
+    }
+
+    const current = draft.value;
+
+    if (!current) {
+        return;
+    }
+
+    if (current.item.kind === 'draw') {
+        current.item.points.push(
+            point.x - current.originX,
+            point.y - current.originY,
+        );
+
+        return;
+    }
+
+    if (current.item.kind === 'arrow') {
+        current.item.points = [
+            0,
+            0,
+            point.x - current.originX,
+            point.y - current.originY,
+        ];
+
+        return;
+    }
+
+    current.item.x = Math.min(current.originX, point.x);
+    current.item.y = Math.min(current.originY, point.y);
+    current.item.width = Math.abs(point.x - current.originX);
+    current.item.height = Math.abs(point.y - current.originY);
+};
+
+const onPointerUp = () => {
+    if (marqueeStart) {
+        const box = marquee.value;
+
+        if (box && box.width > 4 && box.height > 4) {
+            board.select(
+                board.items.value
+                    .filter((item) => overlaps(boundsOf(item), box))
+                    .map((item) => item.id),
+            );
+        }
+
+        marqueeStart = null;
+        marquee.value = null;
+
+        return;
+    }
+
+    const current = draft.value;
+    draft.value = null;
+
+    if (!current) {
+        return;
+    }
+
+    const item = current.item;
+
+    // A click rather than a drag: give the item its default size so a tap
+    // still puts something usable on the board.
+    if (!isStroke(item) && item.width < 8 && item.height < 8) {
+        const fresh = board.makeItem(item.kind, item.x, item.y);
+
+        item.width = fresh.width;
+        item.height = fresh.height;
+    }
+
+    if (isStroke(item) && item.points.length < 4) {
+        return;
+    }
+
+    board.add(item);
+    tool.value = 'select';
+
+    if (hasText(item) && item.kind !== 'frame') {
+        nextTick(() => startEditing(item.id));
+    }
+};
+
+// Dragging one of several selected items should move the whole selection
+const onItemDragStart = (event: Konva.KonvaEventObject<DragEvent>) => {
+    const id = event.target.id();
+
+    if (!board.selection.value.includes(id)) {
+        board.select([id]);
+    }
+
+    board.commit();
+    dragOrigin = new Map(
+        board.selected.value.map((item) => [item.id, { x: item.x, y: item.y }]),
+    );
+};
+
+const onItemDragMove = (event: Konva.KonvaEventObject<DragEvent>) => {
+    const origins = dragOrigin;
+    const id = event.target.id();
+    const origin = origins?.get(id);
+
+    if (!origins || !origin || !board.byId.value.has(id)) {
+        return;
+    }
+
+    const dx = event.target.x() - origin.x;
+    const dy = event.target.y() - origin.y;
+
+    origins.forEach((start, otherId) => {
+        const item = board.byId.value.get(otherId);
+
+        if (!item) {
+            return;
+        }
+
+        item.x = otherId === id ? event.target.x() : start.x + dx;
+        item.y = otherId === id ? event.target.y() : start.y + dy;
+    });
+};
+
+const onItemDragEnd = () => {
+    dragOrigin = null;
+};
+
+// Konva resizes by scaling; fold it back into width/height so text and corner
+// radii keep their proportions.
+const onTransformEnd = () => {
+    board.commit();
+
+    board.selection.value.forEach((id) => {
+        const node = stage()?.findOne(`#${id}`);
+        const item = board.byId.value.get(id);
+
+        if (!node || !item) {
+            return;
+        }
+
+        const scaleX = node.scaleX();
+        const scaleY = node.scaleY();
+
+        item.x = node.x();
+        item.y = node.y();
+        item.rotation = node.rotation();
+
+        if (isStroke(item)) {
+            item.points = item.points.map((value, index) =>
+                index % 2 === 0 ? value * scaleX : value * scaleY,
+            );
+        } else {
+            item.width = Math.max(12, item.width * scaleX);
+            item.height = Math.max(12, item.height * scaleY);
+        }
+
+        node.scaleX(1);
+        node.scaleY(1);
+    });
+};
+
+const onWheel = (event: Konva.KonvaEventObject<WheelEvent>) => {
+    event.evt.preventDefault();
+    camera.zoomBy(event.evt.deltaY > 0 ? 0.92 : 1.08);
+};
+
+const onStageDragEnd = (event: Konva.KonvaEventObject<DragEvent>) => {
+    if (event.target === stage()) {
+        camera.position.value = { x: event.target.x(), y: event.target.y() };
+    }
+};
+
+const onItemClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
+    if (presenting.value || tool.value !== 'select') {
+        return;
+    }
+
+    const id = event.target.id() || event.target.getParent()?.id();
+
+    if (!id || !board.byId.value.has(id)) {
+        return;
+    }
+
+    if (event.evt.shiftKey) {
+        board.toggleInSelection(id);
+
+        return;
+    }
+
+    board.select([id]);
+};
+
+// ------------------------------------------------------------ Text editing
+const editingId = ref<string | null>(null);
+const editorText = ref('');
+const editor = useTemplateRef<HTMLTextAreaElement>('editor');
+
+const editingItem = computed(() =>
+    editingId.value ? board.byId.value.get(editingId.value) : null,
+);
+
+// The overlay sits on top of the canvas, so it has to be placed in screen
+// coordinates that follow the camera.
+const editorStyle = computed(() => {
+    const item = editingItem.value;
+
+    if (!item) {
+        return { display: 'none' };
+    }
+
+    const scale = camera.scale.value;
+
+    return {
+        left: `${item.x * scale + camera.position.value.x}px`,
+        top: `${item.y * scale + camera.position.value.y}px`,
+        width: `${item.width * scale}px`,
+        height: `${(item.kind === 'frame' ? 32 : item.height) * scale}px`,
+        fontSize: `${item.fontSize * scale}px`,
+        textAlign:
+            item.kind === 'sticky' ? ('center' as const) : ('left' as const),
+    };
+});
+
+const startEditing = (id: string) => {
+    const item = board.byId.value.get(id);
+
+    if (!item || !hasText(item)) {
+        return;
+    }
+
+    editingId.value = id;
+    editorText.value = item.text;
+
+    nextTick(() => {
+        editor.value?.focus();
+        editor.value?.select();
+    });
+};
+
+const stopEditing = (keep = true) => {
+    const id = editingId.value;
+
+    if (id && keep) {
+        board.setText(id, editorText.value);
+    }
+
+    editingId.value = null;
+};
+
+const onItemDoubleClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
+    const id = event.target.id() || event.target.getParent()?.id();
+
+    if (id && !presenting.value) {
+        startEditing(id);
+    }
+};
+
+// --------------------------------------------------------------- Presenting
+const frameIndex = ref(0);
+
+const currentFrame = computed(
+    () => board.frames.value[frameIndex.value] ?? null,
+);
+
+const showFrame = (index: number) => {
+    const frames = board.frames.value;
+
+    if (!frames.length) {
+        return;
+    }
+
+    frameIndex.value = Math.min(frames.length - 1, Math.max(0, index));
+    camera.focus(boundsOf(frames[frameIndex.value]), {
+        animate: true,
+        padding: 24,
+    });
+};
+
+// Entering and leaving presentation hides or restores the side panels, so the
+// canvas changes width a frame later. The camera is recomputed once the new
+// size lands -- which also keeps the frame filling the screen if the window is
+// resized mid-presentation.
+let refitOnResize: 'frame' | 'all' | null = null;
+
+watch([width, height], () => {
+    if (presenting.value) {
+        const frame = currentFrame.value;
+
+        if (frame) {
+            camera.focus(boundsOf(frame), { padding: 24 });
+        }
+
+        return;
+    }
+
+    if (refitOnResize === 'all') {
+        refitOnResize = null;
+        camera.focus(boundsOfAll(board.items.value));
     }
 });
 
-// ------------------------------------------------------------------ Editing
-const onNodeDragMove = (event: Konva.KonvaEventObject<DragEvent>) => {
-    const box = boxById.value.get(boxIdOf(event) ?? '');
-
-    if (box) {
-        // Written back on every frame so the edges follow the node as it moves
-        box.x = event.target.x();
-        box.y = event.target.y();
-    }
-};
-
-const onTransformEnd = (event: Konva.KonvaEventObject<Event>) => {
-    const box = boxById.value.get(boxIdOf(event) ?? '');
-    const group = event.target;
-
-    if (!box) {
+const startPresenting = () => {
+    if (!board.frames.value.length) {
         return;
     }
 
-    // Konva resizes by scaling; fold that back into width/height and keep the
-    // group at scale 1 so the label and corner radius are not stretched.
-    box.x = group.x();
-    box.y = group.y();
-    box.width = Math.max(90, group.width() * group.scaleX());
-    box.height = Math.max(50, group.height() * group.scaleY());
-
-    group.scaleX(1);
-    group.scaleY(1);
+    board.select([]);
+    presenting.value = true;
+    showFrame(0);
 };
 
-const addNode = () => {
-    const id = newId();
-
-    boxes.value.push({
-        id,
-        // Dropped near the middle of whatever is currently on screen
-        x: Math.round((-position.value.x + width.value / 2) / scale.value) - 95,
-        y:
-            Math.round((-position.value.y + height.value / 2) / scale.value) -
-            45,
-        width: 190,
-        height: 90,
-        label: `Step ${boxes.value.length + 1}`,
-        tone: tones[boxes.value.length % tones.length],
-    });
-
-    selectedId.value = id;
+const stopPresenting = () => {
+    presenting.value = false;
+    refitOnResize = 'all';
+    camera.focus(boundsOfAll(board.items.value), { animate: true });
 };
 
-const removeSelected = () => {
-    const id = selectedId.value;
+// ------------------------------------------------------------------ Actions
+const fitAll = () => camera.focus(boundsOfAll(board.items.value));
 
-    if (!id) {
+const removeSelection = () => board.remove([...board.selection.value]);
+
+// Typing a number in the inspector edits the one selected item
+const resizeSelection = (change: {
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+}) => {
+    const item = board.selected.value[0];
+
+    if (!item) {
         return;
     }
 
-    boxes.value = boxes.value.filter((box) => box.id !== id);
-    edges.value = edges.value.filter(
-        (edge) => edge.from !== id && edge.to !== id,
-    );
-    selectedId.value = null;
+    board.commit();
+
+    if (change.x !== undefined) item.x = change.x;
+    if (change.y !== undefined) item.y = change.y;
+    if (change.width !== undefined) item.width = Math.max(12, change.width);
+    if (change.height !== undefined) item.height = Math.max(12, change.height);
 };
 
-const toggleEdge = (from: string, to: string) => {
-    const existing = edges.value.findIndex(
-        (edge) =>
-            (edge.from === from && edge.to === to) ||
-            (edge.from === to && edge.to === from),
-    );
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+    const typing =
+        editingId.value !== null ||
+        document.activeElement instanceof HTMLInputElement ||
+        document.activeElement instanceof HTMLTextAreaElement;
 
-    if (existing >= 0) {
-        edges.value.splice(existing, 1);
+    if (event.code === 'Space' && !typing) {
+        spaceHeld.value = true;
+        event.preventDefault();
+    }
+
+    if (presenting.value) {
+        if (event.key === 'ArrowRight' || event.key === 'PageDown') {
+            showFrame(frameIndex.value + 1);
+        }
+        if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
+            showFrame(frameIndex.value - 1);
+        }
+        if (event.key === 'Escape') {
+            stopPresenting();
+        }
 
         return;
     }
 
-    edges.value.push({ from, to });
-};
+    if (typing) {
+        if (event.key === 'Escape') {
+            stopEditing(false);
+        }
 
-// A rough measure of how much this renderer can carry
-const addMany = () => {
-    const start = boxes.value.length;
-
-    for (let index = 0; index < 250; index++) {
-        const id = newId();
-
-        boxes.value.push({
-            id,
-            x: 60 + (index % 25) * 130,
-            y: 400 + Math.floor(index / 25) * 110,
-            width: 110,
-            height: 70,
-            label: `#${start + index + 1}`,
-            tone: tones[index % tones.length],
-        });
-    }
-};
-
-// ------------------------------------------------------------------- Edges
-// Cubic curve out of the right edge of one node and into the left of the next,
-// which reads better than a straight line when nodes sit side by side.
-const edgePoints = (edge: Edge): number[] => {
-    const from = boxById.value.get(edge.from);
-    const to = boxById.value.get(edge.to);
-
-    if (!from || !to) {
-        return [];
+        return;
     }
 
-    const startX = from.x + from.width;
-    const startY = from.y + from.height / 2;
-    const endX = to.x;
-    const endY = to.y + to.height / 2;
-    const bend = Math.max(40, Math.abs(endX - startX) / 2);
+    const meta = event.ctrlKey || event.metaKey;
 
-    return [
-        startX,
-        startY,
-        startX + bend,
-        startY,
-        endX - bend,
-        endY,
-        endX,
-        endY,
-    ];
+    if (meta && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        event.shiftKey ? board.redo() : board.undo();
+
+        return;
+    }
+
+    if (meta && event.key.toLowerCase() === 'd') {
+        event.preventDefault();
+        board.duplicate();
+
+        return;
+    }
+
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+        removeSelection();
+
+        return;
+    }
+
+    if (event.key === 'Escape') {
+        board.select([]);
+        tool.value = 'select';
+    }
+
+    const shortcuts: Record<string, Tool> = {
+        v: 'select',
+        s: 'sticky',
+        t: 'text',
+        r: 'rect',
+        p: 'pill',
+        o: 'ellipse',
+        g: 'triangle',
+        m: 'diamond',
+        h: 'hexagon',
+        k: 'star',
+        b: 'cylinder',
+        i: 'parallelogram',
+        u: 'document',
+        n: 'process',
+        c: 'cloud',
+        a: 'arrow',
+        d: 'draw',
+        f: 'frame',
+    };
+
+    const next = shortcuts[event.key.toLowerCase()];
+
+    if (next && !meta) {
+        tool.value = next;
+    }
+});
+
+useEventListener(window, 'keyup', (event: KeyboardEvent) => {
+    if (event.code === 'Space') {
+        spaceHeld.value = false;
+    }
+});
+
+// vue-konva components render a fragment, so Vue cannot inherit listeners onto
+// them and warns on every mount. Konva's own events bubble, so one set on the
+// layer covers every item and stays cheap with hundreds of them.
+const contentLayer = useTemplateRef<{ getNode: () => Konva.Layer }>(
+    'contentLayer',
+);
+
+onMounted(() => {
+    const layer = contentLayer.value?.getNode();
+
+    layer?.on('dragstart', onItemDragStart);
+    layer?.on('dragmove', onItemDragMove);
+    layer?.on('dragend', onItemDragEnd);
+    layer?.on('transformend', onTransformEnd);
+
+    nextTick(fitAll);
+});
+
+// What the item list looks like to the template, in paint order
+const drawn = computed(() =>
+    draft.value ? [...board.items.value, draft.value.item] : board.items.value,
+);
+
+const strokePoints = (item: Item) => item.points;
+
+const isSelected = (item: Item) => board.selection.value.includes(item.id);
+
+// How far a label sits from the top of its shape. A cylinder's lid and a
+// triangle's point leave no room at the edges, so their text starts lower.
+const labelInset = (item: Item): number => {
+    if (item.kind === 'cylinder') {
+        return item.height * 0.2;
+    }
+
+    if (item.kind === 'triangle') {
+        return item.height * 0.35;
+    }
+
+    return 12;
 };
 </script>
 
 <template>
-    <Head title="Konva canvas" />
+    <Head title="Konva board" />
 
-    <div class="flex flex-1 flex-col gap-4 p-4 md:p-6">
-        <div class="flex flex-wrap items-end justify-between gap-4">
+    <div class="flex flex-1 flex-col gap-3 overflow-hidden p-4 md:p-6">
+        <div
+            v-show="!presenting"
+            class="flex flex-wrap items-center justify-between gap-3"
+        >
             <div>
-                <h1 class="text-xl font-semibold">Konva canvas</h1>
-                <p class="text-muted-foreground text-sm">
-                    Drag a node to move it, click to select and resize,
-                    shift-click a second node to link or unlink. Scroll to zoom,
-                    drag the background to pan, Delete to remove.
+                <h1 class="text-lg font-semibold">Konva board</h1>
+                <p class="text-muted-foreground text-xs">
+                    Pick a shape on the left, drag it out on the canvas, group
+                    work into frames and present them. Space drags the canvas,
+                    scroll zooms, double-click any shape to label it.
                 </p>
             </div>
 
-            <div class="flex flex-wrap gap-2">
-                <button class="demo-btn" @click="addNode">Add node</button>
+            <div class="flex items-center gap-1 rounded-lg border p-1">
                 <button
-                    class="demo-btn"
-                    :disabled="!selectedId"
-                    @click="removeSelected"
+                    type="button"
+                    class="board-zoom"
+                    title="Undo (Ctrl+Z)"
+                    data-test="undo"
+                    :disabled="!board.canUndo.value"
+                    @click="board.undo"
                 >
-                    Delete
+                    <Undo2 class="size-4" />
                 </button>
-                <button class="demo-btn" @click="fitView">Fit</button>
-                <button class="demo-btn" @click="resetView">100%</button>
-                <button class="demo-btn" @click="addMany">+250 nodes</button>
-                <button class="demo-btn" @click="seed">Reset</button>
+                <button
+                    type="button"
+                    class="board-zoom"
+                    title="Redo (Ctrl+Shift+Z)"
+                    :disabled="!board.canRedo.value"
+                    @click="board.redo"
+                >
+                    <Redo2 class="size-4" />
+                </button>
+                <span class="bg-border mx-1 h-5 w-px" />
+                <button
+                    type="button"
+                    class="board-zoom"
+                    title="Zoom out"
+                    @click="camera.zoomBy(0.8)"
+                >
+                    <Minus class="size-3.5" />
+                </button>
+                <button
+                    type="button"
+                    class="board-zoom w-14"
+                    data-test="zoom"
+                    title="Fit everything"
+                    @click="fitAll"
+                >
+                    {{ Math.round(camera.scale.value * 100) }}%
+                </button>
+                <button
+                    type="button"
+                    class="board-zoom"
+                    title="Zoom in"
+                    @click="camera.zoomBy(1.25)"
+                >
+                    <Plus class="size-3.5" />
+                </button>
             </div>
         </div>
 
-        <div
-            ref="canvas"
-            class="border-sidebar-border/70 dark:border-sidebar-border bg-muted/30 relative min-h-[420px] flex-1 overflow-hidden rounded-xl border"
-        >
-            <Stage
-                ref="stageRef"
-                :config="stageConfig"
-                @wheel="onWheel"
-                @dragend="onStageDragEnd"
-                @mousedown="onBackgroundClick"
-                @touchstart="onBackgroundClick"
-            >
-                <Layer>
-                    <Line
-                        v-for="edge in edges"
-                        :key="`${edge.from}-${edge.to}`"
-                        :config="{
-                            points: edgePoints(edge),
-                            stroke: '#94a3b8',
-                            strokeWidth: 2,
-                            bezier: true,
-                            listening: false,
-                        }"
-                    />
-                </Layer>
+        <div class="flex min-h-0 flex-1 gap-3">
+            <ShapeLibrary
+                v-show="!presenting"
+                :tool="tool"
+                @update:tool="tool = $event"
+            />
 
-                <Layer ref="nodeLayer">
-                    <Group
-                        v-for="box in boxes"
-                        :key="box.id"
-                        :config="{
-                            id: box.id,
-                            x: box.x,
-                            y: box.y,
-                            width: box.width,
-                            height: box.height,
-                            draggable: true,
-                        }"
+            <div
+                ref="canvas"
+                :data-zoom="Math.round(camera.scale.value * 100)"
+                class="border-sidebar-border/70 dark:border-sidebar-border relative min-h-[480px] flex-1 overflow-hidden rounded-xl border bg-white"
+                :class="{ 'cursor-grab': panning }"
+            >
+                <div
+                    class="pointer-events-none absolute inset-0"
+                    :style="gridStyle"
+                />
+
+                <Stage
+                    ref="stageRef"
+                    :config="stageConfig"
+                    @wheel="onWheel"
+                    @dragend="onStageDragEnd"
+                    @pointerdown="onPointerDown"
+                    @pointermove="onPointerMove"
+                    @pointerup="onPointerUp"
+                    @click="onItemClick"
+                    @dblclick="onItemDoubleClick"
+                >
+                    <Layer ref="contentLayer">
+                        <Group
+                            v-for="item in drawn"
+                            :key="item.id"
+                            :config="{
+                                id: item.id,
+                                x: item.x,
+                                y: item.y,
+                                rotation: item.rotation,
+                                width: item.width,
+                                height: item.height,
+                                draggable:
+                                    !presenting &&
+                                    tool === 'select' &&
+                                    !spaceHeld,
+                            }"
+                        >
+                            <!-- A frame is the slide: a plain board-coloured card -->
+                            <Rect
+                                v-if="item.kind === 'frame'"
+                                :config="{
+                                    width: item.width,
+                                    height: item.height,
+                                    fill: item.fill,
+                                    stroke: isSelected(item)
+                                        ? '#6366f1'
+                                        : item.stroke,
+                                    strokeWidth: 1,
+                                    shadowColor: 'black',
+                                    shadowOpacity: 0.06,
+                                    shadowBlur: 18,
+                                }"
+                            />
+                            <Text
+                                v-if="item.kind === 'frame'"
+                                :config="{
+                                    text: item.text,
+                                    y: -28,
+                                    fontSize: 18,
+                                    fontStyle: '600',
+                                    fill: '#64748b',
+                                }"
+                            />
+
+                            <Rect
+                                v-else-if="item.kind === 'sticky'"
+                                :config="{
+                                    width: item.width,
+                                    height: item.height,
+                                    fill: item.fill,
+                                    cornerRadius: 4,
+                                    shadowColor: 'black',
+                                    shadowOpacity: 0.12,
+                                    shadowBlur: 8,
+                                    shadowOffsetY: 3,
+                                    stroke: isSelected(item)
+                                        ? '#6366f1'
+                                        : undefined,
+                                    strokeWidth: isSelected(item) ? 2 : 0,
+                                }"
+                            />
+
+                            <Rect
+                                v-else-if="item.kind === 'rect'"
+                                :config="{
+                                    width: item.width,
+                                    height: item.height,
+                                    fill: item.fill,
+                                    stroke: isSelected(item)
+                                        ? '#6366f1'
+                                        : item.stroke,
+                                    strokeWidth: isSelected(item) ? 2 : 1.5,
+                                    cornerRadius: 8,
+                                }"
+                            />
+
+                            <Path
+                                v-else-if="isPath(item.kind)"
+                                :config="{
+                                    data: PATHS[item.kind],
+                                    scaleX: item.width / 100,
+                                    scaleY: item.height / 100,
+                                    fill: item.fill,
+                                    stroke: isSelected(item)
+                                        ? '#6366f1'
+                                        : item.stroke,
+                                    strokeWidth: isSelected(item) ? 2 : 1.5,
+                                    strokeScaleEnabled: false,
+                                }"
+                            />
+
+                            <Rect
+                                v-else-if="item.kind === 'pill'"
+                                :config="{
+                                    width: item.width,
+                                    height: item.height,
+                                    fill: item.fill,
+                                    stroke: isSelected(item)
+                                        ? '#6366f1'
+                                        : item.stroke,
+                                    strokeWidth: isSelected(item) ? 2 : 1.5,
+                                    cornerRadius:
+                                        Math.min(item.width, item.height) / 2,
+                                }"
+                            />
+
+                            <Line
+                                v-else-if="POLYGONS.includes(item.kind)"
+                                :config="{
+                                    points: polygonPoints(item),
+                                    closed: true,
+                                    fill: item.fill,
+                                    stroke: isSelected(item)
+                                        ? '#6366f1'
+                                        : item.stroke,
+                                    strokeWidth: isSelected(item) ? 2 : 1.5,
+                                    lineJoin: 'round',
+                                }"
+                            />
+
+                            <Star
+                                v-else-if="item.kind === 'star'"
+                                :config="{
+                                    x: item.width / 2,
+                                    y: item.height / 2,
+                                    numPoints: 5,
+                                    innerRadius:
+                                        Math.min(item.width, item.height) / 4,
+                                    outerRadius:
+                                        Math.min(item.width, item.height) / 2,
+                                    fill: item.fill,
+                                    stroke: isSelected(item)
+                                        ? '#6366f1'
+                                        : item.stroke,
+                                    strokeWidth: isSelected(item) ? 2 : 1.5,
+                                }"
+                            />
+
+                            <Ellipse
+                                v-else-if="item.kind === 'ellipse'"
+                                :config="{
+                                    x: item.width / 2,
+                                    y: item.height / 2,
+                                    radiusX: item.width / 2,
+                                    radiusY: item.height / 2,
+                                    fill: item.fill,
+                                    stroke: isSelected(item)
+                                        ? '#6366f1'
+                                        : item.stroke,
+                                    strokeWidth: isSelected(item) ? 2 : 1.5,
+                                }"
+                            />
+
+                            <Line
+                                v-else-if="isStroke(item)"
+                                :config="{
+                                    points: strokePoints(item),
+                                    stroke: isSelected(item)
+                                        ? '#6366f1'
+                                        : item.stroke,
+                                    strokeWidth: 3,
+                                    lineCap: 'round',
+                                    lineJoin: 'round',
+                                    tension: item.kind === 'draw' ? 0.4 : 0,
+                                    hitStrokeWidth: 16,
+                                }"
+                            />
+                            <!-- Arrow head, drawn as a small triangle on the end -->
+                            <Circle
+                                v-if="
+                                    item.kind === 'arrow' &&
+                                    item.points.length >= 4
+                                "
+                                :config="{
+                                    x: item.points[item.points.length - 2],
+                                    y: item.points[item.points.length - 1],
+                                    radius: 5,
+                                    fill: isSelected(item)
+                                        ? '#6366f1'
+                                        : item.stroke,
+                                }"
+                            />
+
+                            <!-- A label sits inside every shape except plain text,
+                             which is the label. Double-click any of them. -->
+                            <Text
+                                v-if="hasText(item) && item.kind !== 'frame'"
+                                :config="{
+                                    text: item.text,
+                                    x: item.kind === 'text' ? 0 : 12,
+                                    y:
+                                        item.kind === 'text'
+                                            ? 0
+                                            : labelInset(item),
+                                    width:
+                                        item.kind === 'text'
+                                            ? item.width
+                                            : item.width - 24,
+                                    height:
+                                        item.kind === 'text'
+                                            ? undefined
+                                            : item.height -
+                                              labelInset(item) * 2,
+                                    fontSize: item.fontSize,
+                                    fontStyle:
+                                        item.kind === 'text' ? '600' : 'normal',
+                                    fill: '#0f172a',
+                                    align:
+                                        item.kind === 'text'
+                                            ? 'left'
+                                            : 'center',
+                                    verticalAlign: 'middle',
+                                    listening: false,
+                                    opacity: editingId === item.id ? 0 : 1,
+                                }"
+                            />
+                        </Group>
+                    </Layer>
+
+                    <Layer>
+                        <Rect
+                            v-if="marquee"
+                            :config="{
+                                ...marquee,
+                                fill: 'rgba(99,102,241,0.08)',
+                                stroke: '#6366f1',
+                                strokeWidth: 1,
+                                listening: false,
+                            }"
+                        />
+                        <Transformer
+                            ref="transformerRef"
+                            :config="{
+                                rotateEnabled: true,
+                                keepRatio: false,
+                                borderStroke: '#6366f1',
+                                anchorStroke: '#6366f1',
+                                anchorSize: 8,
+                            }"
+                        />
+                    </Layer>
+                </Stage>
+
+                <!-- Typing happens in a real textarea laid over the canvas -->
+                <textarea
+                    v-if="editingItem"
+                    ref="editor"
+                    v-model="editorText"
+                    class="board-editor"
+                    :style="editorStyle"
+                    data-test="text-editor"
+                    @blur="stopEditing()"
+                    @keydown.enter.exact.prevent="stopEditing()"
+                />
+
+                <!-- Presenting: frame position, arrows, and a way out -->
+                <div
+                    v-if="presenting"
+                    class="bg-background/95 absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border px-2 py-1.5 shadow-lg"
+                >
+                    <button
+                        type="button"
+                        class="board-zoom"
+                        data-test="prev-frame"
+                        :disabled="frameIndex === 0"
+                        @click="showFrame(frameIndex - 1)"
                     >
-                        <Rect
-                            :config="{
-                                width: box.width,
-                                height: box.height,
-                                fill: 'white',
-                                stroke:
-                                    box.id === selectedId
-                                        ? box.tone
-                                        : '#cbd5e1',
-                                strokeWidth: box.id === selectedId ? 2 : 1,
-                                cornerRadius: 10,
-                                shadowColor: 'black',
-                                shadowOpacity: 0.08,
-                                shadowBlur: 6,
-                                shadowOffsetY: 2,
-                            }"
-                        />
-                        <Rect
-                            :config="{
-                                width: box.width,
-                                height: 6,
-                                fill: box.tone,
-                                cornerRadius: [10, 10, 0, 0],
-                            }"
-                        />
-                        <Text
-                            :config="{
-                                text: box.label,
-                                x: 14,
-                                y: box.height / 2 - 9,
-                                width: box.width - 28,
-                                fontSize: 14,
-                                fontStyle: '600',
-                                fill: '#0f172a',
-                                ellipsis: true,
-                                wrap: 'none',
-                                listening: false,
-                            }"
-                        />
-                        <Circle
-                            :config="{
-                                x: box.width,
-                                y: box.height / 2,
-                                radius: 4,
-                                fill: box.tone,
-                                listening: false,
-                            }"
-                        />
-                        <Circle
-                            :config="{
-                                x: 0,
-                                y: box.height / 2,
-                                radius: 4,
-                                fill: '#cbd5e1',
-                                listening: false,
-                            }"
-                        />
-                    </Group>
+                        <ChevronLeft class="size-4" />
+                    </button>
+                    <span class="px-1 text-sm" data-test="frame-position">
+                        {{ frameIndex + 1 }} / {{ board.frames.value.length }}
+                        <span class="text-muted-foreground">
+                            · {{ currentFrame?.text }}
+                        </span>
+                    </span>
+                    <button
+                        type="button"
+                        class="board-zoom"
+                        data-test="next-frame"
+                        :disabled="frameIndex >= board.frames.value.length - 1"
+                        @click="showFrame(frameIndex + 1)"
+                    >
+                        <ChevronRight class="size-4" />
+                    </button>
+                    <button
+                        type="button"
+                        class="board-zoom"
+                        title="Leave (Esc)"
+                        data-test="exit-present"
+                        @click="stopPresenting"
+                    >
+                        <X class="size-4" />
+                    </button>
+                </div>
+            </div>
 
-                    <Transformer
-                        ref="transformerRef"
-                        :config="{
-                            rotateEnabled: false,
-                            keepRatio: false,
-                            borderStroke: '#6366f1',
-                            anchorStroke: '#6366f1',
-                            anchorSize: 8,
-                            enabledAnchors: [
-                                'top-left',
-                                'top-right',
-                                'bottom-left',
-                                'bottom-right',
-                            ],
-                        }"
-                    />
-                </Layer>
-            </Stage>
-
-            <p
-                class="bg-background/80 text-muted-foreground absolute right-3 bottom-3 rounded-md px-2 py-1 text-xs"
-            >
-                {{ boxes.length }} nodes · {{ edges.length }} links ·
-                {{ Math.round(scale * 100) }}%
-            </p>
+            <InspectorPanel
+                v-show="!presenting"
+                :selection="board.selected.value"
+                :fill="fillColour"
+                :stroke="strokeColour"
+                :item-count="board.items.value.length"
+                :frame-count="board.frames.value.length"
+                @paint="paintFill"
+                @paint-stroke="paintStroke"
+                @resize="resizeSelection"
+                @duplicate="board.duplicate"
+                @remove="removeSelection"
+                @reorder="board.reorder"
+                @present="startPresenting"
+            />
         </div>
     </div>
 </template>
 
 <style scoped>
-.demo-btn {
-    height: 2rem;
-    padding: 0 0.75rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--foreground);
-    background-color: var(--background);
-    border: 1px solid var(--border);
+.board-editor {
+    position: absolute;
+    z-index: 20;
+    padding: 0;
+    margin: 0;
+    font-family: var(--font-sans);
+    font-weight: 600;
+    line-height: 1.3;
+    color: #0f172a;
+    background: transparent;
+    border: none;
+    outline: 2px solid var(--primary);
+    outline-offset: 4px;
+    resize: none;
+    overflow: hidden;
+}
+
+.board-zoom {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 1.75rem;
+    min-width: 1.75rem;
+    padding: 0 0.25rem;
     border-radius: var(--radius-md);
     cursor: pointer;
 }
-.demo-btn:hover:not(:disabled) {
+.board-zoom:hover:not(:disabled) {
     background-color: var(--muted);
 }
-.demo-btn:disabled {
-    opacity: 0.5;
+.board-zoom:disabled {
+    opacity: 0.4;
     cursor: not-allowed;
 }
 </style>
