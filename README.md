@@ -28,10 +28,22 @@ docker compose port web 8080
 
 ### Assets
 
-`COMPOSE_PROFILES=dev` in `.env` runs Vite for HMR. While it runs it writes
-`public/hot` and Laravel serves assets from the dev server, which is only
-reachable from this machine. To serve the built bundle instead — over a tunnel,
-or from another device on the LAN — build first, then drop the profile:
+`COMPOSE_PROFILES=dev` in `.env` runs Vite for HMR. While it runs it writes an
+empty `public/hot`, which makes Laravel emit relative asset URLs, and `web`
+proxies the dev server on the page's own origin. So `http://localhost:8001`,
+this machine's LAN IP and a hostname in front of it all serve the same HTML and
+all get HMR, with no dev-server address baked in.
+
+Vite refuses a Host header it does not recognise, so name any host that fronts
+it: `APP_HOST`, `VITE_HOST`, or `VITE_ALLOWED_HOSTS` (comma separated) in
+`.env`. Bare IP addresses need no entry.
+
+Set `VITE_DEV_ORIGIN` to an absolute URL to skip the proxy and have the browser
+talk to the dev server directly — that address then becomes the only one that
+works.
+
+To serve the built bundle instead — the mode to deploy — build first, then drop
+the profile:
 
 ```sh
 docker compose exec app npm run build

@@ -87,9 +87,20 @@ services:
         volumes:
             - .:/var/www/html
         environment:
-            # The origin the browser uses to reach Vite. Only differs from the
-            # published port when a proxy is in front.
-            VITE_DEV_ORIGIN: '${VITE_DEV_ORIGIN:-http://localhost:${VITE_PORT:-5173}}'
+            # The origin the browser uses to reach Vite. Passed through as-is,
+            # including unset: `web` then proxies the dev server on the page's
+            # own origin, which is the only way one page works from the
+            # hostname, localhost and a LAN IP at once. An absolute URL here
+            # sends the browser straight to the dev server instead.
+            VITE_DEV_ORIGIN: '${VITE_DEV_ORIGIN:-}'
+            # Vite answers 403 for a Host header it does not recognise, which
+            # would be every named host in front of it. Bare IPs it allows on
+            # its own, so only names need listing: the app's own hostname, the
+            # one the dev server is routed at, and anything else (a tunnel)
+            # named in VITE_ALLOWED_HOSTS as a comma-separated list.
+            APP_HOST: '${APP_HOST:-}'
+            VITE_HOST: '${VITE_HOST:-}'
+            VITE_ALLOWED_HOSTS: '${VITE_ALLOWED_HOSTS:-}'
         # `npm run dev` puts npm at PID 1 with the real vite process a hop
         # downstream; a `docker compose stop`/`down` SIGTERM either never
         # reaches that far down or gets hard-killed on the way, so
