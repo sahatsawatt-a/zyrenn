@@ -10,6 +10,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
 });
 
 // ---------------------------------
+//      Feature
+// ---------------------------------
+require __DIR__.'/features/drive.php';
+
+// ---------------------------------
 //      Setting
 // ---------------------------------
 require __DIR__.'/settings.php';
