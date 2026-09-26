@@ -125,8 +125,12 @@ const transformerRef = useTemplateRef<{ getNode: () => Konva.Transformer }>(
     'transformerRef',
 );
 
+// Declared here because the transformer watcher below reads it, and a watcher
+// evaluates its sources the moment it is created.
+const editingId = ref<string | null>(null);
+
 watch(
-    [board.selection, board.items, presenting],
+    [board.selection, board.items, presenting, editingId],
     () => {
         const transformer = transformerRef.value?.getNode();
         const target = stage();
@@ -135,18 +139,21 @@ watch(
             return;
         }
 
-        // A connector has no box to resize: it is wherever its ends are
-        const nodes = presenting.value
-            ? []
-            : board.selection.value
-                  .filter(
-                      (id) =>
-                          !isConnector(
-                              board.byId.value.get(id) ?? ({} as Item),
-                          ),
-                  )
-                  .map((id) => target.findOne(`#${id}`))
-                  .filter((node): node is Konva.Node => !!node);
+        // While typing, the caret is the only frame worth showing: the
+        // transformer's box and handles sat behind the editor as a second,
+        // slightly larger box around the same words.
+        const nodes =
+            presenting.value || editingId.value
+                ? []
+                : board.selection.value
+                      .filter(
+                          (id) =>
+                              !isConnector(
+                                  board.byId.value.get(id) ?? ({} as Item),
+                              ),
+                      )
+                      .map((id) => target.findOne(`#${id}`))
+                      .filter((node): node is Konva.Node => !!node);
 
         transformer.nodes(nodes);
     },
@@ -500,7 +507,6 @@ const onItemClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
 };
 
 // ------------------------------------------------------------ Text editing
-const editingId = ref<string | null>(null);
 const editorText = ref('');
 const editor = useTemplateRef<HTMLTextAreaElement>('editor');
 
@@ -804,7 +810,10 @@ const drawn = computed(() =>
 
 const strokePoints = (item: Item) => item.points;
 
-const isSelected = (item: Item) => board.selection.value.includes(item.id);
+// While an item is being edited the editor draws the only frame around it;
+// its selected outline would sit just inside that as a second box.
+const isSelected = (item: Item) =>
+    board.selection.value.includes(item.id) && editingId.value !== item.id;
 
 const connectable = computed(() => board.items.value.filter(isConnectable));
 
@@ -1352,7 +1361,7 @@ const labelInset = (item: Item): number => {
     background: transparent;
     border: none;
     outline: 2px solid var(--primary);
-    outline-offset: 4px;
+    outline-offset: 2px;
     resize: none;
     overflow: hidden;
 }
