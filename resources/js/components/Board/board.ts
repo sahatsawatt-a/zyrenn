@@ -284,6 +284,24 @@ export const makeItem = (
     }
 };
 
+/**
+ * A saved item made whole again. Anything missing from it -- a field a board
+ * written by an MCP client never mentioned, or one that came back as null --
+ * falls back to the default for its kind, so the canvas always has a string to
+ * draw and a list of points to follow.
+ */
+export const hydrate = (saved: Partial<Item>): Item => {
+    const item = makeItem(saved.kind ?? 'rect', 0, 0);
+
+    for (const [field, value] of Object.entries(saved)) {
+        if (value !== null && value !== undefined) {
+            (item as Record<string, unknown>)[field] = value;
+        }
+    }
+
+    return item;
+};
+
 /** The box an item occupies, including stroke items built from points. */
 export const boundsOf = (item: Item) => {
     if (!isStroke(item)) {

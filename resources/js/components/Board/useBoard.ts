@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue';
 import type { Item, ItemKind } from './board';
-import { STICKY_COLOURS, bumpIdsTo, makeItem, newId } from './board';
+import { STICKY_COLOURS, bumpIdsTo, hydrate, makeItem, newId } from './board';
 
 /**
  * The board's items, what is selected, and undo/redo.
@@ -344,7 +344,7 @@ export function useBoard(initial: Item[] | null = null) {
         past.length = 0;
         future.length = 0;
         selection.value = [];
-        items.value = saved.map(copy);
+        items.value = saved.map((item) => copy(hydrate(item)));
 
         // Ids carry on from the highest one already used, so a new item cannot
         // take the id of one that is already on the board

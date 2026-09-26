@@ -24,12 +24,16 @@ return Application::configure(basePath: dirname(__DIR__))
         // so these headers can only come from `web` on the compose network.
         $middleware->trustProxies(at: '*');
 
-        // Note autosave sends the editor's JSON, where spaces at the edges of text
-        // nodes are content (e.g. "Energy is " before a formula or bold word).
-        // Runs before routing, so match on method + path rather than route name.
-        $middleware->trimStrings(except: [
-            fn (Request $request) => $request->isMethod('PATCH') && $request->is('notes/*'),
-        ]);
+        // Note and board autosave send a document, not a form: spaces at the edges
+        // of a note's text nodes are content (e.g. "Energy is " before a formula),
+        // and a board's shapes carry empty strings that mean "nothing written here"
+        // -- turned into nulls, the canvas has no label to draw. Both run before
+        // routing, so they match on method + path rather than route name.
+        $autosave = fn (Request $request) => $request->isMethod('PATCH')
+            && ($request->is('notes/*') || $request->is('boards/*'));
+
+        $middleware->trimStrings(except: [$autosave]);
+        $middleware->convertEmptyStringsToNull(except: [$autosave]);
 
         $middleware->web(append: [
             HandleAppearance::class,
