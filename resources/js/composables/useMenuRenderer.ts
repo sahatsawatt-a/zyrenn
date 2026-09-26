@@ -48,7 +48,8 @@ export function useMenuRenderer(commandItems: SlashCommandItem[]) {
     const updateMenuPosition = (
         props: SuggestionProps<SlashCommandItem> | null = currentSuggestionProps,
     ) => {
-        nextTick(() => {
+        // Nothing waits on the tick; the menu is placed once the DOM has caught up
+        void nextTick(() => {
             const rect = props?.clientRect?.();
             if (!rect) return;
 
@@ -127,7 +128,7 @@ export function useMenuRenderer(commandItems: SlashCommandItem[]) {
 
             // 💡 THE FIX: Moves arrow logic to fall smoothly down here for execution tracking
             if (handled) {
-                nextTick(() => {
+                void nextTick(() => {
                     // Find the active highlighted dropdown item in the DOM
                     const activeItem = document.querySelector(
                         '.notion-dropdown .dropdown-item.is-active',
