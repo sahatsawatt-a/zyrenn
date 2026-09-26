@@ -109,16 +109,16 @@ class McpBoardsTest extends TestCase
         $this->assertLessThan($items['check']['y'], $items['start']['y']);
         $this->assertLessThan($items['store']['y'], $items['check']['y']);
 
-        // The connectors are pinned to a side, with the point on that edge --
-        // the canvas draws a pinned end from its side, so the two go together
+        // Neither end was given a side, so both follow the shapes -- and the
+        // point sits on the face that currently looks at the other end
         $connector = $items['i4'];
         $this->assertSame('start', $connector['from']['item']);
-        $this->assertSame('bottom', $connector['from']['side']);
+        $this->assertNull($connector['from']['side']);
         $this->assertEquals(
             $items['start']['y'] + $items['start']['height'],
             $connector['from']['y'],
         );
-        $this->assertSame('top', $connector['to']['side']);
+        $this->assertNull($connector['to']['side']);
         $this->assertEquals($items['check']['y'], $connector['to']['y']);
     }
 
@@ -186,6 +186,66 @@ class McpBoardsTest extends TestCase
 
         // A sticky no connector touches is put below the chart, out of its way
         $this->assertGreaterThan($items['pay']['y'] + $items['pay']['height'], $items['aside']['y']);
+    }
+
+    public function test_an_end_given_a_side_keeps_it_and_one_without_follows_the_shapes()
+    {
+        $user = User::factory()->create();
+
+        UserServer::actingAs($user)->tool(CreateBoard::class, [
+            'title' => 'Loop back',
+            'items' => [
+                ['id' => 'a', 'kind' => 'rect', 'x' => 0, 'y' => 0, 'width' => 200, 'height' => 100],
+                ['id' => 'b', 'kind' => 'rect', 'x' => 400, 'y' => 0, 'width' => 200, 'height' => 100],
+                ['id' => 'plain', 'kind' => 'arrow', 'from' => ['item' => 'a'], 'to' => ['item' => 'b']],
+                // A loop that has to dip below the pair rather than run between them
+                ['id' => 'loop', 'kind' => 'arrow',
+                    'from' => ['item' => 'b', 'side' => 'bottom'],
+                    'to' => ['item' => 'a', 'side' => 'bottom']],
+            ],
+        ])->assertOk();
+
+        $items = $this->stored($user->boards()->sole());
+
+        $this->assertNull($items['plain']['from']['side']);
+        $this->assertNull($items['plain']['to']['side']);
+
+        $this->assertSame('bottom', $items['loop']['from']['side']);
+        $this->assertSame('bottom', $items['loop']['to']['side']);
+        // The point goes with the side it was pinned to
+        $this->assertEquals(100, $items['loop']['from']['y']);
+        $this->assertEquals(500, $items['loop']['from']['x']);
+    }
+
+    public function test_a_label_can_be_lined_up_inside_what_it_is_written_on()
+    {
+        $user = User::factory()->create();
+
+        UserServer::actingAs($user)->tool(CreateBoard::class, [
+            'title' => 'Aligned',
+            'items' => [
+                ['id' => 'card', 'kind' => 'rect', 'text' => 'Top left', 'align' => 'left', 'verticalAlign' => 'top'],
+                ['id' => 'plain', 'kind' => 'rect', 'text' => 'Middle of it'],
+                ['id' => 'words', 'kind' => 'text', 'text' => 'A heading'],
+            ],
+        ])->assertOk();
+
+        $items = $this->stored($user->boards()->sole());
+
+        $this->assertSame(['left', 'top'], [$items['card']['align'], $items['card']['verticalAlign']]);
+        // Left alone, a shape centres its label and a text item starts top left
+        $this->assertSame(['center', 'middle'], [$items['plain']['align'], $items['plain']['verticalAlign']]);
+        $this->assertSame(['left', 'top'], [$items['words']['align'], $items['words']['verticalAlign']]);
+
+        // Only the ones that differ from their kind's own default are reported
+        UserServer::actingAs($user)
+            ->tool(GetBoard::class, ['ref_id' => $user->boards()->sole()->ref_id])
+            ->assertStructuredContent(fn (AssertableJson $json) => $json
+                ->where('items.0.align', 'left')
+                ->where('items.0.verticalAlign', 'top')
+                ->missing('items.1.align')
+                ->missing('items.2.align')
+                ->etc());
     }
 
     public function test_items_stay_in_the_order_they_were_sent()

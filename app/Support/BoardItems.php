@@ -39,6 +39,11 @@ class BoardItems
 
     public const HEADS = ['none', 'arrow', 'open', 'circle', 'diamond', 'bar'];
 
+    /** Where a label sits in whatever it is written on. */
+    public const ALIGNS = ['left', 'center', 'right'];
+
+    public const VERTICAL_ALIGNS = ['top', 'middle', 'bottom'];
+
     /** Sticky notes are dealt out of this pack, as they are on the canvas. */
     private const STICKY_COLOURS = ['#fde68a', '#bbf7d0', '#bfdbfe', '#fbcfe8', '#ddd6fe'];
 
@@ -89,7 +94,7 @@ class BoardItems
                 }
             }
 
-            foreach (['text', 'fill', 'stroke', 'src', 'routing', 'lineStyle', 'startHead', 'endHead'] as $string) {
+            foreach (['text', 'fill', 'stroke', 'src', 'align', 'verticalAlign', 'routing', 'lineStyle', 'startHead', 'endHead'] as $string) {
                 if (is_string($spec[$string] ?? null)) {
                     $item[$string] = $spec[$string];
                 }
@@ -198,6 +203,14 @@ class BoardItems
                 }
             }
 
+            $default = self::blank($kind, 0);
+
+            foreach (['align', 'verticalAlign'] as $placing) {
+                if (isset($item[$placing]) && $item[$placing] !== $default[$placing]) {
+                    $spec[$placing] = (string) $item[$placing];
+                }
+            }
+
             // A picture is a data URL of its own bytes, far too big to report.
             // Saying it is there is enough: send the item back without a "src"
             // and it keeps the picture it has.
@@ -299,6 +312,8 @@ class BoardItems
             'stroke' => '#cbd5e1',
             'text' => '',
             'fontSize' => 16.0,
+            'align' => 'center',
+            'verticalAlign' => 'middle',
             'points' => [],
             'hidden' => false,
             'locked' => false,
@@ -319,7 +334,7 @@ class BoardItems
             'sticky' => [...$base, 'width' => 180.0, 'height' => 180.0, 'stroke' => 'transparent',
                 'fill' => self::STICKY_COLOURS[$index % count(self::STICKY_COLOURS)]],
             'text' => [...$base, 'width' => 260.0, 'height' => 40.0, 'fill' => 'transparent',
-                'stroke' => 'transparent', 'fontSize' => 28.0],
+                'stroke' => 'transparent', 'fontSize' => 28.0, 'align' => 'left', 'verticalAlign' => 'top'],
             'ellipse' => [...$base, 'width' => 200.0, 'height' => 200.0],
             'star' => [...$base, 'width' => 180.0, 'height' => 180.0, 'fill' => '#fde68a'],
             'image' => [...$base, 'width' => 200.0, 'height' => 200.0, 'fill' => 'transparent', 'stroke' => 'transparent'],
@@ -542,13 +557,17 @@ class BoardItems
             $facing = self::centreOf($boxes[$ends[$other]['item'] ?? ''] ?? null)
                 ?? ['x' => $ends[$other]['x'] ?? 0.0, 'y' => $ends[$other]['y'] ?? 0.0];
 
-            $side = in_array($ends[$end]['side'] ?? null, self::SIDES, true)
+            $chosen = in_array($ends[$end]['side'] ?? null, self::SIDES, true)
                 ? $ends[$end]['side']
-                : self::sideFacing($boxes[$host], $facing);
+                : null;
 
-            // The canvas reads a pinned end's point from its side, so the two
-            // have to be set together or the line starts inside the shape
-            $ends[$end] = ['item' => $host, 'side' => $side, ...self::anchorAt($boxes[$host], $side)];
+            // Without a side of its own the end follows the shapes, turning to
+            // face whatever is at the other end; the point is worked out the
+            // same way, so a line never leaves one face while turning as
+            // though it left another.
+            $side = $chosen ?? self::sideFacing($boxes[$host], $facing);
+
+            $ends[$end] = ['item' => $host, 'side' => $chosen, ...self::anchorAt($boxes[$host], $side)];
         }
 
         return [...$item, 'from' => $ends['from'], 'to' => $ends['to']];

@@ -1,5 +1,11 @@
 <script setup lang="ts">
 import {
+    AlignCenterHorizontal,
+    AlignCenterVertical,
+    AlignEndHorizontal,
+    AlignEndVertical,
+    AlignStartHorizontal,
+    AlignStartVertical,
     BringToFront,
     ChevronDown,
     ChevronUp,
@@ -8,9 +14,17 @@ import {
     SendToBack,
     Trash2,
 } from '@lucide/vue';
+import type { Component } from 'vue';
 import { computed } from 'vue';
-import type { Item, LineStyle, Routing } from './board';
-import { HEAD_TYPES } from './board';
+import type {
+    Align,
+    Item,
+    LineStyle,
+    Routing,
+    Side,
+    VerticalAlign,
+} from './board';
+import { HEAD_TYPES, hasText } from './board';
 import ColourPicker from './ColourPicker.vue';
 import LayersPanel from './LayersPanel.vue';
 import ConnectorIcon from './ConnectorIcon.vue';
@@ -52,6 +66,73 @@ const line = computed(() => connectors.value[0] ?? null);
 
 const routings: Routing[] = ['elbow', 'straight', 'curved'];
 const styles: LineStyle[] = ['solid', 'dashed', 'dotted'];
+
+// Everything but ink and connectors carries a label that can be lined up
+const labelled = computed(() => props.selection.filter(hasText));
+const label = computed(() => labelled.value[0] ?? null);
+
+const aligns: { value: Align; icon: Component; title: string }[] = [
+    {
+        value: 'left',
+        icon: AlignStartVertical,
+        title: 'Line the label up left',
+    },
+    {
+        value: 'center',
+        icon: AlignCenterVertical,
+        title: 'Centre the label',
+    },
+    {
+        value: 'right',
+        icon: AlignEndVertical,
+        title: 'Line the label up right',
+    },
+];
+
+const verticalAligns: {
+    value: VerticalAlign;
+    icon: Component;
+    title: string;
+}[] = [
+    {
+        value: 'top',
+        icon: AlignStartHorizontal,
+        title: 'Put the label at the top',
+    },
+    {
+        value: 'middle',
+        icon: AlignCenterHorizontal,
+        title: 'Put the label in the middle',
+    },
+    {
+        value: 'bottom',
+        icon: AlignEndHorizontal,
+        title: 'Put the label at the bottom',
+    },
+];
+
+// An end with no side of its own follows the shapes; one with a side stays put
+const sides: { value: Side | null; label: string }[] = [
+    { value: null, label: 'Auto' },
+    { value: 'top', label: 'Top' },
+    { value: 'right', label: 'Right' },
+    { value: 'bottom', label: 'Bottom' },
+    { value: 'left', label: 'Left' },
+];
+
+const pinnedSide = (end: 'from' | 'to'): Side | null =>
+    line.value?.[end]?.side ?? null;
+
+// The end keeps whatever it is pinned to; only its side changes
+const pinSide = (end: 'from' | 'to', side: Side | null) => {
+    const current = line.value?.[end];
+
+    if (!current) {
+        return;
+    }
+
+    emit('update', { [end]: { ...current, side } });
+};
 
 const one = computed(() =>
     props.selection.length === 1 ? props.selection[0] : null,
@@ -180,6 +261,38 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                 </label>
             </div>
 
+            <!-- Where the label sits in whatever it is written on -->
+            <div v-if="label" class="inspector-align" data-test="align-config">
+                <p class="inspector-label">Label</p>
+                <div class="inspector-segments">
+                    <button
+                        v-for="option in aligns"
+                        :key="option.value"
+                        type="button"
+                        :title="option.title"
+                        :class="{ 'is-on': label.align === option.value }"
+                        :data-test="`align-${option.value}`"
+                        @click="emit('update', { align: option.value })"
+                    >
+                        <component :is="option.icon" class="size-4" />
+                    </button>
+                    <span class="inspector-divider" />
+                    <button
+                        v-for="option in verticalAligns"
+                        :key="option.value"
+                        type="button"
+                        :title="option.title"
+                        :class="{
+                            'is-on': label.verticalAlign === option.value,
+                        }"
+                        :data-test="`valign-${option.value}`"
+                        @click="emit('update', { verticalAlign: option.value })"
+                    >
+                        <component :is="option.icon" class="size-4" />
+                    </button>
+                </div>
+            </div>
+
             <!-- Connector-only controls: how the line is routed and capped -->
             <div
                 v-if="line"
@@ -264,6 +377,30 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                         "
                     >
                         <ConnectorIcon :kind="{ head: head.value, side }" />
+                    </button>
+                </div>
+
+                <p class="inspector-label">Pinned to</p>
+                <div
+                    v-for="end in ['from', 'to'] as const"
+                    :key="end"
+                    class="inspector-sides"
+                >
+                    <span>{{ end === 'from' ? 'start' : 'end' }}</span>
+                    <button
+                        v-for="option in sides"
+                        :key="option.label"
+                        type="button"
+                        :title="
+                            option.value
+                                ? `Keep this end on the ${option.value}`
+                                : 'Let this end follow the shapes'
+                        "
+                        :class="{ 'is-on': pinnedSide(end) === option.value }"
+                        :data-test="`side-${end}-${option.value ?? 'auto'}`"
+                        @click="pinSide(end, option.value)"
+                    >
+                        {{ option.label }}
                     </button>
                 </div>
 
@@ -482,6 +619,44 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     color: var(--primary);
     border-color: var(--primary);
     background-color: color-mix(in oklab, var(--primary) 10%, transparent);
+}
+
+/* The sides read as words rather than pictures: "auto" has no icon to draw */
+.inspector-sides {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+.inspector-sides span {
+    width: 2.25rem;
+    font-size: 0.6875rem;
+    text-transform: capitalize;
+    color: var(--muted-foreground);
+}
+.inspector-sides button {
+    flex: 1;
+    padding: 0.25rem 0;
+    font-size: 0.6875rem;
+    color: var(--foreground);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+.inspector-sides button:hover {
+    background-color: var(--muted);
+}
+.inspector-sides button.is-on {
+    color: var(--primary);
+    border-color: var(--primary);
+    background-color: color-mix(in oklab, var(--primary) 10%, transparent);
+}
+
+/* Keeps the two halves of the label controls apart */
+.inspector-divider {
+    width: 1px;
+    height: 1.25rem;
+    margin: 0 0.25rem;
+    background-color: var(--border);
 }
 
 .inspector-slider {

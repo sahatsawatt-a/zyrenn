@@ -74,6 +74,15 @@ export const HEAD_TYPES: { value: HeadType; label: string }[] = [
 ];
 export type LineStyle = 'solid' | 'dashed' | 'dotted';
 
+/** Where a label sits in the box it is written in. */
+export type Align = 'left' | 'center' | 'right';
+
+export type VerticalAlign = 'top' | 'middle' | 'bottom';
+
+export const ALIGNS: Align[] = ['left', 'center', 'right'];
+
+export const VERTICAL_ALIGNS: VerticalAlign[] = ['top', 'middle', 'bottom'];
+
 export type Item = {
     id: string;
     kind: ItemKind;
@@ -86,6 +95,8 @@ export type Item = {
     stroke: string;
     text: string;
     fontSize: number;
+    align: Align;
+    verticalAlign: VerticalAlign;
     // Freehand keeps its shape as points relative to x/y
     points: number[];
     // Out of sight, and out of reach of the pointer, from the layers list
@@ -180,6 +191,8 @@ export const makeItem = (
         stroke: '#cbd5e1',
         text: '',
         fontSize: 16,
+        align: 'center',
+        verticalAlign: 'middle',
         points: [],
         hidden: false,
         locked: false,
@@ -222,6 +235,8 @@ export const makeItem = (
                 stroke: 'transparent',
                 text: 'Text',
                 fontSize: 28,
+                align: 'left',
+                verticalAlign: 'top',
             };
         case 'ellipse':
             return {
@@ -427,14 +442,32 @@ export const nearestSide = (
     return best;
 };
 
+/**
+ * The side an end leaves by. A stored side is one somebody chose, so it is
+ * kept; without one the end follows the shapes, turning to face whatever sits
+ * at the other end of the line.
+ */
+export const sideOf = (
+    end: Endpoint | null,
+    host: Item | null,
+    facing: { x: number; y: number },
+): Side | null => {
+    if (!host) {
+        return null;
+    }
+
+    return end?.side ?? nearestSide(host, facing);
+};
+
 export const endpointAt = (end: Endpoint | null, byId: Map<string, Item>) => {
     if (!end) {
         return null;
     }
 
-    const host = end.item ? byId.get(end.item) : null;
+    const host = end.item ? (byId.get(end.item) ?? null) : null;
+    const side = sideOf(end, host, { x: end.x, y: end.y });
 
-    return host && end.side ? anchorAt(host, end.side) : { x: end.x, y: end.y };
+    return host && side ? anchorAt(host, side) : { x: end.x, y: end.y };
 };
 
 const STUB = 24;
@@ -467,24 +500,12 @@ export const connectorPoints = (
     item: Item,
     byId: Map<string, Item>,
 ): number[] => {
-    const start = endpointAt(item.from, byId);
-    const end = endpointAt(item.to, byId);
-
-    if (!start || !end) {
+    if (!item.from || !item.to) {
         return [];
     }
 
-    if (item.routing === 'straight') {
-        return [start.x, start.y, end.x, end.y];
-    }
-
-    // Which side each end leaves by is worked out from where the shapes are
-    // now, not from where they were when the connector was drawn: drag a shape
-    // to the far side and the line comes out of its other face, the way it
-    // does in every diagram tool. A stored side is the fallback for an end
-    // whose partner is a loose point.
-    const fromHost = item.from?.item ? byId.get(item.from.item) : null;
-    const toHost = item.to?.item ? byId.get(item.to.item) : null;
+    const fromHost = item.from.item ? (byId.get(item.from.item) ?? null) : null;
+    const toHost = item.to.item ? (byId.get(item.to.item) ?? null) : null;
 
     const centreOf = (host: Item) => {
         const box = boundsOf(host);
@@ -492,14 +513,33 @@ export const connectorPoints = (
         return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
     };
 
-    const fromSide = fromHost
-        ? nearestSide(fromHost, toHost ? centreOf(toHost) : end)
-        : null;
-    const toSide = toHost
-        ? nearestSide(toHost, fromHost ? centreOf(fromHost) : start)
-        : null;
+    // An end with no side of its own turns to face wherever the other end is
+    // now, rather than where it was when the line was drawn: drag a shape to
+    // the far side and the line comes out of its other face, as it does in
+    // every diagram tool. An end somebody put on a particular face stays on it.
+    const fromSide = sideOf(
+        item.from,
+        fromHost,
+        toHost ? centreOf(toHost) : { x: item.to.x, y: item.to.y },
+    );
+    const toSide = sideOf(
+        item.to,
+        toHost,
+        fromHost ? centreOf(fromHost) : { x: item.from.x, y: item.from.y },
+    );
 
-    if (!fromSide && !toSide) {
+    // The point and the side have to come from the same answer, or the line
+    // leaves one face while turning as though it left another
+    const start =
+        fromHost && fromSide
+            ? anchorAt(fromHost, fromSide)
+            : { x: item.from.x, y: item.from.y };
+    const end =
+        toHost && toSide
+            ? anchorAt(toHost, toSide)
+            : { x: item.to.x, y: item.to.y };
+
+    if (item.routing === 'straight' || (!fromSide && !toSide)) {
         return [start.x, start.y, end.x, end.y];
     }
 

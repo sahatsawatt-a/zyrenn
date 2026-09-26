@@ -36,14 +36,12 @@ import {
     PATHS,
     POLYGONS,
     alignmentFor,
-    anchorAt,
     anchorsOf,
     boundsOf,
     boundsOfAll,
     hasText,
     connectorPoints,
     dashFor,
-    endpointAt,
     headPoints,
     headsOf,
     isConnectable,
@@ -51,7 +49,6 @@ import {
     isPath,
     isStroke,
     midpointOf,
-    nearestSide,
     overlaps,
     fitOnBoard,
     polygonPoints,
@@ -253,16 +250,17 @@ const shapeAt = (point: { x: number; y: number }): Item | null => {
     return null;
 };
 
-/** The anchor a connector should use when it meets `item` at `point`. */
-const pinTo = (item: Item | null, point: { x: number; y: number }) =>
-    item
-        ? {
-              item: item.id,
-              side: nearestSide(item, point),
-              x: point.x,
-              y: point.y,
-          }
-        : { item: null, side: null as Side | null, x: point.x, y: point.y };
+/**
+ * The anchor a connector should use when it meets `item` at `point`. The side
+ * is left open, so the line keeps facing whatever is at its other end; the
+ * inspector is where an end gets pinned to one face for good.
+ */
+const pinTo = (item: Item | null, point: { x: number; y: number }) => ({
+    item: item?.id ?? null,
+    side: null as Side | null,
+    x: point.x,
+    y: point.y,
+});
 
 const onPointerDown = (event: Konva.KonvaEventObject<PointerEvent>) => {
     if (presenting.value || panning.value) {
@@ -350,30 +348,9 @@ const onPointerMove = () => {
         const over = shapeAt(point);
         hoveredTarget.value = over?.id ?? null;
 
-        const source = current.item.from?.item
-            ? board.byId.value.get(current.item.from.item)
-            : null;
-
-        // It leaves by the side facing the cursor...
-        if (source && current.item.from) {
-            current.item.from.side = nearestSide(source, point);
-        }
-
-        // ...and lands on the side facing where it came from, so the elbow
-        // reads the way it would in any diagram tool.
-        const leaving =
-            source && current.item.from?.side
-                ? anchorAt(source, current.item.from.side)
-                : { x: current.originX, y: current.originY };
-
-        current.item.to = over
-            ? {
-                  item: over.id,
-                  side: nearestSide(over, leaving),
-                  x: point.x,
-                  y: point.y,
-              }
-            : { item: null, side: null, x: point.x, y: point.y };
+        // Both ends pick their face from where the shapes are, every frame, so
+        // the line turns as the cursor comes round a shape
+        current.item.to = pinTo(over, point);
 
         return;
     }
@@ -694,8 +671,8 @@ const editorStyle = computed(() => {
         width: `${item.width * scale}px`,
         height: `${item.height * scale}px`,
         fontSize: `${item.fontSize * scale}px`,
-        textAlign:
-            item.kind === 'sticky' ? ('center' as const) : ('left' as const),
+        // Typing lines up the way the finished label will
+        textAlign: item.align,
     };
 });
 
@@ -1191,37 +1168,8 @@ const onEndpointDragMove = (event: Konva.KonvaEventObject<DragEvent>) => {
 
     const point = { x: event.target.x(), y: event.target.y() };
     const over = shapeAt(point);
-    const otherEnd = end === 'from' ? 'to' : 'from';
-    const path = connectorPath(item);
-    const otherPoint =
-        otherEnd === 'from'
-            ? { x: path[0], y: path[1] }
-            : { x: path[path.length - 2], y: path[path.length - 1] };
 
-    item[end] = over
-        ? {
-              item: over.id,
-              // Face whatever sits at the other end, as when it was drawn
-              side: nearestSide(over, otherPoint),
-              x: point.x,
-              y: point.y,
-          }
-        : { item: null, side: null, x: point.x, y: point.y };
-
-    // The far end turns to face the new position too, so the elbow stays tidy
-    const otherHost = item[otherEnd]?.item
-        ? board.byId.value.get(item[otherEnd]!.item!)
-        : null;
-
-    if (otherHost && item[otherEnd]) {
-        item[otherEnd] = {
-            ...item[otherEnd],
-            side: nearestSide(
-                otherHost,
-                endpointAt(item[end], board.byId.value) ?? point,
-            ),
-        };
-    }
+    item[end] = pinTo(over, point);
 
     hoveredTarget.value = over?.id ?? null;
 
@@ -1694,18 +1642,15 @@ const labelInset = (item: Item): number => {
                                             : item.width - 24,
                                     height:
                                         item.kind === 'text'
-                                            ? undefined
+                                            ? item.height
                                             : item.height -
                                               labelInset(item) * 2,
                                     fontSize: item.fontSize,
                                     fontStyle:
                                         item.kind === 'text' ? '600' : 'normal',
                                     fill: '#0f172a',
-                                    align:
-                                        item.kind === 'text'
-                                            ? 'left'
-                                            : 'center',
-                                    verticalAlign: 'middle',
+                                    align: item.align,
+                                    verticalAlign: item.verticalAlign,
                                     // A text item has no shape behind it, so
                                     // its label is the only thing that can be
                                     // clicked; on other shapes the box is the
