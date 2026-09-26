@@ -97,6 +97,26 @@ class User extends Authenticatable implements PasskeyUser
     }
 
     /**
+     * Get the user's boards.
+     *
+     * @return HasMany<Board, $this>
+     */
+    public function boards(): HasMany
+    {
+        return $this->hasMany(Board::class);
+    }
+
+    /**
+     * Get the folders the user files boards in.
+     *
+     * @return HasMany<BoardFolder, $this>
+     */
+    public function boardFolders(): HasMany
+    {
+        return $this->hasMany(BoardFolder::class);
+    }
+
+    /**
      * Get the folders the user files notes in.
      *
      * @return HasMany<NoteFolder, $this>

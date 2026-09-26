@@ -4,6 +4,7 @@ import {
     BookOpen,
     FolderGit2,
     HardDrive,
+    LayoutDashboard,
     LayoutGrid,
     NotebookPen,
 } from '@lucide/vue';
@@ -20,7 +21,8 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard, template_sample, tiptap_demo } from '@/routes';
+import { dashboard, template_sample, tiptap_demo, konva_demo } from '@/routes';
+import { index as boardsIndex } from '@/routes/boards';
 import { index as driveIndex } from '@/routes/drive';
 import { index as notesIndex } from '@/routes/notes';
 import type { NavItem } from '@/types';
@@ -37,6 +39,11 @@ const mainNavItems: NavItem[] = [
         icon: NotebookPen,
     },
     {
+        title: 'Boards',
+        href: boardsIndex(),
+        icon: LayoutDashboard,
+    },
+    {
         title: 'Drive',
         href: driveIndex(),
         icon: HardDrive,
@@ -51,6 +58,11 @@ const mainNavItems: NavItem[] = [
     //     href: tiptap_demo(),
     //     icon: LayoutGrid,
     // },
+    {
+        title: 'Konva Demo',
+        href: konva_demo(),
+        icon: LayoutGrid,
+    },
 ];
 
 const footerNavItems: NavItem[] = [
