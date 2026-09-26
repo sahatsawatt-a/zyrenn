@@ -118,7 +118,9 @@ export function useCamera(
         flight = new Konva.Tween({
             node: target,
             duration: 0.45,
-            easing: Konva.Easings.EaseInOut,
+            // Called through a wrapper so the easing stays bound to Konva
+            easing: (t: number, from: number, by: number, duration: number) =>
+                Konva.Easings.EaseInOut(t, from, by, duration),
             scaleX: next.scale,
             scaleY: next.scale,
             x: next.x,

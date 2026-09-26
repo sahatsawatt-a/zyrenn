@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue';
 import type { Item, ItemKind } from './board';
-import { STICKY_COLOURS, makeItem, newId } from './board';
+import { STICKY_COLOURS, bumpIdsTo, makeItem, newId } from './board';
 
 /**
  * The board's items, what is selected, and undo/redo.
@@ -9,7 +9,7 @@ import { STICKY_COLOURS, makeItem, newId } from './board';
  * a board this size is a few kilobytes of JSON, and it means a new tool cannot
  * forget to write its own undo step.
  */
-export function useBoard() {
+export function useBoard(initial: Item[] | null = null) {
     const items = ref<Item[]>([]);
     const selection = ref<string[]>([]);
 
@@ -339,9 +339,32 @@ export function useBoard() {
         }
     };
 
-    reset();
+    /** Open a board that was saved earlier. */
+    const load = (saved: Item[]) => {
+        past.length = 0;
+        future.length = 0;
+        selection.value = [];
+        items.value = saved.map(copy);
+
+        // Ids carry on from the highest one already used, so a new item cannot
+        // take the id of one that is already on the board
+        const highest = saved.reduce((top, item) => {
+            const number = Number(item.id.replace(/\D/g, ''));
+
+            return Number.isFinite(number) && number > top ? number : top;
+        }, 0);
+
+        bumpIdsTo(highest);
+    };
+
+    if (initial === null) {
+        reset();
+    } else {
+        load(initial);
+    }
 
     return {
+        load,
         items,
         byId,
         frames,

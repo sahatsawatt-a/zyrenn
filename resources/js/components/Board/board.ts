@@ -139,6 +139,11 @@ let counter = 0;
 
 export const newId = (): string => `i${++counter}`;
 
+/** Carry on numbering past the ids of a board that was loaded. */
+export const bumpIdsTo = (highest: number): void => {
+    counter = Math.max(counter, highest);
+};
+
 /**
  * Items that hold editable text: everything except ink and arrows, so a
  * database or a decision diamond can be labelled by double-clicking it.
