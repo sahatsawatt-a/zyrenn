@@ -307,6 +307,7 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     flex-direction: column;
     width: 16rem;
     flex-shrink: 0;
+    min-height: 0;
     gap: 0.75rem;
     padding: 0.75rem;
     background-color: var(--background);

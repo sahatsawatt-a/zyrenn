@@ -12,6 +12,7 @@ import {
     MousePointer2,
     Pencil,
     RectangleHorizontal,
+    FileCode,
     Search,
     Shapes,
     Square,
@@ -26,7 +27,7 @@ import type { Tool } from './board';
 // The shape library Lucidchart puts down the left: grouped, searchable, and
 // the thing you reach for before every other control.
 defineProps<{ tool: Tool }>();
-const emit = defineEmits<{ 'update:tool': [Tool] }>();
+const emit = defineEmits<{ 'update:tool': [Tool]; 'import-svg': [] }>();
 
 type Entry = { tool: Tool; icon: unknown; label: string; key: string };
 
@@ -128,6 +129,20 @@ const shown = computed(() => {
                 </div>
             </section>
 
+            <section>
+                <p class="library-heading">Your own</p>
+                <button
+                    type="button"
+                    class="library-item is-wide"
+                    title="Paste SVG markup or pick a file"
+                    data-test="open-svg-import"
+                    @click="emit('import-svg')"
+                >
+                    <FileCode class="size-5" />
+                    <span>Add SVG</span>
+                </button>
+            </section>
+
             <p v-if="!shown.length" class="library-empty">
                 Nothing matches “{{ search }}”.
             </p>
@@ -141,6 +156,9 @@ const shown = computed(() => {
     flex-direction: column;
     width: 13rem;
     flex-shrink: 0;
+    /* Its own scroll, so a long list cannot stretch the row and push the
+       canvas off the bottom of the window */
+    min-height: 0;
     gap: 0.5rem;
     padding: 0.625rem;
     background-color: var(--background);
@@ -168,6 +186,8 @@ const shown = computed(() => {
 
 .library-scroll {
     display: flex;
+    flex: 1;
+    min-height: 0;
     flex-direction: column;
     gap: 0.75rem;
     overflow-y: auto;
@@ -213,6 +233,15 @@ const shown = computed(() => {
     color: var(--primary);
     background-color: color-mix(in oklab, var(--primary) 12%, transparent);
     border-color: var(--primary);
+}
+
+.library-item.is-wide {
+    width: 100%;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 0.5rem;
+    padding: 0.5rem 0.625rem;
+    border-color: var(--border);
 }
 
 .library-empty {

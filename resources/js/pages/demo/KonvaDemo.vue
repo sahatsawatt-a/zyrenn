@@ -18,6 +18,7 @@ import {
     Circle,
     Ellipse,
     Group,
+    Image as KonvaImage,
     Layer,
     Line,
     Path,
@@ -28,6 +29,7 @@ import {
     Transformer,
 } from 'vue-konva';
 import InspectorPanel from './konva/InspectorPanel.vue';
+import SvgImport from './konva/SvgImport.vue';
 import ShapeLibrary from './konva/ShapeLibrary.vue';
 import type { Item, Side, Tool } from './konva/board';
 import type { Guide } from './konva/board';
@@ -52,13 +54,41 @@ import {
     midpointOf,
     nearestSide,
     overlaps,
+    fitOnBoard,
     polygonPoints,
+    svgSource,
     trimmedPoints,
 } from './konva/board';
 import { useBoard } from './konva/useBoard';
 import { useCamera } from './konva/useCamera';
 
 const board = useBoard();
+
+// The app's pages grow with their content, which would let the board run off
+// the bottom of the window: the canvas is then partly unreachable, and the
+// whole page scrolls instead of panning. Hold it to the space actually on
+// screen. The offset is taken from the document, not the viewport -- read
+// while the page happens to be scrolled, a viewport-relative top is negative
+// and makes the board taller still.
+const page = useTemplateRef<HTMLElement>('page');
+const pageOffset = ref(0);
+
+const measurePage = () => {
+    const element = page.value;
+
+    if (element) {
+        pageOffset.value = Math.round(
+            element.getBoundingClientRect().top + window.scrollY,
+        );
+    }
+};
+
+onMounted(measurePage);
+useEventListener(window, 'resize', measurePage);
+
+const pageStyle = computed(() => ({
+    height: `calc(100svh - ${pageOffset.value}px)`,
+}));
 
 // ------------------------------------------------------------------ Canvas
 const canvas = useTemplateRef<HTMLDivElement>('canvas');
@@ -531,9 +561,9 @@ const onItemDragEnd = () => {
 
 // Konva resizes by scaling; fold it back into width/height so text and corner
 // radii keep their proportions.
-const onTransformEnd = () => {
-    board.commit();
-
+// Written on every frame of a resize, not just at the end: anything pinned to
+// the shape -- a connector's anchor above all -- has to keep up with it.
+const applyTransform = () => {
     board.selection.value.forEach((id) => {
         const node = stage()?.findOne(`#${id}`);
         const item = board.byId.value.get(id);
@@ -752,6 +782,122 @@ const stopPresenting = () => {
     camera.focus(boundsOfAll(board.items.value), { animate: true });
 };
 
+// --------------------------------------------------------------- Imported SVG
+const importing = ref(false);
+
+// Each document is decoded once and kept by its data URL. The ref is replaced
+// rather than mutated so the canvas redraws when one finishes loading.
+const decoded = ref(new Map<string, HTMLImageElement>());
+const loading = new Set<string>();
+
+const imageFor = (item: Item): HTMLImageElement | undefined => {
+    if (!item.src) {
+        return undefined;
+    }
+
+    const ready = decoded.value.get(item.src);
+
+    if (ready || loading.has(item.src)) {
+        return ready;
+    }
+
+    loading.add(item.src);
+
+    const image = new window.Image();
+    image.onload = () => {
+        decoded.value = new Map(decoded.value).set(item.src, image);
+        loading.delete(item.src);
+    };
+    image.onerror = () => loading.delete(item.src);
+    image.src = item.src;
+
+    return undefined;
+};
+
+const placeImage = (source: { src: string; width: number; height: number }) => {
+    const middle = camera.toBoard({ x: width.value / 2, y: height.value / 2 });
+
+    const item = board.makeItem(
+        'image',
+        middle.x - source.width / 2,
+        middle.y - source.height / 2,
+    );
+    item.src = source.src;
+    item.width = source.width;
+    item.height = source.height;
+
+    board.add(item);
+    importing.value = false;
+};
+
+const addSvg = (markup: string) => placeImage(svgSource(markup));
+
+/** A dropped, pasted or chosen file: SVG as markup, everything else as pixels. */
+const addImageFile = async (file: File) => {
+    if (file.type === 'image/svg+xml' || file.name.endsWith('.svg')) {
+        addSvg(await file.text());
+
+        return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+        return;
+    }
+
+    const src = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+    });
+
+    // Its own pixel size decides how big it lands, within reason
+    const sized = await new Promise<{ width: number; height: number }>(
+        (resolve) => {
+            const probe = new window.Image();
+            probe.onload = () =>
+                resolve(fitOnBoard(probe.naturalWidth, probe.naturalHeight));
+            probe.onerror = () => resolve({ width: 240, height: 240 });
+            probe.src = src;
+        },
+    );
+
+    placeImage({ src, ...sized });
+};
+
+// Paste a screenshot straight onto the board, as any board app does. Markup on
+// the clipboard counts too, so an SVG copied from a page can just be pasted.
+useEventListener(window, 'paste', (event: ClipboardEvent) => {
+    if (editingId.value || importing.value) {
+        return;
+    }
+
+    const file = Array.from(event.clipboardData?.files ?? [])[0];
+
+    if (file) {
+        event.preventDefault();
+        void addImageFile(file);
+
+        return;
+    }
+
+    const text = event.clipboardData?.getData('text/plain') ?? '';
+
+    if (/<svg[\s>]/i.test(text)) {
+        event.preventDefault();
+        addSvg(text);
+    }
+});
+
+const onDropFiles = (event: DragEvent) => {
+    const files = Array.from(event.dataTransfer?.files ?? []);
+
+    if (files.length) {
+        event.preventDefault();
+        files.forEach((file) => void addImageFile(file));
+    }
+};
+
 // ------------------------------------------------------------------ Actions
 const fitAll = () => camera.focus(boundsOfAll(board.items.value));
 
@@ -903,7 +1049,15 @@ onMounted(() => {
     layer?.on('dragstart', onItemDragStart);
     layer?.on('dragmove', onItemDragMove);
     layer?.on('dragend', onItemDragEnd);
-    layer?.on('transformend', onTransformEnd);
+    // Bound on the transformer itself: Konva announces a transform with
+    // node._fire(), which does not bubble, so a layer-level handler never
+    // hears it -- which is why a resize only landed when the handle was let go.
+    const transformer = transformerRef.value?.getNode();
+
+    // The undo step is taken before the first frame changes anything
+    transformer?.on('transformstart', () => board.commit());
+    transformer?.on('transform', applyTransform);
+    transformer?.on('transformend', applyTransform);
 
     nextTick(fitAll);
 });
@@ -1070,7 +1224,11 @@ const labelInset = (item: Item): number => {
 <template>
     <Head title="Konva board" />
 
-    <div class="flex flex-1 flex-col gap-3 overflow-hidden p-4 md:p-6">
+    <div
+        ref="page"
+        :style="pageStyle"
+        class="flex min-h-0 flex-none flex-col gap-3 overflow-hidden p-4 md:p-6"
+    >
         <div
             v-show="!presenting"
             class="flex flex-wrap items-center justify-between gap-3"
@@ -1138,11 +1296,14 @@ const labelInset = (item: Item): number => {
                 v-show="!presenting"
                 :tool="tool"
                 @update:tool="tool = $event"
+                @import-svg="importing = true"
             />
 
             <div
                 ref="canvas"
                 :data-zoom="Math.round(camera.scale.value * 100)"
+                @dragover.prevent
+                @drop="onDropFiles"
                 :data-camera="`${camera.position.value.x},${camera.position.value.y},${camera.scale.value}`"
                 class="border-sidebar-border/70 dark:border-sidebar-border relative min-h-[480px] flex-1 overflow-hidden rounded-xl border bg-white"
                 :class="{ 'cursor-grab': panning }"
@@ -1248,6 +1409,26 @@ const labelInset = (item: Item): number => {
                                         : item.stroke,
                                     strokeWidth: isSelected(item) ? 2 : 1.5,
                                     cornerRadius: 8,
+                                }"
+                            />
+
+                            <KonvaImage
+                                v-else-if="
+                                    item.kind === 'image' && imageFor(item)
+                                "
+                                :config="{
+                                    image: imageFor(item),
+                                    width: item.width,
+                                    height: item.height,
+                                }"
+                            />
+                            <Rect
+                                v-else-if="item.kind === 'image'"
+                                :config="{
+                                    width: item.width,
+                                    height: item.height,
+                                    stroke: '#cbd5e1',
+                                    dash: [6, 6],
                                 }"
                             />
 
@@ -1638,6 +1819,13 @@ const labelInset = (item: Item): number => {
                     </button>
                 </div>
             </div>
+
+            <SvgImport
+                v-if="importing"
+                @add="addSvg"
+                @file="addImageFile"
+                @close="importing = false"
+            />
 
             <InspectorPanel
                 v-show="!presenting"

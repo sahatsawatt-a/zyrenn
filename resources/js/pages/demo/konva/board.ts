@@ -18,6 +18,7 @@ export type ItemKind =
     | 'document'
     | 'process'
     | 'cloud'
+    | 'image'
     | 'arrow'
     | 'draw';
 
@@ -87,6 +88,8 @@ export type Item = {
     fontSize: number;
     // Freehand keeps its shape as points relative to x/y
     points: number[];
+    // A picture -- SVG, PNG, JPEG -- as a data URL drawn through an <img>
+    src: string;
     // Connectors only: where each end is pinned and how the line is drawn
     from: Endpoint | null;
     to: Endpoint | null;
@@ -170,6 +173,7 @@ export const makeItem = (
         text: '',
         fontSize: 16,
         points: [],
+        src: '',
         from: null,
         to: null,
         routing: 'elbow',
@@ -224,6 +228,14 @@ export const makeItem = (
                 height: 180,
                 fill: colours.fill ?? '#fde68a',
                 stroke: colours.stroke ?? base.stroke,
+            };
+        case 'image':
+            return {
+                ...base,
+                width: 200,
+                height: 200,
+                fill: 'transparent',
+                stroke: 'transparent',
             };
         case 'cylinder':
             return {
@@ -768,5 +780,65 @@ export const alignmentFor = (
         dx: vertical?.shift ?? 0,
         dy: horizontal?.shift ?? 0,
         guides,
+    };
+};
+
+/** Keeps a picture to a sensible size on the board, in proportion. */
+export const fitOnBoard = (width: number, height: number) => {
+    const longest = Math.max(width, height);
+    const factor = longest < 120 ? 200 / longest : Math.min(1, 480 / longest);
+
+    return {
+        width: Math.round(width * factor),
+        height: Math.round(height * factor),
+    };
+};
+
+/**
+ * An SVG document as a data URL, with the size it asks for.
+ *
+ * The markup is never put in the page: it is handed to an <img>, which is the
+ * one place a browser draws SVG without running anything inside it.
+ */
+export const svgSource = (
+    markup: string,
+): { src: string; width: number; height: number } => {
+    const attribute = (name: string) =>
+        markup.match(new RegExp(`<svg[^>]*\\s${name}="([^"]+)"`, 'i'))?.[1];
+
+    const viewBox = attribute('viewBox')
+        ?.trim()
+        .split(/[\s,]+/)
+        .map(Number);
+    const number = (value: string | undefined) => {
+        const parsed = parseFloat(value ?? '');
+
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    };
+
+    const width =
+        number(attribute('width')) ??
+        (viewBox?.length === 4 ? viewBox[2] : null) ??
+        200;
+    const height =
+        number(attribute('height')) ??
+        (viewBox?.length === 4 ? viewBox[3] : null) ??
+        200;
+
+    // Scaled so a 24px icon is usable on a board, keeping its proportions
+    const longest = Math.max(width, height);
+    const factor = longest < 120 ? 200 / longest : 1;
+
+    // Inline in a page the parser infers the namespace, but an <img> loads the
+    // document on its own and refuses it without one -- which is why markup
+    // pasted straight from a web page can arrive lacking it.
+    const document = /<svg[^>]*\sxmlns=/i.test(markup)
+        ? markup
+        : markup.replace(/<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+
+    return {
+        src: `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(document)))}`,
+        width: Math.round(width * factor),
+        height: Math.round(height * factor),
     };
 };
