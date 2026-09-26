@@ -387,7 +387,7 @@ export const nearestSide = (
     return best;
 };
 
-const endpointAt = (end: Endpoint | null, byId: Map<string, Item>) => {
+export const endpointAt = (end: Endpoint | null, byId: Map<string, Item>) => {
     if (!end) {
         return null;
     }
@@ -588,4 +588,71 @@ export const headPoints = (type: HeadType, size: number): number[] => {
         default:
             return [];
     }
+};
+
+/** How far back a head of this type needs the line to stop. */
+const headRoom = (type: HeadType, size: number): number => {
+    switch (type) {
+        case 'arrow':
+        case 'diamond':
+            // Solid caps: the line would show through the middle of them
+            return size * 0.9;
+        case 'circle':
+            return size * 0.4;
+        default:
+            // An open V or a bar is drawn on the line and wants it to arrive
+            return 0;
+    }
+};
+
+/** Move a point `distance` along the way towards `towards`. */
+const pulledBack = (
+    point: { x: number; y: number },
+    towards: { x: number; y: number },
+    distance: number,
+) => {
+    const span = Math.hypot(towards.x - point.x, towards.y - point.y);
+
+    if (!span || !distance) {
+        return point;
+    }
+
+    const ratio = Math.min(1, distance / span);
+
+    return {
+        x: point.x + (towards.x - point.x) * ratio,
+        y: point.y + (towards.y - point.y) * ratio,
+    };
+};
+
+/**
+ * The line's own points: the full path with each end pulled back far enough to
+ * sit behind its head, so a thick line does not show through a solid cap.
+ * Heads are still placed on the untrimmed ends.
+ */
+export const trimmedPoints = (item: Item, points: number[]): number[] => {
+    if (points.length < 4) {
+        return points;
+    }
+
+    const trimmed = [...points];
+    const last = trimmed.length;
+
+    const start = pulledBack(
+        { x: trimmed[0], y: trimmed[1] },
+        { x: trimmed[2], y: trimmed[3] },
+        headRoom(item.startHead, item.headSize),
+    );
+    const end = pulledBack(
+        { x: trimmed[last - 2], y: trimmed[last - 1] },
+        { x: trimmed[last - 4], y: trimmed[last - 3] },
+        headRoom(item.endHead, item.headSize),
+    );
+
+    trimmed[0] = start.x;
+    trimmed[1] = start.y;
+    trimmed[last - 2] = end.x;
+    trimmed[last - 1] = end.y;
+
+    return trimmed;
 };

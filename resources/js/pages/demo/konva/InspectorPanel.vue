@@ -14,6 +14,8 @@ const props = defineProps<{
     stroke: string;
     itemCount: number;
     frameCount: number;
+    // What a selected connector joins, e.g. "rect → database"
+    link?: string;
 }>();
 
 const emit = defineEmits<{
@@ -71,6 +73,9 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
             </p>
             <p class="inspector-sub">
                 {{ itemCount }} items · {{ frameCount }} frames
+            </p>
+            <p v-if="link" class="inspector-sub" data-test="connector-link">
+                {{ link }}
             </p>
         </div>
 

@@ -40,6 +40,7 @@ import {
     hasText,
     connectorPoints,
     dashFor,
+    endpointAt,
     headPoints,
     headsOf,
     isConnectable,
@@ -50,6 +51,7 @@ import {
     nearestSide,
     overlaps,
     polygonPoints,
+    trimmedPoints,
 } from './konva/board';
 import { useBoard } from './konva/useBoard';
 import { useCamera } from './konva/useCamera';
@@ -791,9 +793,26 @@ useEventListener(window, 'keyup', (event: KeyboardEvent) => {
 const contentLayer = useTemplateRef<{ getNode: () => Konva.Layer }>(
     'contentLayer',
 );
+const overlayLayer = useTemplateRef<{ getNode: () => Konva.Layer }>(
+    'overlayLayer',
+);
 
 onMounted(() => {
     const layer = contentLayer.value?.getNode();
+
+    const overlay = overlayLayer.value?.getNode();
+
+    overlay?.on('dragstart', (event) => {
+        if (event.target.name().startsWith(ENDPOINT)) {
+            board.commit();
+        }
+    });
+    overlay?.on('dragmove', (event) => {
+        if (event.target.name().startsWith(ENDPOINT)) {
+            onEndpointDragMove(event as Konva.KonvaEventObject<DragEvent>);
+        }
+    });
+    overlay?.on('dragend', () => (hoveredTarget.value = null));
 
     layer?.on('dragstart', onItemDragStart);
     layer?.on('dragmove', onItemDragMove);
@@ -818,6 +837,95 @@ const isSelected = (item: Item) =>
 const connectable = computed(() => board.items.value.filter(isConnectable));
 
 const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
+
+// ------------------------------------------------------- Connector endpoints
+// One selected connector gets a handle on each end, so it can be re-aimed at a
+// different shape without redrawing it.
+const ENDPOINT = 'endpoint';
+
+const soleConnector = computed(() => {
+    const selected = board.selected.value;
+
+    return selected.length === 1 && isConnector(selected[0])
+        ? selected[0]
+        : null;
+});
+
+// What the selected connector joins, so the panel can say so and a re-aimed
+// end is visible without hunting for it on the canvas.
+const connectorLink = computed(() => {
+    const item = soleConnector.value;
+
+    if (!item) {
+        return undefined;
+    }
+
+    const name = (end: 'from' | 'to') => {
+        const host = item[end]?.item
+            ? board.byId.value.get(item[end]!.item!)
+            : null;
+
+        return host ? host.text || host.kind : 'a point';
+    };
+
+    return `${name('from')} → ${name('to')}`;
+});
+
+const endpointHandles = computed(() => {
+    const item = soleConnector.value;
+
+    if (!item || presenting.value) {
+        return [];
+    }
+
+    return (['from', 'to'] as const).map((end) => ({
+        end,
+        ...(endpointAt(item[end], board.byId.value) ?? { x: 0, y: 0 }),
+    }));
+});
+
+const onEndpointDragMove = (event: Konva.KonvaEventObject<DragEvent>) => {
+    const item = soleConnector.value;
+    // Which end is being dragged rides in the node's name: reading it back off
+    // a typed attr fights Konva's own generics for no gain.
+    const end = event.target.name().endsWith('from') ? 'from' : 'to';
+
+    if (!item) {
+        return;
+    }
+
+    const point = { x: event.target.x(), y: event.target.y() };
+    const over = shapeAt(point);
+    const otherEnd = end === 'from' ? 'to' : 'from';
+    const otherPoint = endpointAt(item[otherEnd], board.byId.value) ?? point;
+
+    item[end] = over
+        ? {
+              item: over.id,
+              // Face whatever sits at the other end, as when it was drawn
+              side: nearestSide(over, otherPoint),
+              x: point.x,
+              y: point.y,
+          }
+        : { item: null, side: null, x: point.x, y: point.y };
+
+    // The far end turns to face the new position too, so the elbow stays tidy
+    const otherHost = item[otherEnd]?.item
+        ? board.byId.value.get(item[otherEnd]!.item!)
+        : null;
+
+    if (otherHost && item[otherEnd]) {
+        item[otherEnd] = {
+            ...item[otherEnd],
+            side: nearestSide(
+                otherHost,
+                endpointAt(item[end], board.byId.value) ?? point,
+            ),
+        };
+    }
+
+    hoveredTarget.value = over?.id ?? null;
+};
 
 // Close enough for a backing chip: Konva would have to measure the text to do
 // better, and this only has to keep the line out of the words.
@@ -1115,7 +1223,10 @@ const labelInset = (item: Item): number => {
                             <template v-else-if="isConnector(item)">
                                 <Line
                                     :config="{
-                                        points: connectorPath(item),
+                                        points: trimmedPoints(
+                                            item,
+                                            connectorPath(item),
+                                        ),
                                         stroke: strokeOf(item),
                                         strokeWidth: item.lineWidth,
                                         dash: dashFor(item.lineStyle),
@@ -1251,7 +1362,53 @@ const labelInset = (item: Item): number => {
                         </Group>
                     </Layer>
 
-                    <Layer>
+                    <Layer ref="overlayLayer">
+                        <!-- Where a connector can pin itself, shown only while
+                             the arrow tool is out so the board stays quiet -->
+                        <template v-if="tool === 'arrow' && !presenting">
+                            <template
+                                v-for="shape in connectable"
+                                :key="shape.id"
+                            >
+                                <Circle
+                                    v-for="anchor in anchorsOf(shape)"
+                                    :key="anchor.side"
+                                    :config="{
+                                        x: anchor.x,
+                                        y: anchor.y,
+                                        radius:
+                                            (hoveredTarget === shape.id
+                                                ? 6
+                                                : 4) / camera.scale.value,
+                                        fill:
+                                            hoveredTarget === shape.id
+                                                ? '#6366f1'
+                                                : '#ffffff',
+                                        stroke: '#6366f1',
+                                        strokeWidth: 1.5 / camera.scale.value,
+                                        listening: false,
+                                    }"
+                                />
+                            </template>
+                        </template>
+
+                        <!-- Drag either end of a selected connector onto
+                             another shape to re-aim it -->
+                        <Circle
+                            v-for="handle in endpointHandles"
+                            :key="handle.end"
+                            :config="{
+                                name: `${ENDPOINT}-${handle.end}`,
+                                x: handle.x,
+                                y: handle.y,
+                                radius: 6 / camera.scale.value,
+                                fill: '#ffffff',
+                                stroke: '#6366f1',
+                                strokeWidth: 2 / camera.scale.value,
+                                draggable: true,
+                            }"
+                        />
+
                         <Rect
                             v-if="marquee"
                             :config="{
@@ -1335,6 +1492,7 @@ const labelInset = (item: Item): number => {
                 :stroke="strokeColour"
                 :item-count="board.items.value.length"
                 :frame-count="board.frames.value.length"
+                :link="connectorLink"
                 @paint="paintFill"
                 @paint-stroke="paintStroke"
                 @resize="resizeSelection"
