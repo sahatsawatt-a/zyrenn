@@ -4,6 +4,7 @@ import { computed } from 'vue';
 import type { Item, LineStyle, Routing } from './board';
 import { HEAD_TYPES } from './board';
 import ColourPicker from './ColourPicker.vue';
+import ConnectorIcon from './ConnectorIcon.vue';
 
 // Lucidchart's right-hand panel: what is selected, and every property of it in
 // one place instead of hidden behind a toolbar popover.
@@ -34,17 +35,8 @@ const connectors = computed(() =>
 // one's setting, which is what every drawing tool does with a mixed selection.
 const line = computed(() => connectors.value[0] ?? null);
 
-const routings: { value: Routing; label: string }[] = [
-    { value: 'elbow', label: 'Elbow' },
-    { value: 'straight', label: 'Straight' },
-    { value: 'curved', label: 'Curved' },
-];
-
-const styles: { value: LineStyle; label: string }[] = [
-    { value: 'solid', label: '——' },
-    { value: 'dashed', label: '- -' },
-    { value: 'dotted', label: '···' },
-];
+const routings: Routing[] = ['elbow', 'straight', 'curved'];
+const styles: LineStyle[] = ['solid', 'dashed', 'dotted'];
 
 const one = computed(() =>
     props.selection.length === 1 ? props.selection[0] : null,
@@ -162,13 +154,14 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                 <div class="inspector-segments">
                     <button
                         v-for="option in routings"
-                        :key="option.value"
+                        :key="option"
                         type="button"
-                        :class="{ 'is-on': line.routing === option.value }"
-                        :data-test="`routing-${option.value}`"
-                        @click="emit('update', { routing: option.value })"
+                        :title="option"
+                        :class="{ 'is-on': line.routing === option }"
+                        :data-test="`routing-${option}`"
+                        @click="emit('update', { routing: option })"
                     >
-                        {{ option.label }}
+                        <ConnectorIcon :kind="option" />
                     </button>
                 </div>
 
@@ -176,13 +169,14 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                 <div class="inspector-segments">
                     <button
                         v-for="option in styles"
-                        :key="option.value"
+                        :key="option"
                         type="button"
-                        :class="{ 'is-on': line.lineStyle === option.value }"
-                        :data-test="`style-${option.value}`"
-                        @click="emit('update', { lineStyle: option.value })"
+                        :title="option"
+                        :class="{ 'is-on': line.lineStyle === option }"
+                        :data-test="`style-${option}`"
+                        @click="emit('update', { lineStyle: option })"
                     >
-                        {{ option.label }}
+                        <ConnectorIcon :kind="option" />
                     </button>
                 </div>
 
@@ -206,51 +200,35 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                 </label>
 
                 <p class="inspector-label">Ends</p>
-                <div class="inspector-ends">
-                    <label>
-                        Start
-                        <select
-                            :value="line.startHead"
-                            data-test="head-start"
-                            @change="
-                                emit('update', {
-                                    startHead: (
-                                        $event.target as HTMLSelectElement
-                                    ).value as Item['startHead'],
-                                })
-                            "
-                        >
-                            <option
-                                v-for="head in HEAD_TYPES"
-                                :key="head.value"
-                                :value="head.value"
-                            >
-                                {{ head.label }}
-                            </option>
-                        </select>
-                    </label>
-                    <label>
-                        End
-                        <select
-                            :value="line.endHead"
-                            data-test="head-end"
-                            @change="
-                                emit('update', {
-                                    endHead: (
-                                        $event.target as HTMLSelectElement
-                                    ).value as Item['endHead'],
-                                })
-                            "
-                        >
-                            <option
-                                v-for="head in HEAD_TYPES"
-                                :key="head.value"
-                                :value="head.value"
-                            >
-                                {{ head.label }}
-                            </option>
-                        </select>
-                    </label>
+                <div
+                    v-for="side in ['start', 'end'] as const"
+                    :key="side"
+                    class="inspector-heads"
+                >
+                    <span>{{ side }}</span>
+                    <button
+                        v-for="head in HEAD_TYPES"
+                        :key="head.value"
+                        type="button"
+                        :title="`${side}: ${head.label}`"
+                        :class="{
+                            'is-on':
+                                (side === 'start'
+                                    ? line.startHead
+                                    : line.endHead) === head.value,
+                        }"
+                        :data-test="`head-${side}-${head.value}`"
+                        @click="
+                            emit(
+                                'update',
+                                side === 'start'
+                                    ? { startHead: head.value }
+                                    : { endHead: head.value },
+                            )
+                        "
+                    >
+                        <ConnectorIcon :kind="{ head: head.value, side }" />
+                    </button>
                 </div>
 
                 <label class="inspector-slider">
@@ -411,7 +389,10 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     gap: 2px;
 }
 .inspector-segments button {
+    display: inline-flex;
     flex: 1;
+    align-items: center;
+    justify-content: center;
     height: 1.75rem;
     font-size: 0.6875rem;
     border: 1px solid var(--border);
@@ -427,28 +408,35 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     border-color: var(--primary);
 }
 
-.inspector-ends {
+.inspector-heads {
     display: flex;
-    gap: 0.375rem;
-}
-.inspector-ends label {
-    display: flex;
-    flex: 1;
     align-items: center;
-    gap: 0.25rem;
+    gap: 2px;
+}
+.inspector-heads span {
+    width: 2.25rem;
     font-size: 0.6875rem;
+    text-transform: capitalize;
     color: var(--muted-foreground);
 }
-.inspector-ends select {
-    width: 100%;
-    min-width: 0;
+.inspector-heads button {
+    display: inline-flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
     height: 1.75rem;
-    padding: 0 0.25rem;
-    font-size: 0.6875rem;
     color: var(--foreground);
-    background-color: var(--background);
-    border: 1px solid var(--border);
+    border: 1px solid transparent;
     border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+.inspector-heads button:hover {
+    background-color: var(--muted);
+}
+.inspector-heads button.is-on {
+    color: var(--primary);
+    border-color: var(--primary);
+    background-color: color-mix(in oklab, var(--primary) 10%, transparent);
 }
 
 .inspector-slider {
