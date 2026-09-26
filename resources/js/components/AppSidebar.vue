@@ -58,19 +58,19 @@ const mainNavItems: NavItem[] = [
     //     href: tiptap_demo(),
     //     icon: LayoutGrid,
     // },
-    {
-        title: 'Konva Demo',
-        href: konva_demo(),
-        icon: LayoutGrid,
-    },
+    // {
+    //     title: 'Konva Demo',
+    //     href: konva_demo(),
+    //     icon: LayoutGrid,
+    // },
 ];
 
 const footerNavItems: NavItem[] = [
-    // {
-    //     title: 'Repository',
-    //     href: 'https://github.com/{username}/{repository}',
-    //     icon: FolderGit2,
-    // },
+    {
+        title: 'Repository',
+        href: 'https://github.com/sahatsawatt-a/zyrenn',
+        icon: FolderGit2,
+    },
     // {
     //     title: 'Documentation',
     //     href: '',
