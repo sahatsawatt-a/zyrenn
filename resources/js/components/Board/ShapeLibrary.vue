@@ -12,7 +12,7 @@ import {
     MousePointer2,
     Pencil,
     RectangleHorizontal,
-    FileCode,
+    ImagePlus,
     Search,
     Shapes,
     Sigma,
@@ -28,7 +28,7 @@ import type { Tool } from './board';
 // The shape library Lucidchart puts down the left: grouped, searchable, and
 // the thing you reach for before every other control.
 defineProps<{ tool: Tool }>();
-const emit = defineEmits<{ 'update:tool': [Tool]; 'import-svg': [] }>();
+const emit = defineEmits<{ 'update:tool': [Tool]; 'add-picture': [] }>();
 
 type Entry = { tool: Tool; icon: unknown; label: string; key: string };
 
@@ -136,12 +136,12 @@ const shown = computed(() => {
                 <button
                     type="button"
                     class="library-item is-wide"
-                    title="Paste SVG markup or pick a file"
-                    data-test="open-svg-import"
-                    @click="emit('import-svg')"
+                    title="From this computer, your Drive, a link, or SVG markup"
+                    data-test="open-image-picker"
+                    @click="emit('add-picture')"
                 >
-                    <FileCode class="size-5" />
-                    <span>Add SVG</span>
+                    <ImagePlus class="size-5" />
+                    <span>Add picture</span>
                 </button>
             </section>
 

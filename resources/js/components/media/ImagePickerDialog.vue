@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { HardDrive, ImageUp, Link2, LoaderCircle, Search } from '@lucide/vue';
+import {
+    Code,
+    HardDrive,
+    ImageUp,
+    Link2,
+    LoaderCircle,
+    Search,
+} from '@lucide/vue';
 import { useDebounceFn } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
@@ -25,19 +32,60 @@ export type PickedImage = { src: string; alt: string };
 
 const open = defineModel<boolean>('open', { required: true });
 
+const props = withDefaults(
+    defineProps<{
+        // Where the picked image is going, said plainly in the dialog
+        destination?: string;
+        // A board can take SVG markup as a drawing; a note cannot
+        allowMarkup?: boolean;
+    }>(),
+    { destination: 'the note', allowMarkup: false },
+);
+
 const emit = defineEmits<{
     (e: 'insert', images: PickedImage[]): void;
+    (e: 'markup', svg: string): void;
 }>();
 
-type Tab = 'upload' | 'drive' | 'link';
+type Tab = 'upload' | 'drive' | 'link' | 'markup';
 
-const tabs: { id: Tab; label: string; icon: typeof ImageUp }[] = [
-    { id: 'upload', label: 'Upload', icon: ImageUp },
-    { id: 'drive', label: 'From Drive', icon: HardDrive },
-    { id: 'link', label: 'Link', icon: Link2 },
-];
+const tabs = computed(() =>
+    [
+        { id: 'upload' as const, label: 'Upload', icon: ImageUp },
+        { id: 'drive' as const, label: 'From Drive', icon: HardDrive },
+        { id: 'link' as const, label: 'Link', icon: Link2 },
+        ...(props.allowMarkup
+            ? [{ id: 'markup' as const, label: 'SVG', icon: Code }]
+            : []),
+    ].filter(Boolean),
+);
 
 const tab = ref<Tab>('upload');
+
+// ------------------------------------------------------------- SVG markup
+const markup = ref('');
+
+const MARKUP_EXAMPLE =
+    '<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="#6366f1" /></svg>';
+
+const markupIsValid = computed(() => /<svg[\s>]/i.test(markup.value));
+
+// The hint lives here rather than in the template: a literal tag inside a
+// template expression reads as markup to the parser
+const markupHint = computed(() =>
+    markup.value.trim() && !markupIsValid.value
+        ? 'That does not look like SVG: it needs an <svg> tag.'
+        : 'Paste SVG markup and it is drawn as a picture you can resize.',
+);
+
+const insertMarkup = () => {
+    if (!markupIsValid.value) {
+        return;
+    }
+
+    emit('markup', markup.value);
+    open.value = false;
+};
 
 const finish = (images: PickedImage[]) => {
     if (images.length) {
@@ -173,6 +221,7 @@ watch(open, (isOpen) => {
     selected.value = [];
     query.value = '';
     linkUrl.value = '';
+    markup.value = '';
     driveFiles.value = [];
 });
 
@@ -190,7 +239,7 @@ watch(tab, (current) => {
                 <DialogTitle>Add image</DialogTitle>
                 <DialogDescription>
                     Uploads are saved to your Drive. You can also paste or drop
-                    images straight into the note.
+                    images straight into {{ destination }}.
                 </DialogDescription>
             </DialogHeader>
 
@@ -352,7 +401,7 @@ watch(tab, (current) => {
 
             <!-- Image from a link -->
             <form
-                v-else
+                v-else-if="tab === 'link'"
                 class="flex flex-col gap-3"
                 @submit.prevent="insertLink"
             >
@@ -392,6 +441,37 @@ watch(tab, (current) => {
 
                 <div class="flex justify-end">
                     <Button type="submit" :disabled="!linkIsValid || linkBroken"
+                        >Insert</Button
+                    >
+                </div>
+            </form>
+
+            <!-- SVG markup, for somewhere that can hold a drawing -->
+            <form
+                v-else
+                class="flex flex-col gap-3"
+                @submit.prevent="insertMarkup"
+            >
+                <textarea
+                    v-model="markup"
+                    class="border-border bg-background h-48 w-full resize-none rounded-lg border p-3 font-mono text-xs"
+                    spellcheck="false"
+                    :placeholder="MARKUP_EXAMPLE"
+                    data-test="svg-markup"
+                />
+
+                <p
+                    class="text-muted-foreground text-xs"
+                    data-test="svg-problem"
+                >
+                    {{ markupHint }}
+                </p>
+
+                <div class="flex justify-end">
+                    <Button
+                        type="submit"
+                        :disabled="!markupIsValid"
+                        data-test="svg-add"
                         >Insert</Button
                     >
                 </div>

@@ -36,7 +36,9 @@ import {
     Transformer,
 } from 'vue-konva';
 import InspectorPanel from './InspectorPanel.vue';
-import SvgImport from './SvgImport.vue';
+import { isImageFile, uploadToDrive } from '@/lib/drive';
+import ImagePickerDialog from '@/components/media/ImagePickerDialog.vue';
+import type { PickedImage } from '@/components/media/ImagePickerDialog.vue';
 import ShapeLibrary from './ShapeLibrary.vue';
 import type { Item, Side, Tool } from './board';
 import type { Guide } from './board';
@@ -962,7 +964,34 @@ const placeImage = (source: { src: string; width: number; height: number }) => {
 
 const addSvg = (markup: string) => placeImage(svgSource(markup));
 
-/** A dropped, pasted or chosen file: SVG as markup, everything else as pixels. */
+/** How big a picture should land, from its own proportions. */
+const sizeOf = (src: string) =>
+    new Promise<{ width: number; height: number }>((resolve) => {
+        const probe = new window.Image();
+
+        probe.onload = () =>
+            resolve(fitOnBoard(probe.naturalWidth, probe.naturalHeight));
+        probe.onerror = () => resolve({ width: 240, height: 240 });
+        probe.src = src;
+    });
+
+/**
+ * Pictures chosen in the dialog -- uploaded from this machine, taken from the
+ * Drive, or linked. They are all just a URL by the time they get here.
+ */
+const onImagesPicked = async (images: PickedImage[]) => {
+    for (const image of images) {
+        placeImage({ src: image.src, ...(await sizeOf(image.src)) });
+    }
+};
+
+/**
+ * A file dropped or pasted onto the board. SVG is drawn from its markup;
+ * anything else goes to the Drive and the board keeps the link, the way a note
+ * does -- a screenshot carried inside the board would be sent again on every
+ * save. If the upload cannot be made, the pixels are kept instead so the
+ * picture is not simply lost.
+ */
 const addImageFile = async (file: File) => {
     if (file.type === 'image/svg+xml' || file.name.endsWith('.svg')) {
         addSvg(await file.text());
@@ -970,29 +999,24 @@ const addImageFile = async (file: File) => {
         return;
     }
 
-    if (!file.type.startsWith('image/')) {
+    if (!isImageFile(file)) {
         return;
     }
 
-    const src = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
-    });
+    let src: string;
 
-    // Its own pixel size decides how big it lands, within reason
-    const sized = await new Promise<{ width: number; height: number }>(
-        (resolve) => {
-            const probe = new window.Image();
-            probe.onload = () =>
-                resolve(fitOnBoard(probe.naturalWidth, probe.naturalHeight));
-            probe.onerror = () => resolve({ width: 240, height: 240 });
-            probe.src = src;
-        },
-    );
+    try {
+        src = (await uploadToDrive(file)).url;
+    } catch {
+        src = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(file);
+        });
+    }
 
-    placeImage({ src, ...sized });
+    placeImage({ src, ...(await sizeOf(src)) });
 };
 
 // Paste a screenshot straight onto the board, as any board app does. Markup on
@@ -1436,7 +1460,7 @@ const labelInset = (item: Item): number => {
                 v-show="!presenting"
                 :tool="tool"
                 @update:tool="tool = $event"
-                @import-svg="importing = true"
+                @add-picture="importing = true"
             />
 
             <div
@@ -2002,11 +2026,12 @@ const labelInset = (item: Item): number => {
                 </div>
             </div>
 
-            <SvgImport
-                v-if="importing"
-                @add="addSvg"
-                @file="addImageFile"
-                @close="importing = false"
+            <ImagePickerDialog
+                v-model:open="importing"
+                destination="the board"
+                allow-markup
+                @insert="onImagesPicked"
+                @markup="addSvg"
             />
 
             <InspectorPanel
