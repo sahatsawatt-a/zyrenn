@@ -30,9 +30,11 @@ import {
 import InspectorPanel from './konva/InspectorPanel.vue';
 import ShapeLibrary from './konva/ShapeLibrary.vue';
 import type { Item, Side, Tool } from './konva/board';
+import type { Guide } from './konva/board';
 import {
     PATHS,
     POLYGONS,
+    alignmentFor,
     anchorAt,
     anchorsOf,
     boundsOf,
@@ -167,6 +169,7 @@ type Draft = { item: Item; originX: number; originY: number } | null;
 
 const draft = ref<Draft>(null);
 const hoveredTarget = ref<string | null>(null);
+const guides = ref<Guide[]>([]);
 const marquee = ref<{
     x: number;
     y: number;
@@ -176,6 +179,10 @@ const marquee = ref<{
 
 let marqueeStart: { x: number; y: number } | null = null;
 let dragOrigin: Map<string, { x: number; y: number }> | null = null;
+let floatingOrigin: Map<
+    string,
+    { from: { x: number; y: number }; to: { x: number; y: number } }
+> | null = null;
 
 const pointerOnBoard = () => {
     const point = stage()?.getPointerPosition();
@@ -413,6 +420,23 @@ const onItemDragStart = (event: Konva.KonvaEventObject<DragEvent>) => {
     dragOrigin = new Map(
         board.selected.value.map((item) => [item.id, { x: item.x, y: item.y }]),
     );
+
+    // A connector pinned to a shape follows it on its own. One floating free is
+    // carried along with whatever else is being dragged.
+    floatingOrigin = new Map(
+        board.selected.value
+            .filter(
+                (item) =>
+                    isConnector(item) && !item.from?.item && !item.to?.item,
+            )
+            .map((item) => [
+                item.id,
+                {
+                    from: { x: item.from?.x ?? 0, y: item.from?.y ?? 0 },
+                    to: { x: item.to?.x ?? 0, y: item.to?.y ?? 0 },
+                },
+            ]),
+    );
 };
 
 const onItemDragMove = (event: Konva.KonvaEventObject<DragEvent>) => {
@@ -427,6 +451,25 @@ const onItemDragMove = (event: Konva.KonvaEventObject<DragEvent>) => {
     const dx = event.target.x() - origin.x;
     const dy = event.target.y() - origin.y;
 
+    floatingOrigin?.forEach((start, connectorId) => {
+        const connector = board.byId.value.get(connectorId);
+
+        if (!connector?.from || !connector.to) {
+            return;
+        }
+
+        connector.from = {
+            ...connector.from,
+            x: start.from.x + dx,
+            y: start.from.y + dy,
+        };
+        connector.to = {
+            ...connector.to,
+            x: start.to.x + dx,
+            y: start.to.y + dy,
+        };
+    });
+
     origins.forEach((start, otherId) => {
         const item = board.byId.value.get(otherId);
 
@@ -439,8 +482,51 @@ const onItemDragMove = (event: Konva.KonvaEventObject<DragEvent>) => {
     });
 };
 
+/**
+ * Konva asks this for the position it is about to put a dragged node at, which
+ * is the one place a nudge does not fight the drag: moving the node inside
+ * dragmove instead makes Konva re-base the drag and the nudges pile up.
+ */
+const snapWhileDragging =
+    (item: Item) => (position: { x: number; y: number }) => {
+        // Only a single item lines up: a group would jump to suit one member
+        if (
+            isConnector(item) ||
+            item.kind === 'draw' ||
+            dragOrigin?.size !== 1
+        ) {
+            return position;
+        }
+
+        const scale = camera.scale.value;
+        const box = {
+            ...boundsOf(item),
+            x: (position.x - camera.position.value.x) / scale,
+            y: (position.y - camera.position.value.y) / scale,
+        };
+
+        const others = board.items.value
+            .filter(
+                (other) =>
+                    other.id !== item.id &&
+                    !isConnector(other) &&
+                    other.kind !== 'draw',
+            )
+            .map(boundsOf);
+
+        const alignment = alignmentFor(box, others, 8 / scale);
+        guides.value = alignment.guides;
+
+        return {
+            x: position.x + alignment.dx * scale,
+            y: position.y + alignment.dy * scale,
+        };
+    };
+
 const onItemDragEnd = () => {
     dragOrigin = null;
+    floatingOrigin = null;
+    guides.value = [];
 };
 
 // Konva resizes by scaling; fold it back into width/height so text and corner
@@ -878,10 +964,23 @@ const endpointHandles = computed(() => {
         return [];
     }
 
-    return (['from', 'to'] as const).map((end) => ({
-        end,
-        ...(endpointAt(item[end], board.byId.value) ?? { x: 0, y: 0 }),
-    }));
+    // Taken from the drawn path, not from the stored sides: the line picks its
+    // sides from where the shapes are now, and a handle that used the stored
+    // side sat inside the shape instead of on the end of the line.
+    const points = connectorPath(item);
+
+    if (points.length < 4) {
+        return [];
+    }
+
+    return [
+        { end: 'from' as const, x: points[0], y: points[1] },
+        {
+            end: 'to' as const,
+            x: points[points.length - 2],
+            y: points[points.length - 1],
+        },
+    ];
 });
 
 const onEndpointDragMove = (event: Konva.KonvaEventObject<DragEvent>) => {
@@ -897,7 +996,11 @@ const onEndpointDragMove = (event: Konva.KonvaEventObject<DragEvent>) => {
     const point = { x: event.target.x(), y: event.target.y() };
     const over = shapeAt(point);
     const otherEnd = end === 'from' ? 'to' : 'from';
-    const otherPoint = endpointAt(item[otherEnd], board.byId.value) ?? point;
+    const path = connectorPath(item);
+    const otherPoint =
+        otherEnd === 'from'
+            ? { x: path[0], y: path[1] }
+            : { x: path[path.length - 2], y: path[path.length - 1] };
 
     item[end] = over
         ? {
@@ -925,6 +1028,22 @@ const onEndpointDragMove = (event: Konva.KonvaEventObject<DragEvent>) => {
     }
 
     hoveredTarget.value = over?.id ?? null;
+
+    // Konva keeps a dragged node under the pointer, which would leave the
+    // handle sitting inside the shape while the line snapped to its edge. Put
+    // it back on the end of the line every frame, so it clings to the anchor.
+    const settled = connectorPath(item);
+
+    if (settled.length >= 4) {
+        event.target.position(
+            end === 'from'
+                ? { x: settled[0], y: settled[1] }
+                : {
+                      x: settled[settled.length - 2],
+                      y: settled[settled.length - 1],
+                  },
+        );
+    }
 };
 
 // Close enough for a backing chip: Konva would have to measure the text to do
@@ -1024,6 +1143,7 @@ const labelInset = (item: Item): number => {
             <div
                 ref="canvas"
                 :data-zoom="Math.round(camera.scale.value * 100)"
+                :data-camera="`${camera.position.value.x},${camera.position.value.y},${camera.scale.value}`"
                 class="border-sidebar-border/70 dark:border-sidebar-border relative min-h-[480px] flex-1 overflow-hidden rounded-xl border bg-white"
                 :class="{ 'cursor-grab': panning }"
             >
@@ -1057,7 +1177,12 @@ const labelInset = (item: Item): number => {
                                 draggable:
                                     !presenting &&
                                     tool === 'select' &&
-                                    !spaceHeld,
+                                    !spaceHeld &&
+                                    // A connector is wherever its ends are:
+                                    // dragging its body would slide the line
+                                    // off the shapes it is pinned to
+                                    !isConnector(item),
+                                dragBoundFunc: snapWhileDragging(item),
                             }"
                         >
                             <!-- A frame is the slide: a plain board-coloured card -->
@@ -1406,6 +1531,35 @@ const labelInset = (item: Item): number => {
                                 stroke: '#6366f1',
                                 strokeWidth: 2 / camera.scale.value,
                                 draggable: true,
+                            }"
+                        />
+
+                        <!-- The ruler the board holds up while you drag -->
+                        <Line
+                            v-for="(guide, index) in guides"
+                            :key="`guide-${index}`"
+                            :config="{
+                                points:
+                                    guide.axis === 'x'
+                                        ? [
+                                              guide.at,
+                                              guide.from,
+                                              guide.at,
+                                              guide.to,
+                                          ]
+                                        : [
+                                              guide.from,
+                                              guide.at,
+                                              guide.to,
+                                              guide.at,
+                                          ],
+                                stroke: '#ec4899',
+                                strokeWidth: 1 / camera.scale.value,
+                                dash: [
+                                    4 / camera.scale.value,
+                                    4 / camera.scale.value,
+                                ],
+                                listening: false,
                             }"
                         />
 
