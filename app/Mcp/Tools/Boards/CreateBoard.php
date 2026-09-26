@@ -46,8 +46,7 @@ class CreateBoard extends BoardTool
             ...$this->itemRules(),
         ]);
 
-        /** @var list<array<string, mixed>> $specs */
-        $specs = array_values($validated['items'] ?? []);
+        $specs = $this->specs($validated);
         $problem = $this->itemProblem($specs);
 
         if ($problem !== null) {

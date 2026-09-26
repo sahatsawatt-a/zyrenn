@@ -51,8 +51,7 @@ class UpdateBoard extends BoardTool
         }
 
         if (array_key_exists('items', $validated)) {
-            /** @var list<array<string, mixed>> $specs */
-            $specs = array_values($validated['items'] ?? []);
+            $specs = $this->specs($validated);
             $problem = $this->itemProblem($specs);
 
             if ($problem !== null) {

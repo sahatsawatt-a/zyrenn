@@ -101,6 +101,26 @@ abstract class BoardTool extends ScopedTool
     }
 
     /**
+     * The client's items, back in the order they sent them.
+     *
+     * Validated data is rebuilt rule by rule, so "items.*.id" reaches the items
+     * that carry an id before anything else reaches the rest, and they come out
+     * shuffled. The original keys survive that, and a board's order is the
+     * order it is painted in, so they are put back in it here.
+     *
+     * @param  array<string, mixed>  $validated
+     * @return list<array<string, mixed>>
+     */
+    protected function specs(array $validated): array
+    {
+        $items = is_array($validated['items'] ?? null) ? $validated['items'] : [];
+        ksort($items);
+
+        /** @var list<array<string, mixed>> */
+        return array_values($items);
+    }
+
+    /**
      * The trouble with a client's list that the field rules cannot see: two
      * items sharing an id, or a connector pinned to something that isn't there.
      *

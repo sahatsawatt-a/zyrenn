@@ -188,6 +188,28 @@ class McpBoardsTest extends TestCase
         $this->assertGreaterThan($items['pay']['y'] + $items['pay']['height'], $items['aside']['y']);
     }
 
+    public function test_items_stay_in_the_order_they_were_sent()
+    {
+        $user = User::factory()->create();
+
+        // Back to front matters on a board, and the items that carry an id are
+        // the ones validation is apt to shuffle to the front
+        UserServer::actingAs($user)->tool(CreateBoard::class, [
+            'title' => 'Order',
+            'items' => [
+                ['kind' => 'frame', 'text' => 'Slide one'],
+                ['id' => 'card', 'kind' => 'rect', 'text' => 'On top of it'],
+                ['kind' => 'text', 'text' => 'And above that'],
+                ['id' => 'last', 'kind' => 'sticky', 'text' => 'Last of all'],
+            ],
+        ])->assertOk();
+
+        $this->assertSame(
+            ['Slide one', 'On top of it', 'And above that', 'Last of all'],
+            array_column($user->boards()->sole()->content['items'], 'text'),
+        );
+    }
+
     public function test_labels_on_a_board_are_searchable_and_read_back_as_items()
     {
         $user = User::factory()->create();
