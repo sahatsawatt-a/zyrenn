@@ -24,7 +24,7 @@ import type {
     Side,
     VerticalAlign,
 } from './board';
-import { HEAD_TYPES, hasText } from './board';
+import { HEAD_TYPES, SIDES, hasText } from './board';
 import ColourPicker from './ColourPicker.vue';
 import LayersPanel from './LayersPanel.vue';
 import ConnectorIcon from './ConnectorIcon.vue';
@@ -109,15 +109,6 @@ const verticalAligns: {
         icon: AlignEndHorizontal,
         title: 'Put the label at the bottom',
     },
-];
-
-// An end with no side of its own follows the shapes; one with a side stays put
-const sides: { value: Side | null; label: string }[] = [
-    { value: null, label: 'Auto' },
-    { value: 'top', label: 'Top' },
-    { value: 'right', label: 'Right' },
-    { value: 'bottom', label: 'Bottom' },
-    { value: 'left', label: 'Left' },
 ];
 
 const pinnedSide = (end: 'from' | 'to'): Side | null =>
@@ -348,80 +339,92 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                     <span>{{ line.lineWidth }}</span>
                 </label>
 
-                <p class="inspector-label">Ends</p>
-                <div
-                    v-for="side in ['start', 'end'] as const"
-                    :key="side"
-                    class="inspector-heads"
-                >
-                    <span>{{ side }}</span>
-                    <button
-                        v-for="head in HEAD_TYPES"
-                        :key="head.value"
-                        type="button"
-                        :title="`${side}: ${head.label}`"
-                        :class="{
-                            'is-on':
-                                (side === 'start'
-                                    ? line.startHead
-                                    : line.endHead) === head.value,
-                        }"
-                        :data-test="`head-${side}-${head.value}`"
-                        @click="
-                            emit(
-                                'update',
-                                side === 'start'
-                                    ? { startHead: head.value }
-                                    : { endHead: head.value },
-                            )
-                        "
+                <details class="inspector-fold" data-test="ends-config">
+                    <summary>
+                        Ends
+                        <span>{{ line.startHead }} → {{ line.endHead }}</span>
+                    </summary>
+                    <div
+                        v-for="side in ['start', 'end'] as const"
+                        :key="side"
+                        class="inspector-heads"
                     >
-                        <ConnectorIcon :kind="{ head: head.value, side }" />
-                    </button>
-                </div>
+                        <span>{{ side }}</span>
+                        <button
+                            v-for="head in HEAD_TYPES"
+                            :key="head.value"
+                            type="button"
+                            :title="`${side}: ${head.label}`"
+                            :class="{
+                                'is-on':
+                                    (side === 'start'
+                                        ? line.startHead
+                                        : line.endHead) === head.value,
+                            }"
+                            :data-test="`head-${side}-${head.value}`"
+                            @click="
+                                emit(
+                                    'update',
+                                    side === 'start'
+                                        ? { startHead: head.value }
+                                        : { endHead: head.value },
+                                )
+                            "
+                        >
+                            <ConnectorIcon :kind="{ head: head.value, side }" />
+                        </button>
+                    </div>
 
-                <p class="inspector-label">Pinned to</p>
-                <div
-                    v-for="end in ['from', 'to'] as const"
-                    :key="end"
-                    class="inspector-sides"
-                >
-                    <span>{{ end === 'from' ? 'start' : 'end' }}</span>
-                    <button
-                        v-for="option in sides"
-                        :key="option.label"
-                        type="button"
-                        :title="
-                            option.value
-                                ? `Keep this end on the ${option.value}`
-                                : 'Let this end follow the shapes'
-                        "
-                        :class="{ 'is-on': pinnedSide(end) === option.value }"
-                        :data-test="`side-${end}-${option.value ?? 'auto'}`"
-                        @click="pinSide(end, option.value)"
-                    >
-                        {{ option.label }}
-                    </button>
-                </div>
+                    <div class="inspector-fields">
+                        <label
+                            v-for="end in ['from', 'to'] as const"
+                            :key="end"
+                            :title="'Auto keeps this end facing whatever is at the other; a face keeps it there'"
+                        >
+                            {{ end === 'from' ? 'Start on' : 'End on' }}
+                            <select
+                                :value="pinnedSide(end) ?? ''"
+                                :data-test="`side-${end}`"
+                                @change="
+                                    pinSide(
+                                        end,
+                                        (($event.target as HTMLSelectElement)
+                                            .value || null) as Side | null,
+                                    )
+                                "
+                            >
+                                <option value="">Auto</option>
+                                <option
+                                    v-for="side in SIDES"
+                                    :key="side"
+                                    :value="side"
+                                >
+                                    {{ side }}
+                                </option>
+                            </select>
+                        </label>
+                    </div>
 
-                <label class="inspector-slider">
-                    Head size
-                    <input
-                        type="range"
-                        min="6"
-                        max="24"
-                        :value="line.headSize"
-                        data-test="head-size"
-                        @input="
-                            emit('update', {
-                                headSize: Number(
-                                    ($event.target as HTMLInputElement).value,
-                                ),
-                            })
-                        "
-                    />
-                    <span>{{ line.headSize }}</span>
-                </label>
+                    <label class="inspector-slider">
+                        Head size
+                        <input
+                            type="range"
+                            min="6"
+                            max="24"
+                            :value="line.headSize"
+                            data-test="head-size"
+                            @input="
+                                emit('update', {
+                                    headSize: Number(
+                                        ($event.target as HTMLInputElement)
+                                            .value,
+                                    ),
+                                })
+                            "
+                        />
+                        <span>{{ line.headSize }}</span>
+                    </label>
+                </details>
             </div>
 
             <ColourPicker
@@ -619,6 +622,54 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     color: var(--primary);
     border-color: var(--primary);
     background-color: color-mix(in oklab, var(--primary) 10%, transparent);
+}
+
+/* A fold keeps the fiddly settings out of the way until they are wanted */
+.inspector-fold > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.25rem 0;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    cursor: pointer;
+}
+.inspector-fold > summary span {
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+}
+.inspector-fold[open] > summary {
+    margin-bottom: 0.25rem;
+}
+
+/* Two short pickers, where ten buttons used to be */
+.inspector-fields {
+    display: flex;
+    gap: 0.375rem;
+}
+.inspector-fields label {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 0.125rem;
+    font-size: 0.6875rem;
+    color: var(--muted-foreground);
+}
+.inspector-fields select {
+    height: 1.75rem;
+    padding: 0 0.25rem;
+    font-size: 0.75rem;
+    color: var(--foreground);
+    background-color: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    text-transform: capitalize;
+    cursor: pointer;
 }
 
 /* The sides read as words rather than pictures: "auto" has no icon to draw */
