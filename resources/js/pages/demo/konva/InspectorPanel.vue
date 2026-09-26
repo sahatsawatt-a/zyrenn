@@ -1,9 +1,18 @@
 <script setup lang="ts">
-import { BringToFront, Copy, Play, SendToBack, Trash2 } from '@lucide/vue';
+import {
+    BringToFront,
+    ChevronDown,
+    ChevronUp,
+    Copy,
+    Play,
+    SendToBack,
+    Trash2,
+} from '@lucide/vue';
 import { computed } from 'vue';
 import type { Item, LineStyle, Routing } from './board';
 import { HEAD_TYPES } from './board';
 import ColourPicker from './ColourPicker.vue';
+import LayersPanel from './LayersPanel.vue';
 import ConnectorIcon from './ConnectorIcon.vue';
 
 // Lucidchart's right-hand panel: what is selected, and every property of it in
@@ -12,6 +21,7 @@ const props = defineProps<{
     selection: Item[];
     fill: string;
     stroke: string;
+    items: Item[];
     itemCount: number;
     frameCount: number;
     // What a selected connector joins, e.g. "rect → database"
@@ -24,7 +34,10 @@ const emit = defineEmits<{
     resize: [{ width?: number; height?: number; x?: number; y?: number }];
     duplicate: [];
     remove: [];
-    reorder: ['front' | 'back'];
+    reorder: ['front' | 'back' | 'forward' | 'backward'];
+    select: [{ id: string; add: boolean }];
+    move: [{ id: string; index: number }];
+    'toggle-layer': [{ id: string; field: 'hidden' | 'locked' }];
     update: [Partial<Item>];
     present: [];
 }>();
@@ -83,14 +96,32 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
             <div class="inspector-actions">
                 <button
                     type="button"
-                    title="Bring to front"
+                    title="Bring to front (Ctrl+Shift+])"
+                    data-test="to-front"
                     @click="emit('reorder', 'front')"
                 >
                     <BringToFront class="size-4" />
                 </button>
                 <button
                     type="button"
-                    title="Send to back"
+                    title="Bring forward (Ctrl+])"
+                    data-test="forward"
+                    @click="emit('reorder', 'forward')"
+                >
+                    <ChevronUp class="size-4" />
+                </button>
+                <button
+                    type="button"
+                    title="Send backward (Ctrl+[)"
+                    data-test="backward"
+                    @click="emit('reorder', 'backward')"
+                >
+                    <ChevronDown class="size-4" />
+                </button>
+                <button
+                    type="button"
+                    title="Send to back (Ctrl+Shift+[)"
+                    data-test="to-back"
                     @click="emit('reorder', 'back')"
                 >
                     <SendToBack class="size-4" />
@@ -287,6 +318,14 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
             Pick a shape from the left and drag it out on the canvas. Select
             something to change its colour, size and stacking.
         </p>
+
+        <LayersPanel
+            :items="items"
+            :selection="selection.map((item) => item.id)"
+            @select="emit('select', $event)"
+            @move="emit('move', $event)"
+            @toggle="emit('toggle-layer', $event)"
+        />
 
         <button
             type="button"

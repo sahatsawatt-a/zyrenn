@@ -133,8 +133,12 @@ export function useBoard() {
         selection.value = copies.map((copy) => copy.id);
     };
 
-    /** Move the selection to the front or back of the paint order. */
-    const reorder = (direction: 'front' | 'back') => {
+    /**
+     * Move the selection through the paint order. Front and back jump the whole
+     * way; forward and backward step past one neighbour at a time, which is
+     * what you want when a shape is buried under two others.
+     */
+    const reorder = (direction: 'front' | 'back' | 'forward' | 'backward') => {
         if (!selected.value.length) {
             return;
         }
@@ -146,8 +150,72 @@ export function useBoard() {
             (item) => !selection.value.includes(item.id),
         );
 
-        items.value =
-            direction === 'front' ? [...rest, ...moving] : [...moving, ...rest];
+        if (direction === 'front' || direction === 'back') {
+            items.value =
+                direction === 'front'
+                    ? [...rest, ...moving]
+                    : [...moving, ...rest];
+
+            return;
+        }
+
+        const step = direction === 'forward' ? 1 : -1;
+        const next = [...items.value];
+
+        // Walk from the end when moving up, so two selected neighbours keep
+        // their order instead of swapping past each other
+        const order = step > 0 ? [...moving].reverse() : moving;
+
+        order.forEach((item) => {
+            const at = next.indexOf(item);
+            const to = at + step;
+
+            if (at < 0 || to < 0 || to >= next.length) {
+                return;
+            }
+
+            // Do not swap with something that is moving too
+            if (selection.value.includes(next[to].id)) {
+                return;
+            }
+
+            next.splice(at, 1);
+            next.splice(to, 0, item);
+        });
+
+        items.value = next;
+    };
+
+    /** Drop an item straight into a place in the list. */
+    const moveTo = (id: string, index: number) => {
+        const from = items.value.findIndex((item) => item.id === id);
+
+        if (from < 0 || from === index) {
+            return;
+        }
+
+        commit();
+
+        const next = [...items.value];
+        const [item] = next.splice(from, 1);
+        next.splice(Math.max(0, Math.min(next.length, index)), 0, item);
+        items.value = next;
+    };
+
+    const toggle = (id: string, field: 'hidden' | 'locked') => {
+        const item = byId.value.get(id);
+
+        if (!item) {
+            return;
+        }
+
+        commit();
+        item[field] = !item[field];
+
+        // Neither can stay selected: one cannot be seen, the other touched
+        if (item[field]) {
+            selection.value = selection.value.filter((other) => other !== id);
+        }
     };
 
     const setText = (id: string, text: string) => {
@@ -285,6 +353,8 @@ export function useBoard() {
         remove,
         duplicate,
         reorder,
+        moveTo,
+        toggle,
         setText,
         paint,
         paintStroke,

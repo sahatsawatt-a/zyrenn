@@ -375,7 +375,12 @@ const onPointerUp = () => {
         if (box && box.width > 4 && box.height > 4) {
             board.select(
                 board.items.value
-                    .filter((item) => overlaps(boundsOf(item), box))
+                    .filter(
+                        (item) =>
+                            !item.hidden &&
+                            !item.locked &&
+                            overlaps(boundsOf(item), box),
+                    )
                     .map((item) => item.id),
             );
         }
@@ -966,6 +971,21 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         return;
     }
 
+    if (meta && (event.key === ']' || event.key === '[')) {
+        event.preventDefault();
+        board.reorder(
+            event.key === ']'
+                ? event.shiftKey
+                    ? 'front'
+                    : 'forward'
+                : event.shiftKey
+                  ? 'back'
+                  : 'backward',
+        );
+
+        return;
+    }
+
     if (meta && event.key.toLowerCase() === 'd') {
         event.preventDefault();
         board.duplicate();
@@ -1063,9 +1083,11 @@ onMounted(() => {
 });
 
 // What the item list looks like to the template, in paint order
-const drawn = computed(() =>
-    draft.value ? [...board.items.value, draft.value.item] : board.items.value,
-);
+const drawn = computed(() => {
+    const visible = board.items.value.filter((item) => !item.hidden);
+
+    return draft.value ? [...visible, draft.value.item] : visible;
+});
 
 const strokePoints = (item: Item) => item.points;
 
@@ -1335,6 +1357,9 @@ const labelInset = (item: Item): number => {
                                 rotation: item.rotation,
                                 width: item.width,
                                 height: item.height,
+                                // Locked: still drawn, but the pointer goes
+                                // straight through it
+                                listening: !item.locked,
                                 draggable:
                                     !presenting &&
                                     tool === 'select' &&
@@ -1832,6 +1857,7 @@ const labelInset = (item: Item): number => {
                 :selection="board.selected.value"
                 :fill="fillColour"
                 :stroke="strokeColour"
+                :items="board.items.value"
                 :item-count="board.items.value.length"
                 :frame-count="board.frames.value.length"
                 :link="connectorLink"
@@ -1841,6 +1867,13 @@ const labelInset = (item: Item): number => {
                 @duplicate="board.duplicate"
                 @remove="removeSelection"
                 @reorder="board.reorder"
+                @select="
+                    $event.add
+                        ? board.toggleInSelection($event.id)
+                        : board.select([$event.id])
+                "
+                @move="board.moveTo($event.id, $event.index)"
+                @toggle-layer="board.toggle($event.id, $event.field)"
                 @update="board.updateSelected"
                 @present="startPresenting"
             />

@@ -88,6 +88,9 @@ export type Item = {
     fontSize: number;
     // Freehand keeps its shape as points relative to x/y
     points: number[];
+    // Out of sight, and out of reach of the pointer, from the layers list
+    hidden: boolean;
+    locked: boolean;
     // A picture -- SVG, PNG, JPEG -- as a data URL drawn through an <img>
     src: string;
     // Connectors only: where each end is pinned and how the line is drawn
@@ -173,6 +176,8 @@ export const makeItem = (
         text: '',
         fontSize: 16,
         points: [],
+        hidden: false,
+        locked: false,
         src: '',
         from: null,
         to: null,
@@ -841,4 +846,30 @@ export const svgSource = (
         width: Math.round(width * factor),
         height: Math.round(height * factor),
     };
+};
+
+/** What the layers list calls an item. */
+export const nameOf = (item: Item): string => {
+    const label = item.text.trim().split('\n')[0];
+
+    if (label) {
+        return label.length > 22 ? `${label.slice(0, 22)}…` : label;
+    }
+
+    switch (item.kind) {
+        case 'arrow':
+            return 'Connector';
+        case 'draw':
+            return 'Ink';
+        case 'image':
+            return 'Picture';
+        case 'cylinder':
+            return 'Database';
+        case 'parallelogram':
+            return 'Data';
+        case 'process':
+            return 'Predefined process';
+        default:
+            return item.kind.charAt(0).toUpperCase() + item.kind.slice(1);
+    }
 };
