@@ -10,7 +10,15 @@ import {
 } from '@lucide/vue';
 import { useElementSize, useEventListener } from '@vueuse/core';
 import Konva from 'konva';
-import { computed, nextTick, onMounted, ref, useTemplateRef, watch } from 'vue';
+import {
+    computed,
+    nextTick,
+    onMounted,
+    ref,
+    shallowRef,
+    useTemplateRef,
+    watch,
+} from 'vue';
 // Imported into the page rather than installed with app.use(VueKonva): the
 // plugin would put every Konva shape in the main bundle for one demo.
 import {
@@ -690,6 +698,69 @@ const editor = useTemplateRef<HTMLTextAreaElement>('editor');
 const editingItem = computed(() =>
     editingId.value ? board.byId.value.get(editingId.value) : null,
 );
+
+// ------------------------------------------------------------------- Formulae
+// Konva draws shapes, not typeset maths, so a formula is laid over the canvas
+// as HTML that KaTeX has set, moved and scaled with the camera. KaTeX and its
+// stylesheet are only fetched once a board actually has one on it.
+const katex = shallowRef<typeof import('katex').default | null>(null);
+
+const mathItems = computed(() =>
+    board.items.value.filter((item) => item.kind === 'math' && !item.hidden),
+);
+
+watch(
+    () => mathItems.value.length > 0,
+    async (needed) => {
+        if (!needed || katex.value) {
+            return;
+        }
+
+        const [module] = await Promise.all([
+            import('katex'),
+            import('katex/dist/katex.min.css'),
+        ]);
+
+        katex.value = module.default;
+    },
+    { immediate: true },
+);
+
+/** One formula, set from its LaTeX. A mistake in it is shown, not thrown. */
+const mathHtml = (item: Item): string =>
+    katex.value
+        ? katex.value.renderToString(item.text || '\\square', {
+              throwOnError: false,
+              displayMode: true,
+          })
+        : '';
+
+/** Where that formula sits on screen, and how big, as the camera moves. */
+const mathStyle = (item: Item) => {
+    const scale = camera.scale.value;
+
+    return {
+        left: `${item.x * scale + camera.position.value.x}px`,
+        top: `${item.y * scale + camera.position.value.y}px`,
+        width: `${item.width * scale}px`,
+        height: `${item.height * scale}px`,
+        fontSize: `${item.fontSize * scale}px`,
+        justifyContent:
+            item.align === 'left'
+                ? 'flex-start'
+                : item.align === 'right'
+                  ? 'flex-end'
+                  : 'center',
+        alignItems:
+            item.verticalAlign === 'top'
+                ? 'flex-start'
+                : item.verticalAlign === 'bottom'
+                  ? 'flex-end'
+                  : 'center',
+        // The formula is a picture of itself; the shape under it takes the clicks
+        opacity: editingId.value === item.id ? 0 : 1,
+    };
+};
 
 // The overlay sits on top of the canvas, so it has to be placed in screen
 // coordinates that follow the camera.
@@ -1504,6 +1575,20 @@ const labelInset = (item: Item): number => {
                                 }"
                             />
 
+                            <Rect
+                                v-else-if="item.kind === 'math'"
+                                :config="{
+                                    width: item.width,
+                                    height: item.height,
+                                    fill: item.fill,
+                                    stroke: isSelected(item)
+                                        ? '#6366f1'
+                                        : item.stroke,
+                                    strokeWidth: isSelected(item) ? 2 : 1.5,
+                                    cornerRadius: 6,
+                                }"
+                            />
+
                             <Path
                                 v-else-if="isPath(item.kind)"
                                 :config="{
@@ -1703,7 +1788,11 @@ const labelInset = (item: Item): number => {
                             <!-- A label sits inside every shape except plain text,
                              which is the label. Double-click any of them. -->
                             <Text
-                                v-if="hasText(item) && item.kind !== 'frame'"
+                                v-if="
+                                    hasText(item) &&
+                                    item.kind !== 'frame' &&
+                                    item.kind !== 'math'
+                                "
                                 :config="{
                                     text: item.text,
                                     x: item.kind === 'text' ? 0 : 12,
@@ -1849,6 +1938,17 @@ const labelInset = (item: Item): number => {
                     </Layer>
                 </Stage>
 
+                <!-- Formulae, set by KaTeX over the canvas. They take no
+                     clicks: the shape underneath is what gets selected. -->
+                <div
+                    v-for="item in mathItems"
+                    :key="item.id"
+                    class="math-item"
+                    :style="mathStyle(item)"
+                    :data-test="`math-${item.id}`"
+                    v-html="mathHtml(item)"
+                />
+
                 <!-- Typing happens in a real textarea laid over the canvas -->
                 <textarea
                     v-if="editingItem"
@@ -1939,6 +2039,22 @@ const labelInset = (item: Item): number => {
 </template>
 
 <style scoped>
+/* A formula sits over the canvas, but never in the way of it */
+.math-item {
+    position: absolute;
+    display: flex;
+    overflow: hidden;
+    color: #0f172a;
+    pointer-events: none;
+}
+/* KaTeX sets its own size; the wrapper's font-size is what scales it */
+.math-item :deep(.katex-display) {
+    margin: 0;
+}
+.math-item :deep(.katex) {
+    font-size: 1em;
+}
+
 .board-editor {
     position: absolute;
     z-index: 20;

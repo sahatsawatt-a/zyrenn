@@ -196,12 +196,12 @@ abstract class BoardTool extends ScopedTool
     {
         return $schema->object([
             'id' => $schema->string()->max(64)->description('Your name for this item, so a connector can point at it (letters, digits, "-" and "_"). Made up for you if you leave it out.'),
-            'kind' => $schema->string()->enum(BoardItems::KINDS)->description('What to draw. Shapes: rect, pill, ellipse, triangle, diamond, hexagon, star. Flowchart: cylinder (a database), parallelogram (data), document, process, cloud. Also sticky, text, frame (a 16:9 slide for present mode), image, arrow (a connector) and draw (freehand ink).')->required(),
+            'kind' => $schema->string()->enum(BoardItems::KINDS)->description('What to draw. Shapes: rect, pill, ellipse, triangle, diamond, hexagon, star. Flowchart: cylinder (a database), parallelogram (data), document, process, cloud. Also sticky, text, frame (a 16:9 slide for present mode), image, math (a formula, with LaTeX in "text"), arrow (a connector) and draw (freehand ink).')->required(),
             'x' => $schema->number()->description('Left edge on the board. Leave x and y out and items are laid out in rows for you.'),
             'y' => $schema->number()->description('Top edge on the board.'),
             'width' => $schema->number()->description('Width in board units; each kind has a sensible default.'),
             'height' => $schema->number()->description('Height in board units.'),
-            'text' => $schema->string()->max(5000)->description('The label written on it. Connectors and ink take no label.'),
+            'text' => $schema->string()->max(5000)->description('The label written on it. On a "math" item this is LaTeX, set with KaTeX, e.g. "e^{i\\pi} + 1 = 0". Ink takes no label.'),
             'fill' => $schema->string()->max(32)->description('Fill colour as hex, e.g. "#fde68a", or "transparent".'),
             'stroke' => $schema->string()->max(32)->description('Outline (or, for a connector, line) colour as hex.'),
             'fontSize' => $schema->number()->description('Label size in board units (16 on shapes, 28 on text).'),

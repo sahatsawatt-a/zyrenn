@@ -15,6 +15,7 @@ import {
     FileCode,
     Search,
     Shapes,
+    Sigma,
     Square,
     Star,
     StickyNote,
@@ -46,6 +47,7 @@ const groups: { name: string; entries: Entry[] }[] = [
         entries: [
             { tool: 'sticky', icon: StickyNote, label: 'Sticky', key: 'S' },
             { tool: 'text', icon: Type, label: 'Text', key: 'T' },
+            { tool: 'math', icon: Sigma, label: 'Formula', key: 'E' },
         ],
     },
     {

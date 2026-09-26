@@ -19,6 +19,8 @@ export type ItemKind =
     | 'process'
     | 'cloud'
     | 'image'
+    // A formula, written as LaTeX and set with KaTeX
+    | 'math'
     | 'arrow'
     | 'draw';
 
@@ -262,6 +264,16 @@ export const makeItem = (
                 fill: 'transparent',
                 stroke: 'transparent',
             };
+        case 'math':
+            return {
+                ...base,
+                width: 260,
+                height: 90,
+                fill: 'transparent',
+                stroke: 'transparent',
+                fontSize: 24,
+                text: 'a^2 + b^2 = c^2',
+            };
         case 'cylinder':
             return {
                 ...base,
@@ -400,7 +412,7 @@ export const polygonPoints = (item: Item): number[] => {
     }
 };
 
-const SIDES: Side[] = ['top', 'right', 'bottom', 'left'];
+export const SIDES: Side[] = ['top', 'right', 'bottom', 'left'];
 
 /** Where a side's anchor sits on a shape, in board coordinates. */
 export const anchorAt = (item: Item, side: Side) => {
@@ -984,6 +996,8 @@ export const nameOf = (item: Item): string => {
             return 'Ink';
         case 'image':
             return 'Picture';
+        case 'math':
+            return 'Formula';
         case 'cylinder':
             return 'Database';
         case 'parallelogram':

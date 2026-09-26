@@ -21,14 +21,14 @@ class BoardItems
     public const KINDS = [
         'frame', 'sticky', 'text', 'rect', 'pill', 'ellipse', 'triangle',
         'diamond', 'hexagon', 'star', 'cylinder', 'parallelogram', 'document',
-        'process', 'cloud', 'image', self::CONNECTOR, 'draw',
+        'process', 'cloud', 'image', 'math', self::CONNECTOR, 'draw',
     ];
 
     /** Kinds a connector may pin itself to. */
     public const CONNECTABLE = [
         'sticky', 'text', 'rect', 'pill', 'ellipse', 'triangle', 'diamond',
         'hexagon', 'star', 'cylinder', 'parallelogram', 'document', 'process',
-        'cloud', 'image',
+        'cloud', 'image', 'math',
     ];
 
     public const SIDES = ['top', 'right', 'bottom', 'left'];
@@ -338,6 +338,9 @@ class BoardItems
             'ellipse' => [...$base, 'width' => 200.0, 'height' => 200.0],
             'star' => [...$base, 'width' => 180.0, 'height' => 180.0, 'fill' => '#fde68a'],
             'image' => [...$base, 'width' => 200.0, 'height' => 200.0, 'fill' => 'transparent', 'stroke' => 'transparent'],
+            // A formula is its own picture: no box, no outline, just the maths
+            'math' => [...$base, 'width' => 260.0, 'height' => 90.0, 'fill' => 'transparent',
+                'stroke' => 'transparent', 'fontSize' => 24.0],
             'cylinder' => [...$base, 'width' => 180.0, 'height' => 200.0, 'fill' => '#e0e7ff', 'stroke' => '#6366f1'],
             self::CONNECTOR, 'draw' => [...$base, 'width' => 0.0, 'height' => 0.0, 'fill' => 'transparent', 'stroke' => '#0f172a'],
             default => $base,

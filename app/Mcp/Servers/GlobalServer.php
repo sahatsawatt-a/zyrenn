@@ -38,8 +38,8 @@ folders addressed by path, e.g. "KT Plan/Lakeshore".
 Boards: endless whiteboard canvases of shapes, sticky notes, connectors, pictures and 16:9 frames
 (list-boards, get-board, create-board, update-board, delete-board). A board is a list of items, each
 with a "kind" -- rect, pill, ellipse, triangle, diamond, hexagon, star, sticky, text, frame, image,
-the flowchart set (cylinder for a database, parallelogram, document, process, cloud), "arrow" for a
-connector and "draw" for freehand ink. Leave an item's x and y out and it is laid out for you. A
+"math" for a formula written as LaTeX, the flowchart set (cylinder for a database, parallelogram,
+document, process, cloud), "arrow" for a connector and "draw" for freehand ink. Leave an item's x and y out and it is laid out for you. A
 connector's "from" and "to" name other items by id and stay pinned to their edges as those shapes are
 moved or resized, so a diagram survives being rearranged by hand afterwards. Boards have their own
 folder tree, listed by list-board-folders.
