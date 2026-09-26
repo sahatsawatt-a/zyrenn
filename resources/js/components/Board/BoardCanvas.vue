@@ -250,19 +250,66 @@ const shapeAt = (point: { x: number; y: number }): Item | null => {
     return null;
 };
 
+/** Whether this is the dot the pointer is about to drop an end on. */
+const isAimedAt = (id: string, side: Side) =>
+    hoveredAnchor.value?.id === id && hoveredAnchor.value.side === side;
+
+/** Lights the shape being aimed at, and the dot under the pointer if there is one. */
+const showTarget = (point: { x: number; y: number }, over: Item | null) => {
+    const anchor = anchorNear(point);
+
+    hoveredTarget.value = anchor?.id ?? over?.id ?? null;
+    hoveredAnchor.value = anchor ? { id: anchor.id, side: anchor.side } : null;
+};
+
+/** How near an anchor dot the pointer has to come to catch it, in pixels. */
+const ANCHOR_GRAB = 14;
+
+/** The anchor dot under the pointer, if it is close enough to one. */
+const anchorNear = (point: { x: number; y: number }) => {
+    let closest = ANCHOR_GRAB / camera.scale.value;
+    let found: { id: string; side: Side; x: number; y: number } | null = null;
+
+    for (const shape of connectable.value) {
+        for (const anchor of anchorsOf(shape)) {
+            const away = Math.hypot(anchor.x - point.x, anchor.y - point.y);
+
+            if (away <= closest) {
+                closest = away;
+                found = { id: shape.id, ...anchor };
+            }
+        }
+    }
+
+    return found;
+};
+
 /**
- * The anchor a connector should use when it meets `item` at `point`. The side
- * is left open, so the line keeps facing whatever is at its other end; the
- * inspector is where an end gets pinned to one face for good.
+ * Where a connector should pin itself when it meets the board at `point`.
+ *
+ * Dropped on one of a shape's anchor dots, the end keeps that face however the
+ * shapes move afterwards -- the same bargain a diagram tool makes with its
+ * ports. Dropped anywhere else on a shape, the end stays free to turn, and
+ * leaves by whichever face is pointing at the other end at the time.
  */
-const pinTo = (item: Item | null, point: { x: number; y: number }) => ({
-    item: item?.id ?? null,
-    side: null as Side | null,
-    x: point.x,
-    y: point.y,
-});
+const pinTo = (item: Item | null, point: { x: number; y: number }) => {
+    const anchor = anchorNear(point);
+
+    if (anchor) {
+        return { item: anchor.id, side: anchor.side, x: anchor.x, y: anchor.y };
+    }
+
+    return {
+        item: item?.id ?? null,
+        side: null as Side | null,
+        x: point.x,
+        y: point.y,
+    };
+};
 
 const onPointerDown = (event: Konva.KonvaEventObject<PointerEvent>) => {
+    drewJustNow = false;
+
     if (presenting.value || panning.value) {
         return;
     }
@@ -346,11 +393,9 @@ const onPointerMove = () => {
 
     if (isConnector(current.item)) {
         const over = shapeAt(point);
-        hoveredTarget.value = over?.id ?? null;
 
-        // Both ends pick their face from where the shapes are, every frame, so
-        // the line turns as the cursor comes round a shape
         current.item.to = pinTo(over, point);
+        showTarget(point, over);
 
         return;
     }
@@ -360,6 +405,13 @@ const onPointerMove = () => {
     current.item.width = Math.abs(point.x - current.originX);
     current.item.height = Math.abs(point.y - current.originY);
 };
+
+/**
+ * Letting go after drawing also fires a click on whatever is under the pointer
+ * -- usually the frame the new shape was drawn inside, which would then take
+ * the selection off the thing just drawn. That one click is not a choice.
+ */
+let drewJustNow = false;
 
 const onPointerUp = () => {
     if (marqueeStart) {
@@ -404,6 +456,7 @@ const onPointerUp = () => {
 
     if (isConnector(item)) {
         hoveredTarget.value = null;
+        hoveredAnchor.value = null;
 
         const from = item.from;
         const to = item.to;
@@ -420,6 +473,7 @@ const onPointerUp = () => {
 
         board.add(item);
         tool.value = 'select';
+        drewJustNow = true;
 
         return;
     }
@@ -430,6 +484,7 @@ const onPointerUp = () => {
 
     board.add(item);
     tool.value = 'select';
+    drewJustNow = true;
 
     if (hasText(item) && item.kind !== 'frame') {
         nextTick(() => startEditing(item.id));
@@ -603,6 +658,12 @@ const onStageDragEnd = (event: Konva.KonvaEventObject<DragEvent>) => {
 };
 
 const onItemClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
+    if (drewJustNow) {
+        drewJustNow = false;
+
+        return;
+    }
+
     if (presenting.value || tool.value !== 'select') {
         return;
     }
@@ -1054,6 +1115,9 @@ onMounted(() => {
     overlay?.on('dragstart', (event) => {
         if (event.target.name().startsWith(ENDPOINT)) {
             board.commit();
+            // The dots come out while an end is in the air, so there is
+            // something to aim at
+            draggingEnd.value = true;
         }
     });
     overlay?.on('dragmove', (event) => {
@@ -1061,7 +1125,11 @@ onMounted(() => {
             onEndpointDragMove(event as Konva.KonvaEventObject<DragEvent>);
         }
     });
-    overlay?.on('dragend', () => (hoveredTarget.value = null));
+    overlay?.on('dragend', () => {
+        hoveredTarget.value = null;
+        hoveredAnchor.value = null;
+        draggingEnd.value = false;
+    });
 
     layer?.on('dragstart', onItemDragStart);
     layer?.on('dragmove', onItemDragMove);
@@ -1093,7 +1161,12 @@ const strokePoints = (item: Item) => item.points;
 const isSelected = (item: Item) =>
     board.selection.value.includes(item.id) && editingId.value !== item.id;
 
-const connectable = computed(() => board.items.value.filter(isConnectable));
+const connectable = computed(() =>
+    board.items.value.filter((item) => isConnectable(item) && !item.hidden),
+);
+
+// Which dot the pointer is over, so it can light up under it
+const hoveredAnchor = ref<{ id: string; side: Side } | null>(null);
 
 const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
 
@@ -1101,6 +1174,8 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
 // One selected connector gets a handle on each end, so it can be re-aimed at a
 // different shape without redrawing it.
 const ENDPOINT = 'endpoint';
+
+const draggingEnd = ref(false);
 
 const soleConnector = computed(() => {
     const selected = board.selected.value;
@@ -1171,7 +1246,7 @@ const onEndpointDragMove = (event: Konva.KonvaEventObject<DragEvent>) => {
 
     item[end] = pinTo(over, point);
 
-    hoveredTarget.value = over?.id ?? null;
+    showTarget(point, over);
 
     // Konva keeps a dragged node under the pointer, which would leave the
     // handle sitting inside the shape while the line snapped to its edge. Put
@@ -1663,9 +1738,16 @@ const labelInset = (item: Item): number => {
                     </Layer>
 
                     <Layer ref="overlayLayer">
-                        <!-- Where a connector can pin itself, shown only while
-                             the arrow tool is out so the board stays quiet -->
-                        <template v-if="tool === 'arrow' && !presenting">
+                        <!-- Where a connector can pin itself: out while the
+                             arrow tool is chosen, and while an end is in the
+                             air, so there is always something to aim at. Drop
+                             on a dot and the end keeps that face; drop
+                             anywhere else on the shape and it stays free. -->
+                        <template
+                            v-if="
+                                (tool === 'arrow' || draggingEnd) && !presenting
+                            "
+                        >
                             <template
                                 v-for="shape in connectable"
                                 :key="shape.id"
@@ -1677,15 +1759,21 @@ const labelInset = (item: Item): number => {
                                         x: anchor.x,
                                         y: anchor.y,
                                         radius:
-                                            (hoveredTarget === shape.id
-                                                ? 6
-                                                : 4) / camera.scale.value,
+                                            (isAimedAt(shape.id, anchor.side)
+                                                ? 8
+                                                : hoveredTarget === shape.id
+                                                  ? 6
+                                                  : 4) / camera.scale.value,
                                         fill:
+                                            isAimedAt(shape.id, anchor.side) ||
                                             hoveredTarget === shape.id
                                                 ? '#6366f1'
                                                 : '#ffffff',
                                         stroke: '#6366f1',
-                                        strokeWidth: 1.5 / camera.scale.value,
+                                        strokeWidth:
+                                            (isAimedAt(shape.id, anchor.side)
+                                                ? 2.5
+                                                : 1.5) / camera.scale.value,
                                         listening: false,
                                     }"
                                 />

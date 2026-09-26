@@ -491,6 +491,52 @@ const stubbed = (
 };
 
 /**
+ * Where the elbow makes its turn, along the axis the stubs travel in.
+ *
+ * Halfway between them, unless that lands behind one of the stubs: an end
+ * leaving downwards has to turn below where its stub finishes, or the line
+ * doubles back on itself and leaves a tail hanging under the shape.
+ */
+const turnBetween = (
+    axis: 'x' | 'y',
+    out: { x: number; y: number },
+    back: { x: number; y: number },
+    fromSide: Side | null,
+    toSide: Side | null,
+): number => {
+    const halfway = (out[axis] + back[axis]) / 2;
+
+    // The side that pushes the turn further along this axis, and the one that
+    // holds it back
+    const onwards = axis === 'y' ? 'bottom' : 'right';
+    const backwards = axis === 'y' ? 'top' : 'left';
+
+    let atLeast = -Infinity;
+    let atMost = Infinity;
+
+    for (const [side, stub] of [
+        [fromSide, out],
+        [toSide, back],
+    ] as const) {
+        if (side === onwards) {
+            atLeast = Math.max(atLeast, stub[axis]);
+        }
+
+        if (side === backwards) {
+            atMost = Math.min(atMost, stub[axis]);
+        }
+    }
+
+    // Two ends pointing at each other leave nowhere that suits both, and
+    // halfway is as good as it gets
+    if (atLeast > atMost) {
+        return halfway;
+    }
+
+    return Math.min(Math.max(halfway, atLeast), atMost);
+};
+
+/**
  * A connector's path, in board coordinates: it leaves an anchor along that
  * side's normal, turns once in the middle and comes back in along the other
  * anchor's normal -- the elbow routing a diagram tool is expected to draw.
@@ -556,12 +602,24 @@ export const connectorPoints = (
     const midpoint =
         fromSide === 'left' || fromSide === 'right'
             ? [
-                  { x: (out.x + back.x) / 2, y: out.y },
-                  { x: (out.x + back.x) / 2, y: back.y },
+                  {
+                      x: turnBetween('x', out, back, fromSide, toSide),
+                      y: out.y,
+                  },
+                  {
+                      x: turnBetween('x', out, back, fromSide, toSide),
+                      y: back.y,
+                  },
               ]
             : [
-                  { x: out.x, y: (out.y + back.y) / 2 },
-                  { x: back.x, y: (out.y + back.y) / 2 },
+                  {
+                      x: out.x,
+                      y: turnBetween('y', out, back, fromSide, toSide),
+                  },
+                  {
+                      x: back.x,
+                      y: turnBetween('y', out, back, fromSide, toSide),
+                  },
               ];
 
     return [start, out, ...midpoint, back, end].flatMap((point) => [
