@@ -159,7 +159,7 @@ async function copy(key: string, text: string): Promise<void> {
             <Heading
                 variant="small"
                 title="MCP access"
-                description="Connect an AI client (Claude Code, Claude Desktop, …) to your notes. Tokens only ever see your own notes."
+                description="Connect an AI client (Claude Code, Claude Desktop, …) to your notes, boards and Drive. A token only ever sees your own content."
             />
 
             <Form
