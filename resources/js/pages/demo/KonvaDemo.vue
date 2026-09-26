@@ -66,6 +66,9 @@ const stage = () => stageRef.value?.getNode();
 const camera = useCamera(stage, { width, height });
 
 const tool = ref<Tool>('select');
+
+// Konva node name, so a double-click can tell the frame's title from its body
+const FRAME_TITLE = 'frame-title';
 // What the next shape is drawn with; recolouring a selection updates it too, so
 // the toolbar always shows the colour you last worked in.
 const fillColour = ref('#ffffff');
@@ -516,6 +519,17 @@ const editorStyle = computed(() => {
 
     const scale = camera.scale.value;
 
+    if (item.kind === 'frame') {
+        return {
+            left: `${item.x * scale + camera.position.value.x}px`,
+            top: `${(item.y - 30) * scale + camera.position.value.y}px`,
+            width: `${Math.min(item.width, 420) * scale}px`,
+            height: `${24 * scale}px`,
+            fontSize: `${18 * scale}px`,
+            textAlign: 'left' as const,
+        };
+    }
+
     if (isConnector(item)) {
         const middle = midpointOf(connectorPath(item));
 
@@ -533,7 +547,7 @@ const editorStyle = computed(() => {
         left: `${item.x * scale + camera.position.value.x}px`,
         top: `${item.y * scale + camera.position.value.y}px`,
         width: `${item.width * scale}px`,
-        height: `${(item.kind === 'frame' ? 32 : item.height) * scale}px`,
+        height: `${item.height * scale}px`,
         fontSize: `${item.fontSize * scale}px`,
         textAlign:
             item.kind === 'sticky' ? ('center' as const) : ('left' as const),
@@ -569,10 +583,19 @@ const stopEditing = (keep = true) => {
 
 const onItemDoubleClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
     const id = event.target.id() || event.target.getParent()?.id();
+    const item = id ? board.byId.value.get(id) : null;
 
-    if (id && !presenting.value) {
-        startEditing(id);
+    if (!item || presenting.value) {
+        return;
     }
+
+    // Double-clicking inside a frame is for whatever sits in it; the title is
+    // renamed by double-clicking the title itself.
+    if (item.kind === 'frame' && event.target.name() !== FRAME_TITLE) {
+        return;
+    }
+
+    startEditing(item.id);
 };
 
 // --------------------------------------------------------------- Presenting
@@ -936,14 +959,21 @@ const labelInset = (item: Item): number => {
                                     shadowBlur: 18,
                                 }"
                             />
+                            <!-- The frame's title sits above it and is edited
+                                 on its own, the way a slide is named -->
                             <Text
                                 v-if="item.kind === 'frame'"
                                 :config="{
-                                    text: item.text,
+                                    name: FRAME_TITLE,
+                                    text: item.text || 'Untitled frame',
                                     y: -28,
+                                    width: item.width,
                                     fontSize: 18,
                                     fontStyle: '600',
-                                    fill: '#64748b',
+                                    fill: isSelected(item)
+                                        ? '#6366f1'
+                                        : '#64748b',
+                                    opacity: editingId === item.id ? 0 : 1,
                                 }"
                             />
 
@@ -1201,7 +1231,11 @@ const labelInset = (item: Item): number => {
                                             ? 'left'
                                             : 'center',
                                     verticalAlign: 'middle',
-                                    listening: false,
+                                    // A text item has no shape behind it, so
+                                    // its label is the only thing that can be
+                                    // clicked; on other shapes the box is the
+                                    // hit area and the label stays out of it.
+                                    listening: item.kind === 'text',
                                     opacity: editingId === item.id ? 0 : 1,
                                 }"
                             />
