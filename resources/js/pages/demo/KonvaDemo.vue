@@ -269,10 +269,14 @@ const onPointerMove = () => {
     }
 
     if (current.item.kind === 'draw') {
-        current.item.points.push(
+        // A new array rather than a push: vue-konva compares the config it was
+        // handed, and pushing leaves the same array reference in place, so the
+        // stroke only appeared once the item was committed on release.
+        current.item.points = [
+            ...current.item.points,
             point.x - current.originX,
             point.y - current.originY,
-        );
+        ];
 
         return;
     }
