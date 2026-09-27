@@ -10,7 +10,7 @@
         "check:fix": "vp check --fix",
         "types:check": "vue-tsc --noEmit",
         "test": "vitest run",
-        "test:e2e": "node tests/e2e/board.mjs && node tests/e2e/connectors.mjs && node tests/e2e/panels.mjs && node tests/e2e/media.mjs && node tests/e2e/boards.mjs"
+        "test:e2e": "node tests/e2e/board.mjs && node tests/e2e/connectors.mjs && node tests/e2e/dragging.mjs && node tests/e2e/panels.mjs && node tests/e2e/media.mjs && node tests/e2e/boards.mjs"
     },
     "dependencies": {
         "@inertiajs/vite": "^3.0.0",
