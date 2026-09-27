@@ -10,9 +10,10 @@ import { chromium } from 'playwright-core';
 
 const APP = process.env.APP_URL ?? 'http://127.0.0.1:8001';
 
+// The seeded user, so `php artisan db:seed` is all the setup there is
 const WHO = {
-    email: process.env.E2E_EMAIL ?? 'playwright@zyrenn.test',
-    password: process.env.E2E_PASSWORD ?? 'canvas-demo-password',
+    email: process.env.E2E_EMAIL ?? 'test@example.com',
+    password: process.env.E2E_PASSWORD ?? 'password',
 };
 
 export const SHOTS = process.env.E2E_SHOTS ?? '/tmp/zyrenn-e2e';

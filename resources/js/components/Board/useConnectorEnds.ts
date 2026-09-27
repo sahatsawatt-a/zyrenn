@@ -3,7 +3,7 @@ import type { ComputedRef, Ref } from 'vue';
 import { computed, ref } from 'vue';
 import { anchorsOf } from './geometry';
 import type { Item, Side } from './items';
-import { isConnectable, isConnector, nameOf } from './items';
+import { isConnectable, isConnector } from './items';
 
 /** The name a handle carries, so a drag can tell which end it has hold of. */
 export const ENDPOINT = 'endpoint';

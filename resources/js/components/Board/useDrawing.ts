@@ -7,9 +7,6 @@ import { alignmentFor } from './guides';
 import type { Endpoint, Item, ItemKind, Tool } from './items';
 import { hasText, isConnectable, isConnector, isStroke } from './items';
 
-/** How near a neighbour's edge counts as lining up with it, in pixels. */
-const SNAP = 6;
-
 type Drawing = {
     board: {
         items: Ref<Item[]>;
@@ -286,7 +283,7 @@ export function useDrawing({
         drewJustNow = true;
 
         if (hasText(item) && item.kind !== 'frame') {
-            nextTick(() => startEditing(item.id));
+            void nextTick(() => startEditing(item.id));
         }
     };
 
