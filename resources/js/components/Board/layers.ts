@@ -43,7 +43,12 @@ export const groupKeys = (items: Item[]): Map<string, string> => {
             continue;
         }
 
-        const home = frames.find((frame) => sitsIn(item, frame));
+        // Frames can sit inside frames, and an imported diagram lands on top
+        // of whatever was there: the smallest one holding it is the one it
+        // belongs to
+        const home = frames
+            .filter((frame) => sitsIn(item, frame))
+            .sort((a, b) => a.width * a.height - b.width * b.height)[0];
 
         keys.set(item.id, home ? home.id : 'board');
     }

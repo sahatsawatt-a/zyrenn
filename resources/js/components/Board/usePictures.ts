@@ -1,16 +1,19 @@
 import { useEventListener } from '@vueuse/core';
 import type { Ref } from 'vue';
 import { ref } from 'vue';
+import { toast } from 'vue-sonner';
 import { isImageFile, uploadToDrive } from '@/lib/drive';
 import type { PickedImage } from '@/components/media/ImagePickerDialog.vue';
 import { fitOnBoard } from './geometry';
 import type { Item } from './items';
+import { itemsFromMermaid } from './mermaid';
 import { svgSource } from './pictures';
 
 type Placer = {
     board: {
         makeItem: (kind: 'image', x: number, y: number) => Item;
         add: (item: Item) => void;
+        insert: (items: Item[]) => void;
     };
     /** The middle of what is on screen, in board coordinates. */
     middleOfView: () => { x: number; y: number };
@@ -77,6 +80,34 @@ export function usePictures({ board, middleOfView, editingId }: Placer) {
     };
 
     const addSvg = (markup: string) => placeImage(svgSource(markup));
+
+    /**
+     * A Mermaid diagram. A flowchart comes in as shapes and connectors that
+     * behave like any others; anything else Mermaid can draw but the board
+     * cannot take apart is put on as a picture.
+     */
+    const addMermaid = async (source: string) => {
+        const middle = middleOfView();
+        const drawn = await itemsFromMermaid(source, {
+            x: middle.x - 300,
+            y: middle.y - 200,
+        });
+
+        if (drawn.ok) {
+            board.insert(drawn.items);
+            importing.value = false;
+
+            return;
+        }
+
+        if (drawn.reason === 'unsupported') {
+            addSvg(drawn.svg);
+
+            return;
+        }
+
+        toast.error(drawn.error);
+    };
 
     /** How big a picture should land, from its own proportions. */
     const sizeOf = (src: string) =>
@@ -175,6 +206,7 @@ export function usePictures({ board, middleOfView, editingId }: Placer) {
         importing,
         imageFor,
         addSvg,
+        addMermaid,
         onImagesPicked,
         onDropFiles,
     };

@@ -97,6 +97,17 @@ export function useBoard(initial: Item[] | null = null) {
         }
     };
 
+    /** Several at once -- an imported diagram is one thing to undo, not twenty. */
+    const insert = (added: Item[]) => {
+        if (!added.length) {
+            return;
+        }
+
+        commit();
+        items.value.push(...added);
+        selection.value = added.map((item) => item.id);
+    };
+
     const remove = (ids: string[]) => {
         if (!ids.length) {
             return;
@@ -389,6 +400,7 @@ export function useBoard(initial: Item[] | null = null) {
         select,
         toggleInSelection,
         add,
+        insert,
         remove,
         duplicate,
         reorder,

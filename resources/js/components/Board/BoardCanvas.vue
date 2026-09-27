@@ -301,7 +301,7 @@ const { formulae, mathHtml, mathStyle } = useFormulae({
 });
 
 // ------------------------------------------------------------------ Pictures
-const { importing, imageFor, addSvg, onImagesPicked, onDropFiles } =
+const { importing, imageFor, addSvg, addMermaid, onImagesPicked, onDropFiles } =
     usePictures({
         board,
         middleOfView: () =>
@@ -659,6 +659,7 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
                 allow-markup
                 @insert="onImagesPicked"
                 @markup="addSvg"
+                @mermaid="addMermaid"
             />
 
             <InspectorPanel

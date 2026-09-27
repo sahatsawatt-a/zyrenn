@@ -359,6 +359,13 @@ export function useDrawing({
                 return;
             }
 
+            // A connector is wherever its ends are, and its points are already
+            // in board coordinates: giving it an x and a y as well would draw
+            // the whole line over again, shifted by the drag.
+            if (isConnector(item)) {
+                return;
+            }
+
             item.x = otherId === id ? event.target.x() : start.x + dx;
             item.y = otherId === id ? event.target.y() : start.y + dy;
         });

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
     Code,
+    Workflow,
     HardDrive,
     ImageUp,
     Link2,
@@ -36,7 +37,8 @@ const props = withDefaults(
     defineProps<{
         // Where the picked image is going, said plainly in the dialog
         destination?: string;
-        // A board can take SVG markup as a drawing; a note cannot
+        // A board can take SVG markup as a drawing, and a Mermaid diagram as
+        // shapes it can then edit; a note writes Mermaid inline already
         allowMarkup?: boolean;
     }>(),
     { destination: 'the note', allowMarkup: false },
@@ -45,9 +47,10 @@ const props = withDefaults(
 const emit = defineEmits<{
     (e: 'insert', images: PickedImage[]): void;
     (e: 'markup', svg: string): void;
+    (e: 'mermaid', source: string): void;
 }>();
 
-type Tab = 'upload' | 'drive' | 'link' | 'markup';
+type Tab = 'upload' | 'drive' | 'link' | 'markup' | 'mermaid';
 
 const tabs = computed(() =>
     [
@@ -55,7 +58,10 @@ const tabs = computed(() =>
         { id: 'drive' as const, label: 'From Drive', icon: HardDrive },
         { id: 'link' as const, label: 'Link', icon: Link2 },
         ...(props.allowMarkup
-            ? [{ id: 'markup' as const, label: 'SVG', icon: Code }]
+            ? [
+                  { id: 'markup' as const, label: 'SVG', icon: Code },
+                  { id: 'mermaid' as const, label: 'Mermaid', icon: Workflow },
+              ]
             : []),
     ].filter(Boolean),
 );
@@ -77,6 +83,23 @@ const markupHint = computed(() =>
         ? 'That does not look like SVG: it needs an <svg> tag.'
         : 'Paste SVG markup and it is drawn as a picture you can resize.',
 );
+
+// ---------------------------------------------------------------- Mermaid
+const diagram = ref('');
+
+const DIAGRAM_EXAMPLE = `flowchart TD
+    A[Order placed] --> B{In stock?}
+    B -- yes --> C[(Warehouse)]
+    B -- no --> D[/Back-order/]`;
+
+const insertDiagram = () => {
+    if (!diagram.value.trim()) {
+        return;
+    }
+
+    emit('mermaid', diagram.value);
+    open.value = false;
+};
 
 const insertMarkup = () => {
     if (!markupIsValid.value) {
@@ -222,6 +245,7 @@ watch(open, (isOpen) => {
     query.value = '';
     linkUrl.value = '';
     markup.value = '';
+    diagram.value = '';
     driveFiles.value = [];
 });
 
@@ -441,6 +465,35 @@ watch(tab, (current) => {
 
                 <div class="flex justify-end">
                     <Button type="submit" :disabled="!linkIsValid || linkBroken"
+                        >Insert</Button
+                    >
+                </div>
+            </form>
+
+            <!-- A Mermaid diagram, which comes in as shapes and connectors -->
+            <form
+                v-else-if="tab === 'mermaid'"
+                class="flex flex-col gap-3"
+                @submit.prevent="insertDiagram"
+            >
+                <textarea
+                    v-model="diagram"
+                    class="border-border bg-background h-48 w-full resize-none rounded-lg border p-3 font-mono text-xs"
+                    spellcheck="false"
+                    :placeholder="DIAGRAM_EXAMPLE"
+                    data-test="mermaid-source"
+                />
+
+                <p class="text-muted-foreground text-xs">
+                    A flowchart arrives as shapes and connectors you can move
+                    and restyle. Any other diagram is added as a picture.
+                </p>
+
+                <div class="flex justify-end">
+                    <Button
+                        type="submit"
+                        :disabled="!diagram.trim()"
+                        data-test="mermaid-add"
                         >Insert</Button
                     >
                 </div>
