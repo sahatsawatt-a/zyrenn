@@ -42,14 +42,7 @@ import BoardItem from './BoardItem.vue';
 import BoardOverlay from './BoardOverlay.vue';
 import type { PickedImage } from '@/components/media/ImagePickerDialog.vue';
 import ShapeLibrary from './ShapeLibrary.vue';
-import {
-    connectorPoints,
-    dashFor,
-    headPoints,
-    headsOf,
-    midpointOf,
-    trimmedPoints,
-} from './connectors';
+import { connectorPoints } from './connectors';
 import type { Guide } from './connectors';
 import {
     anchorsOf,
@@ -57,22 +50,15 @@ import {
     boundsOfAll,
     fitOnBoard,
     overlaps,
-    polygonPoints,
 } from './geometry';
 import { alignmentFor } from './guides';
-import {
-    PATHS,
-    POLYGONS,
-    hasText,
-    isConnectable,
-    isConnector,
-    isPath,
-    isStroke,
-} from './items';
+import { hasText, isConnectable, isConnector, isStroke } from './items';
 import type { Item, Side, Tool } from './items';
 import { svgSource } from './pictures';
 import { FRAME_TITLE, useLabelEditor } from './useLabelEditor';
 import { usePresenting } from './usePresenting';
+import { useConnectorEnds } from './useConnectorEnds';
+import { useShortcuts } from './useShortcuts';
 import { useFormulae } from './useFormulae';
 import { usePictures } from './usePictures';
 import { useBoard } from './useBoard';
@@ -194,6 +180,28 @@ const gridStyle = computed(() => {
     };
 });
 
+// -------------------------------------------------------- Connector endpoints
+const {
+    ENDPOINT,
+    connectable,
+    hoveredTarget,
+    hoveredAnchor,
+    draggingEnd,
+    soleConnector,
+    connectorLink,
+    endpointHandles,
+    isAimedAt,
+    showTarget,
+    pinTo,
+    onEndpointDragMove,
+} = useConnectorEnds({
+    board,
+    camera,
+    shapeAt: (point) => shapeAt(point),
+    presenting,
+    connectorPath: (item) => connectorPath(item),
+});
+
 // ------------------------------------------------------------ Text editing
 // Before the transformer's watcher, which reads what is being typed the moment
 // it is created.
@@ -253,7 +261,6 @@ watch(
 type Draft = { item: Item; originX: number; originY: number } | null;
 
 const draft = ref<Draft>(null);
-const hoveredTarget = ref<string | null>(null);
 const guides = ref<Guide[]>([]);
 const marquee = ref<{
     x: number;
@@ -290,63 +297,6 @@ const shapeAt = (point: { x: number; y: number }): Item | null => {
     }
 
     return null;
-};
-
-/** Whether this is the dot the pointer is about to drop an end on. */
-const isAimedAt = (id: string, side: Side) =>
-    hoveredAnchor.value?.id === id && hoveredAnchor.value.side === side;
-
-/** Lights the shape being aimed at, and the dot under the pointer if there is one. */
-const showTarget = (point: { x: number; y: number }, over: Item | null) => {
-    const anchor = anchorNear(point);
-
-    hoveredTarget.value = anchor?.id ?? over?.id ?? null;
-    hoveredAnchor.value = anchor ? { id: anchor.id, side: anchor.side } : null;
-};
-
-/** How near an anchor dot the pointer has to come to catch it, in pixels. */
-const ANCHOR_GRAB = 14;
-
-/** The anchor dot under the pointer, if it is close enough to one. */
-const anchorNear = (point: { x: number; y: number }) => {
-    let closest = ANCHOR_GRAB / camera.scale.value;
-    let found: { id: string; side: Side; x: number; y: number } | null = null;
-
-    for (const shape of connectable.value) {
-        for (const anchor of anchorsOf(shape)) {
-            const away = Math.hypot(anchor.x - point.x, anchor.y - point.y);
-
-            if (away <= closest) {
-                closest = away;
-                found = { id: shape.id, ...anchor };
-            }
-        }
-    }
-
-    return found;
-};
-
-/**
- * Where a connector should pin itself when it meets the board at `point`.
- *
- * Dropped on one of a shape's anchor dots, the end keeps that face however the
- * shapes move afterwards -- the same bargain a diagram tool makes with its
- * ports. Dropped anywhere else on a shape, the end stays free to turn, and
- * leaves by whichever face is pointing at the other end at the time.
- */
-const pinTo = (item: Item | null, point: { x: number; y: number }) => {
-    const anchor = anchorNear(point);
-
-    if (anchor) {
-        return { item: anchor.id, side: anchor.side, x: anchor.x, y: anchor.y };
-    }
-
-    return {
-        item: item?.id ?? null,
-        side: null as Side | null,
-        x: point.x,
-        y: point.y,
-    };
 };
 
 const onPointerDown = (event: Konva.KonvaEventObject<PointerEvent>) => {
@@ -767,118 +717,17 @@ const resizeSelection = (change: {
     if (change.height !== undefined) item.height = Math.max(12, change.height);
 };
 
-useEventListener(window, 'keydown', (event: KeyboardEvent) => {
-    const typing =
-        editingId.value !== null ||
-        document.activeElement instanceof HTMLInputElement ||
-        document.activeElement instanceof HTMLTextAreaElement;
-
-    if (event.code === 'Space' && !typing) {
-        spaceHeld.value = true;
-        event.preventDefault();
-    }
-
-    if (presenting.value) {
-        if (event.key === 'ArrowRight' || event.key === 'PageDown') {
-            showFrame(frameIndex.value + 1);
-        }
-        if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
-            showFrame(frameIndex.value - 1);
-        }
-        if (event.key === 'Escape') {
-            stopPresenting();
-        }
-
-        return;
-    }
-
-    if (typing) {
-        if (event.key === 'Escape') {
-            stopEditing(false);
-        }
-
-        return;
-    }
-
-    const meta = event.ctrlKey || event.metaKey;
-
-    if (meta && event.key.toLowerCase() === 'z') {
-        event.preventDefault();
-        if (event.shiftKey) {
-            board.redo();
-        } else {
-            board.undo();
-        }
-
-        return;
-    }
-
-    if (meta && (event.key === ']' || event.key === '[')) {
-        event.preventDefault();
-        board.reorder(
-            event.key === ']'
-                ? event.shiftKey
-                    ? 'front'
-                    : 'forward'
-                : event.shiftKey
-                  ? 'back'
-                  : 'backward',
-        );
-
-        return;
-    }
-
-    if (meta && event.key.toLowerCase() === 'd') {
-        event.preventDefault();
-        board.duplicate();
-
-        return;
-    }
-
-    if (event.key === 'Delete' || event.key === 'Backspace') {
-        event.preventDefault();
-        removeSelection();
-
-        return;
-    }
-
-    if (event.key === 'Escape') {
-        board.select([]);
-        tool.value = 'select';
-    }
-
-    const shortcuts: Record<string, Tool> = {
-        v: 'select',
-        s: 'sticky',
-        t: 'text',
-        r: 'rect',
-        p: 'pill',
-        o: 'ellipse',
-        g: 'triangle',
-        m: 'diamond',
-        h: 'hexagon',
-        k: 'star',
-        b: 'cylinder',
-        i: 'parallelogram',
-        u: 'document',
-        n: 'process',
-        c: 'cloud',
-        a: 'arrow',
-        d: 'draw',
-        f: 'frame',
-    };
-
-    const next = shortcuts[event.key.toLowerCase()];
-
-    if (next && !meta) {
-        tool.value = next;
-    }
-});
-
-useEventListener(window, 'keyup', (event: KeyboardEvent) => {
-    if (event.code === 'Space') {
-        spaceHeld.value = false;
-    }
+useShortcuts({
+    board,
+    tool,
+    spaceHeld,
+    editingId,
+    stopEditing,
+    presenting,
+    frameIndex,
+    showFrame,
+    stopPresenting,
+    removeSelection,
 });
 
 // vue-konva components render a fragment, so Vue cannot inherit listeners onto
@@ -945,129 +794,9 @@ const strokePoints = (item: Item) => item.points;
 const isSelected = (item: Item) =>
     board.selection.value.includes(item.id) && editingId.value !== item.id;
 
-const connectable = computed(() =>
-    board.items.value.filter((item) => isConnectable(item) && !item.hidden),
-);
-
 // Which dot the pointer is over, so it can light up under it
-const hoveredAnchor = ref<{ id: string; side: Side } | null>(null);
 
 const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
-
-// ------------------------------------------------------- Connector endpoints
-// One selected connector gets a handle on each end, so it can be re-aimed at a
-// different shape without redrawing it.
-const ENDPOINT = 'endpoint';
-
-const draggingEnd = ref(false);
-
-const soleConnector = computed(() => {
-    const selected = board.selected.value;
-
-    return selected.length === 1 && isConnector(selected[0])
-        ? selected[0]
-        : null;
-});
-
-// What the selected connector joins, so the panel can say so and a re-aimed
-// end is visible without hunting for it on the canvas.
-const connectorLink = computed(() => {
-    const item = soleConnector.value;
-
-    if (!item) {
-        return undefined;
-    }
-
-    const name = (end: 'from' | 'to') => {
-        const host = item[end]?.item
-            ? board.byId.value.get(item[end]!.item!)
-            : null;
-
-        return host ? host.text || host.kind : 'a point';
-    };
-
-    return `${name('from')} → ${name('to')}`;
-});
-
-const endpointHandles = computed(() => {
-    const item = soleConnector.value;
-
-    if (!item || presenting.value) {
-        return [];
-    }
-
-    // Taken from the drawn path, not from the stored sides: the line picks its
-    // sides from where the shapes are now, and a handle that used the stored
-    // side sat inside the shape instead of on the end of the line.
-    const points = connectorPath(item);
-
-    if (points.length < 4) {
-        return [];
-    }
-
-    return [
-        { end: 'from' as const, x: points[0], y: points[1] },
-        {
-            end: 'to' as const,
-            x: points[points.length - 2],
-            y: points[points.length - 1],
-        },
-    ];
-});
-
-const onEndpointDragMove = (event: Konva.KonvaEventObject<DragEvent>) => {
-    const item = soleConnector.value;
-    // Which end is being dragged rides in the node's name: reading it back off
-    // a typed attr fights Konva's own generics for no gain.
-    const end = event.target.name().endsWith('from') ? 'from' : 'to';
-
-    if (!item) {
-        return;
-    }
-
-    const point = { x: event.target.x(), y: event.target.y() };
-    const over = shapeAt(point);
-
-    item[end] = pinTo(over, point);
-
-    showTarget(point, over);
-
-    // Konva keeps a dragged node under the pointer, which would leave the
-    // handle sitting inside the shape while the line snapped to its edge. Put
-    // it back on the end of the line every frame, so it clings to the anchor.
-    const settled = connectorPath(item);
-
-    if (settled.length >= 4) {
-        event.target.position(
-            end === 'from'
-                ? { x: settled[0], y: settled[1] }
-                : {
-                      x: settled[settled.length - 2],
-                      y: settled[settled.length - 1],
-                  },
-        );
-    }
-};
-
-// Close enough for a backing chip: Konva would have to measure the text to do
-// better, and this only has to keep the line out of the words.
-const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
-
-const strokeOf = (item: Item) => (isSelected(item) ? '#6366f1' : item.stroke);
-
-// How far a label sits from the top of its shape. A cylinder's lid and a
-// triangle's point leave no room at the edges, so their text starts lower.
-const labelInset = (item: Item): number => {
-    if (item.kind === 'cylinder') {
-        return item.height * 0.2;
-    }
-
-    if (item.kind === 'triangle') {
-        return item.height * 0.35;
-    }
-
-    return 12;
-};
 </script>
 
 <template>
