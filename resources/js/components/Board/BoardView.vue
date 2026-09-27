@@ -5,7 +5,8 @@ import { Group, Layer, Stage } from 'vue-konva';
 import { connectorPoints } from './connectors';
 import { boundsOf, boundsOfAll } from './geometry';
 import type { Item } from './items';
-import { hydrate } from './items';
+import { hydrate, isConnector } from './items';
+import { groupKeys } from './layers';
 import { useImageCache } from './useImageCache';
 import BoardItem from './BoardItem.vue';
 
@@ -36,40 +37,19 @@ const byId = computed(
 );
 
 const shown = computed(() => {
-    const frame = props.frame
-        ? drawn.value.find((item) => item.id === props.frame)
-        : null;
+    const visible = drawn.value.filter((item) => !item.hidden);
 
-    if (!frame) {
-        return drawn.value.filter((item) => !item.hidden);
+    if (!props.frame) {
+        return visible;
     }
 
-    const slide = boundsOf(frame);
-    const middle = (item: Item) => {
-        const box = boundsOf(item);
+    // A connector has no box of its own, so what belongs to a frame is worked
+    // out the same way the layers list works it out: by what each line joins.
+    const homes = groupKeys(drawn.value);
 
-        return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-    };
-
-    // What sits on that frame, and the frame itself behind it
-    return drawn.value.filter((item) => {
-        if (item.hidden) {
-            return false;
-        }
-
-        if (item.id === frame.id) {
-            return true;
-        }
-
-        const point = middle(item);
-
-        return (
-            point.x >= slide.x &&
-            point.x <= slide.x + slide.width &&
-            point.y >= slide.y &&
-            point.y <= slide.y + slide.height
-        );
-    });
+    return visible.filter(
+        (item) => item.id === props.frame || homes.get(item.id) === props.frame,
+    );
 });
 
 /** The box to fit: one frame, or everything on the board. */
@@ -79,7 +59,9 @@ const extent = computed(() => {
         : null;
 
     if (!frame) {
-        return boundsOfAll(shown.value);
+        // A connector sits at the origin until its ends are read, and a board
+        // fitted around that would be squeezed into a corner
+        return boundsOfAll(shown.value.filter((item) => !isConnector(item)));
     }
 
     // A frame's title is written above it, so leave room for it

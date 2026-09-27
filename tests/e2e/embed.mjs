@@ -36,10 +36,44 @@ await runBoard(
             await page.keyboard.press('Enter');
         }
 
+        // a second shape, joined to the first: a line has no box of its own and
+        // is the thing most easily lost when a board is drawn somewhere else
+        await page.locator('[data-test="tool-rect"]').click();
+        await page.mouse.move(at(0.32, 0.26).x, at(0.32, 0.26).y);
+        await page.mouse.down();
+        await page.mouse.move(at(0.42, 0.42).x, at(0.42, 0.42).y, { steps: 6 });
+        await page.mouse.up();
+        await page.waitForTimeout(400);
+        await page.keyboard.press('Escape');
+
+        await page.locator('[data-test="tool-arrow"]').click();
+        await page.mouse.move(at(0.24, 0.36).x, at(0.24, 0.36).y);
+        await page.mouse.down();
+        await page.mouse.move(at(0.3, 0.35).x, at(0.3, 0.35).y, { steps: 6 });
+        await page.mouse.move(at(0.37, 0.34).x, at(0.37, 0.34).y, { steps: 6 });
+        await page.mouse.up();
+        await page.waitForTimeout(600);
+
         await page.waitForTimeout(2200);
         check(
             'the board saved itself',
             /Saved/i.test(await page.locator('body').innerText()),
+        );
+
+        const kinds = await page.evaluate(async () => {
+            const ref = location.pathname.split('/').pop();
+            const board = await (
+                await fetch(`/boards/${ref}/content`, {
+                    headers: { Accept: 'application/json' },
+                })
+            ).json();
+
+            return (board.items ?? []).map((item) => item.kind).join(',');
+        });
+        check(
+            'the board has a line joining two shapes',
+            kinds.includes('arrow'),
+            kinds,
         );
 
         // --- a note showing it
@@ -75,6 +109,26 @@ await runBoard(
             'choosing a board draws it in the note',
             (await page.locator('[data-test="board-view"] canvas').count()) > 0,
         );
+
+        // what is drawn in the note's own stage, by kind
+        const drawnIn = () =>
+            page.evaluate(() => {
+                const stage =
+                    window.Konva.stages[window.Konva.stages.length - 1];
+                return {
+                    shapes: stage.find('Rect').length,
+                    lines: stage
+                        .find('Line')
+                        .filter((l) => !l.closed() && l.points().length >= 4)
+                        .length,
+                };
+            });
+
+        check(
+            'the lines are drawn too, not only the shapes',
+            (await drawnIn()).lines > 0,
+            JSON.stringify(await drawnIn()),
+        );
         await page.screenshot({ path: `${SHOTS}/embed-whole.png` });
 
         const frames = await page
@@ -92,6 +146,11 @@ await runBoard(
         check(
             'choosing a frame keeps it drawn',
             (await page.locator('[data-test="board-view"] canvas').count()) > 0,
+        );
+        check(
+            'and keeps the lines on that frame',
+            (await drawnIn()).lines > 0,
+            JSON.stringify(await drawnIn()),
         );
         await page.screenshot({ path: `${SHOTS}/embed-frame.png` });
 
