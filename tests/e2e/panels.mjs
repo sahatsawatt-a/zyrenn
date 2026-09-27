@@ -8,7 +8,7 @@ await runBoard('/demo/konva', async (b) => {
         check,
         draw,
         join,
-        screenOf,
+
         rows,
         layerNames,
         painted,

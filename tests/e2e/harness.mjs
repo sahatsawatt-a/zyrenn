@@ -98,7 +98,6 @@ export async function openBoard(path = '/demo/konva', size = {}) {
 
     /** A point on the board, in screen coordinates. */
     const screenOf = async (boardX, boardY) => {
-
         const at = await camera();
 
         return {

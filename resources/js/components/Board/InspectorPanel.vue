@@ -29,7 +29,7 @@ import type {
 } from './items';
 import ColourPicker from './ColourPicker.vue';
 import LayersPanel from './LayersPanel.vue';
-import ConnectorIcon from './ConnectorIcon.vue';
+import ConnectorSettings from './ConnectorSettings.vue';
 
 // Lucidchart's right-hand panel: what is selected, and every property of it in
 // one place instead of hidden behind a toolbar popover.
@@ -286,148 +286,12 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                 </div>
             </div>
 
-            <!-- Connector-only controls: how the line is routed and capped -->
-            <div
+            <!-- Connector-only controls, when a line is what is selected -->
+            <ConnectorSettings
                 v-if="line"
-                class="inspector-connector"
-                data-test="connector-config"
-            >
-                <p class="inspector-label">Routing</p>
-                <div class="inspector-segments">
-                    <button
-                        v-for="option in routings"
-                        :key="option"
-                        type="button"
-                        :title="option"
-                        :class="{ 'is-on': line.routing === option }"
-                        :data-test="`routing-${option}`"
-                        @click="emit('update', { routing: option })"
-                    >
-                        <ConnectorIcon :kind="option" />
-                    </button>
-                </div>
-
-                <p class="inspector-label">Line</p>
-                <div class="inspector-segments">
-                    <button
-                        v-for="option in styles"
-                        :key="option"
-                        type="button"
-                        :title="option"
-                        :class="{ 'is-on': line.lineStyle === option }"
-                        :data-test="`style-${option}`"
-                        @click="emit('update', { lineStyle: option })"
-                    >
-                        <ConnectorIcon :kind="option" />
-                    </button>
-                </div>
-
-                <label class="inspector-slider">
-                    Thickness
-                    <input
-                        type="range"
-                        min="1"
-                        max="8"
-                        :value="line.lineWidth"
-                        data-test="line-width"
-                        @input="
-                            emit('update', {
-                                lineWidth: Number(
-                                    ($event.target as HTMLInputElement).value,
-                                ),
-                            })
-                        "
-                    />
-                    <span>{{ line.lineWidth }}</span>
-                </label>
-
-                <div class="inspector-fields">
-                    <label
-                        v-for="end in ['from', 'to'] as const"
-                        :key="end"
-                        :title="'Auto keeps this end facing whatever is at the other; a face keeps it there'"
-                    >
-                        {{ end === 'from' ? 'Start on' : 'End on' }}
-                        <select
-                            :value="pinnedSide(end) ?? ''"
-                            :data-test="`side-${end}`"
-                            @change="
-                                pinSide(
-                                    end,
-                                    (($event.target as HTMLSelectElement)
-                                        .value || null) as Side | null,
-                                )
-                            "
-                        >
-                            <option value="">Auto</option>
-                            <option
-                                v-for="side in SIDES"
-                                :key="side"
-                                :value="side"
-                            >
-                                {{ side }}
-                            </option>
-                        </select>
-                    </label>
-                </div>
-
-                <details class="inspector-fold" data-test="ends-config">
-                    <summary>
-                        Ends
-                        <span>{{ line.startHead }} → {{ line.endHead }}</span>
-                    </summary>
-                    <div
-                        v-for="side in ['start', 'end'] as const"
-                        :key="side"
-                        class="inspector-heads"
-                    >
-                        <span>{{ side }}</span>
-                        <button
-                            v-for="head in HEAD_TYPES"
-                            :key="head.value"
-                            type="button"
-                            :title="`${side}: ${head.label}`"
-                            :class="{
-                                'is-on':
-                                    (side === 'start'
-                                        ? line.startHead
-                                        : line.endHead) === head.value,
-                            }"
-                            :data-test="`head-${side}-${head.value}`"
-                            @click="
-                                emit(
-                                    'update',
-                                    side === 'start'
-                                        ? { startHead: head.value }
-                                        : { endHead: head.value },
-                                )
-                            "
-                        >
-                            <ConnectorIcon :kind="{ head: head.value, side }" />
-                        </button>
-                    </div>
-
-                    <label class="inspector-slider">
-                        Head size
-                        <input
-                            type="range"
-                            min="6"
-                            max="24"
-                            :value="line.headSize"
-                            data-test="head-size"
-                            @input="
-                                emit('update', {
-                                    headSize: Number(
-                                        ($event.target as HTMLInputElement)
-                                            .value,
-                                    ),
-                                })
-                            "
-                        />
-                        <span>{{ line.headSize }}</span>
-                    </label>
-                </details>
-            </div>
+                :line="line"
+                @update="emit('update', $event)"
+            />
 
             <ColourPicker
                 v-if="!line"
