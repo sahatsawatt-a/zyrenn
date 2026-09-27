@@ -90,6 +90,17 @@ MD;
         $this->assertSame(['type' => 'blockMath', 'attrs' => ['latex' => 'a^2 + b^2 = c^2']], $doc['content'][1]);
     }
 
+    public function test_a_board_embed_survives_the_round_trip()
+    {
+        // The note keeps what it points at, not a copy of the board
+        $markdown = "```board\nref: k3x9m2p7qa\nframe: i4\n```";
+        $doc = TiptapMarkdown::toDoc($markdown);
+
+        $this->assertSame('codeBlock', $doc['content'][0]['type']);
+        $this->assertSame('board', $doc['content'][0]['attrs']['language']);
+        $this->assertSame($markdown, trim(TiptapMarkdown::toMarkdown($doc)));
+    }
+
     public function test_empty_input_produces_a_valid_document()
     {
         $this->assertSame(['type' => 'doc', 'content' => [['type' => 'paragraph']]], TiptapMarkdown::toDoc(''));

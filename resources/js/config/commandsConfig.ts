@@ -179,6 +179,25 @@ export const commandItems: SlashCommandItem[] = [
                 .run(),
     },
     {
+        title: 'Board',
+        description: 'Show a board, or one of its frames, in this note.',
+        icon: '▦',
+        keywords: ['board', 'canvas', 'frame', 'slide', 'diagram'],
+        command: ({ editor, range }) => {
+            editor
+                .chain()
+                .focus()
+                .deleteRange(range)
+                .insertContent({
+                    type: 'codeBlock',
+                    attrs: { language: 'board' },
+                    // Filled in from the block's own dropdowns
+                    content: [{ type: 'text', text: 'ref: \nframe: all' }],
+                })
+                .run();
+        },
+    },
+    {
         title: 'Mermaid Diagram',
         description: 'Flowcharts, sequence, gantt, pie and 20+ more.',
         icon: '◇',

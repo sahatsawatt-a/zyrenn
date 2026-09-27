@@ -193,6 +193,43 @@ class BoardController extends Controller
     }
 
     /**
+     * The user's boards, for the picker in a note. Newest first, by name.
+     */
+    public function pick(Request $request): JsonResponse
+    {
+        $request->validate(['q' => ['nullable', 'string', 'max:255']]);
+
+        $boards = $request->user()->boards()
+            ->when($request->filled('q'), fn ($query) => $query
+                ->whereLike('title', '%'.$request->string('q').'%'))
+            ->latest('updated_at')
+            ->limit(100)
+            ->get(['ref_id', 'title', 'updated_at']);
+
+        return response()->json([
+            'boards' => $boards->map(fn (Board $board) => [
+                'ref_id' => $board->ref_id,
+                'title' => $board->title,
+                'updated_at' => $board->updated_at?->toIso8601String(),
+            ]),
+        ]);
+    }
+
+    /**
+     * What is on a board, for showing it somewhere other than its own page.
+     */
+    public function content(Board $board): JsonResponse
+    {
+        Gate::authorize('view', $board);
+
+        return response()->json([
+            'ref_id' => $board->ref_id,
+            'title' => $board->title,
+            'items' => $board->content['items'] ?? [],
+        ]);
+    }
+
+    /**
      * A board folder ref_id that belongs to the user.
      */
     public static function ownFolder(User $user): Exists

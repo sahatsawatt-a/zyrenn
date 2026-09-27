@@ -165,6 +165,39 @@ class BoardTest extends TestCase
         $this->assertNull($user->boards()->first());
     }
 
+    public function test_the_picker_lists_the_users_own_boards()
+    {
+        $user = User::factory()->create();
+        Board::factory()->for($user)->create(['title' => 'Launch plan']);
+        Board::factory()->create(['title' => 'Someone else']);
+
+        $this->actingAs($user)
+            ->getJson(route('boards.pick'))
+            ->assertOk()
+            ->assertJsonCount(1, 'boards')
+            ->assertJsonPath('boards.0.title', 'Launch plan');
+
+        $this->actingAs($user)
+            ->getJson(route('boards.pick', ['q' => 'nothing like it']))
+            ->assertJsonCount(0, 'boards');
+    }
+
+    public function test_a_boards_contents_are_served_to_its_owner_only()
+    {
+        $user = User::factory()->create();
+        $board = Board::factory()->for($user)->create(['content' => $this->contents()]);
+        $theirs = Board::factory()->create();
+
+        $this->actingAs($user)
+            ->getJson(route('boards.content', $board))
+            ->assertOk()
+            ->assertJsonPath('items.1.text', 'Ship the canvas');
+
+        $this->actingAs($user)
+            ->getJson(route('boards.content', $theirs))
+            ->assertForbidden();
+    }
+
     public function test_boards_are_deleted_with_their_user()
     {
         $user = User::factory()->create();

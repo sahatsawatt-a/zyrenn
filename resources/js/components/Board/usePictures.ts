@@ -8,6 +8,7 @@ import { fitOnBoard } from './geometry';
 import type { Item } from './items';
 import { itemsFromMermaid } from './mermaid';
 import { svgSource } from './pictures';
+import { useImageCache } from './useImageCache';
 
 type Placer = {
     board: {
@@ -28,35 +29,7 @@ type Placer = {
 export function usePictures({ board, middleOfView, editingId }: Placer) {
     const importing = ref(false);
 
-    // Each picture is decoded once and kept by its URL. The map is replaced
-    // rather than mutated, so the canvas redraws when one finishes loading.
-    const decoded = ref(new Map<string, HTMLImageElement>());
-    const loading = new Set<string>();
-
-    const imageFor = (item: Item): HTMLImageElement | undefined => {
-        if (!item.src) {
-            return undefined;
-        }
-
-        const ready = decoded.value.get(item.src);
-
-        if (ready || loading.has(item.src)) {
-            return ready;
-        }
-
-        loading.add(item.src);
-
-        const image = new window.Image();
-
-        image.onload = () => {
-            decoded.value = new Map(decoded.value).set(item.src, image);
-            loading.delete(item.src);
-        };
-        image.onerror = () => loading.delete(item.src);
-        image.src = item.src;
-
-        return undefined;
-    };
+    const { imageFor } = useImageCache();
 
     /** Puts a picture in the middle of what is on screen. */
     const placeImage = (source: {

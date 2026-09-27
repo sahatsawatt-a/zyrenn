@@ -23,6 +23,8 @@ import plaintext from 'highlight.js/lib/languages/plaintext';
 import CodeBlockView from '../components/Editor/CodeBlockView.vue';
 // Newly created Interactive Graphic Render Canvas Component
 import MermaidBlock from '../components/Editor/MermaidBlock.vue';
+// A board shown in the note, chosen from two dropdowns
+import BoardBlock from '../components/Editor/BoardBlock.vue';
 
 const lowlight = createLowlight();
 
@@ -41,6 +43,8 @@ lowlight.register('rust', rust);
 lowlight.register('plaintext', plaintext);
 // Mermaid source has no highlight.js grammar; keep it from being auto-detected as another language
 lowlight.register('mermaid', plaintext);
+// Nor does a board reference: it is two lines naming what to show
+lowlight.register('board', plaintext);
 
 export const CodeBlockNode = CodeBlockLowlight.configure({
     lowlight,
@@ -50,29 +54,35 @@ export const CodeBlockNode = CodeBlockLowlight.configure({
     },
 }).extend({
     addNodeView() {
-        const isMermaid = (node: ProseMirrorNode) =>
-            node.attrs.language === 'mermaid';
+        const kindOf = (node: ProseMirrorNode): 'mermaid' | 'board' | 'code' =>
+            node.attrs.language === 'mermaid'
+                ? 'mermaid'
+                : node.attrs.language === 'board'
+                  ? 'board'
+                  : 'code';
 
-        // The view is picked once per node, so returning false when a block switches
-        // to/from mermaid makes ProseMirror rebuild it with the other component
+        // The view is picked once per node, so returning false when a block
+        // changes kind makes ProseMirror rebuild it with the other component
         const update: VueNodeViewRendererOptions['update'] = ({
             oldNode,
             newNode,
             updateProps,
         }) => {
-            if (isMermaid(oldNode) !== isMermaid(newNode)) return false;
+            if (kindOf(oldNode) !== kindOf(newNode)) return false;
             updateProps();
             return true;
         };
 
         return (props) => {
-            // 💡 Intercept block mapping if user explicitly toggles it to a flow/sequence scheme
-            if (isMermaid(props.node)) {
-                return VueNodeViewRenderer(MermaidBlock, { update })(props);
-            }
+            const views = {
+                mermaid: MermaidBlock,
+                board: BoardBlock,
+                code: CodeBlockView,
+            } as const;
 
-            // Fall back directly to your standard highlight.js interface structure
-            return VueNodeViewRenderer(CodeBlockView, { update })(props);
+            return VueNodeViewRenderer(views[kindOf(props.node)], { update })(
+                props,
+            );
         };
     },
 });
