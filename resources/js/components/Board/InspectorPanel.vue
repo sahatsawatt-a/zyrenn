@@ -16,6 +16,9 @@ import {
 } from '@lucide/vue';
 import type { Component } from 'vue';
 import { computed } from 'vue';
+import { HEAD_TYPES } from './connectors';
+import { SIDES } from './geometry';
+import { hasText } from './items';
 import type {
     Align,
     Item,
@@ -23,8 +26,7 @@ import type {
     Routing,
     Side,
     VerticalAlign,
-} from './board';
-import { HEAD_TYPES, SIDES, hasText } from './board';
+} from './items';
 import ColourPicker from './ColourPicker.vue';
 import LayersPanel from './LayersPanel.vue';
 import ConnectorIcon from './ConnectorIcon.vue';
@@ -339,6 +341,36 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                     <span>{{ line.lineWidth }}</span>
                 </label>
 
+                <div class="inspector-fields">
+                    <label
+                        v-for="end in ['from', 'to'] as const"
+                        :key="end"
+                        :title="'Auto keeps this end facing whatever is at the other; a face keeps it there'"
+                    >
+                        {{ end === 'from' ? 'Start on' : 'End on' }}
+                        <select
+                            :value="pinnedSide(end) ?? ''"
+                            :data-test="`side-${end}`"
+                            @change="
+                                pinSide(
+                                    end,
+                                    (($event.target as HTMLSelectElement)
+                                        .value || null) as Side | null,
+                                )
+                            "
+                        >
+                            <option value="">Auto</option>
+                            <option
+                                v-for="side in SIDES"
+                                :key="side"
+                                :value="side"
+                            >
+                                {{ side }}
+                            </option>
+                        </select>
+                    </label>
+                </div>
+
                 <details class="inspector-fold" data-test="ends-config">
                     <summary>
                         Ends
@@ -373,36 +405,6 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                         >
                             <ConnectorIcon :kind="{ head: head.value, side }" />
                         </button>
-                    </div>
-
-                    <div class="inspector-fields">
-                        <label
-                            v-for="end in ['from', 'to'] as const"
-                            :key="end"
-                            :title="'Auto keeps this end facing whatever is at the other; a face keeps it there'"
-                        >
-                            {{ end === 'from' ? 'Start on' : 'End on' }}
-                            <select
-                                :value="pinnedSide(end) ?? ''"
-                                :data-test="`side-${end}`"
-                                @change="
-                                    pinSide(
-                                        end,
-                                        (($event.target as HTMLSelectElement)
-                                            .value || null) as Side | null,
-                                    )
-                                "
-                            >
-                                <option value="">Auto</option>
-                                <option
-                                    v-for="side in SIDES"
-                                    :key="side"
-                                    :value="side"
-                                >
-                                    {{ side }}
-                                </option>
-                            </select>
-                        </label>
                     </div>
 
                     <label class="inspector-slider">

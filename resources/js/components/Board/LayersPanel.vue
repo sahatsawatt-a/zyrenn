@@ -10,8 +10,9 @@ import {
     LockOpen,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
-import type { Item } from './board';
-import { boundsOf, isConnector, nameOf } from './board';
+import { nameOf } from './items';
+import type { Item } from './items';
+import { groupItems } from './layers';
 
 // The stack, top first -- the order you see, not the order it is painted in.
 const props = defineProps<{ items: Item[]; selection: string[] }>();
@@ -21,8 +22,6 @@ const emit = defineEmits<{
     move: [{ id: string; index: number }];
     toggle: [{ id: string; field: 'hidden' | 'locked' }];
 }>();
-
-type Group = { key: string; frame: Item | null; items: Item[] };
 
 const collapsed = ref(new Set<string>());
 
@@ -36,83 +35,9 @@ const toggleGroup = (key: string) => {
     collapsed.value = shut;
 };
 
-/** Whether the middle of an item falls inside a frame. */
-const sitsIn = (item: Item, frame: Item) => {
-    const box = boundsOf(item);
-    const slide = boundsOf(frame);
-    const x = box.x + box.width / 2;
-    const y = box.y + box.height / 2;
+const groups = computed(() => groupItems(props.items));
 
-    return (
-        x >= slide.x &&
-        x <= slide.x + slide.width &&
-        y >= slide.y &&
-        y <= slide.y + slide.height
-    );
-};
-
-/**
- * The stack, under the frame each thing sits on. A board is usually a handful
- * of slides with a dozen things on each, and one flat list of forty rows says
- * nothing about which slide anything belongs to.
- */
-const groups = computed<Group[]>(() => {
-    const frames = props.items.filter((item) => item.kind === 'frame');
-    const onFrame = new Map<string, Item[]>(
-        frames.map((frame) => [frame.id, []]),
-    );
-    const loose: Item[] = [];
-    // Which frame each thing was filed under, so a connector can follow the
-    // shapes it joins whichever order they are painted in
-    const filedUnder = new Map<string, string>();
-
-    for (const item of props.items) {
-        if (item.kind === 'frame' || isConnector(item)) {
-            continue;
-        }
-
-        const home = frames.find((frame) => sitsIn(item, frame));
-
-        if (home) {
-            filedUnder.set(item.id, home.id);
-        }
-    }
-
-    for (const item of props.items) {
-        if (item.kind === 'frame') {
-            continue;
-        }
-
-        // A connector has no box of its own -- it is wherever its ends are --
-        // so it is filed with whatever it joins rather than by where it sits
-        const frameId = isConnector(item)
-            ? (filedUnder.get(item.from?.item ?? '') ??
-              filedUnder.get(item.to?.item ?? ''))
-            : filedUnder.get(item.id);
-
-        const home = frameId ? onFrame.get(frameId) : undefined;
-
-        (home ?? loose).push(item);
-    }
-
-    // Each group runs top of the stack first, as the flat list did
-    const grouped: Group[] = frames.map((frame) => ({
-        key: frame.id,
-        frame,
-        items: [...(onFrame.get(frame.id) ?? [])].reverse(),
-    }));
-
-    if (loose.length || frames.length === 0) {
-        grouped.push({
-            key: 'board',
-            frame: null,
-            items: [...loose].reverse(),
-        });
-    }
-
-    return grouped;
-});
-
+// --- dragging a row to restack it
 const dragging = ref<string | null>(null);
 const over = ref<string | null>(null);
 

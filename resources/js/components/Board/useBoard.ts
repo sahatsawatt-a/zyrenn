@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue';
-import type { Item, ItemKind } from './board';
-import { STICKY_COLOURS, bumpIdsTo, hydrate, makeItem, newId } from './board';
+import { STICKY_COLOURS, bumpIdsTo, hydrate, makeItem, newId } from './items';
+import { groupKeys } from './layers';
+import type { Item, ItemKind } from './items';
 
 /**
  * The board's items, what is selected, and undo/redo.
@@ -166,16 +167,31 @@ export function useBoard(initial: Item[] | null = null) {
         // their order instead of swapping past each other
         const order = step > 0 ? [...moving].reverse() : moving;
 
+        // Stepping is by what the layers list shows, which is grouped by frame:
+        // stepping past a shape on another frame looks like nothing happening.
+        const groups = groupKeys(items.value);
+
         order.forEach((item) => {
             const at = next.indexOf(item);
-            const to = at + step;
 
-            if (at < 0 || to < 0 || to >= next.length) {
+            if (at < 0) {
                 return;
             }
 
-            // Do not swap with something that is moving too
-            if (selection.value.includes(next[to].id)) {
+            const home = groups.get(item.id);
+            let to = at + step;
+
+            // Over anything on another frame, and over what is moving too
+            while (
+                to >= 0 &&
+                to < next.length &&
+                (groups.get(next[to].id) !== home ||
+                    selection.value.includes(next[to].id))
+            ) {
+                to += step;
+            }
+
+            if (to < 0 || to >= next.length) {
                 return;
             }
 

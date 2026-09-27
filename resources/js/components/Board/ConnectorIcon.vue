@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { HeadType, LineStyle, Routing } from './board';
+import type { HeadType, LineStyle, Routing } from './items';
 
 // Small previews of what each connector setting draws. A picture of a dashed
 // line beats the word "dashed", and a diamond cap is only obvious as a diamond.

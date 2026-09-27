@@ -40,31 +40,39 @@ import { isImageFile, uploadToDrive } from '@/lib/drive';
 import ImagePickerDialog from '@/components/media/ImagePickerDialog.vue';
 import type { PickedImage } from '@/components/media/ImagePickerDialog.vue';
 import ShapeLibrary from './ShapeLibrary.vue';
-import type { Item, Side, Tool } from './board';
-import type { Guide } from './board';
 import {
-    PATHS,
-    POLYGONS,
-    alignmentFor,
-    anchorsOf,
-    boundsOf,
-    boundsOfAll,
-    hasText,
     connectorPoints,
     dashFor,
     headPoints,
     headsOf,
+    midpointOf,
+    trimmedPoints,
+} from './connectors';
+import type { Guide } from './connectors';
+import {
+    anchorsOf,
+    boundsOf,
+    boundsOfAll,
+    fitOnBoard,
+    overlaps,
+    polygonPoints,
+} from './geometry';
+import { alignmentFor } from './guides';
+import {
+    PATHS,
+    POLYGONS,
+    hasText,
     isConnectable,
     isConnector,
     isPath,
     isStroke,
-    midpointOf,
-    overlaps,
-    fitOnBoard,
-    polygonPoints,
-    svgSource,
-    trimmedPoints,
-} from './board';
+} from './items';
+import type { Item, Side, Tool } from './items';
+import { svgSource } from './pictures';
+import { FRAME_TITLE, useLabelEditor } from './useLabelEditor';
+import { usePresenting } from './usePresenting';
+import { useFormulae } from './useFormulae';
+import { usePictures } from './usePictures';
 import { useBoard } from './useBoard';
 import { useCamera } from './useCamera';
 
@@ -125,7 +133,6 @@ const camera = useCamera(stage, { width, height });
 const tool = ref<Tool>('select');
 
 // Konva node name, so a double-click can tell the frame's title from its body
-const FRAME_TITLE = 'frame-title';
 // What the next shape is drawn with; recolouring a selection updates it too, so
 // the toolbar always shows the colour you last worked in.
 const fillColour = ref('#ffffff');
@@ -140,7 +147,15 @@ const paintStroke = (colour: string) => {
     strokeColour.value = colour;
     board.paintStroke(colour);
 };
-const presenting = ref(false);
+const {
+    presenting,
+    frameIndex,
+    currentFrame,
+    showFrame,
+    startPresenting,
+    stopPresenting,
+} = usePresenting({ board, camera, width, height });
+
 const spaceHeld = ref(false);
 
 const panning = computed(
@@ -177,14 +192,29 @@ const gridStyle = computed(() => {
     };
 });
 
+// ------------------------------------------------------------ Text editing
+// Before the transformer's watcher, which reads what is being typed the moment
+// it is created.
+const {
+    editingId,
+    editingItem,
+    editorText,
+    editorStyle,
+    startEditing,
+    stopEditing,
+    onItemDoubleClick,
+} = useLabelEditor({
+    board,
+    camera,
+    presenting,
+    // Wrapped, so the path can be worked out later rather than read now
+    connectorPath: (item) => connectorPath(item),
+});
+
 // --------------------------------------------------------------- Selection
 const transformerRef = useTemplateRef<{ getNode: () => Konva.Transformer }>(
     'transformerRef',
 );
-
-// Declared here because the transformer watcher below reads it, and a watcher
-// evaluates its sources the moment it is created.
-const editingId = ref<string | null>(null);
 
 watch(
     [board.selection, board.items, presenting, editingId],
@@ -693,364 +723,21 @@ const onItemClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
     board.select([id]);
 };
 
-// ------------------------------------------------------------ Text editing
-const editorText = ref('');
-const editor = useTemplateRef<HTMLTextAreaElement>('editor');
-
-const editingItem = computed(() =>
-    editingId.value ? board.byId.value.get(editingId.value) : null,
-);
-
-// ------------------------------------------------------------------- Formulae
-// Konva draws shapes, not typeset maths, so a formula is laid over the canvas
-// as HTML that KaTeX has set, moved and scaled with the camera. KaTeX and its
-// stylesheet are only fetched once a board actually has one on it.
-const katex = shallowRef<typeof import('katex').default | null>(null);
-
-const mathItems = computed(() =>
-    board.items.value.filter((item) => item.kind === 'math' && !item.hidden),
-);
-
-watch(
-    () => mathItems.value.length > 0,
-    async (needed) => {
-        if (!needed || katex.value) {
-            return;
-        }
-
-        const [module] = await Promise.all([
-            import('katex'),
-            import('katex/dist/katex.min.css'),
-        ]);
-
-        katex.value = module.default;
-    },
-    { immediate: true },
-);
-
-/** One formula, set from its LaTeX. A mistake in it is shown, not thrown. */
-const mathHtml = (item: Item): string =>
-    katex.value
-        ? katex.value.renderToString(item.text || '\\square', {
-              throwOnError: false,
-              displayMode: true,
-          })
-        : '';
-
-/** Where that formula sits on screen, and how big, as the camera moves. */
-const mathStyle = (item: Item) => {
-    const scale = camera.scale.value;
-
-    return {
-        left: `${item.x * scale + camera.position.value.x}px`,
-        top: `${item.y * scale + camera.position.value.y}px`,
-        width: `${item.width * scale}px`,
-        height: `${item.height * scale}px`,
-        fontSize: `${item.fontSize * scale}px`,
-        justifyContent:
-            item.align === 'left'
-                ? 'flex-start'
-                : item.align === 'right'
-                  ? 'flex-end'
-                  : 'center',
-        alignItems:
-            item.verticalAlign === 'top'
-                ? 'flex-start'
-                : item.verticalAlign === 'bottom'
-                  ? 'flex-end'
-                  : 'center',
-        // The formula is a picture of itself; the shape under it takes the clicks
-        opacity: editingId.value === item.id ? 0 : 1,
-    };
-};
-
-// The overlay sits on top of the canvas, so it has to be placed in screen
-// coordinates that follow the camera.
-const editorStyle = computed(() => {
-    const item = editingItem.value;
-
-    if (!item) {
-        return { display: 'none' };
-    }
-
-    const scale = camera.scale.value;
-
-    if (item.kind === 'frame') {
-        return {
-            left: `${item.x * scale + camera.position.value.x}px`,
-            top: `${(item.y - 30) * scale + camera.position.value.y}px`,
-            width: `${Math.min(item.width, 420) * scale}px`,
-            height: `${24 * scale}px`,
-            fontSize: `${18 * scale}px`,
-            textAlign: 'left' as const,
-        };
-    }
-
-    if (isConnector(item)) {
-        const middle = midpointOf(connectorPath(item));
-
-        return {
-            left: `${(middle.x - 70) * scale + camera.position.value.x}px`,
-            top: `${(middle.y - 11) * scale + camera.position.value.y}px`,
-            width: `${140 * scale}px`,
-            height: `${22 * scale}px`,
-            fontSize: `${13 * scale}px`,
-            textAlign: 'center' as const,
-        };
-    }
-
-    return {
-        left: `${item.x * scale + camera.position.value.x}px`,
-        top: `${item.y * scale + camera.position.value.y}px`,
-        width: `${item.width * scale}px`,
-        height: `${item.height * scale}px`,
-        fontSize: `${item.fontSize * scale}px`,
-        // Typing lines up the way the finished label will
-        textAlign: item.align,
-    };
+// ------------------------------------------------------------------ Formulae
+const { formulae, mathHtml, mathStyle } = useFormulae({
+    items: board.items,
+    camera,
+    editingId,
 });
 
-const startEditing = (id: string) => {
-    const item = board.byId.value.get(id);
-
-    // Ink has nowhere to put a label; everything else, connectors included, does
-    if (!item || (!hasText(item) && !isConnector(item))) {
-        return;
-    }
-
-    editingId.value = id;
-    editorText.value = item.text;
-
-    nextTick(() => {
-        editor.value?.focus();
-        editor.value?.select();
+// ------------------------------------------------------------------ Pictures
+const { importing, imageFor, addSvg, onImagesPicked, onDropFiles } =
+    usePictures({
+        board,
+        middleOfView: () =>
+            camera.toBoard({ x: width.value / 2, y: height.value / 2 }),
+        editingId,
     });
-};
-
-const stopEditing = (keep = true) => {
-    const id = editingId.value;
-
-    if (id && keep) {
-        board.setText(id, editorText.value);
-    }
-
-    editingId.value = null;
-};
-
-const onItemDoubleClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
-    const id = event.target.id() || event.target.getParent()?.id();
-    const item = id ? board.byId.value.get(id) : null;
-
-    if (!item || presenting.value) {
-        return;
-    }
-
-    // Double-clicking inside a frame is for whatever sits in it; the title is
-    // renamed by double-clicking the title itself.
-    if (item.kind === 'frame' && event.target.name() !== FRAME_TITLE) {
-        return;
-    }
-
-    startEditing(item.id);
-};
-
-// --------------------------------------------------------------- Presenting
-const frameIndex = ref(0);
-
-const currentFrame = computed(
-    () => board.frames.value[frameIndex.value] ?? null,
-);
-
-const showFrame = (index: number) => {
-    const frames = board.frames.value;
-
-    if (!frames.length) {
-        return;
-    }
-
-    frameIndex.value = Math.min(frames.length - 1, Math.max(0, index));
-    camera.focus(boundsOf(frames[frameIndex.value]), {
-        animate: true,
-        padding: 24,
-    });
-};
-
-// Entering and leaving presentation hides or restores the side panels, so the
-// canvas changes width a frame later. The camera is recomputed once the new
-// size lands -- which also keeps the frame filling the screen if the window is
-// resized mid-presentation.
-let refitOnResize: 'frame' | 'all' | null = null;
-
-watch([width, height], () => {
-    if (presenting.value) {
-        const frame = currentFrame.value;
-
-        if (frame) {
-            camera.focus(boundsOf(frame), { padding: 24 });
-        }
-
-        return;
-    }
-
-    if (refitOnResize === 'all') {
-        refitOnResize = null;
-        camera.focus(boundsOfAll(board.items.value));
-    }
-});
-
-const startPresenting = () => {
-    if (!board.frames.value.length) {
-        return;
-    }
-
-    board.select([]);
-    presenting.value = true;
-    showFrame(0);
-};
-
-const stopPresenting = () => {
-    presenting.value = false;
-    refitOnResize = 'all';
-    camera.focus(boundsOfAll(board.items.value), { animate: true });
-};
-
-// --------------------------------------------------------------- Imported SVG
-const importing = ref(false);
-
-// Each document is decoded once and kept by its data URL. The ref is replaced
-// rather than mutated so the canvas redraws when one finishes loading.
-const decoded = ref(new Map<string, HTMLImageElement>());
-const loading = new Set<string>();
-
-const imageFor = (item: Item): HTMLImageElement | undefined => {
-    if (!item.src) {
-        return undefined;
-    }
-
-    const ready = decoded.value.get(item.src);
-
-    if (ready || loading.has(item.src)) {
-        return ready;
-    }
-
-    loading.add(item.src);
-
-    const image = new window.Image();
-    image.onload = () => {
-        decoded.value = new Map(decoded.value).set(item.src, image);
-        loading.delete(item.src);
-    };
-    image.onerror = () => loading.delete(item.src);
-    image.src = item.src;
-
-    return undefined;
-};
-
-const placeImage = (source: { src: string; width: number; height: number }) => {
-    const middle = camera.toBoard({ x: width.value / 2, y: height.value / 2 });
-
-    const item = board.makeItem(
-        'image',
-        middle.x - source.width / 2,
-        middle.y - source.height / 2,
-    );
-    item.src = source.src;
-    item.width = source.width;
-    item.height = source.height;
-
-    board.add(item);
-    importing.value = false;
-};
-
-const addSvg = (markup: string) => placeImage(svgSource(markup));
-
-/** How big a picture should land, from its own proportions. */
-const sizeOf = (src: string) =>
-    new Promise<{ width: number; height: number }>((resolve) => {
-        const probe = new window.Image();
-
-        probe.onload = () =>
-            resolve(fitOnBoard(probe.naturalWidth, probe.naturalHeight));
-        probe.onerror = () => resolve({ width: 240, height: 240 });
-        probe.src = src;
-    });
-
-/**
- * Pictures chosen in the dialog -- uploaded from this machine, taken from the
- * Drive, or linked. They are all just a URL by the time they get here.
- */
-const onImagesPicked = async (images: PickedImage[]) => {
-    for (const image of images) {
-        placeImage({ src: image.src, ...(await sizeOf(image.src)) });
-    }
-};
-
-/**
- * A file dropped or pasted onto the board. SVG is drawn from its markup;
- * anything else goes to the Drive and the board keeps the link, the way a note
- * does -- a screenshot carried inside the board would be sent again on every
- * save. If the upload cannot be made, the pixels are kept instead so the
- * picture is not simply lost.
- */
-const addImageFile = async (file: File) => {
-    if (file.type === 'image/svg+xml' || file.name.endsWith('.svg')) {
-        addSvg(await file.text());
-
-        return;
-    }
-
-    if (!isImageFile(file)) {
-        return;
-    }
-
-    let src: string;
-
-    try {
-        src = (await uploadToDrive(file)).url;
-    } catch {
-        src = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result));
-            reader.onerror = () => reject(reader.error);
-            reader.readAsDataURL(file);
-        });
-    }
-
-    placeImage({ src, ...(await sizeOf(src)) });
-};
-
-// Paste a screenshot straight onto the board, as any board app does. Markup on
-// the clipboard counts too, so an SVG copied from a page can just be pasted.
-useEventListener(window, 'paste', (event: ClipboardEvent) => {
-    if (editingId.value || importing.value) {
-        return;
-    }
-
-    const file = Array.from(event.clipboardData?.files ?? [])[0];
-
-    if (file) {
-        event.preventDefault();
-        void addImageFile(file);
-
-        return;
-    }
-
-    const text = event.clipboardData?.getData('text/plain') ?? '';
-
-    if (/<svg[\s>]/i.test(text)) {
-        event.preventDefault();
-        addSvg(text);
-    }
-});
-
-const onDropFiles = (event: DragEvent) => {
-    const files = Array.from(event.dataTransfer?.files ?? []);
-
-    if (files.length) {
-        event.preventDefault();
-        files.forEach((file) => void addImageFile(file));
-    }
-};
 
 // ------------------------------------------------------------------ Actions
 const fitAll = () => camera.focus(boundsOfAll(board.items.value));
@@ -1965,7 +1652,7 @@ const labelInset = (item: Item): number => {
                 <!-- Formulae, set by KaTeX over the canvas. They take no
                      clicks: the shape underneath is what gets selected. -->
                 <div
-                    v-for="item in mathItems"
+                    v-for="item in formulae"
                     :key="item.id"
                     class="math-item"
                     :style="mathStyle(item)"

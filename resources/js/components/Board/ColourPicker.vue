@@ -2,7 +2,7 @@
 import { Pipette } from '@lucide/vue';
 import { useEventListener } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
-import { PALETTE } from './board';
+import { PALETTE } from './items';
 
 // A saturation/value square over a hue slider: the picker Figma, Miro and
 // friends use. Hand-built rather than pulled from a package -- the well-known

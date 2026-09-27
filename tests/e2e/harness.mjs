@@ -1,0 +1,298 @@
+// What every board suite shares: signing in, reading the canvas back, and
+// saying what passed. A suite should hold only what is particular to it.
+//
+// These drive the real app in a real browser, because a canvas can type-check
+// perfectly and still refuse to draw. Run them against `composer dev`:
+//
+//     node tests/e2e/board.mjs          # watch it happen
+//     HEADED=0 node tests/e2e/board.mjs # quietly
+import { chromium } from 'playwright-core';
+
+const APP = process.env.APP_URL ?? 'http://127.0.0.1:8001';
+
+const WHO = {
+    email: process.env.E2E_EMAIL ?? 'playwright@zyrenn.test',
+    password: process.env.E2E_PASSWORD ?? 'canvas-demo-password',
+};
+
+export const SHOTS = process.env.E2E_SHOTS ?? '/tmp/zyrenn-e2e';
+
+/**
+ * Opens the app at `path` with somebody signed in, and hands back the page
+ * along with the helpers every board suite needs.
+ */
+export async function openBoard(path = '/demo/konva', size = {}) {
+    const results = [];
+    const problems = [];
+
+    const browser = await chromium.launch({
+        channel: 'chrome',
+        headless: process.env.HEADED === '0',
+        slowMo: Number(process.env.SLOWMO ?? 40),
+    });
+    const page = await browser.newPage({
+        viewport: { width: size.width ?? 1500, height: size.height ?? 950 },
+    });
+
+    page.on('console', (message) => {
+        if (message.type() === 'error' || message.type() === 'warning') {
+            problems.push(
+                `console.${message.type()}: ${message.text().slice(0, 160)}`,
+            );
+        }
+    });
+    page.on('pageerror', (error) =>
+        problems.push(`pageerror: ${error.message.slice(0, 160)}`),
+    );
+
+    await page.goto(`${APP}/login`, { waitUntil: 'networkidle' });
+    await page.getByLabel('Email address').fill(WHO.email);
+    await page.getByLabel('Password', { exact: true }).fill(WHO.password);
+    await page.getByRole('button', { name: /log in/i }).click();
+    await page.waitForURL(/dashboard/);
+
+    await page.goto(`${APP}${path}`, { waitUntil: 'networkidle' });
+
+    // Where the canvas sits on screen. A page that has no board on it yet --
+    // the list, say -- says so, and calls ready() once one is open.
+    const view = { box: null };
+
+    const ready = async () => {
+        await page.waitForSelector('canvas');
+        await page.waitForTimeout(900);
+        view.box = await page.locator('[data-zoom]').boundingBox();
+
+        return view.box;
+    };
+
+    if (size.canvas !== false) {
+        await ready();
+    }
+
+    const check = (label, passed, detail = '') => {
+        results.push(
+            `${passed ? 'PASS' : 'FAIL'}  ${label}${detail ? ` — ${detail}` : ''}`,
+        );
+
+        if (!passed) {
+            problems.push(label);
+        }
+    };
+
+    /** A point a fraction of the way across the canvas, in screen coordinates. */
+    const at = (across, down) => ({
+        x: view.box.x + view.box.width * across,
+        y: view.box.y + view.box.height * down,
+    });
+
+    /** Where the camera is, as the canvas reports it. */
+    const camera = async () => {
+        const [x, y, scale] = (
+            await page.locator('[data-camera]').getAttribute('data-camera')
+        )
+            .split(',')
+            .map(Number);
+
+        return { x, y, scale };
+    };
+
+    /** A point on the board, in screen coordinates. */
+    const screenOf = async (boardX, boardY) => {
+
+        const at = await camera();
+
+        return {
+            x: view.box.x + boardX * at.scale + at.x,
+            y: view.box.y + boardY * at.scale + at.y,
+        };
+    };
+
+    const rows = (group) =>
+        page.locator(
+            group
+                ? `[data-test="layers"] .layers-row[data-group="${group}"]`
+                : '[data-test="layers"] .layers-row',
+        );
+
+    const layerNames = async (group) =>
+        (await rows(group).allInnerTexts()).map((text) => text.trim());
+
+    const inspectorTitle = async () =>
+        (
+            await page.locator('[data-test="inspector-title"]').innerText()
+        ).trim();
+
+    const link = async () =>
+        (await page.locator('[data-test="connector-link"]').count())
+            ? (
+                  await page.locator('[data-test="connector-link"]').innerText()
+              ).trim()
+            : '(none)';
+
+    /** How many things are on the board, as the inspector counts them. */
+    const itemCount = async () =>
+        Number(
+            (await page.locator('[data-test="inspector"]').innerText()).match(
+                /(\d+) items/,
+            )?.[1] ?? 0,
+        );
+
+    /** The selection's x, y, width and height, as the inspector shows them. */
+    const fields = async () => {
+        const inputs = page.locator(
+            '[data-test="inspector"] input[type="number"]',
+        );
+        const [x, y, width, height] = await Promise.all(
+            [0, 1, 2, 3].map((index) => inputs.nth(index).inputValue()),
+        );
+
+        return { x: +x, y: +y, w: +width, h: +height };
+    };
+
+    /** How much of the canvas is painted -- a cheap "did anything change". */
+    const painted = () =>
+        page.evaluate(() => {
+            let count = 0;
+
+            for (const canvas of document.querySelectorAll('canvas')) {
+                const { data } = canvas
+                    .getContext('2d')
+                    .getImageData(0, 0, canvas.width, canvas.height);
+
+                for (let index = 3; index < data.length; index += 4) {
+                    if (data[index] > 0) {
+                        count++;
+                    }
+                }
+            }
+
+            return count;
+        });
+
+    /** A picture of one board rectangle, for comparing what moved. */
+    const shot = async ({ x, y, w, h }) => {
+        const at = await camera();
+
+        return page.screenshot({
+            clip: {
+                x: view.box.x + x * at.scale + at.x,
+                y: view.box.y + y * at.scale + at.y,
+                width: w * at.scale,
+                height: h * at.scale,
+            },
+        });
+    };
+
+    /** Draws something with a tool, and reports the box it ended up with. */
+    const draw = async (tool, fromX, fromY, across = 0.1, down = 0.12) => {
+        await page.locator(`[data-test="tool-${tool}"]`).click();
+        await page.mouse.move(at(fromX, fromY).x, at(fromX, fromY).y);
+        await page.mouse.down();
+        await page.mouse.move(
+            at(fromX + across, fromY + down).x,
+            at(fromX + across, fromY + down).y,
+            { steps: 6 },
+        );
+        await page.mouse.up();
+        await page.waitForTimeout(250);
+
+        const drawn = await fields();
+        await page.keyboard.press('Escape');
+
+        return drawn;
+    };
+
+    /** Draws a connector between the middles of two boxes. */
+    const join = async (from, to, ends) => {
+        await page.locator('[data-test="tool-arrow"]').click();
+
+        const start =
+            ends?.from ??
+            (await screenOf(from.x + from.w / 2, from.y + from.h / 2));
+        const finish =
+            ends?.to ?? (await screenOf(to.x + to.w / 2, to.y + to.h / 2));
+
+        await page.mouse.move(start.x, start.y);
+        await page.mouse.down();
+        await page.mouse.move((start.x + finish.x) / 2, start.y, { steps: 6 });
+        await page.mouse.move(finish.x, finish.y, { steps: 6 });
+        await page.mouse.up();
+        await page.waitForTimeout(400);
+        await page.locator('[data-test="tool-select"]').click();
+    };
+
+    /** Writes on whatever is under the point, the way a person would. */
+    const label = async (point, words) => {
+        await page.mouse.dblclick(point.x, point.y);
+        await page.waitForTimeout(350);
+        await page.keyboard.type(words);
+        // Escape throws the typing away; Enter is what commits it
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(350);
+    };
+
+    /** Which face a connector end is pinned to, as the inspector shows it. */
+    const pinnedSide = async (end) =>
+        (await page.locator(`[data-test="side-${end}"]`).inputValue()) ||
+        'auto';
+
+    const done = async () => {
+        await browser.close();
+        console.log(results.join('\n'));
+        console.log(
+            'problems:',
+            problems.length ? problems.join('; ') : 'none',
+        );
+
+        return problems.length;
+    };
+
+    return {
+        browser,
+        page,
+        view,
+        ready,
+        results,
+        problems,
+        check,
+        at,
+        camera,
+        screenOf,
+        rows,
+        layerNames,
+        inspectorTitle,
+        link,
+        itemCount,
+        fields,
+        painted,
+        shot,
+        draw,
+        join,
+        label,
+        pinnedSide,
+        done,
+    };
+}
+
+/**
+ * Runs a suite: opens the board, hands it the helpers, and always reports --
+ * a suite that falls over still says what had passed before it did.
+ */
+export async function runBoard(path, suite, size) {
+    const board = await openBoard(path, size);
+
+    try {
+        await suite(board);
+    } catch (error) {
+        board.problems.push(
+            `threw: ${error.message.split('\n')[0].slice(0, 200)}`,
+        );
+        board.results.push('FAIL  the suite got this far and threw');
+    }
+
+    const failures = await board.done();
+
+    process.exitCode = failures ? 1 : 0;
+
+    return failures;
+}
