@@ -1,16 +1,69 @@
 <?php
 
-namespace App\Models\Concerns;
+namespace App\Models;
 
+use App\Models\Concerns\HasRefId;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
 /**
- * A folder that nests under another folder of its own kind through
- * `parent_id`, like Drive folders and note folders.
+ * A folder of one kind of thing -- notes, boards, tables, Drive files -- owned
+ * by one user and nested under another folder of its own kind through
+ * `parent_id`. Each kind keeps its folders in a table of its own; everything
+ * else about a folder is the same, and lives here.
+ *
+ * @property int $id
+ * @property string $ref_id
+ * @property int $user_id
+ * @property int|null $parent_id
+ * @property string $name
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  */
-trait IsFolderTree
+abstract class Folder extends Model
 {
+    use HasRefId;
+
+    /**
+     * @var list<string>
+     */
+    protected $fillable = ['name', 'parent_id'];
+
+    /**
+     * What this kind of folder holds.
+     *
+     * @return class-string<Model>
+     */
+    abstract protected function itemModel(): string;
+
+    /**
+     * Get the user that owns the folder.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Delete the folder with everything inside it, at any depth.
+     *
+     * Things go one by one rather than in a single query, so each one's own
+     * deleting hook runs -- a table takes its rows with it, a file its bytes.
+     */
+    public function deleteTree(): void
+    {
+        $this->itemModel()::query()
+            ->whereIn('folder_id', $this->subtreeIds())
+            ->each(fn (Model $item) => $item->delete());
+
+        // Subfolders go with it through the parent_id cascade
+        $this->delete();
+    }
+
     /**
      * @return BelongsTo<static, $this>
      */

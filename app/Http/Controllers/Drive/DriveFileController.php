@@ -5,14 +5,12 @@ namespace App\Http\Controllers\Drive;
 use App\Http\Controllers\Controller;
 use App\Models\Drive\DriveFile;
 use App\Models\Drive\DriveFolder;
-use App\Models\User;
+use App\Support\Folders;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Exists;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -38,7 +36,7 @@ class DriveFileController extends Controller
         $request->validate([
             'files' => ['required', 'array', 'max:50'],
             'files.*' => ['required', 'file', 'max:51200'],
-            'folder' => ['nullable', 'string', self::ownFolder($user)],
+            'folder' => ['nullable', 'string', Folders::rule(DriveFolder::class, $user)],
         ]);
 
         $folder = $request->filled('folder')
@@ -93,7 +91,7 @@ class DriveFileController extends Controller
 
         $validated = $request->validate([
             'name' => ['sometimes', 'required', 'string', 'max:255'],
-            'folder' => ['sometimes', 'nullable', 'string', self::ownFolder($request->user())],
+            'folder' => ['sometimes', 'nullable', 'string', Folders::rule(DriveFolder::class, $request->user())],
         ]);
 
         if (array_key_exists('name', $validated)) {
@@ -101,9 +99,7 @@ class DriveFileController extends Controller
         }
 
         if (array_key_exists('folder', $validated)) {
-            $file->folder_id = $validated['folder'] === null
-                ? null
-                : DriveFolder::query()->where('ref_id', $validated['folder'])->value('id');
+            $file->folder_id = Folders::idOf(DriveFolder::class, $validated['folder']);
         }
 
         $file->save();
@@ -123,13 +119,5 @@ class DriveFileController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => __('File deleted.')]);
 
         return back();
-    }
-
-    /**
-     * A folder ref_id that belongs to the user.
-     */
-    public static function ownFolder(User $user): Exists
-    {
-        return Rule::exists('drive_folders', 'ref_id')->where('user_id', $user->id);
     }
 }

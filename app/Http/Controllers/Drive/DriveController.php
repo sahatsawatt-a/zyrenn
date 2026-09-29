@@ -5,9 +5,9 @@ namespace App\Http\Controllers\Drive;
 use App\Http\Controllers\Controller;
 use App\Models\Drive\DriveFile;
 use App\Models\Drive\DriveFolder;
+use App\Support\Folders;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -41,20 +41,14 @@ class DriveController extends Controller
             'type' => ['nullable', Rule::in(self::KINDS)],
         ]);
 
-        $folder = null;
-
-        if (! empty($filters['folder'])) {
-            $folder = $user->driveFolders()->where('ref_id', $filters['folder'])->firstOrFail();
-            Gate::authorize('view', $folder);
-        }
-
+        $folder = Folders::open(DriveFolder::class, $user, $filters['folder'] ?? null);
         $query = trim($filters['q'] ?? '');
         $searching = $query !== '';
         $sort = $filters['sort'] ?? 'newest';
         $type = $filters['type'] ?? null;
         [$column, $direction] = self::SORTS[$sort];
 
-        $allFolders = $user->driveFolders()->get(['id', 'ref_id', 'parent_id', 'name']);
+        $allFolders = Folders::all(DriveFolder::class, $user);
         $paths = DriveFolder::pathsById($allFolders);
 
         $files = $user->driveFiles()
@@ -70,27 +64,11 @@ class DriveController extends Controller
                 ...($searching ? ['path' => $paths[$file->folder_id] ?? null] : []),
             ]);
 
-        // Folders are always listed by name; a search matches them by name too
-        $folders = $allFolders
-            ->when(! $searching, fn ($all) => $all->where('parent_id', $folder?->id))
-            ->when($searching, fn ($all) => $all->filter(fn (DriveFolder $item) => mb_stripos($item->name, $query) !== false))
-            // A type filter is about files, so it hides folders
-            ->when($type, fn ($all) => $all->take(0))
-            ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
-            ->map(fn (DriveFolder $item) => [
-                'ref_id' => $item->ref_id,
-                'name' => $item->name,
-                ...($searching ? ['path' => $paths[$item->id]] : []),
-            ])
-            ->values();
-
         return Inertia::render('drive/Index', [
             'folder' => $folder?->only(['ref_id', 'name']),
-            'breadcrumbs' => array_map(
-                fn (DriveFolder $crumb) => $crumb->only(['ref_id', 'name']),
-                $folder?->ancestry() ?? [],
-            ),
-            'folders' => $folders,
+            'breadcrumbs' => Folders::crumbs($folder),
+            // A type filter is about files, so it hides folders
+            'folders' => Folders::listed($allFolders, $folder, $query, $paths, hide: $type !== null),
             'files' => $files,
             'filters' => ['q' => $query, 'sort' => $sort, 'type' => $type],
             'allFolders' => fn () => DriveFolder::paths($allFolders),

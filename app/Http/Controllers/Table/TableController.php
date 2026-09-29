@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Table;
 
+use App\Http\Controllers\Concerns\BrowsesFolders;
 use App\Http\Controllers\Controller;
 use App\Models\Table\Table;
 use App\Models\Table\TableColumn;
@@ -14,25 +15,12 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Exists;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class TableController extends Controller
 {
-    /**
-     * How the tables list can be sorted: key => [column, direction].
-     */
-    private const SORTS = [
-        'edited' => ['updated_at', 'desc'],
-        'created' => ['created_at', 'desc'],
-        'title' => ['title', 'asc'],
-    ];
-
-    /**
-     * How far back the "edited" filter reaches, in days (0 = since midnight).
-     */
-    private const EDITED = ['today' => 0, 'week' => 7, 'month' => 30];
+    use BrowsesFolders;
 
     /**
      * Browse a folder of the user's tables (the top level when none is given),
@@ -40,77 +28,18 @@ class TableController extends Controller
      */
     public function index(Request $request): Response
     {
-        $user = $request->user();
-
-        $filters = $request->validate([
-            'folder' => ['nullable', 'string'],
-            'q' => ['nullable', 'string', 'max:255'],
-            'sort' => ['nullable', Rule::in(array_keys(self::SORTS))],
-            'edited' => ['nullable', Rule::in(array_keys(self::EDITED))],
-        ]);
-
-        $folder = null;
-
-        if (! empty($filters['folder'])) {
-            $folder = $user->tableFolders()->where('ref_id', $filters['folder'])->firstOrFail();
-            Gate::authorize('view', $folder);
-        }
-
-        $query = trim($filters['q'] ?? '');
-        $searching = $query !== '';
-        $sort = $filters['sort'] ?? 'edited';
-        $edited = $filters['edited'] ?? null;
-        [$column, $direction] = self::SORTS[$sort];
-
-        $allFolders = $user->tableFolders()->get(['id', 'ref_id', 'parent_id', 'name']);
-        $paths = TableFolder::pathsById($allFolders);
-
-        $tables = $user->tables()
-            ->withCount('columns')
-            ->when(! $searching, fn ($tables) => $tables->where('folder_id', $folder?->id))
-            ->when($searching, fn ($tables) => $tables->whereLike('title', "%{$query}%"))
-            ->when($edited, fn ($tables) => $tables->where(
-                'updated_at',
-                '>=',
-                self::EDITED[$edited] === 0 ? now()->startOfDay() : now()->subDays(self::EDITED[$edited]),
-            ))
-            ->orderBy($column, $direction)
-            ->orderByDesc('id')
-            ->get()
-            ->map(fn (Table $table) => [
-                'ref_id' => $table->ref_id,
-                'title' => $table->title,
+        return $this->browse(
+            $request,
+            'tables/Index',
+            'tables',
+            $request->user()->tables()->withCount('columns'),
+            ['title'],
+            fn (Table $table) => [
                 // The id column is always there; the ones the user added are what count
                 'columns' => max(0, $table->columns_count - 1),
                 'rows' => TableStorage::count($table),
-                'updated_at' => $table->updated_at,
-                'created_at' => $table->created_at,
-                // Search results come from every folder, so say where each one lives
-                ...($searching ? ['path' => $paths[$table->folder_id] ?? null] : []),
-            ]);
-
-        // Folders are always listed by name; a search matches them by name too
-        $folders = $allFolders
-            ->when(! $searching, fn ($all) => $all->where('parent_id', $folder?->id))
-            ->when($searching, fn ($all) => $all->filter(fn (TableFolder $item) => mb_stripos($item->name, $query) !== false))
-            // An edited filter is about tables, so it hides folders rather than guessing at them
-            ->when($edited, fn ($all) => $all->take(0))
-            ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
-            ->map(fn (TableFolder $item) => [
-                'ref_id' => $item->ref_id,
-                'name' => $item->name,
-                ...($searching ? ['path' => $paths[$item->id]] : []),
-            ])
-            ->values();
-
-        return Inertia::render('tables/Index', [
-            'folder' => $folder?->only(['ref_id', 'name']),
-            'breadcrumbs' => self::crumbs($folder),
-            'folders' => $folders,
-            'tables' => $tables,
-            'filters' => ['q' => $query, 'sort' => $sort, 'edited' => $edited],
-            'allFolders' => fn () => TableFolder::paths($allFolders),
-        ]);
+            ],
+        );
     }
 
     /**
@@ -199,32 +128,8 @@ class TableController extends Controller
         return to_route('tables.index', $folder ? ['folder' => $folder->ref_id] : []);
     }
 
-    /**
-     * A table folder ref_id that belongs to the user.
-     */
-    public static function ownFolder(User $user): Exists
+    protected static function folderModel(): string
     {
-        return Rule::exists('table_folders', 'ref_id')->where('user_id', $user->id);
-    }
-
-    /**
-     * The id of a folder given by ref_id, already validated as the user's own.
-     */
-    public static function folderId(?string $refId): ?int
-    {
-        return $refId === null ? null : TableFolder::query()->where('ref_id', $refId)->value('id');
-    }
-
-    /**
-     * The path from the top level down to the folder, for breadcrumbs.
-     *
-     * @return list<array{ref_id: string, name: string}>
-     */
-    private static function crumbs(?TableFolder $folder): array
-    {
-        return array_map(
-            fn (TableFolder $crumb) => $crumb->only(['ref_id', 'name']),
-            $folder?->ancestry() ?? [],
-        );
+        return TableFolder::class;
     }
 }

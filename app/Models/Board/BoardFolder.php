@@ -2,41 +2,15 @@
 
 namespace App\Models\Board;
 
-use App\Models\Concerns\HasRefId;
-use App\Models\Concerns\IsFolderTree;
-use App\Models\User;
+use App\Models\Folder;
 use Database\Factories\Board\BoardFolderFactory;
-use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Carbon;
 
-/**
- * @property int $id
- * @property string $ref_id
- * @property int $user_id
- * @property int|null $parent_id
- * @property string $name
- * @property Carbon|null $created_at
- * @property Carbon|null $updated_at
- */
-#[Fillable(['name', 'parent_id'])]
-class BoardFolder extends Model
+class BoardFolder extends Folder
 {
     /** @use HasFactory<BoardFolderFactory> */
-    use HasFactory, HasRefId, IsFolderTree;
-
-    /**
-     * Get the user that owns the folder.
-     *
-     * @return BelongsTo<User, $this>
-     */
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
-    }
+    use HasFactory;
 
     /**
      * @return HasMany<Board, $this>
@@ -46,14 +20,8 @@ class BoardFolder extends Model
         return $this->hasMany(Board::class, 'folder_id');
     }
 
-    /**
-     * Delete the folder with every board and folder inside it.
-     */
-    public function deleteTree(): void
+    protected function itemModel(): string
     {
-        Board::query()->whereIn('folder_id', $this->subtreeIds())->delete();
-
-        // Subfolders go with it through the parent_id cascade
-        $this->delete();
+        return Board::class;
     }
 }
