@@ -1,8 +1,9 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Note;
 
-use App\Models\NoteFolder;
+use App\Http\Controllers\Controller;
+use App\Models\Note\NoteFolder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;

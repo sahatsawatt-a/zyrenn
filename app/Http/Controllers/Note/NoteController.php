@@ -1,9 +1,10 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Note;
 
-use App\Models\Note;
-use App\Models\NoteFolder;
+use App\Http\Controllers\Controller;
+use App\Models\Note\Note;
+use App\Models\Note\NoteFolder;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;

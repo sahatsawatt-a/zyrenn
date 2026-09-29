@@ -2,7 +2,7 @@
 
 namespace App\Policies;
 
-use App\Models\Board;
+use App\Models\Board\Board;
 use App\Models\User;
 
 class BoardPolicy

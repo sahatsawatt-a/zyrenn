@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Drive;
 
 use App\Http\Controllers\Controller;
-use App\Models\DriveFile;
-use App\Models\DriveFolder;
+use App\Models\Drive\DriveFile;
+use App\Models\Drive\DriveFolder;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;

@@ -1,7 +1,7 @@
 <?php
 
-use App\Http\Controllers\NoteController;
-use App\Http\Controllers\NoteFolderController;
+use App\Http\Controllers\Note\NoteController;
+use App\Http\Controllers\Note\NoteFolderController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'verified'])->group(function () {

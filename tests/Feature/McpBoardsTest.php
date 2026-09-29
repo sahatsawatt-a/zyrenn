@@ -10,7 +10,7 @@ use App\Mcp\Tools\Boards\GetBoard;
 use App\Mcp\Tools\Boards\ListBoardFolders;
 use App\Mcp\Tools\Boards\ListBoards;
 use App\Mcp\Tools\Boards\UpdateBoard;
-use App\Models\Board;
+use App\Models\Board\Board;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\Fluent\AssertableJson;

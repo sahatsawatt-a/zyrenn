@@ -7,7 +7,7 @@ use App\Mcp\Servers\LocalUserServer;
 use App\Mcp\Tools\Notes\GetNote;
 use App\Mcp\Tools\Notes\ListNotes;
 use App\Mcp\Tools\Users\ListUsers;
-use App\Models\Note;
+use App\Models\Note\Note;
 use App\Models\User;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;

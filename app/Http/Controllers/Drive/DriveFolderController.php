@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Drive;
 
 use App\Http\Controllers\Controller;
-use App\Models\DriveFolder;
+use App\Models\Drive\DriveFolder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;

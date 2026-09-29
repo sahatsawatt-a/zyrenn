@@ -2,8 +2,8 @@
 
 namespace App\Mcp\Tools;
 
-use App\Models\DriveFile;
-use App\Models\DriveFolder;
+use App\Models\Drive\DriveFile;
+use App\Models\Drive\DriveFolder;
 use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Relations\HasMany;

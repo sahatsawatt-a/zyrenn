@@ -1,8 +1,9 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Board;
 
-use App\Models\BoardFolder;
+use App\Http\Controllers\Controller;
+use App\Models\Board\BoardFolder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;

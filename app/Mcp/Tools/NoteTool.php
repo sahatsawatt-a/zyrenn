@@ -2,8 +2,8 @@
 
 namespace App\Mcp\Tools;
 
-use App\Models\Note;
-use App\Models\NoteFolder;
+use App\Models\Note\Note;
+use App\Models\Note\NoteFolder;
 use App\Models\User;
 use App\Support\TiptapMarkdown;
 use Illuminate\Contracts\JsonSchema\JsonSchema;

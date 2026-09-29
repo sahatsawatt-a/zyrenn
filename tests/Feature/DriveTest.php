@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\DriveFile;
-use App\Models\DriveFolder;
+use App\Models\Drive\DriveFile;
+use App\Models\Drive\DriveFolder;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;

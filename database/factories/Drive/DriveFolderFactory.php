@@ -1,27 +1,26 @@
 <?php
 
-namespace Database\Factories;
+namespace Database\Factories\Drive;
 
-use App\Models\Board;
+use App\Models\Drive\DriveFolder;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends Factory<Board>
+ * @extends Factory<DriveFolder>
  */
-class BoardFactory extends Factory
+class DriveFolderFactory extends Factory
 {
-    protected $model = Board::class;
-
     /**
+     * Define the model's default state.
+     *
      * @return array<string, mixed>
      */
     public function definition(): array
     {
         return [
             'user_id' => User::factory(),
-            'title' => $this->faker->sentence(3),
-            'content' => ['items' => []],
+            'name' => fake()->words(2, true),
         ];
     }
 }

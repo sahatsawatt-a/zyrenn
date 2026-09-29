@@ -1,7 +1,7 @@
 <?php
 
-use App\Http\Controllers\BoardController;
-use App\Http\Controllers\BoardFolderController;
+use App\Http\Controllers\Board\BoardController;
+use App\Http\Controllers\Board\BoardFolderController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'verified'])->group(function () {

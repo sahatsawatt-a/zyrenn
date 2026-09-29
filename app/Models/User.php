@@ -2,6 +2,12 @@
 
 namespace App\Models;
 
+use App\Models\Board\Board;
+use App\Models\Board\BoardFolder;
+use App\Models\Drive\DriveFile;
+use App\Models\Drive\DriveFolder;
+use App\Models\Note\Note;
+use App\Models\Note\NoteFolder;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;

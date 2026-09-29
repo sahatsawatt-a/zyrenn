@@ -2,8 +2,8 @@
 
 namespace App\Mcp\Tools;
 
-use App\Models\Board;
-use App\Models\BoardFolder;
+use App\Models\Board\Board;
+use App\Models\Board\BoardFolder;
 use App\Models\User;
 use App\Support\BoardItems;
 use Illuminate\Contracts\JsonSchema\JsonSchema;

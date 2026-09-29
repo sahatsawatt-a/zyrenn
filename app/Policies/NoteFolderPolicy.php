@@ -2,7 +2,7 @@
 
 namespace App\Policies;
 
-use App\Models\NoteFolder;
+use App\Models\Note\NoteFolder;
 use App\Models\User;
 
 class NoteFolderPolicy

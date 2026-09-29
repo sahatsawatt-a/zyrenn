@@ -3,8 +3,8 @@
 namespace App\Mcp\Tools\Drive;
 
 use App\Mcp\Tools\DriveTool;
-use App\Models\DriveFile;
-use App\Models\DriveFolder;
+use App\Models\Drive\DriveFile;
+use App\Models\Drive\DriveFolder;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;

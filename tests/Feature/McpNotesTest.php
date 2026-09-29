@@ -11,7 +11,7 @@ use App\Mcp\Tools\Notes\ListFolders;
 use App\Mcp\Tools\Notes\ListNotes;
 use App\Mcp\Tools\Notes\UpdateNote;
 use App\Mcp\Tools\Users\ListUsers;
-use App\Models\Note;
+use App\Models\Note\Note;
 use App\Models\User;
 use App\Support\TiptapMarkdown;
 use Illuminate\Foundation\Testing\RefreshDatabase;

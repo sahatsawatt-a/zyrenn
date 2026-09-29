@@ -1,10 +1,11 @@
 <?php
 
-namespace App\Models;
+namespace App\Models\Note;
 
 use App\Models\Concerns\HasRefId;
+use App\Models\User;
 use App\Support\TiptapMarkdown;
-use Database\Factories\NoteFactory;
+use Database\Factories\Note\NoteFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;

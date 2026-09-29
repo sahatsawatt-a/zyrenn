@@ -1,9 +1,10 @@
 <?php
 
-namespace App\Models;
+namespace App\Models\Board;
 
 use App\Models\Concerns\HasRefId;
-use Database\Factories\BoardFactory;
+use App\Models\User;
+use Database\Factories\Board\BoardFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;

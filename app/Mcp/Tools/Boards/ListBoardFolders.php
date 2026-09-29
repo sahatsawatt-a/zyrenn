@@ -3,7 +3,7 @@
 namespace App\Mcp\Tools\Boards;
 
 use App\Mcp\Tools\BoardTool;
-use App\Models\BoardFolder;
+use App\Models\Board\BoardFolder;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;

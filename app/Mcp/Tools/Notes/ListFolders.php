@@ -3,7 +3,7 @@
 namespace App\Mcp\Tools\Notes;
 
 use App\Mcp\Tools\NoteTool;
-use App\Models\NoteFolder;
+use App\Models\Note\NoteFolder;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;

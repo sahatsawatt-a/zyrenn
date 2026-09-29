@@ -2,7 +2,7 @@
 
 namespace App\Policies;
 
-use App\Models\DriveFile;
+use App\Models\Drive\DriveFile;
 use App\Models\User;
 
 class DriveFilePolicy

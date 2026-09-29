@@ -2,7 +2,7 @@
 
 namespace App\Policies;
 
-use App\Models\DriveFolder;
+use App\Models\Drive\DriveFolder;
 use App\Models\User;
 
 class DriveFolderPolicy

@@ -1,9 +1,10 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Board;
 
-use App\Models\Board;
-use App\Models\BoardFolder;
+use App\Http\Controllers\Controller;
+use App\Models\Board\Board;
+use App\Models\Board\BoardFolder;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;

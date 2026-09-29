@@ -1,10 +1,11 @@
 <?php
 
-namespace App\Models;
+namespace App\Models\Note;
 
 use App\Models\Concerns\HasRefId;
 use App\Models\Concerns\IsFolderTree;
-use Database\Factories\NoteFolderFactory;
+use App\Models\User;
+use Database\Factories\Note\NoteFolderFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;

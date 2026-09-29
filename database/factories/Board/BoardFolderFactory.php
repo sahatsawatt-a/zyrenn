@@ -1,8 +1,8 @@
 <?php
 
-namespace Database\Factories;
+namespace Database\Factories\Board;
 
-use App\Models\BoardFolder;
+use App\Models\Board\BoardFolder;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
