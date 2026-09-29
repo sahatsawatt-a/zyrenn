@@ -44,10 +44,10 @@ class UpdateBoard extends BoardTool
             ...$this->itemRules(sometimes: true),
         ]);
 
-        $board = $this->findBoard($user, $validated['ref_id']);
+        $board = $this->find($user, $validated['ref_id']);
 
         if (! $board) {
-            return Response::error("Board {$validated['ref_id']} was not found.");
+            return $this->notFound($validated['ref_id']);
         }
 
         if (array_key_exists('items', $validated)) {
@@ -72,6 +72,6 @@ class UpdateBoard extends BoardTool
 
         $board->save();
 
-        return Response::structured($this->withItems($board));
+        return Response::structured($this->full($board));
     }
 }

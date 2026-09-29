@@ -6,18 +6,30 @@ use App\Models\Note\Note;
 use App\Models\Note\NoteFolder;
 use App\Models\User;
 use App\Support\TiptapMarkdown;
-use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\JsonSchema\Types\Type;
 
 /**
- * Base for the note tools shared by both MCP servers. The user scoping and
- * folder-path handling live in ScopedTool.
+ * Base for the note tools shared by both MCP servers. Finding, listing and
+ * folders are FiledTool's; notes add their Markdown.
  *
- * @extends ScopedTool<NoteFolder>
+ * @extends FiledTool<NoteFolder, Note>
  */
-abstract class NoteTool extends ScopedTool
+abstract class NoteTool extends FiledTool
 {
+    protected function noun(): string
+    {
+        return 'note';
+    }
+
+    /**
+     * Note folders came first, so theirs is the plain name.
+     */
+    protected function folderTool(): string
+    {
+        return 'list-folders';
+    }
+
     /**
      * @return HasMany<NoteFolder, User>
      */
@@ -26,59 +38,35 @@ abstract class NoteTool extends ScopedTool
         return $user->noteFolders();
     }
 
-    protected function findNote(User $user, string $refId): ?Note
+    /**
+     * @return HasMany<Note, User>
+     */
+    protected function things(User $user): HasMany
     {
-        return $user->notes()->where('ref_id', $refId)->first();
+        return $user->notes();
+    }
+
+    protected function searchIn(): array
+    {
+        return ['title' => 'title', 'plain_text' => 'text'];
     }
 
     /**
-     * Schema for the note reference argument shared by single-note tools.
+     * @param  Note  $thing
      */
-    protected function refIdArgument(JsonSchema $schema): Type
+    protected function details(Model $thing): array
     {
-        return $schema->string()->description('The note\'s ref_id (shown on the note page, e.g. "k3x9m2p7qa").')->required();
+        return ['is_wide' => $thing->is_wide];
     }
 
     /**
-     * The note's folder as a path, e.g. "KT Plan/Lakeshore", or null at the top level.
-     *
-     * @param  array<int, string>|null  $paths  folder paths by id, when listing many notes
+     * @param  Note  $thing
      */
-    protected function folderPath(Note $note, ?array $paths = null): ?string
-    {
-        if ($note->folder_id === null) {
-            return null;
-        }
-
-        return $paths[$note->folder_id]
-            ?? implode('/', array_map(fn (NoteFolder $folder) => $folder->name, $note->folder->ancestry()));
-    }
-
-    /**
-     * @param  array<int, string>|null  $paths  folder paths by id, when listing many notes
-     * @return array<string, mixed>
-     */
-    protected function summary(Note $note, ?array $paths = null): array
+    protected function full(Model $thing): array
     {
         return [
-            'ref_id' => $note->ref_id,
-            'user_id' => $note->user_id,
-            'title' => $note->title,
-            'folder' => $this->folderPath($note, $paths),
-            'is_wide' => $note->is_wide,
-            'updated_at' => $note->updated_at?->toIso8601String(),
-            'url' => route('notes.show', $note),
-        ];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    protected function withContent(Note $note): array
-    {
-        return [
-            ...$this->summary($note),
-            'markdown' => TiptapMarkdown::toMarkdown($note->content),
+            ...$this->summary($thing),
+            'markdown' => TiptapMarkdown::toMarkdown($thing->content),
         ];
     }
 }

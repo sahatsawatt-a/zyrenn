@@ -60,6 +60,6 @@ class CreateBoard extends BoardTool
         $board->folder_id = $this->ensureFolderAt($user, $validated['folder'] ?? '')?->id;
         $board->save();
 
-        return Response::structured($this->withItems($board->refresh()));
+        return Response::structured($this->full($board->refresh()));
     }
 }

@@ -38,10 +38,10 @@ class UpdateNote extends NoteTool
             'folder' => ['sometimes', 'nullable', 'string', 'max:1000'],
         ]);
 
-        $note = $this->findNote($user, $validated['ref_id']);
+        $note = $this->find($user, $validated['ref_id']);
 
         if (! $note) {
-            return Response::error("Note {$validated['ref_id']} was not found.");
+            return $this->notFound($validated['ref_id']);
         }
 
         if (array_key_exists('title', $validated)) {
@@ -62,6 +62,6 @@ class UpdateNote extends NoteTool
 
         $note->save();
 
-        return Response::structured($this->withContent($note));
+        return Response::structured($this->full($note));
     }
 }

@@ -7,19 +7,25 @@ use App\Models\Board\BoardFolder;
 use App\Models\User;
 use App\Support\BoardItems;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\JsonSchema\Types\Type;
 
 /**
- * Base for the board tools shared by both MCP servers. The user scoping and
- * folder-path handling live in ScopedTool.
+ * Base for the board tools shared by both MCP servers. Finding, listing and
+ * folders are FiledTool's; boards add their items.
  *
- * @extends ScopedTool<BoardFolder>
+ * @extends FiledTool<BoardFolder, Board>
  */
-abstract class BoardTool extends ScopedTool
+abstract class BoardTool extends FiledTool
 {
     /** No board needs more on it than this in one call. */
     protected const MAX_ITEMS = 300;
+
+    protected function noun(): string
+    {
+        return 'board';
+    }
 
     /**
      * @return HasMany<BoardFolder, User>
@@ -29,17 +35,36 @@ abstract class BoardTool extends ScopedTool
         return $user->boardFolders();
     }
 
-    protected function findBoard(User $user, string $refId): ?Board
+    /**
+     * @return HasMany<Board, User>
+     */
+    protected function things(User $user): HasMany
     {
-        return $user->boards()->where('ref_id', $refId)->first();
+        return $user->boards();
+    }
+
+    protected function searchIn(): array
+    {
+        return ['title' => 'title', 'plain_text' => 'labels'];
     }
 
     /**
-     * Schema for the board reference argument shared by single-board tools.
+     * @param  Board  $thing
      */
-    protected function refIdArgument(JsonSchema $schema): Type
+    protected function details(Model $thing): array
     {
-        return $schema->string()->description('The board\'s ref_id (shown on the board page, e.g. "k3x9m2p7qa").')->required();
+        return ['item_count' => $thing->itemCount()];
+    }
+
+    /**
+     * @param  Board  $thing
+     */
+    protected function full(Model $thing): array
+    {
+        return [
+            ...$this->summary($thing),
+            'items' => BoardItems::toSpec($thing->content),
+        ];
     }
 
     /**
@@ -143,49 +168,6 @@ abstract class BoardTool extends ScopedTool
         }
 
         return null;
-    }
-
-    /**
-     * The board's folder as a path, e.g. "Plans/Q3", or null at the top level.
-     *
-     * @param  array<int, string>|null  $paths  folder paths by id, when listing many boards
-     */
-    protected function folderPath(Board $board, ?array $paths = null): ?string
-    {
-        if ($board->folder_id === null) {
-            return null;
-        }
-
-        return $paths[$board->folder_id]
-            ?? implode('/', array_map(fn (BoardFolder $folder) => $folder->name, $board->folder->ancestry()));
-    }
-
-    /**
-     * @param  array<int, string>|null  $paths  folder paths by id, when listing many boards
-     * @return array<string, mixed>
-     */
-    protected function summary(Board $board, ?array $paths = null): array
-    {
-        return [
-            'ref_id' => $board->ref_id,
-            'user_id' => $board->user_id,
-            'title' => $board->title,
-            'folder' => $this->folderPath($board, $paths),
-            'item_count' => $board->itemCount(),
-            'updated_at' => $board->updated_at?->toIso8601String(),
-            'url' => route('boards.show', $board),
-        ];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    protected function withItems(Board $board): array
-    {
-        return [
-            ...$this->summary($board),
-            'items' => BoardItems::toSpec($board->content),
-        ];
     }
 
     /**

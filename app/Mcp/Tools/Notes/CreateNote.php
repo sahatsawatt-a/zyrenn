@@ -42,6 +42,6 @@ class CreateNote extends NoteTool
         $note->folder_id = $this->ensureFolderAt($user, $validated['folder'] ?? '')?->id;
         $note->save();
 
-        return Response::structured($this->withContent($note->refresh()));
+        return Response::structured($this->full($note->refresh()));
     }
 }
