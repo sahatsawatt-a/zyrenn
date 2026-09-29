@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import {
+    Table2,
     BookOpen,
     FolderGit2,
     HardDrive,
     LayoutDashboard,
     LayoutGrid,
     NotebookPen,
-    Table2,
+    FileSpreadsheet,
+    ChartNoAxesCombined,
+    Presentation,
 } from '@lucide/vue';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
@@ -22,7 +25,13 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard, template_sample, tiptap_demo, konva_demo } from '@/routes';
+import {
+    dashboard,
+    template_sample,
+    tiptap_demo,
+    konva_demo,
+    table_demo,
+} from '@/routes';
 import { index as boardsIndex } from '@/routes/boards';
 import { index as driveIndex } from '@/routes/drive';
 import { index as notesIndex } from '@/routes/notes';
@@ -33,7 +42,7 @@ const mainNavItems: NavItem[] = [
     {
         title: 'Dashboard',
         href: dashboard(),
-        icon: LayoutGrid,
+        icon: ChartNoAxesCombined,
     },
     {
         title: 'Notes',
@@ -43,7 +52,7 @@ const mainNavItems: NavItem[] = [
     {
         title: 'Boards',
         href: boardsIndex(),
-        icon: LayoutDashboard,
+        icon: Presentation,
     },
     {
         title: 'Tables',
@@ -69,6 +78,11 @@ const mainNavItems: NavItem[] = [
     //     title: 'Konva Demo',
     //     href: konva_demo(),
     //     icon: LayoutGrid,
+    // },
+    // {
+    //     title: 'Table Demo',
+    //     href: table_demo(),
+    //     icon: FileSpreadsheet,
     // },
 ];
 

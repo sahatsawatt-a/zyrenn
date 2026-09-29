@@ -43,3 +43,6 @@ yarn-error.log
 /opencode.json
 /opencode.jsonc
 tools/mcp/zyrenn-mcp.sh
+
+# Local database dumps
+/backup_*.sql

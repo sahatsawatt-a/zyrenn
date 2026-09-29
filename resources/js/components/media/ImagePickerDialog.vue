@@ -60,7 +60,7 @@ const tabs = computed(() =>
         ...(props.allowMarkup
             ? [
                   { id: 'markup' as const, label: 'SVG', icon: Code },
-                  { id: 'mermaid' as const, label: 'Mermaid', icon: Workflow },
+                  //   { id: 'mermaid' as const, label: 'Mermaid', icon: Workflow },
               ]
             : []),
     ].filter(Boolean),

@@ -7,8 +7,6 @@ Route::inertia('/', 'Welcome')->name('home');
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::inertia('dashboard', 'Dashboard')->name('dashboard');
     Route::inertia('template', 'template/TemplateSample')->name('template_sample');
-    Route::inertia('demo/tiptap', 'demo/TiptapDemo')->name('tiptap_demo');
-    Route::inertia('demo/konva', 'demo/KonvaDemo')->name('konva_demo');
 });
 
 // ---------------------------------
@@ -18,6 +16,11 @@ require __DIR__.'/features/notes.php';
 require __DIR__.'/features/drive.php';
 require __DIR__.'/features/boards.php';
 require __DIR__.'/features/tables.php';
+
+// ---------------------------------
+//      Demo
+// ---------------------------------
+require __DIR__.'/demo/web.php';
 
 // ---------------------------------
 //      Setting
