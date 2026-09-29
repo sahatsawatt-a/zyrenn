@@ -8,6 +8,8 @@ use App\Models\Drive\DriveFile;
 use App\Models\Drive\DriveFolder;
 use App\Models\Note\Note;
 use App\Models\Note\NoteFolder;
+use App\Models\Table\Table;
+use App\Models\Table\TableFolder;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -120,6 +122,26 @@ class User extends Authenticatable implements PasskeyUser
     public function boardFolders(): HasMany
     {
         return $this->hasMany(BoardFolder::class);
+    }
+
+    /**
+     * Get the user's tables.
+     *
+     * @return HasMany<Table, $this>
+     */
+    public function tables(): HasMany
+    {
+        return $this->hasMany(Table::class);
+    }
+
+    /**
+     * Get the folders the user files tables in.
+     *
+     * @return HasMany<TableFolder, $this>
+     */
+    public function tableFolders(): HasMany
+    {
+        return $this->hasMany(TableFolder::class);
     }
 
     /**

@@ -7,6 +7,7 @@ import {
     LayoutDashboard,
     LayoutGrid,
     NotebookPen,
+    Table2,
 } from '@lucide/vue';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
@@ -25,6 +26,7 @@ import { dashboard, template_sample, tiptap_demo, konva_demo } from '@/routes';
 import { index as boardsIndex } from '@/routes/boards';
 import { index as driveIndex } from '@/routes/drive';
 import { index as notesIndex } from '@/routes/notes';
+import { index as tablesIndex } from '@/routes/tables';
 import type { NavItem } from '@/types';
 
 const mainNavItems: NavItem[] = [
@@ -42,6 +44,11 @@ const mainNavItems: NavItem[] = [
         title: 'Boards',
         href: boardsIndex(),
         icon: LayoutDashboard,
+    },
+    {
+        title: 'Tables',
+        href: tablesIndex(),
+        icon: Table2,
     },
     {
         title: 'Drive',
