@@ -19,6 +19,12 @@ use App\Mcp\Tools\Notes\GetNote;
 use App\Mcp\Tools\Notes\ListFolders;
 use App\Mcp\Tools\Notes\ListNotes;
 use App\Mcp\Tools\Notes\UpdateNote;
+use App\Mcp\Tools\Tables\CreateTable;
+use App\Mcp\Tools\Tables\DeleteTable;
+use App\Mcp\Tools\Tables\GetTable;
+use App\Mcp\Tools\Tables\ListTableFolders;
+use App\Mcp\Tools\Tables\ListTables;
+use App\Mcp\Tools\Tables\UpdateTable;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\Name;
@@ -27,7 +33,7 @@ use Laravel\Mcp\Server\Attributes\Version;
 #[Name('Zyrenn (personal)')]
 #[Version('1.0.0')]
 #[Instructions(<<<'TEXT'
-Zyrenn is a personal app holding notes, whiteboard boards, and a private file Drive. Every tool here
+Zyrenn is a personal app holding notes, whiteboard boards, tables, and a private file Drive. Every tool here
 acts only on the content of the user who owns the access token.
 
 Notes: bodies are read and written as Markdown (get-note, create-note, update-note). Notes live in
@@ -41,6 +47,12 @@ document, process, cloud), "arrow" for a connector and "draw" for freehand ink. 
 connector's "from" and "to" name other items by id and stay pinned to their edges as those shapes are
 moved or resized, so a diagram survives being rearranged by hand afterwards. Boards have their own
 folder tree, listed by list-board-folders.
+
+Tables: rows and columns, each column of one kind -- varchar, text, integer, numeric, boolean,
+select, multi_select, date, email, url, phone, currency, percent, rating, user (list-tables,
+get-table, create-table, update-table, delete-table). A row is written as an object of values keyed
+by column label, e.g. {"Owner": "Ada", "Budget": 300}; update-table changes or deletes rows by the
+"id" get-table shows. Tables have their own folder tree, listed by list-table-folders.
 
 Drive: the user's private files (list-drive, get-file, upload-file, update-file, delete-file). Files
 are served only to their owner, from a URL like /drive/files/k3x9m2p7qa.
@@ -73,6 +85,12 @@ class UserServer extends Server
             new CreateBoard,
             new UpdateBoard,
             new DeleteBoard,
+            new ListTables,
+            new ListTableFolders,
+            new GetTable,
+            new CreateTable,
+            new UpdateTable,
+            new DeleteTable,
             new ListDrive,
             new GetFile,
             new UploadFile,

@@ -24,9 +24,7 @@ class TableRowController extends Controller
     {
         Gate::authorize('update', $table);
 
-        $id = DB::table(TableStorage::physicalName($table))
-            ->insertGetId(['created_at' => now(), 'updated_at' => now()]);
-        $table->touch();
+        $id = TableStorage::insertRow($table);
 
         return response()->json(['row' => TableStorage::row($table, $id)], 201);
     }
@@ -56,15 +54,7 @@ class TableRowController extends Controller
             ]);
         }
 
-        $changed = DB::table(TableStorage::physicalName($table))
-            ->where('id', $row)
-            ->update([
-                $column->name => TableStorage::toStored($column, $validated['value']),
-                'updated_at' => now(),
-            ]);
-
-        abort_if($changed === 0 && ! TableStorage::row($table, $row), 404);
-        $table->touch();
+        abort_unless(TableStorage::updateRow($table, $row, [$column->name => $validated['value']]), 404);
 
         return response()->json(['updated_at' => $table->updated_at]);
     }
@@ -102,10 +92,7 @@ class TableRowController extends Controller
             'ids.*' => ['integer'],
         ]);
 
-        $deleted = DB::table(TableStorage::physicalName($table))
-            ->whereIn('id', $validated['ids'])
-            ->delete();
-        $table->touch();
+        $deleted = TableStorage::deleteRows($table, $validated['ids']);
 
         return response()->json(['deleted' => $deleted]);
     }

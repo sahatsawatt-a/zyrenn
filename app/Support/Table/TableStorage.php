@@ -227,6 +227,76 @@ class TableStorage
     }
 
     /**
+     * Adds a row, with any values given, keyed by column name, and returns its id.
+     *
+     * @param  array<string, mixed>  $values
+     */
+    public static function insertRow(Table $table, array $values = []): int
+    {
+        $id = DB::table(self::physicalName($table))->insertGetId([
+            ...self::stored($table, $values),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $table->touch();
+
+        return $id;
+    }
+
+    /**
+     * Writes values, keyed by column name, into a row. False when there is no such row.
+     *
+     * @param  array<string, mixed>  $values
+     */
+    public static function updateRow(Table $table, int $id, array $values): bool
+    {
+        $changed = DB::table(self::physicalName($table))
+            ->where('id', $id)
+            ->update([...self::stored($table, $values), 'updated_at' => now()]);
+
+        if ($changed === 0 && ! DB::table(self::physicalName($table))->where('id', $id)->exists()) {
+            return false;
+        }
+
+        $table->touch();
+
+        return true;
+    }
+
+    /**
+     * Deletes rows by id, and says how many went.
+     *
+     * @param  list<int>  $ids
+     */
+    public static function deleteRows(Table $table, array $ids): int
+    {
+        $deleted = DB::table(self::physicalName($table))->whereIn('id', $ids)->delete();
+        $table->touch();
+
+        return $deleted;
+    }
+
+    /**
+     * Values keyed by column name, as the database keeps them. Only the table's
+     * own columns are written, and never the id the database gives out.
+     *
+     * @param  array<string, mixed>  $values
+     * @return array<string, mixed>
+     */
+    private static function stored(Table $table, array $values): array
+    {
+        $stored = [];
+
+        foreach ($table->columns as $column) {
+            if (! $column->is_primary && array_key_exists($column->name, $values)) {
+                $stored[$column->name] = self::toStored($column, $values[$column->name]);
+            }
+        }
+
+        return $stored;
+    }
+
+    /**
      * One row, as the grid reads it.
      *
      * @return array<string, mixed>|null

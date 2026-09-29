@@ -1,15 +1,17 @@
 # ZyrenN
 
-A personal workspace: notes, boards, and a private Drive behind them.
+A personal workspace: notes, boards, tables, and a private Drive behind them.
 
 - **Notes** — a rich editor (Tiptap) filed in folders, saved as you type.
   Markdown in and out, with callouts, tables, code, Mermaid diagrams and KaTeX.
 - **Boards** — an endless canvas (Konva): sticky notes, shapes, flowchart
   symbols, connectors that stay joined to what they link, pictures, formulae,
   and 16:9 frames that play as slides.
-- **Drive** — the files behind both. A picture on a board or in a note lives
+- **Tables** — rows and columns of your own, each column of a kind (text,
+  numbers, dates, choices, ratings…), with search, filters, sort and CSV export.
+- **Drive** — the files behind the rest. A picture on a board or in a note lives
   here and is served only to its owner.
-- **MCP** — an AI client can read and write all three. See [Agent access](#agent-access).
+- **MCP** — an AI client can read and write all of it. See [Agent access](#agent-access).
 
 ## Running ZyrenN locally
 
@@ -70,7 +72,7 @@ Set `APP_DEBUG=false` before exposing the app to anyone else: with it on, any
 ```sh
 docker compose exec app php artisan test   # the PHP suite
 docker compose exec app composer ci:check  # what CI runs: format, lint, types, tests
-npm run test:e2e                           # the board, in a real browser
+npm run test:e2e                           # boards and tables, in a real browser
 ```
 
 `composer ci:check` is the one to run before pushing. It fails on lint
@@ -101,8 +103,8 @@ Two MCP servers, both over HTTP and stdio:
 - **`zyrenn-admin`** reaches every user's content with `MCP_GLOBAL_TOKEN`, and
   takes a `user_id` on each call.
 
-Notes are read and written as Markdown, boards as a list of items, and files
-through the Drive. A picture has to be in the Drive before a note or a board
+Notes are read and written as Markdown, boards as a list of items, tables as
+columns and rows of values keyed by column label, and files through the Drive. A picture has to be in the Drive before a note or a board
 can show it — the tools say so, and hand back the line or URL to use.
 
 ```sh
@@ -111,10 +113,20 @@ docker compose exec app php artisan mcp:start zyrenn   # stdio, reads MCP_TOKEN
 
 ## How the code is laid out
 
-Ordinary Laravel and Inertia, with two parts worth a map.
+Ordinary Laravel and Inertia, grouped by feature: `Models/Note/`,
+`Controllers/Board/`, `components/Table/` and so on. A few parts are worth a map.
 
-**The board** (`resources/js/components/Board/`) is one flat list of items in
-paint order, which keeps z-order, undo and hit-testing simple.
+**Folders** are the same for every feature. `app/Models/Folder.php` is the tree
+each kind's folder model extends, with one `FolderPolicy` for all of them;
+`FolderController` makes, renames, moves and deletes them, and the
+`BrowsesFolders` trait lists what is in them. On the page, notes, boards and
+tables share `components/folders/FolderListPage.vue` and say only what they
+are called and what they count. The MCP tools share the same way:
+`app/Mcp/Tools/FiledTool.php`, and the list, get and delete tools in `Concerns/`.
+
+**The board** is one flat list of items in paint order, which keeps z-order,
+undo and hit-testing simple. Its logic is in `resources/js/composables/board/`,
+its components in `resources/js/components/Board/`.
 
 |                                                                             |                                                                            |
 | --------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
@@ -126,6 +138,13 @@ paint order, which keeps z-order, undo and hit-testing simple.
 | `useLabelEditor.ts`, `useFormulae.ts`, `usePictures.ts`, `usePresenting.ts` | writing on things, KaTeX, pictures, playing the frames                     |
 | `BoardCanvas.vue`                                                           | the page: panels, the stage, and what is bound to what                     |
 | `BoardItem.vue`, `BoardOverlay.vue`                                         | what one thing looks like, and what is drawn over the board                |
+
+**A table** keeps its rows in a database table of its own,
+`user_table_<ref_id>`, with one real column per column of the grid;
+`table_columns` says what each is. Every schema change and row write goes
+through `app/Support/Table/TableStorage.php`, which names columns itself from
+their labels, so nothing from a request becomes an identifier. The grid edits
+itself first and saves behind (`resources/js/composables/table/`).
 
 **The board's server side** keeps the canvas's own JSON. `app/Support/BoardItems.php`
 translates between that and the short form MCP clients write, with
