@@ -15,11 +15,17 @@ import {
     headsOf,
     midpointOf,
     trimmedPoints,
-} from './connectors';
-import { polygonPoints } from './geometry';
-import type { Item } from './items';
-import { PATHS, POLYGONS, hasText, isConnector, isPath } from './items';
-import { FRAME_TITLE } from './useLabelEditor';
+} from '../../composables/board/connectors';
+import { polygonPoints } from '../../composables/board/geometry';
+import type { Item } from '../../composables/board/items';
+import {
+    PATHS,
+    POLYGONS,
+    hasText,
+    isConnector,
+    isPath,
+} from '../../composables/board/items';
+import { FRAME_TITLE } from '../../composables/board/useLabelEditor';
 
 // How one thing on the board is drawn. The canvas decides where it sits and
 // what may be done to it; this decides what it looks like.

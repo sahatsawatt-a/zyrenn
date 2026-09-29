@@ -42,28 +42,36 @@ import BoardItem from './BoardItem.vue';
 import BoardOverlay from './BoardOverlay.vue';
 import type { PickedImage } from '@/components/media/ImagePickerDialog.vue';
 import ShapeLibrary from './ShapeLibrary.vue';
-import { connectorPoints } from './connectors';
-import type { Guide } from './connectors';
+import { connectorPoints } from '../../composables/board/connectors.js';
+import type { Guide } from '../../composables/board/connectors.js';
 import {
     anchorsOf,
     boundsOf,
     boundsOfAll,
     fitOnBoard,
     overlaps,
-} from './geometry';
-import { alignmentFor } from './guides';
-import { hasText, isConnectable, isConnector, isStroke } from './items';
-import type { Item, Side, Tool } from './items';
-import { svgSource } from './pictures';
-import { FRAME_TITLE, useLabelEditor } from './useLabelEditor';
-import { usePresenting } from './usePresenting';
-import { useConnectorEnds } from './useConnectorEnds';
-import { useDrawing } from './useDrawing';
-import { useShortcuts } from './useShortcuts';
-import { useFormulae } from './useFormulae';
-import { usePictures } from './usePictures';
-import { useBoard } from './useBoard';
-import { useCamera } from './useCamera';
+} from '../../composables/board/geometry.js';
+import { alignmentFor } from '../../composables/board/guides.js';
+import {
+    hasText,
+    isConnectable,
+    isConnector,
+    isStroke,
+} from '../../composables/board/items.js';
+import type { Item, Side, Tool } from '../../composables/board/items.js';
+import { svgSource } from '../../composables/board/pictures.js';
+import {
+    FRAME_TITLE,
+    useLabelEditor,
+} from '../../composables/board/useLabelEditor.js';
+import { usePresenting } from '../../composables/board/usePresenting.js';
+import { useConnectorEnds } from '../../composables/board/useConnectorEnds.js';
+import { useDrawing } from '../../composables/board/useDrawing.js';
+import { useShortcuts } from '../../composables/board/useShortcuts.js';
+import { useFormulae } from '../../composables/board/useFormulae.js';
+import { usePictures } from '../../composables/board/usePictures.js';
+import { useBoard } from '../../composables/board/useBoard.js';
+import { useCamera } from '../../composables/board/useCamera.js';
 
 const props = withDefaults(
     defineProps<{

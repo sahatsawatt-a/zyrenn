@@ -2,12 +2,12 @@
 import { useElementSize } from '@vueuse/core';
 import { computed, ref, useTemplateRef } from 'vue';
 import { Group, Layer, Stage } from 'vue-konva';
-import { connectorPoints } from './connectors';
-import { boundsOf, boundsOfAll } from './geometry';
-import type { Item } from './items';
-import { hydrate, isConnector } from './items';
-import { groupKeys } from './layers';
-import { useImageCache } from './useImageCache';
+import { connectorPoints } from '../../composables/board/connectors';
+import { boundsOf, boundsOfAll } from '../../composables/board/geometry';
+import type { Item } from '../../composables/board/items';
+import { hydrate, isConnector } from '../../composables/board/items';
+import { groupKeys } from '../../composables/board/layers';
+import { useImageCache } from '../../composables/board/useImageCache';
 import BoardItem from './BoardItem.vue';
 
 /** How much room a frame's title needs above it, in board units. */

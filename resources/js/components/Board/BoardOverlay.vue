@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Circle, Line, Rect } from 'vue-konva';
-import { anchorsOf } from './geometry';
-import type { Guide } from './guides';
-import type { Item, Side } from './items';
+import { anchorsOf } from '../../composables/board/geometry';
+import type { Guide } from '../../composables/board/guides';
+import type { Item, Side } from '../../composables/board/items';
 
 // What the board draws over itself while something is being done to it: the
 // dots a connector can pin to, the handles on a chosen line, the ruler that

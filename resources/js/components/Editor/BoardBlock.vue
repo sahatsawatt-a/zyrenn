@@ -2,8 +2,8 @@
 import { NodeViewWrapper } from '@tiptap/vue-3';
 import type { NodeViewProps } from '@tiptap/vue-3';
 import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue';
-import type { Item } from '@/components/Board/items';
-import { nameOf } from '@/components/Board/items';
+import type { Item } from '@/composables/board/items';
+import { nameOf } from '@/composables/board/items';
 import type { BoardContent, BoardSummary } from '@/lib/boards';
 import { boardContent, listBoards } from '@/lib/boards';
 import { show } from '@/routes/boards';

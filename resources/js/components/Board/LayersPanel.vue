@@ -10,9 +10,9 @@ import {
     LockOpen,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
-import { nameOf } from './items';
-import type { Item } from './items';
-import { groupItems } from './layers';
+import { nameOf } from '../../composables/board/items';
+import type { Item } from '../../composables/board/items';
+import { groupItems } from '../../composables/board/layers';
 
 // The stack, top first -- the order you see, not the order it is painted in.
 const props = defineProps<{ items: Item[]; selection: string[] }>();

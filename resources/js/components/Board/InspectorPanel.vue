@@ -16,9 +16,9 @@ import {
 } from '@lucide/vue';
 import type { Component } from 'vue';
 import { computed } from 'vue';
-import { HEAD_TYPES } from './connectors';
-import { SIDES } from './geometry';
-import { hasText } from './items';
+import { HEAD_TYPES } from '../../composables/board/connectors';
+import { SIDES } from '../../composables/board/geometry';
+import { hasText } from '../../composables/board/items';
 import type {
     Align,
     Item,
@@ -26,7 +26,7 @@ import type {
     Routing,
     Side,
     VerticalAlign,
-} from './items';
+} from '../../composables/board/items';
 import ColourPicker from './ColourPicker.vue';
 import LayersPanel from './LayersPanel.vue';
 import ConnectorSettings from './ConnectorSettings.vue';

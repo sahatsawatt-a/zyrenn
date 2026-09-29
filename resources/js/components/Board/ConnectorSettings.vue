@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import type { Item, LineStyle, Routing, Side } from './items';
-import { HEAD_TYPES } from './connectors';
-import { SIDES } from './geometry';
+import type {
+    Item,
+    LineStyle,
+    Routing,
+    Side,
+} from '../../composables/board/items';
+import { HEAD_TYPES } from '../../composables/board/connectors';
+import { SIDES } from '../../composables/board/geometry';
 import ConnectorIcon from './ConnectorIcon.vue';
 
 // Everything that can be said about a line between two shapes. The fiddly

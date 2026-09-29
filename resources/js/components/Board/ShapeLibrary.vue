@@ -23,7 +23,7 @@ import {
     Type,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
-import type { Tool } from './items';
+import type { Tool } from '../../composables/board/items';
 
 // The shape library Lucidchart puts down the left: grouped, searchable, and
 // the thing you reach for before every other control.

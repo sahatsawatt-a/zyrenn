@@ -4,7 +4,7 @@ import { Check, Copy, Trash2 } from '@lucide/vue';
 import { useDebounceFn, useEventListener } from '@vueuse/core';
 import { computed, onBeforeUnmount, ref, watchEffect } from 'vue';
 import BoardCanvas from '@/components/Board/BoardCanvas.vue';
-import type { Item } from '@/components/Board/items';
+import type { Item } from '@/composables/board/items';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
