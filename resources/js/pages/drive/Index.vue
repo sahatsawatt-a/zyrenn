@@ -11,7 +11,8 @@ import ListToolbar from '@/components/folders/ListToolbar.vue';
 import MoveDialog from '@/components/folders/MoveDialog.vue';
 import MoveUpTarget from '@/components/folders/MoveUpTarget.vue';
 import NameDialog from '@/components/folders/NameDialog.vue';
-import Heading from '@/components/Heading.vue';
+import PageHeader from '@/components/folders/PageHeader.vue';
+import Section from '@/components/folders/Section.vue';
 import MediaViewer from '@/components/MediaViewer.vue';
 import { Button } from '@/components/ui/button';
 import { useFileDrop } from '@/composables/useFileDrop';
@@ -174,26 +175,20 @@ const openFile = (file: DriveFile) => {
         class="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-4 md:p-6"
         v-bind="dropZoneProps"
     >
-        <div class="flex flex-wrap items-start justify-between gap-4">
-            <Heading
-                :title="folder?.name ?? 'Drive'"
-                description="Your private files. Images you add to notes are saved here."
-            />
-
-            <div class="flex gap-2">
-                <Button variant="outline" @click="newFolder">
-                    <FolderPlus />
-                    New folder
-                </Button>
-                <Button
-                    :disabled="progress !== null"
-                    @click="fileDialog.open()"
-                >
-                    <Upload />
-                    Upload
-                </Button>
-            </div>
-        </div>
+        <PageHeader
+            :icon="HardDrive"
+            :title="folder?.name ?? 'Drive'"
+            description="Your private files. Images you add to notes are saved here."
+        >
+            <Button variant="outline" @click="newFolder">
+                <FolderPlus />
+                New folder
+            </Button>
+            <Button :disabled="progress !== null" @click="fileDialog.open()">
+                <Upload />
+                Upload
+            </Button>
+        </PageHeader>
 
         <ListToolbar
             v-model:q="filters.q"
@@ -233,12 +228,7 @@ const openFile = (file: DriveFile) => {
         />
 
         <!-- Folders -->
-        <section v-if="folders.length" class="flex flex-col gap-3">
-            <h3
-                class="text-muted-foreground text-xs font-medium tracking-wide uppercase"
-            >
-                Folders
-            </h3>
+        <Section v-if="folders.length" title="Folders" :count="folders.length">
             <div
                 class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
             >
@@ -259,15 +249,9 @@ const openFile = (file: DriveFile) => {
                     @remove="remove(folderItem(item))"
                 />
             </div>
-        </section>
+        </Section>
 
-        <!-- Files -->
-        <section v-if="files.length" class="flex flex-col gap-3">
-            <h3
-                class="text-muted-foreground text-xs font-medium tracking-wide uppercase"
-            >
-                Files
-            </h3>
+        <Section v-if="files.length" title="Files" :count="files.length">
             <div
                 class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
             >
@@ -285,16 +269,16 @@ const openFile = (file: DriveFile) => {
                     @remove="remove(fileItem(file))"
                 />
             </div>
-        </section>
+        </Section>
 
         <EmptyState
             v-if="isEmpty && isFiltered"
             :icon="SearchX"
             title="Nothing matches"
         >
-            <Button variant="outline" size="sm" @click="clear"
-                >Clear search and filter</Button
-            >
+            <Button variant="outline" size="sm" class="mt-2" @click="clear">
+                Clear search and filter
+            </Button>
         </EmptyState>
 
         <EmptyState

@@ -8,20 +8,13 @@ import {
     FileText,
     FileVideo,
     Folder,
-    FolderInput,
-    MoreHorizontal,
-    Pencil,
-    Trash2,
 } from '@lucide/vue';
 import { computed } from 'vue';
 import Highlight from '@/components/folders/Highlight.vue';
-import { Button } from '@/components/ui/button';
+import ItemActions from '@/components/folders/ItemActions.vue';
 import {
-    DropdownMenu,
-    DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuSeparator,
-    DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { DriveFile } from '@/lib/drive';
 import { formatBytes, formatRelativeTime } from '@/lib/utils';
@@ -56,7 +49,7 @@ const icon = computed(
 
 <template>
     <div
-        class="group border-sidebar-border/70 dark:border-sidebar-border relative flex flex-col overflow-hidden rounded-lg border"
+        class="group bg-card hover:border-primary/40 relative flex flex-col overflow-hidden rounded-xl border transition-all hover:shadow-sm"
         :class="{ 'opacity-50': dragging }"
     >
         <button
@@ -101,35 +94,20 @@ const icon = computed(
                 </p>
             </div>
 
-            <DropdownMenu>
-                <DropdownMenuTrigger as-child>
-                    <Button variant="ghost" size="icon" class="size-7 shrink-0">
-                        <MoreHorizontal />
-                        <span class="sr-only">File actions</span>
-                    </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                    <DropdownMenuItem @select="$emit('open')">
-                        <ExternalLink /> {{ file.is_image ? 'View' : 'Open' }}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem as-child>
-                        <a :href="downloadUrl"><Download /> Download</a>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem @select="$emit('rename')">
-                        <Pencil /> Rename
-                    </DropdownMenuItem>
-                    <DropdownMenuItem @select="$emit('move')">
-                        <FolderInput /> Move
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                        variant="destructive"
-                        @select="$emit('remove')"
-                    >
-                        <Trash2 /> Delete
-                    </DropdownMenuItem>
-                </DropdownMenuContent>
-            </DropdownMenu>
+            <ItemActions
+                label="File actions"
+                @rename="$emit('rename')"
+                @move="$emit('move')"
+                @remove="$emit('remove')"
+            >
+                <DropdownMenuItem @select="$emit('open')">
+                    <ExternalLink /> {{ file.is_image ? 'View' : 'Open' }}
+                </DropdownMenuItem>
+                <DropdownMenuItem as-child>
+                    <a :href="downloadUrl"><Download /> Download</a>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+            </ItemActions>
         </div>
     </div>
 </template>

@@ -1,375 +1,45 @@
 <script setup lang="ts">
-import { Form, Head, Link } from '@inertiajs/vue3';
-import {
-    LayoutDashboard,
-    Folder,
-    FolderInput,
-    FolderPlus,
-    MoreHorizontal,
-    SearchX,
-    Pencil,
-    Plus,
-    Trash2,
-} from '@lucide/vue';
-import { computed } from 'vue';
-import DeleteDialog from '@/components/folders/DeleteDialog.vue';
-import EmptyState from '@/components/folders/EmptyState.vue';
-import FolderCard from '@/components/folders/FolderCard.vue';
-import Highlight from '@/components/folders/Highlight.vue';
-import ListToolbar from '@/components/folders/ListToolbar.vue';
-import MoveDialog from '@/components/folders/MoveDialog.vue';
-import MoveUpTarget from '@/components/folders/MoveUpTarget.vue';
-import NameDialog from '@/components/folders/NameDialog.vue';
-import Heading from '@/components/Heading.vue';
-import { Button } from '@/components/ui/button';
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import type { FolderItem } from '@/composables/useFolderDialogs';
-import { useFolderPage } from '@/composables/useFolderPage';
+import { Presentation } from '@lucide/vue';
+import FolderListPage from '@/components/folders/FolderListPage.vue';
+import type { ListItem } from '@/components/folders/FolderListPage.vue';
 import type { FolderRef } from '@/composables/useFolderPage';
-import { useListFilters } from '@/composables/useListFilters';
-import { formatRelativeTime } from '@/lib/utils';
 import * as folderRoutes from '@/routes/board-folders';
-import { destroy, index, show, store, update } from '@/routes/boards';
+import * as routes from '@/routes/boards';
 
-// `path` is only there in search results, which span every folder
-type FolderRow = FolderRef & { path?: string };
-
-type BoardSummary = {
-    ref_id: string;
-    title: string;
+type BoardSummary = ListItem & {
     // How many things are on it, shown in the list
     items: number;
-    updated_at: string;
-    created_at: string;
-    path?: string | null;
-    snippet?: string | null;
 };
 
-const props = defineProps<{
+defineProps<{
     folder: FolderRef | null;
     breadcrumbs: FolderRef[];
-    folders: FolderRow[];
+    folders: (FolderRef & { path?: string })[];
     boards: BoardSummary[];
     filters: { q: string; sort: string; edited: string | null };
     allFolders: { ref_id: string; path: string }[];
 }>();
-
-const isEmpty = computed(() => !props.folders.length && !props.boards.length);
-
-// ------------------------------------------------- Search, sort and filter
-const {
-    state: filters,
-    isFiltered,
-    isSearching,
-    clear,
-} = useListFilters({
-    current: () => ({
-        q: props.filters.q,
-        sort: props.filters.sort,
-        filter: props.filters.edited,
-    }),
-    url: () => index.url(),
-    filterParam: 'edited',
-    defaultSort: 'edited',
-    folder: () => props.folder?.ref_id ?? null,
-});
-
-const sortOptions = [
-    { value: 'edited', label: 'Last edited' },
-    { value: 'created', label: 'Date created' },
-    { value: 'title', label: 'Title A–Z' },
-];
-
-const editedOptions = [
-    { value: 'today', label: 'Edited today' },
-    { value: 'week', label: 'Past 7 days' },
-    { value: 'month', label: 'Past 30 days' },
-];
-
-const shownTime = (board: BoardSummary) =>
-    props.filters.sort === 'created' ? board.created_at : board.updated_at;
-
-// ------------------------------------------------ Folders, dialogs and drag
-const {
-    target,
-    busy,
-    nameOpen,
-    moveOpen,
-    deleteOpen,
-    newFolder,
-    rename,
-    move,
-    remove,
-    folderHref,
-    folderItem,
-    parent,
-    submitName,
-    submitMove,
-    submitDelete,
-    dragging,
-    dragProps,
-    dropProps,
-    isOver,
-    isDragging,
-} = useFolderPage({
-    rootLabel: 'Boards',
-    index,
-    state: () => props,
-    item: { kind: 'board', routes: { update, destroy }, nameField: 'title' },
-    folderRoutes,
-});
-
-const boardItem = (board: BoardSummary): FolderItem<'board' | 'folder'> => ({
-    kind: 'board',
-    ref_id: board.ref_id,
-    name: board.title || 'Untitled',
-});
 </script>
 
 <template>
-    <Head :title="folder ? `${folder.name} · Boards` : 'Boards'" />
-
-    <div class="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 md:p-6">
-        <div class="flex flex-wrap items-start justify-between gap-4">
-            <Heading
-                :title="folder?.name ?? 'Boards'"
-                description="Endless canvases: sticky notes, shapes, connectors and frames to present."
-            />
-
-            <div class="flex gap-2">
-                <Button variant="outline" @click="newFolder">
-                    <FolderPlus />
-                    New folder
-                </Button>
-                <Form v-bind="store.form()" v-slot="{ processing }">
-                    <input
-                        v-if="folder"
-                        type="hidden"
-                        name="folder"
-                        :value="folder.ref_id"
-                    />
-                    <Button type="submit" :disabled="processing">
-                        <Plus />
-                        New board
-                    </Button>
-                </Form>
-            </div>
-        </div>
-
-        <ListToolbar
-            v-model:q="filters.q"
-            v-model:sort="filters.sort"
-            v-model:filter="filters.filter"
-            placeholder="Search titles and labels on all boards"
-            :sort-options="sortOptions"
-            :filter-options="editedOptions"
-            filter-all="Any time"
-        />
-
-        <p
-            v-if="isSearching && !isEmpty"
-            class="text-muted-foreground -mt-2 text-sm"
-        >
-            {{ boards.length + folders.length }}
-            {{ boards.length + folders.length === 1 ? 'result' : 'results' }}
-            for “{{ props.filters.q }}” across all folders
-        </p>
-
-        <MoveUpTarget
-            v-if="folder && dragging && !isSearching"
-            v-bind="dropProps(parent?.ref_id ?? null)"
-            :label="parent?.name ?? 'Boards'"
-            :active="isOver(parent?.ref_id ?? null)"
-        />
-
-        <!-- Folders -->
-        <section v-if="folders.length" class="flex flex-col gap-3">
-            <h3
-                class="text-muted-foreground text-xs font-medium tracking-wide uppercase"
-            >
-                Folders
-            </h3>
-            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                <FolderCard
-                    v-for="item in folders"
-                    :key="item.ref_id"
-                    v-bind="{
-                        ...dragProps(folderItem(item)),
-                        ...dropProps(item.ref_id),
-                    }"
-                    :folder="item"
-                    :href="folderHref(item.ref_id)"
-                    :query="props.filters.q"
-                    :over="isOver(item.ref_id)"
-                    :dragging="isDragging(item)"
-                    @rename="rename(folderItem(item))"
-                    @move="move(folderItem(item))"
-                    @remove="remove(folderItem(item))"
-                />
-            </div>
-        </section>
-
-        <!-- Boards -->
-        <section v-if="boards.length" class="flex flex-col gap-3">
-            <h3
-                v-if="folders.length"
-                class="text-muted-foreground text-xs font-medium tracking-wide uppercase"
-            >
-                Boards
-            </h3>
-            <ul
-                class="divide-border border-sidebar-border/70 dark:border-sidebar-border divide-y overflow-hidden rounded-xl border"
-            >
-                <li
-                    v-for="board in boards"
-                    :key="board.ref_id"
-                    v-bind="dragProps(boardItem(board))"
-                    class="group hover:bg-muted/60 flex items-center transition-colors"
-                    :class="{ 'opacity-50': isDragging(board) }"
-                >
-                    <Link
-                        :href="show(board.ref_id)"
-                        class="flex min-w-0 flex-1 items-start gap-3 py-3 pl-4"
-                    >
-                        <LayoutDashboard
-                            class="text-muted-foreground mt-0.5 size-4 shrink-0"
-                        />
-                        <span class="min-w-0 flex-1">
-                            <Highlight
-                                :text="board.title || 'Untitled'"
-                                :query="props.filters.q"
-                                class="block truncate font-medium"
-                                :class="{
-                                    'text-muted-foreground': !board.title,
-                                }"
-                            />
-                            <span
-                                v-if="isSearching"
-                                class="text-muted-foreground block truncate text-xs"
-                            >
-                                <Folder
-                                    class="mr-1 inline size-3 align-[-2px]"
-                                />{{ board.path ?? 'Boards' }}
-                            </span>
-                            <span class="text-muted-foreground block text-xs">
-                                {{ board.items }}
-                                {{ board.items === 1 ? 'item' : 'items' }}
-                            </span>
-                            <Highlight
-                                v-if="board.snippet"
-                                :text="board.snippet"
-                                :query="props.filters.q"
-                                class="text-muted-foreground mt-1 line-clamp-2 block text-sm"
-                            />
-                        </span>
-                        <time
-                            :datetime="shownTime(board)"
-                            :title="
-                                filters.sort === 'created'
-                                    ? 'Created'
-                                    : 'Last edited'
-                            "
-                            class="text-muted-foreground mt-0.5 shrink-0 text-xs"
-                        >
-                            {{ formatRelativeTime(shownTime(board)) }}
-                        </time>
-                    </Link>
-
-                    <DropdownMenu>
-                        <DropdownMenuTrigger as-child>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                class="mx-2 size-7 shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
-                            >
-                                <MoreHorizontal />
-                                <span class="sr-only">Board actions</span>
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                                @select="rename(boardItem(board))"
-                            >
-                                <Pencil /> Rename
-                            </DropdownMenuItem>
-                            <DropdownMenuItem @select="move(boardItem(board))">
-                                <FolderInput /> Move
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                                variant="destructive"
-                                @select="remove(boardItem(board))"
-                            >
-                                <Trash2 /> Delete
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                </li>
-            </ul>
-        </section>
-
-        <EmptyState
-            v-if="isEmpty && isFiltered"
-            :icon="SearchX"
-            title="Nothing matches"
-        >
-            <Button variant="outline" size="sm" @click="clear"
-                >Clear search and filter</Button
-            >
-        </EmptyState>
-
-        <EmptyState
-            v-else-if="isEmpty"
-            :icon="LayoutDashboard"
-            :title="folder ? 'This folder is empty' : 'No boards yet'"
-        >
-            <p class="text-muted-foreground text-sm">
-                {{
-                    folder
-                        ? 'Create a board or a folder in it.'
-                        : 'Create your first board to start drawing.'
-                }}
-            </p>
-        </EmptyState>
-    </div>
-
-    <NameDialog
-        v-model:open="nameOpen"
-        :title="target ? `Rename ${target.kind}` : 'New folder'"
-        :submit-label="target ? 'Rename' : 'Create'"
-        :initial="
-            target?.kind === 'board' && target.name === 'Untitled'
-                ? ''
-                : target?.name
-        "
-        :busy="busy"
-        @submit="submitName"
-    />
-    <MoveDialog
-        v-model:open="moveOpen"
-        :name="target?.name ?? ''"
-        :folders="allFolders"
-        :current="folder?.ref_id ?? null"
+    <FolderListPage
+        kind="board"
         root-label="Boards"
-        :moving-folder="target?.kind === 'folder' ? target.ref_id : undefined"
-        :busy="busy"
-        @submit="submitMove"
-    />
-    <DeleteDialog
-        v-model:open="deleteOpen"
-        :name="target?.name ?? ''"
-        :description="
-            target?.kind === 'folder'
-                ? 'The folder and every board and folder in it will be deleted for good.'
-                : 'The board will be deleted for good.'
-        "
-        :busy="busy"
-        @confirm="submitDelete"
-    />
+        :icon="Presentation"
+        description="Endless canvases: sticky notes, shapes, connectors and frames to present."
+        search-placeholder="Search titles and labels on all boards"
+        empty-hint="Make your first board to start drawing."
+        :routes="routes"
+        :folder-routes="folderRoutes"
+        :folder="folder"
+        :breadcrumbs="breadcrumbs"
+        :folders="folders"
+        :items="boards"
+        :filters="filters"
+        :all-folders="allFolders"
+    >
+        <template #meta="{ item }">
+            {{ item.items }} {{ item.items === 1 ? 'item' : 'items' }}
+        </template>
+    </FolderListPage>
 </template>

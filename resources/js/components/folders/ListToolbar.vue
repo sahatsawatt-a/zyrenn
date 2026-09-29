@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { ArrowDownUp, ListFilter, Search, X } from '@lucide/vue';
+import {
+    ArrowDownUp,
+    LayoutGrid,
+    List,
+    ListFilter,
+    Search,
+    X,
+} from '@lucide/vue';
 import { computed } from 'vue';
 import { Input } from '@/components/ui/input';
 import {
@@ -15,6 +22,13 @@ type Option = { value: string; label: string };
 const q = defineModel<string>('q', { required: true });
 const sort = defineModel<string>('sort', { required: true });
 const filter = defineModel<string | null>('filter', { required: true });
+// Cards or rows; a page that has only one way to show things leaves it out
+const view = defineModel<'grid' | 'list'>('view');
+
+const VIEWS = [
+    { value: 'grid', label: 'Cards', icon: LayoutGrid },
+    { value: 'list', label: 'List', icon: List },
+] as const;
 
 defineProps<{
     placeholder: string;
@@ -89,6 +103,31 @@ const filterValue = computed({
                     </SelectItem>
                 </SelectContent>
             </Select>
+
+            <div
+                v-if="view"
+                class="bg-muted flex shrink-0 items-center gap-0.5 rounded-md p-0.5"
+                role="radiogroup"
+                aria-label="Show as"
+            >
+                <button
+                    v-for="option in VIEWS"
+                    :key="option.value"
+                    type="button"
+                    role="radio"
+                    :aria-checked="view === option.value"
+                    :title="option.label"
+                    class="flex h-8 w-8 items-center justify-center rounded transition-colors"
+                    :class="
+                        view === option.value
+                            ? 'bg-background text-foreground shadow-xs'
+                            : 'text-muted-foreground hover:text-foreground'
+                    "
+                    @click="view = option.value"
+                >
+                    <component :is="option.icon" class="size-4" />
+                </button>
+            </div>
         </div>
     </div>
 </template>
