@@ -2,8 +2,8 @@
 
 namespace App\Models\Board;
 
+use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
-use App\Models\User;
 use Database\Factories\Board\BoardFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,7 +16,6 @@ use Illuminate\Support\Carbon;
  *
  * @property int $id
  * @property string $ref_id
- * @property int $user_id
  * @property int|null $folder_id
  * @property string $title
  * @property array<string, mixed>|null $content
@@ -28,7 +27,7 @@ use Illuminate\Support\Carbon;
 class Board extends Model
 {
     /** @use HasFactory<BoardFactory> */
-    use HasFactory, HasRefId;
+    use BelongsToOwner, HasFactory, HasRefId;
 
     /**
      * Mirror the column defaults so new instances match what the database stores.
@@ -111,16 +110,6 @@ class Board extends Model
         return [
             'content' => 'array',
         ];
-    }
-
-    /**
-     * Get the user that owns the board.
-     *
-     * @return BelongsTo<User, $this>
-     */
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
     }
 
     /**

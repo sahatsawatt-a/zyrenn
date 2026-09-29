@@ -2,15 +2,22 @@
 
 namespace App\Providers;
 
+use App\Models\Board\Board;
+use App\Models\Drive\DriveFile;
 use App\Models\Folder;
-use App\Policies\FolderPolicy;
+use App\Models\Note\Note;
+use App\Models\Project;
+use App\Models\Table\Table;
+use App\Policies\ContentPolicy;
 use Carbon\CarbonImmutable;
+use Closure;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 
@@ -32,8 +39,34 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
         $this->configureRateLimiting();
 
-        // One policy for every kind of folder; the Gate finds it for each subclass
-        Gate::policy(Folder::class, FolderPolicy::class);
+        // One policy for everything a user or a project owns; the Gate finds
+        // Folder's for each kind of folder
+        foreach ([Note::class, Board::class, Table::class, DriveFile::class, Folder::class] as $model) {
+            Gate::policy($model, ContentPolicy::class);
+        }
+
+        $this->configureOwnedRoutes();
+    }
+
+    /**
+     * Routes that list or make things for an owner are registered with
+     * Route::owned(): once for the user's own, as "notes.index" at /notes, and
+     * once for a project's, as "projects.notes.index" at /p/{project}/notes.
+     * Only members get past the second; the controller asks for more when the
+     * route changes something.
+     */
+    protected function configureOwnedRoutes(): void
+    {
+        Route::model('project', Project::class);
+
+        Route::macro('owned', function (Closure $routes): void {
+            $routes();
+
+            Route::prefix('p/{project}')
+                ->name('projects.')
+                ->middleware('can:view,project')
+                ->group($routes);
+        });
     }
 
     /**

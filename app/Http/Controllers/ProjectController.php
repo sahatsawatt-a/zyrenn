@@ -1,0 +1,102 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Project;
+use App\Models\User;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
+use Inertia\Inertia;
+use Inertia\Response;
+
+/**
+ * Making, renaming and deleting projects. What is in one is browsed through
+ * the notes, boards, tables and Drive routes, under /p/{project}.
+ */
+class ProjectController extends Controller
+{
+    /**
+     * Create a project, run by the user who made it, and open it.
+     */
+    public function store(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $project = DB::transaction(function () use ($request, $validated) {
+            $project = new Project(['name' => $validated['name']]);
+            $project->created_by = $request->user()->id;
+            $project->save();
+
+            $project->members()->attach($request->user(), ['role' => Project::OWNER]);
+
+            return $project;
+        });
+
+        return to_route('projects.notes.index', $project);
+    }
+
+    /**
+     * A project opens on its notes.
+     */
+    public function show(Project $project): RedirectResponse
+    {
+        Gate::authorize('view', $project);
+
+        return to_route('projects.notes.index', $project);
+    }
+
+    /**
+     * The project's settings: its name, who is in it, and deleting it.
+     */
+    public function edit(Request $request, Project $project): Response
+    {
+        Gate::authorize('view', $project);
+
+        return Inertia::render('projects/Settings', [
+            'settings' => [
+                ...$project->only(['ref_id', 'name', 'created_at']),
+                'members' => $project->members()->orderBy('name')->get()->map(fn (User $member) => [
+                    'name' => $member->name,
+                    'email' => $member->email,
+                    'role' => $member->getRelationValue('pivot')?->getAttribute('role'),
+                ]),
+                'can' => [
+                    'update' => $request->user()->can('update', $project),
+                    'delete' => $request->user()->can('delete', $project),
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Rename the project.
+     */
+    public function update(Request $request, Project $project): RedirectResponse
+    {
+        Gate::authorize('update', $project);
+
+        $project->update($request->validate([
+            'name' => ['required', 'string', 'max:255'],
+        ]));
+
+        return back();
+    }
+
+    /**
+     * Delete the project with everything in it, for every member.
+     */
+    public function destroy(Project $project): RedirectResponse
+    {
+        Gate::authorize('delete', $project);
+
+        $project->delete();
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Project deleted.')]);
+
+        return to_route('notes.index');
+    }
+}

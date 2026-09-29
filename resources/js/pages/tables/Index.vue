@@ -5,6 +5,8 @@ import type { ListItem } from '@/components/folders/FolderListPage.vue';
 import type { FolderRef } from '@/composables/useFolderPage';
 import * as folderRoutes from '@/routes/table-folders';
 import * as routes from '@/routes/tables';
+import * as projectFolderRoutes from '@/routes/projects/table-folders';
+import * as projectRoutes from '@/routes/projects/tables';
 
 type TableSummary = ListItem & {
     // The columns the user added, and the rows kept
@@ -34,6 +36,8 @@ const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
         empty-hint="Make your first table to start filling it in."
         :routes="routes"
         :folder-routes="folderRoutes"
+        :project-routes="projectRoutes"
+        :project-folder-routes="projectFolderRoutes"
         :folder="folder"
         :breadcrumbs="breadcrumbs"
         :folders="folders"

@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools;
 
+use App\Models\Owner;
 use App\Models\User;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -34,11 +35,11 @@ abstract class ScopedTool extends Tool
     abstract protected function arguments(JsonSchema $schema): array;
 
     /**
-     * The user's folders of the kind this tool works with.
+     * The owner's folders of the kind this tool works with.
      *
-     * @return HasMany<TFolder, User>
+     * @return HasMany<TFolder, covariant Model&Owner>
      */
-    abstract protected function folders(User $user): HasMany;
+    abstract protected function folders(Owner $owner): HasMany;
 
     /**
      * @return array<string, Type>
@@ -91,12 +92,12 @@ abstract class ScopedTool extends Tool
      *
      * @return TFolder|false|null
      */
-    protected function folderAt(User $user, string $path): Model|false|null
+    protected function folderAt(Owner $owner, string $path): Model|false|null
     {
         $folder = null;
 
         foreach ($this->pathNames($path) as $name) {
-            $folder = $this->childFolder($user, $folder, $name);
+            $folder = $this->childFolder($owner, $folder, $name);
 
             if (! $folder) {
                 return false;
@@ -111,12 +112,12 @@ abstract class ScopedTool extends Tool
      *
      * @return TFolder|null
      */
-    protected function ensureFolderAt(User $user, string $path): ?Model
+    protected function ensureFolderAt(Owner $owner, string $path): ?Model
     {
         $folder = null;
 
         foreach ($this->pathNames($path) as $name) {
-            $folder = $this->childFolder($user, $folder, $name) ?? $this->folders($user)->create([
+            $folder = $this->childFolder($owner, $folder, $name) ?? $this->folders($owner)->create([
                 'name' => mb_substr($name, 0, 255),
                 'parent_id' => $folder?->getKey(),
             ]);
@@ -129,9 +130,9 @@ abstract class ScopedTool extends Tool
      * @param  TFolder|null  $parent
      * @return TFolder|null
      */
-    private function childFolder(User $user, ?Model $parent, string $name): ?Model
+    private function childFolder(Owner $owner, ?Model $parent, string $name): ?Model
     {
-        $siblings = fn () => $this->folders($user)->getQuery()->where('parent_id', $parent?->getKey());
+        $siblings = fn () => $this->folders($owner)->getQuery()->where('parent_id', $parent?->getKey());
 
         return $siblings()->where('name', $name)->first()
             // A wrong capital shouldn't create a near-duplicate folder

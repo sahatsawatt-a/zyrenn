@@ -2,8 +2,8 @@
 
 namespace App\Models\Table;
 
+use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
-use App\Models\User;
 use App\Support\Table\TableStorage;
 use Database\Factories\Table\TableFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -19,7 +19,6 @@ use Illuminate\Support\Carbon;
  *
  * @property int $id
  * @property string $ref_id
- * @property int $user_id
  * @property int|null $folder_id
  * @property string $title
  * @property string $density
@@ -30,7 +29,7 @@ use Illuminate\Support\Carbon;
 class Table extends Model
 {
     /** @use HasFactory<TableFactory> */
-    use HasFactory, HasRefId;
+    use BelongsToOwner, HasFactory, HasRefId;
 
     /** How tightly the rows are drawn. */
     public const DENSITIES = ['compact', 'normal', 'spacious'];
@@ -51,16 +50,6 @@ class Table extends Model
     protected static function booted(): void
     {
         static::deleting(fn (Table $table) => TableStorage::drop($table));
-    }
-
-    /**
-     * Get the user that owns the table.
-     *
-     * @return BelongsTo<User, $this>
-     */
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
     }
 
     /**

@@ -7,9 +7,14 @@ use App\Http\Controllers\Table\TableRowController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::resource('tables', TableController::class)->except(['create', 'edit']);
+    Route::owned(function () {
+        Route::resource('tables', TableController::class)->only(['index', 'store']);
+        Route::resource('table-folders', TableFolderController::class)->only(['store']);
+    });
+
+    Route::resource('tables', TableController::class)->only(['show', 'update', 'destroy']);
     Route::resource('table-folders', TableFolderController::class)
-        ->only(['store', 'update', 'destroy'])
+        ->only(['update', 'destroy'])
         ->parameters(['table-folders' => 'folder']);
 
     // The grid saves as it goes; each of these answers with JSON

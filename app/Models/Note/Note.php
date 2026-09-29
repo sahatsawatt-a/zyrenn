@@ -2,8 +2,8 @@
 
 namespace App\Models\Note;
 
+use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
-use App\Models\User;
 use App\Support\TiptapMarkdown;
 use Database\Factories\Note\NoteFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -15,7 +15,6 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property string $ref_id
- * @property int $user_id
  * @property int|null $folder_id
  * @property string $title
  * @property array<string, mixed>|null $content
@@ -28,7 +27,7 @@ use Illuminate\Support\Carbon;
 class Note extends Model
 {
     /** @use HasFactory<NoteFactory> */
-    use HasFactory, HasRefId;
+    use BelongsToOwner, HasFactory, HasRefId;
 
     /**
      * Mirror the column defaults so new instances match what the database stores.
@@ -81,16 +80,6 @@ class Note extends Model
             'content' => 'array',
             'is_wide' => 'boolean',
         ];
-    }
-
-    /**
-     * Get the user that owns the note.
-     *
-     * @return BelongsTo<User, $this>
-     */
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
     }
 
     /**

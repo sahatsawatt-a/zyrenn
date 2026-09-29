@@ -22,9 +22,13 @@ import type { FolderRef } from '@/composables/useFolderPage';
 import { useListFilters } from '@/composables/useListFilters';
 import { useMediaViewer } from '@/composables/useMediaViewer';
 import type { DriveFile } from '@/lib/drive';
-import { index } from '@/routes/drive';
+import { owned } from '@/lib/projects';
+import * as driveRoutes from '@/routes/drive';
 import * as fileRoutes from '@/routes/drive/files';
 import * as folderRoutes from '@/routes/drive/folders';
+import * as projectDriveRoutes from '@/routes/projects/drive';
+import * as projectFileRoutes from '@/routes/projects/drive/files';
+import * as projectFolderRoutes from '@/routes/projects/drive/folders';
 
 // `path` is only there in search results, which span every folder
 type FolderRow = FolderRef & { path?: string };
@@ -40,6 +44,10 @@ const props = defineProps<{
 }>();
 
 const isEmpty = computed(() => !props.folders.length && !props.files.length);
+
+// Listing, uploading and new folders go to the project the page is in, or the user's own
+const index = owned(driveRoutes.index, projectDriveRoutes.index);
+const storeFile = owned(fileRoutes.store, projectFileRoutes.store);
 
 // ------------------------------------------------- Search, sort and filter
 const {
@@ -104,7 +112,10 @@ const {
     index,
     state: () => props,
     item: { kind: 'file', routes: fileRoutes, nameField: 'name' },
-    folderRoutes,
+    folderRoutes: {
+        ...folderRoutes,
+        store: owned(folderRoutes.store, projectFolderRoutes.store),
+    },
 });
 
 const fileItem = (file: DriveFile): FolderItem<'file' | 'folder'> => ({
@@ -122,7 +133,7 @@ const upload = (list: File[]) => {
     }
 
     router.post(
-        fileRoutes.store.url(),
+        storeFile.url(),
         { files: list, folder: props.folder?.ref_id ?? null },
         {
             forceFormData: true,

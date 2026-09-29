@@ -16,6 +16,7 @@ require __DIR__.'/features/notes.php';
 require __DIR__.'/features/drive.php';
 require __DIR__.'/features/boards.php';
 require __DIR__.'/features/tables.php';
+require __DIR__.'/features/projects.php';
 
 // ---------------------------------
 //      Demo

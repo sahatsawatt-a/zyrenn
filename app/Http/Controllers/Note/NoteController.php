@@ -6,7 +6,6 @@ use App\Http\Controllers\Concerns\BrowsesFolders;
 use App\Http\Controllers\Controller;
 use App\Models\Note\Note;
 use App\Models\Note\NoteFolder;
-use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,8 +18,8 @@ class NoteController extends Controller
     use BrowsesFolders;
 
     /**
-     * Browse a folder of the user's notes (the top level when none is given),
-     * or search every folder when there is a query.
+     * Browse a folder of the user's or the project's notes (the top level when
+     * none is given), or search every folder when there is a query.
      */
     public function index(Request $request): Response
     {
@@ -28,7 +27,7 @@ class NoteController extends Controller
             $request,
             'notes/Index',
             'notes',
-            $request->user()->notes()->select(['id', 'ref_id', 'folder_id', 'title', 'plain_text', 'updated_at', 'created_at']),
+            $this->owner($request)->notes()->select(['id', 'ref_id', 'folder_id', 'title', 'plain_text', 'updated_at', 'created_at']),
             ['title', 'plain_text'],
             fn (Note $note, string $query) => $query !== ''
                 ? ['snippet' => $note->snippet($query)]
@@ -41,13 +40,13 @@ class NoteController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
-        $user = $request->user();
+        $owner = $this->owner($request, 'contribute');
 
         $request->validate([
-            'folder' => ['nullable', 'string', self::ownFolder($user)],
+            'folder' => ['nullable', 'string', self::ownFolder($owner)],
         ]);
 
-        $note = $user->notes()->make();
+        $note = (new Note)->ownedBy($owner, $request->user());
         $note->folder_id = self::folderId($request->input('folder'));
         $note->save();
 
@@ -79,7 +78,7 @@ class NoteController extends Controller
             'title' => ['sometimes', 'nullable', 'string', 'max:255'],
             'content' => ['sometimes', 'nullable', 'array'],
             'is_wide' => ['sometimes', 'boolean'],
-            'folder' => ['sometimes', 'nullable', 'string', self::ownFolder($request->user())],
+            'folder' => ['sometimes', 'nullable', 'string', self::ownFolder($note->owner())],
         ]);
 
         if (array_key_exists('title', $validated)) {
@@ -110,12 +109,13 @@ class NoteController extends Controller
     {
         Gate::authorize('delete', $note);
 
+        $owner = $note->owner();
         $folder = $note->folder;
         $note->delete();
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Note deleted.')]);
 
-        return to_route('notes.index', $folder ? ['folder' => $folder->ref_id] : []);
+        return redirect(self::ownerRoute($owner, 'notes.index', $folder ? ['folder' => $folder->ref_id] : []));
     }
 
     protected static function folderModel(): string

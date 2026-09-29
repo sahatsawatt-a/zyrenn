@@ -3,7 +3,7 @@
 namespace App\Mcp\Tools;
 
 use App\Models\Folder;
-use App\Models\User;
+use App\Models\Owner;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -31,11 +31,11 @@ abstract class FiledTool extends ScopedTool
     abstract protected function noun(): string;
 
     /**
-     * The user's things of this kind.
+     * The owner's things of this kind.
      *
-     * @return HasMany<TThing, User>
+     * @return HasMany<TThing, covariant Model&Owner>
      */
-    abstract protected function things(User $user): HasMany;
+    abstract protected function things(Owner $owner): HasMany;
 
     /**
      * The columns a search looks in, with what each is called, e.g. ['title' => 'title'].
@@ -79,9 +79,9 @@ abstract class FiledTool extends ScopedTool
     /**
      * @return TThing|null
      */
-    protected function find(User $user, string $refId): ?Model
+    protected function find(Owner $owner, string $refId): ?Model
     {
-        return $this->things($user)->getQuery()->where('ref_id', $refId)->first();
+        return $this->things($owner)->getQuery()->where('ref_id', $refId)->first();
     }
 
     protected function notFound(string $refId): Response
@@ -102,9 +102,9 @@ abstract class FiledTool extends ScopedTool
      *
      * @return array<int, string>
      */
-    protected function folderPaths(User $user): array
+    protected function folderPaths(Owner $owner): array
     {
-        return $this->folders($user)->getRelated()::pathsById($this->folders($user)->get(['id', 'parent_id', 'name']), '/');
+        return $this->folders($owner)->getRelated()::pathsById($this->folders($owner)->get(['id', 'parent_id', 'name']), '/');
     }
 
     /**

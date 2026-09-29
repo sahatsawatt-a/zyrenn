@@ -4,7 +4,7 @@ namespace App\Mcp\Tools;
 
 use App\Models\Board\Board;
 use App\Models\Board\BoardFolder;
-use App\Models\User;
+use App\Models\Owner;
 use App\Support\BoardItems;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Model;
@@ -28,19 +28,19 @@ abstract class BoardTool extends FiledTool
     }
 
     /**
-     * @return HasMany<BoardFolder, User>
+     * @return HasMany<BoardFolder, covariant Model&Owner>
      */
-    protected function folders(User $user): HasMany
+    protected function folders(Owner $owner): HasMany
     {
-        return $user->boardFolders();
+        return $owner->boardFolders();
     }
 
     /**
-     * @return HasMany<Board, User>
+     * @return HasMany<Board, covariant Model&Owner>
      */
-    protected function things(User $user): HasMany
+    protected function things(Owner $owner): HasMany
     {
-        return $user->boards();
+        return $owner->boards();
     }
 
     protected function searchIn(): array

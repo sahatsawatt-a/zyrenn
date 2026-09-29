@@ -17,7 +17,9 @@ import {
     DialogTrigger,
 } from '@/components/ui/dialog';
 import { copyToClipboard, formatRelativeTime, xsrfToken } from '@/lib/utils';
-import { destroy, index, show, update } from '@/routes/boards';
+import { owned } from '@/lib/projects';
+import { destroy, index as ownIndex, show, update } from '@/routes/boards';
+import { index as projectIndex } from '@/routes/projects/boards';
 
 type Board = {
     ref_id: string;
@@ -43,6 +45,9 @@ const dirty = new Set<Field>();
 const status = ref<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
 const savedAt = ref(props.board.updated_at);
 let inFlight: Promise<void> | null = null;
+
+// Back to the list the page came from: the project's, or the user's own
+const index = owned(ownIndex, projectIndex);
 
 watchEffect(() => {
     setLayoutProps({

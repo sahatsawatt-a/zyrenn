@@ -17,7 +17,9 @@ import {
 } from '@/components/ui/dialog';
 import { useTableStore } from '@/composables/table/useTableStore';
 import { copyToClipboard, formatRelativeTime } from '@/lib/utils';
-import { destroy, index, show } from '@/routes/tables';
+import { owned } from '@/lib/projects';
+import { destroy, index as ownIndex, show } from '@/routes/tables';
+import { index as projectIndex } from '@/routes/projects/tables';
 import type { ColumnMeta, RowData, TableDensity } from '@/types';
 
 type Table = {
@@ -74,6 +76,9 @@ const saveTitle = useDebounceFn(async () => {
         savedAt.value = saved.updated_at;
     }
 }, 800);
+
+// Back to the list the page came from: the project's, or the user's own
+const index = owned(ownIndex, projectIndex);
 
 watchEffect(() => {
     setLayoutProps({

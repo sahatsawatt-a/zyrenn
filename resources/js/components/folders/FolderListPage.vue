@@ -19,7 +19,8 @@ import type { FolderItem } from '@/composables/useFolderDialogs';
 import { useFolderPage } from '@/composables/useFolderPage';
 import type { FolderRef } from '@/composables/useFolderPage';
 import { useListFilters } from '@/composables/useListFilters';
-import type { RouteDefinition, RouteQueryOptions } from '@/wayfinder';
+import { owned } from '@/lib/projects';
+import type { OwnRoute, ProjectRoute } from '@/lib/projects';
 
 // A note, board or table as its list shows it; each kind adds what it counts
 export type ListItem = {
@@ -50,19 +51,23 @@ const props = defineProps<{
     // Said when there are none at all yet
     emptyHint: string;
     routes: {
-        index: ((options?: RouteQueryOptions) => RouteDefinition<'get'>) & {
-            url: () => string;
-        };
+        index: OwnRoute<'get'>;
         show: ByRef;
-        store: { form: () => { action: string; method: 'post' } };
+        store: OwnRoute<'post'>;
         update: ByRef;
         destroy: ByRef;
     };
     folderRoutes: {
-        store: { url: () => string };
+        store: OwnRoute<'post'>;
         update: ByRef;
         destroy: ByRef;
     };
+    // The same list and make routes in a project, at /p/{project}/...
+    projectRoutes: {
+        index: ProjectRoute<'get'>;
+        store: ProjectRoute<'post'>;
+    };
+    projectFolderRoutes: { store: ProjectRoute<'post'> };
     folder: FolderRef | null;
     breadcrumbs: FolderRef[];
     // `path` is only there in search results, which span every folder
@@ -78,6 +83,14 @@ defineSlots<{
 }>();
 
 const isEmpty = computed(() => !props.folders.length && !props.items.length);
+
+// Listing and making go to the project the page is in, or the user's own
+const index = owned(props.routes.index, props.projectRoutes.index);
+const store = owned(props.routes.store, props.projectRoutes.store);
+const folderRoutes = {
+    ...props.folderRoutes,
+    store: owned(props.folderRoutes.store, props.projectFolderRoutes.store),
+};
 
 // Cards or rows, remembered for each kind
 const view = useLocalStorage<'grid' | 'list'>(
@@ -97,7 +110,7 @@ const {
         sort: props.filters.sort,
         filter: props.filters.edited,
     }),
-    url: () => props.routes.index.url(),
+    url: () => index.url(),
     filterParam: 'edited',
     defaultSort: 'edited',
     folder: () => props.folder?.ref_id ?? null,
@@ -141,14 +154,14 @@ const {
     isDragging,
 } = useFolderPage({
     rootLabel: props.rootLabel,
-    index: props.routes.index,
+    index,
     state: () => props,
     item: {
         kind: props.kind,
         routes: { update: props.routes.update, destroy: props.routes.destroy },
         nameField: 'title',
     },
-    folderRoutes: props.folderRoutes,
+    folderRoutes,
 });
 
 const asItem = (item: T): FolderItem => ({
@@ -173,7 +186,7 @@ const plural = computed(() => props.rootLabel.toLowerCase());
                 <FolderPlus />
                 New folder
             </Button>
-            <Form v-bind="routes.store.form()" v-slot="{ processing }">
+            <Form v-bind="store.form()" v-slot="{ processing }">
                 <input
                     v-if="folder"
                     type="hidden"
@@ -295,11 +308,7 @@ const plural = computed(() => props.rootLabel.toLowerCase());
             <p class="text-muted-foreground text-sm">
                 {{ folder ? `Make a ${kind} or a folder in it.` : emptyHint }}
             </p>
-            <Form
-                v-bind="routes.store.form()"
-                v-slot="{ processing }"
-                class="mt-2"
-            >
+            <Form v-bind="store.form()" v-slot="{ processing }" class="mt-2">
                 <input
                     v-if="folder"
                     type="hidden"

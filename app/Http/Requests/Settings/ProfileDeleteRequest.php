@@ -3,7 +3,9 @@
 namespace App\Http\Requests\Settings;
 
 use App\Concerns\PasswordValidationRules;
+use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 
 class ProfileDeleteRequest extends FormRequest
@@ -19,6 +21,28 @@ class ProfileDeleteRequest extends FormRequest
     {
         return [
             'password' => $this->currentPasswordRules(),
+        ];
+    }
+
+    /**
+     * A project must never be left with nobody to run it.
+     *
+     * @return array<int, Closure(Validator): void>
+     */
+    public function after(): array
+    {
+        return [
+            function (Validator $validator) {
+                $projects = $this->user()->soleOwnedProjects();
+
+                if ($projects->isNotEmpty()) {
+                    $validator->errors()->add('projects', trans_choice(
+                        'You still run :names. Delete it first.|You still run :names. Delete them first.',
+                        $projects->count(),
+                        ['names' => $projects->pluck('name')->map(fn (string $name) => "“{$name}”")->join(', ', ' and ')],
+                    ));
+                }
+            },
         ];
     }
 }

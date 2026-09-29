@@ -5,6 +5,8 @@ import type { ListItem } from '@/components/folders/FolderListPage.vue';
 import type { FolderRef } from '@/composables/useFolderPage';
 import * as folderRoutes from '@/routes/note-folders';
 import * as routes from '@/routes/notes';
+import * as projectFolderRoutes from '@/routes/projects/note-folders';
+import * as projectRoutes from '@/routes/projects/notes';
 
 defineProps<{
     folder: FolderRef | null;
@@ -26,6 +28,8 @@ defineProps<{
         empty-hint="Make your first note to start writing."
         :routes="routes"
         :folder-routes="folderRoutes"
+        :project-routes="projectRoutes"
+        :project-folder-routes="projectFolderRoutes"
         :folder="folder"
         :breadcrumbs="breadcrumbs"
         :folders="folders"

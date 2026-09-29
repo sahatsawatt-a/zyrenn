@@ -5,6 +5,8 @@ import type { ListItem } from '@/components/folders/FolderListPage.vue';
 import type { FolderRef } from '@/composables/useFolderPage';
 import * as folderRoutes from '@/routes/board-folders';
 import * as routes from '@/routes/boards';
+import * as projectFolderRoutes from '@/routes/projects/board-folders';
+import * as projectRoutes from '@/routes/projects/boards';
 
 type BoardSummary = ListItem & {
     // How many things are on it, shown in the list
@@ -31,6 +33,8 @@ defineProps<{
         empty-hint="Make your first board to start drawing."
         :routes="routes"
         :folder-routes="folderRoutes"
+        :project-routes="projectRoutes"
+        :project-folder-routes="projectFolderRoutes"
         :folder="folder"
         :breadcrumbs="breadcrumbs"
         :folders="folders"

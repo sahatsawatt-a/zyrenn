@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Concerns;
 
 use App\Models\Folder;
-use App\Models\User;
+use App\Models\Owner;
 use App\Support\Folders;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
@@ -22,6 +22,8 @@ use Inertia\Response;
  */
 trait BrowsesFolders
 {
+    use ActsForOwner;
+
     /**
      * How a list can be sorted: key => [column, direction].
      *
@@ -48,19 +50,19 @@ trait BrowsesFolders
     abstract protected static function folderModel(): string;
 
     /**
-     * Browse a folder of the user's things (the top level when none is given),
+     * Browse a folder of an owner's things (the top level when none is given),
      * or search every folder when there is a query.
      *
      * @template TItem of Model
      *
-     * @param  HasMany<TItem, User>  $items  the user's things, with whatever they need loaded
+     * @param  HasMany<TItem, covariant Model&Owner>  $items  the owner's things, with whatever they need loaded
      * @param  list<string>  $searchIn  the columns a search looks in
      * @param  Closure(TItem, string): array<string, mixed>  $describe  what the list shows of a thing beyond its
      *                                                                  title and dates, given the search ('' when none)
      */
     protected function browse(Request $request, string $page, string $key, HasMany $items, array $searchIn, Closure $describe): Response
     {
-        $user = $request->user();
+        $owner = $items->getParent();
 
         $filters = $request->validate([
             'folder' => ['nullable', 'string'],
@@ -69,14 +71,14 @@ trait BrowsesFolders
             'edited' => ['nullable', Rule::in(array_keys(self::$edited))],
         ]);
 
-        $folder = Folders::open(static::folderModel(), $user, $filters['folder'] ?? null);
+        $folder = Folders::open(static::folderModel(), $owner, $filters['folder'] ?? null);
         $query = trim($filters['q'] ?? '');
         $searching = $query !== '';
         $sort = $filters['sort'] ?? 'edited';
         $edited = $filters['edited'] ?? null;
         [$column, $direction] = self::$sorts[$sort];
 
-        $allFolders = Folders::all(static::folderModel(), $user);
+        $allFolders = Folders::all(static::folderModel(), $owner);
         $paths = static::folderModel()::pathsById($allFolders);
 
         if ($searching) {
@@ -116,15 +118,15 @@ trait BrowsesFolders
     }
 
     /**
-     * A folder ref_id that belongs to the user.
+     * A folder ref_id that belongs to the owner.
      */
-    protected static function ownFolder(User $user): Exists
+    protected static function ownFolder(Owner $owner): Exists
     {
-        return Folders::rule(static::folderModel(), $user);
+        return Folders::rule(static::folderModel(), $owner);
     }
 
     /**
-     * The id of a folder given by ref_id, already validated as the user's own.
+     * The id of a folder given by ref_id, already validated as the owner's.
      */
     protected static function folderId(?string $refId): ?int
     {

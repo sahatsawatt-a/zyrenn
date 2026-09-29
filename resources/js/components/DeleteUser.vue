@@ -79,6 +79,7 @@ const passwordInput = useTemplateRef('passwordInput');
                                 placeholder="Password"
                             />
                             <InputError :message="errors.password" />
+                            <InputError :message="errors.projects" />
                         </div>
 
                         <DialogFooter class="gap-2">
