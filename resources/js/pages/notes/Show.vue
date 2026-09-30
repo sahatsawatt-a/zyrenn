@@ -46,7 +46,12 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { uploadToDrive } from '@/lib/drive';
 import { copyToClipboard, formatRelativeTime, xsrfToken } from '@/lib/utils';
-import { destroy, index, pdf, show, update } from '@/routes/notes';
+import PresenceAvatars from '@/components/PresenceAvatars.vue';
+import { usePresence } from '@/composables/usePresence';
+import { sharingIsOn, useShared } from '@/composables/useShared';
+import { canChange, owned } from '@/lib/projects';
+import { destroy, index as ownIndex, pdf, show, update } from '@/routes/notes';
+import { index as projectIndex } from '@/routes/projects/notes';
 
 type Note = {
     ref_id: string;
@@ -62,12 +67,50 @@ const props = defineProps<{
     breadcrumbs: { ref_id: string; name: string }[];
 }>();
 
+// A project's viewers read the note; nothing they do is saved
+const editable = canChange();
+
+// Who else has the note open
+const { others } = usePresence(() => `notes.${props.note.ref_id}`, {
+    // Deleted by someone else: close it rather than edit into nothing
+    deleted: () => {
+        toast.info('Someone deleted this note.');
+        router.visit(index());
+    },
+});
+
 const editorRef = useTemplateRef('editorRef');
 const titleInput = useTemplateRef('titleInput');
 
 const title = ref(props.note.title);
 let content: JSONContent | null = props.note.content;
 const isWide = ref(props.note.is_wide);
+
+// Edited live with everyone who has it open, when the collaboration server is
+// on: the body is the shared document, the title and width a map beside it.
+// Otherwise the page saves as it goes, below.
+//
+// The PDF printer (?print=, see NotePdf) reads the note as the app keeps it:
+// joining the live document, it could print before that had arrived.
+const printing = document.documentElement.dataset.printStyle !== undefined;
+const shared =
+    sharingIsOn() && !printing ? useShared(`notes.${props.note.ref_id}`) : null;
+// The title is written into the shared map only once the saved one has
+// arrived: set before that, the two would race and either could win
+const meta = shared?.document.getMap('meta');
+
+meta?.observe(() => {
+    const nextTitle = meta.get('title');
+    const nextWide = meta.get('is_wide');
+
+    if (typeof nextTitle === 'string' && nextTitle !== title.value) {
+        title.value = nextTitle;
+    }
+
+    if (typeof nextWide === 'boolean') {
+        isWide.value = nextWide;
+    }
+});
 
 type Field = 'title' | 'content' | 'is_wide';
 
@@ -76,6 +119,9 @@ const dirty = new Set<Field>();
 const status = ref<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
 const savedAt = ref(props.note.updated_at);
 let inFlight: Promise<void> | null = null;
+
+// Back to the list the page came from: the project's, or the user's own
+const index = owned(ownIndex, projectIndex);
 
 watchEffect(() => {
     setLayoutProps({
@@ -166,8 +212,25 @@ function markDirty(field: Field): void {
     void debouncedSave();
 }
 
+function onTitleInput(): void {
+    if (meta) {
+        meta.set('title', title.value);
+
+        return;
+    }
+
+    markDirty('title');
+}
+
 function toggleWide(): void {
     isWide.value = !isWide.value;
+
+    if (meta) {
+        meta.set('is_wide', isWide.value);
+
+        return;
+    }
+
     dirty.add('is_wide');
     status.value = 'unsaved';
     // A layout switch is a single deliberate click, so save it right away
@@ -175,6 +238,11 @@ function toggleWide(): void {
 }
 
 function onContentUpdate(json: JSONContent): void {
+    // Shared, the collaboration server keeps the document
+    if (shared) {
+        return;
+    }
+
     content = json;
     markDirty('content');
 }
@@ -244,9 +312,14 @@ const editedOn = computed(() =>
     }),
 );
 
-// The server prints the saved note, so anything still unsaved goes first
+// The server prints the saved note, so anything still unsaved goes first --
+// shared, whatever anyone has typed that the app has not been handed yet
 async function printPdf(): Promise<File> {
-    await save();
+    if (shared) {
+        await shared.flush({ everyone: true });
+    } else {
+        await save();
+    }
 
     if (status.value === 'error') {
         throw new Error(
@@ -332,14 +405,25 @@ async function exportPdf(to: 'download' | 'drive'): Promise<void> {
 
 // Flush edits before a pin or restore; false when they could not be saved
 async function saveBeforeVersionChange(): Promise<boolean> {
+    // Shared, what everyone has typed goes to the app first
+    if (shared) {
+        await shared.flush({ everyone: true });
+
+        return true;
+    }
+
     await save();
 
     return status.value !== 'error';
 }
 
-// The editor holds its own copy of the content, so reload to show the restored one
+// Shared, the restored note reaches every open editor through the
+// collaboration server. Alone, the editor holds its own copy of the content,
+// so reload to show the restored one.
 function onRestored(): void {
-    window.location.reload();
+    if (!shared) {
+        window.location.reload();
+    }
 }
 
 function focusEditor(): void {
@@ -362,7 +446,7 @@ const removeBeforeListener = router.on('before', (event) => {
 });
 
 onMounted(() => {
-    if (!props.note.title) {
+    if (editable && !props.note.title) {
         titleInput.value?.focus();
     }
 });
@@ -373,6 +457,14 @@ onBeforeUnmount(() => {
 });
 
 const statusLabel = computed(() => {
+    if (!editable) {
+        return 'View only';
+    }
+
+    if (shared) {
+        return shared.label.value;
+    }
+
     switch (status.value) {
         case 'saving':
             return 'Saving…';
@@ -424,9 +516,10 @@ const statusLabel = computed(() => {
                     >
                         {{ statusLabel }}
                     </span>
+                    <PresenceAvatars :others="others" />
                 </div>
 
-                <div class="flex items-center gap-1">
+                <div v-if="editable" class="flex items-center gap-1">
                     <Button
                         variant="ghost"
                         size="sm"
@@ -549,8 +642,11 @@ const statusLabel = computed(() => {
                 maxlength="255"
                 placeholder="Untitled"
                 aria-label="Note title"
+                :readonly="
+                    !editable || (shared !== null && !shared.synced.value)
+                "
                 class="placeholder:text-muted-foreground/60 w-full bg-transparent text-4xl font-bold tracking-tight outline-none print:hidden"
-                @input="markDirty('title')"
+                @input="onTitleInput"
                 @keydown.enter.prevent="focusEditor"
             />
             <!-- An input is one line and clips a long title on paper; this wraps -->
@@ -568,6 +664,8 @@ const statusLabel = computed(() => {
             :key="note.ref_id"
             :content="note.content"
             :wide="isWide"
+            :editable="editable"
+            :shared="shared"
             class="min-h-0! pt-2!"
             @update="onContentUpdate"
         />

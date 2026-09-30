@@ -28,7 +28,7 @@ class ListDrive extends DriveTool
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $user = $this->targetUser($request);
+        $owner = $this->targetOwner($request);
 
         $validated = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
@@ -38,18 +38,19 @@ class ListDrive extends DriveTool
         ]);
 
         $inFolder = array_key_exists('folder', $validated);
-        $folder = $inFolder ? $this->folderAt($user, $validated['folder'] ?? '') : null;
+        $folder = $inFolder ? $this->folderAt($owner, $validated['folder'] ?? '') : null;
 
         if ($folder === false) {
             return Response::error("There is no folder \"{$validated['folder']}\" in the Drive. Call list-drive without a folder to see what is there.");
         }
 
-        $paths = DriveFolder::pathsById($user->driveFolders()->get(['id', 'parent_id', 'name']), '/');
+        $paths = DriveFolder::pathsById($owner->driveFolders()->get(['id', 'parent_id', 'name']), '/');
 
-        $files = $user->driveFiles()
+        $files = $owner->driveFiles()
             ->when($inFolder, fn ($query) => $query->where('folder_id', $folder?->id))
             ->when($validated['search'] ?? null, fn ($query, string $search) => $query->whereLike('name', "%{$search}%"))
             ->when($validated['kind'] ?? null, fn ($query, string $kind) => $query->where('kind', $kind))
+            ->with('project:id,ref_id')
             ->latest('id')
             ->limit($validated['limit'] ?? 25)
             ->get()

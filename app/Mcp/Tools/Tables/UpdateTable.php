@@ -2,9 +2,11 @@
 
 namespace App\Mcp\Tools\Tables;
 
+use App\Events\TableChanged;
 use App\Mcp\Tools\TableTool;
 use App\Models\Table\Table;
 use App\Models\User;
+use App\Support\Live\Live;
 use App\Support\Table\TableStorage;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\DB;
@@ -35,6 +37,7 @@ class UpdateTable extends TableTool
     public function handle(Request $request): Response|ResponseFactory
     {
         $user = $this->targetUser($request);
+        $owner = $this->targetOwner($request, changes: true);
 
         $validated = $request->validate([
             'ref_id' => ['required', 'string', 'max:16'],
@@ -50,7 +53,7 @@ class UpdateTable extends TableTool
             'delete_rows.*' => ['integer'],
         ]);
 
-        $table = $this->find($user, $validated['ref_id']);
+        $table = $this->find($owner, $validated['ref_id']);
 
         if (! $table) {
             return $this->notFound($validated['ref_id']);
@@ -58,6 +61,9 @@ class UpdateTable extends TableTool
 
         try {
             DB::transaction(fn () => $this->apply($table, $user, $validated));
+
+            // Rows and columns may both have changed; whoever has it open loads it again
+            Live::tell(new TableChanged($table, 'reload'));
         } catch (TableProblem $problem) {
             return Response::error($problem->getMessage());
         }
@@ -78,7 +84,7 @@ class UpdateTable extends TableTool
         }
 
         if (array_key_exists('folder', $validated)) {
-            $table->folder_id = $this->ensureFolderAt($user, $validated['folder'] ?? '')?->id;
+            $table->folder_id = $this->ensureFolderAt($table->owner(), $validated['folder'] ?? '', $user)?->id;
         }
 
         $table->save();

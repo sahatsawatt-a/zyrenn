@@ -3,6 +3,7 @@
 namespace App\Models\Note;
 
 use App\Models\Concerns\HasRefId;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,7 +15,7 @@ use Illuminate\Support\Carbon;
  * @property int $note_id
  * @property string $title
  * @property array<string, mixed>|null $content
- * @property Carbon|null $pinned_at
+ * @property CarbonInterface|null $pinned_at immutable, as the app makes every date
  * @property string|null $label
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at

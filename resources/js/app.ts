@@ -11,14 +11,19 @@ import { configureEcho } from '@laravel/echo-vue';
 // opened on -- the https hostname, localhost, or an IP on the LAN. Reading a
 // host out of VITE_REVERB_* would bake one address into the bundle at build
 // time and break every other way in.
-configureEcho({
-    broadcaster: 'reverb',
-    wsHost: window.location.hostname,
-    wsPort: Number(window.location.port || 80),
-    wssPort: Number(window.location.port || 443),
-    forceTLS: window.location.protocol === 'https:',
-    enabledTransports: ['ws', 'wss'],
-});
+//
+// Only in a browser: this file is also run to render pages on the server
+// (Inertia SSR), where there is no page, no origin and no socket to open.
+if (typeof window !== 'undefined') {
+    configureEcho({
+        broadcaster: 'reverb',
+        wsHost: window.location.hostname,
+        wsPort: Number(window.location.port || 80),
+        wssPort: Number(window.location.port || 443),
+        forceTLS: window.location.protocol === 'https:',
+        enabledTransports: ['ws', 'wss'],
+    });
+}
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 

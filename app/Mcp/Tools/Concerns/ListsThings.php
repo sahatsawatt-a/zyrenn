@@ -24,7 +24,7 @@ trait ListsThings
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $user = $this->targetUser($request);
+        $owner = $this->targetOwner($request);
 
         $validated = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
@@ -33,21 +33,22 @@ trait ListsThings
         ]);
 
         $inFolder = array_key_exists('folder', $validated);
-        $folder = $inFolder ? $this->folderAt($user, $validated['folder'] ?? '') : null;
+        $folder = $inFolder ? $this->folderAt($owner, $validated['folder'] ?? '') : null;
 
         if ($folder === false) {
             return Response::error("There is no {$this->noun()} folder \"{$validated['folder']}\". See {$this->folderTool()}.");
         }
 
-        $paths = $this->folderPaths($user);
+        $paths = $this->folderPaths($owner);
 
-        $found = $this->things($user)
+        $found = $this->things($owner)
             ->when($inFolder, fn ($query) => $query->where('folder_id', $folder?->getKey()))
             ->when($validated['search'] ?? null, fn ($query, string $search) => $query->where(function ($match) use ($search) {
                 foreach (array_keys($this->searchIn()) as $column) {
                     $match->orWhereLike($column, "%{$search}%");
                 }
             }))
+            ->with('project:id,ref_id')
             ->latest('updated_at')
             ->limit($validated['limit'] ?? 25)
             ->get()

@@ -19,10 +19,10 @@ trait GetsThing
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $user = $this->targetUser($request);
+        $owner = $this->targetOwner($request);
         $validated = $request->validate(['ref_id' => ['required', 'string', 'max:16']]);
 
-        $thing = $this->find($user, $validated['ref_id']);
+        $thing = $this->find($owner, $validated['ref_id']);
 
         return $thing ? Response::structured($this->full($thing)) : $this->notFound($validated['ref_id']);
     }

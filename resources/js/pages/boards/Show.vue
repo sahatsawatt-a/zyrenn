@@ -3,7 +3,9 @@ import { Head, router, setLayoutProps } from '@inertiajs/vue3';
 import { Check, Copy, Trash2 } from '@lucide/vue';
 import { useDebounceFn, useEventListener } from '@vueuse/core';
 import { computed, onBeforeUnmount, ref, watchEffect } from 'vue';
+import { toast } from 'vue-sonner';
 import BoardCanvas from '@/components/Board/BoardCanvas.vue';
+import BoardView from '@/components/Board/BoardView.vue';
 import type { Item } from '@/composables/board/items';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,7 +19,13 @@ import {
     DialogTrigger,
 } from '@/components/ui/dialog';
 import { copyToClipboard, formatRelativeTime, xsrfToken } from '@/lib/utils';
-import { destroy, index, show, update } from '@/routes/boards';
+import PresenceAvatars from '@/components/PresenceAvatars.vue';
+import { useSharedItems } from '@/composables/board/useBoardSync';
+import { usePresence } from '@/composables/usePresence';
+import { sharingIsOn, useShared } from '@/composables/useShared';
+import { canChange, owned } from '@/lib/projects';
+import { destroy, index as ownIndex, show, update } from '@/routes/boards';
+import { index as projectIndex } from '@/routes/projects/boards';
 
 type Board = {
     ref_id: string;
@@ -32,8 +40,40 @@ const props = defineProps<{
     breadcrumbs: { ref_id: string; name: string }[];
 }>();
 
+// A project's viewers see the whole board, drawn as it is, and change nothing
+const editable = canChange();
+
+// Who else has the board open
+const { others } = usePresence(() => `boards.${props.board.ref_id}`, {
+    // Deleted by someone else: close it rather than edit into nothing
+    deleted: () => {
+        toast.info('Someone deleted this board.');
+        router.visit(index());
+    },
+});
+
 const title = ref(props.board.title);
 let items: Item[] = props.board.content?.items ?? [];
+
+// Drawn on live with everyone who has it open, when the collaboration server
+// is on: the items are the shared document, the title a map beside it. The
+// title is written there only once the saved one has arrived, so the two
+// never race. Otherwise the page saves as it goes, below.
+const shared = sharingIsOn() ? useShared(`boards.${props.board.ref_id}`) : null;
+const meta = shared?.document.getMap('meta');
+
+meta?.observe(() => {
+    const next = meta.get('title');
+
+    if (typeof next === 'string' && next !== title.value) {
+        title.value = next;
+    }
+});
+
+// A viewer's board follows the others' drawing as it happens
+const viewed = shared
+    ? useSharedItems(shared.document, items)
+    : ref<Item[]>(items);
 
 // Saving works the same way a note does: mark what changed, send it debounced,
 // and never let an older request land after a newer one.
@@ -43,6 +83,9 @@ const dirty = new Set<Field>();
 const status = ref<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
 const savedAt = ref(props.board.updated_at);
 let inFlight: Promise<void> | null = null;
+
+// Back to the list the page came from: the project's, or the user's own
+const index = owned(ownIndex, projectIndex);
 
 watchEffect(() => {
     setLayoutProps({
@@ -133,8 +176,23 @@ function markDirty(field: Field): void {
 }
 
 function onBoardChange(next: Item[]): void {
+    // Shared, the collaboration server keeps the board
+    if (shared) {
+        return;
+    }
+
     items = next;
     markDirty('content');
+}
+
+function onTitleInput(): void {
+    if (meta) {
+        meta.set('title', title.value);
+
+        return;
+    }
+
+    markDirty('title');
 }
 
 const refCopied = ref(false);
@@ -170,6 +228,10 @@ onBeforeUnmount(() => {
 });
 
 const statusLabel = computed(() => {
+    if (shared) {
+        return shared.label.value;
+    }
+
     switch (status.value) {
         case 'saving':
             return 'Saving…';
@@ -186,19 +248,52 @@ const statusLabel = computed(() => {
 <template>
     <Head :title="title || 'Untitled board'" />
 
+    <div
+        v-if="!editable"
+        class="flex h-[calc(100svh-6rem)] min-h-0 flex-col gap-3 p-4 md:p-6"
+        data-test="board-read-only"
+    >
+        <div class="flex items-center gap-3">
+            <h1 class="truncate text-lg font-semibold">
+                {{ title || 'Untitled board' }}
+            </h1>
+            <span class="text-muted-foreground text-xs whitespace-nowrap"
+                >View only</span
+            >
+            <PresenceAvatars :others="others" />
+            <Button
+                variant="ghost"
+                size="sm"
+                class="ml-auto"
+                :title="`Copy this board's reference (${props.board.ref_id})`"
+                @click="copyRefId"
+            >
+                <Check v-if="refCopied" class="text-emerald-600" />
+                <Copy v-else />
+            </Button>
+        </div>
+        <div class="min-h-0 flex-1 overflow-hidden rounded-xl border">
+            <BoardView :items="viewed" />
+        </div>
+    </div>
+
     <BoardCanvas
+        v-else
         :items="props.board.content?.items ?? []"
         :title="title || 'Untitled board'"
         :status="statusLabel"
+        :shared="shared"
         @change="onBoardChange"
     >
         <template #actions>
+            <PresenceAvatars :others="others" class="mr-1" />
             <input
                 v-model="title"
                 class="board-title"
                 placeholder="Untitled board"
                 data-test="board-title"
-                @input="markDirty('title')"
+                :readonly="shared !== null && !shared.synced.value"
+                @input="onTitleInput"
             />
 
             <Button

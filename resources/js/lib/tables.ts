@@ -1,5 +1,6 @@
 // Saving a table as it is edited. The grid changes itself first and tells the
 // server afterwards, so every call here answers with JSON rather than a page.
+import { socketHeaders } from '@/lib/live';
 import { xsrfToken } from '@/lib/utils';
 import { update as updateTableRoute } from '@/routes/tables';
 import * as columnRoutes from '@/routes/tables/columns';
@@ -32,6 +33,7 @@ async function send<T>(
             Accept: 'application/json',
             'X-Requested-With': 'XMLHttpRequest',
             'X-XSRF-TOKEN': xsrfToken(),
+            ...socketHeaders(),
         },
         body: body === undefined ? undefined : JSON.stringify(body),
     });

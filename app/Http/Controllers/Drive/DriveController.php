@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Drive;
 
+use App\Http\Controllers\Concerns\ActsForOwner;
 use App\Http\Controllers\Controller;
 use App\Models\Drive\DriveFile;
 use App\Models\Drive\DriveFolder;
@@ -14,6 +15,8 @@ use Inertia\Response;
 
 class DriveController extends Controller
 {
+    use ActsForOwner;
+
     /**
      * How the file list can be sorted: key => [column, direction].
      */
@@ -27,12 +30,12 @@ class DriveController extends Controller
     private const KINDS = ['image', 'pdf', 'doc', 'audio', 'video', 'archive', 'other'];
 
     /**
-     * Browse a folder of the user's Drive (the root when none is given), or
-     * search every folder when there is a query.
+     * Browse a folder of the user's or the project's Drive (the root when none
+     * is given), or search every folder when there is a query.
      */
     public function index(Request $request): Response
     {
-        $user = $request->user();
+        $owner = $this->owner($request);
 
         $filters = $request->validate([
             'folder' => ['nullable', 'string'],
@@ -41,17 +44,17 @@ class DriveController extends Controller
             'type' => ['nullable', Rule::in(self::KINDS)],
         ]);
 
-        $folder = Folders::open(DriveFolder::class, $user, $filters['folder'] ?? null);
+        $folder = Folders::open(DriveFolder::class, $owner, $filters['folder'] ?? null);
         $query = trim($filters['q'] ?? '');
         $searching = $query !== '';
         $sort = $filters['sort'] ?? 'newest';
         $type = $filters['type'] ?? null;
         [$column, $direction] = self::SORTS[$sort];
 
-        $allFolders = Folders::all(DriveFolder::class, $user);
+        $allFolders = Folders::all(DriveFolder::class, $owner);
         $paths = DriveFolder::pathsById($allFolders);
 
-        $files = $user->driveFiles()
+        $files = $owner->driveFiles()
             ->when(! $searching, fn ($files) => $files->where('folder_id', $folder?->id))
             ->when($searching, fn ($files) => $files->whereLike('name', "%{$query}%"))
             ->when($type, fn ($files) => $files->where('kind', $type))
@@ -76,13 +79,13 @@ class DriveController extends Controller
     }
 
     /**
-     * The user's images, newest first, for the note editor's picker.
+     * The user's or the project's images, newest first, for the note editor's picker.
      */
     public function pick(Request $request): JsonResponse
     {
         $request->validate(['q' => ['nullable', 'string', 'max:255']]);
 
-        $files = $request->user()->driveFiles()
+        $files = $this->owner($request)->driveFiles()
             ->whereIn('mime', DriveFile::IMAGE_MIMES)
             ->when($request->filled('q'), fn ($query) => $query->whereLike('name', '%'.$request->string('q').'%'))
             ->latest()

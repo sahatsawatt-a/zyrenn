@@ -22,6 +22,8 @@ class ProfileController extends Controller
         return Inertia::render('settings/Profile', [
             'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
             'status' => $request->session()->get('status'),
+            // Deleting the account deletes these too, so the dialog names them
+            'soloProjects' => $request->user()->soloProjects()->pluck('name'),
         ]);
     }
 

@@ -6,7 +6,6 @@ use App\Http\Controllers\Concerns\BrowsesFolders;
 use App\Http\Controllers\Controller;
 use App\Models\Board\Board;
 use App\Models\Board\BoardFolder;
-use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,8 +18,8 @@ class BoardController extends Controller
     use BrowsesFolders;
 
     /**
-     * Browse a folder of the user's boards (the top level when none is given),
-     * or search every folder when there is a query.
+     * Browse a folder of the user's or the project's boards (the top level
+     * when none is given), or search every folder when there is a query.
      */
     public function index(Request $request): Response
     {
@@ -28,7 +27,7 @@ class BoardController extends Controller
             $request,
             'boards/Index',
             'boards',
-            $request->user()->boards(),
+            $this->owner($request)->boards(),
             ['title', 'plain_text'],
             fn (Board $board, string $query) => [
                 // How much is on it, so the list says more than a title
@@ -43,13 +42,13 @@ class BoardController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
-        $user = $request->user();
+        $owner = $this->owner($request, 'contribute');
 
         $request->validate([
-            'folder' => ['nullable', 'string', self::ownFolder($user)],
+            'folder' => ['nullable', 'string', self::ownFolder($owner)],
         ]);
 
-        $board = $user->boards()->make();
+        $board = (new Board)->ownedBy($owner, $request->user());
         $board->folder_id = self::folderId($request->input('folder'));
         $board->save();
 
@@ -79,7 +78,7 @@ class BoardController extends Controller
         $validated = $request->validate([
             'title' => ['sometimes', 'nullable', 'string', 'max:255'],
             'content' => ['sometimes', 'nullable', 'array'],
-            'folder' => ['sometimes', 'nullable', 'string', self::ownFolder($request->user())],
+            'folder' => ['sometimes', 'nullable', 'string', self::ownFolder($board->owner())],
         ]);
 
         if (array_key_exists('title', $validated)) {
@@ -110,22 +109,24 @@ class BoardController extends Controller
     {
         Gate::authorize('delete', $board);
 
+        $owner = $board->owner();
         $folder = $board->folder;
         $board->delete();
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Board deleted.')]);
 
-        return to_route('boards.index', $folder ? ['folder' => $folder->ref_id] : []);
+        return redirect(self::ownerRoute($owner, 'boards.index', $folder ? ['folder' => $folder->ref_id] : []));
     }
 
     /**
-     * The user's boards, for the picker in a note. Newest first, by name.
+     * The user's or the project's boards, for the picker in a note. Newest
+     * first, by name.
      */
     public function pick(Request $request): JsonResponse
     {
         $request->validate(['q' => ['nullable', 'string', 'max:255']]);
 
-        $boards = $request->user()->boards()
+        $boards = $this->owner($request)->boards()
             ->when($request->filled('q'), fn ($query) => $query
                 ->whereLike('title', '%'.$request->string('q').'%'))
             ->latest('updated_at')

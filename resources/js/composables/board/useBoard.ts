@@ -1,4 +1,5 @@
-import { computed, ref } from 'vue';
+import { computed, ref, shallowRef } from 'vue';
+import type { Ref } from 'vue';
 import { STICKY_COLOURS, bumpIdsTo, hydrate, makeItem, newId } from './items';
 import { groupKeys } from './layers';
 import type { Item, ItemKind } from './items';
@@ -10,6 +11,18 @@ import type { Item, ItemKind } from './items';
  * a board this size is a few kilobytes of JSON, and it means a new tool cannot
  * forget to write its own undo step.
  */
+/**
+ * Undo that lives somewhere else: a shared board's, which takes back only
+ * your own changes (see useBoardSync).
+ */
+export type BoardHistory = {
+    commit: () => void;
+    undo: () => void;
+    redo: () => void;
+    canUndo: Ref<boolean>;
+    canRedo: Ref<boolean>;
+};
+
 export function useBoard(initial: Item[] | null = null) {
     const items = ref<Item[]>([]);
     const selection = ref<string[]>([]);
@@ -29,8 +42,17 @@ export function useBoard(initial: Item[] | null = null) {
 
     const snapshot = (): Item[] => items.value.map(copy);
 
+    // Set once the board is shared; everything below then asks it instead
+    const shared = shallowRef<BoardHistory | null>(null);
+
     /** Call before any change that should be undoable. */
     const commit = () => {
+        if (shared.value) {
+            shared.value.commit();
+
+            return;
+        }
+
         past.push(snapshot());
 
         if (past.length > 60) {
@@ -41,6 +63,12 @@ export function useBoard(initial: Item[] | null = null) {
     };
 
     const undo = () => {
+        if (shared.value) {
+            shared.value.undo();
+
+            return;
+        }
+
         const previous = past.pop();
 
         if (!previous) {
@@ -55,6 +83,12 @@ export function useBoard(initial: Item[] | null = null) {
     };
 
     const redo = () => {
+        if (shared.value) {
+            shared.value.redo();
+
+            return;
+        }
+
         const next = future.pop();
 
         if (!next) {
@@ -65,8 +99,19 @@ export function useBoard(initial: Item[] | null = null) {
         items.value = next;
     };
 
-    const canUndo = computed(() => past.length > 0);
-    const canRedo = computed(() => future.length > 0);
+    const canUndo = computed(() =>
+        shared.value ? shared.value.canUndo.value : past.length > 0,
+    );
+    const canRedo = computed(() =>
+        shared.value ? shared.value.canRedo.value : future.length > 0,
+    );
+
+    /** Hands undo and redo to a shared board's own history. */
+    const shareHistory = (history: BoardHistory) => {
+        shared.value = history;
+        past.length = 0;
+        future.length = 0;
+    };
 
     // ----------------------------------------------------------- selection
     const selected = computed(() =>
@@ -415,6 +460,7 @@ export function useBoard(initial: Item[] | null = null) {
         redo,
         canUndo,
         canRedo,
+        shareHistory,
         reset,
         addMany,
         makeItem: (

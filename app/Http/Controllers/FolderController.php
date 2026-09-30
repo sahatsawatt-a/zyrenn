@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ActsForOwner;
 use App\Models\Folder;
+use App\Models\Owner;
 use App\Support\Folders;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -20,6 +22,8 @@ use Inertia\Inertia;
  */
 abstract class FolderController extends Controller
 {
+    use ActsForOwner;
+
     /**
      * The kind of folder this controller looks after.
      *
@@ -38,22 +42,21 @@ abstract class FolderController extends Controller
     }
 
     /**
-     * Create a folder.
+     * Create a folder, for the user or the project in the URL.
      */
     public function store(Request $request): RedirectResponse
     {
-        $user = $request->user();
+        $owner = $this->owner($request, 'contribute');
 
         $validated = $request->validate([
             'name' => $this->nameRules(),
-            'parent' => ['nullable', 'string', $this->ownFolder($request)],
+            'parent' => ['nullable', 'string', $this->ownFolder($owner)],
         ], self::messages());
 
-        $folder = $this->folderModel()::make([
+        $this->folderModel()::make([
             'name' => $validated['name'],
             'parent_id' => $this->folderId($validated['parent'] ?? null),
-        ]);
-        $folder->user()->associate($user)->save();
+        ])->ownedBy($owner, $request->user())->save();
 
         return back();
     }
@@ -68,7 +71,8 @@ abstract class FolderController extends Controller
 
         $validated = $request->validate([
             'name' => ['sometimes', ...$this->nameRules()],
-            'parent' => ['sometimes', 'nullable', 'string', $this->ownFolder($request)],
+            // Only under another folder of the same owner
+            'parent' => ['sometimes', 'nullable', 'string', $this->ownFolder($folder->owner())],
         ], self::messages());
 
         if (array_key_exists('name', $validated)) {
@@ -112,9 +116,9 @@ abstract class FolderController extends Controller
         return $this->folderModel()::query()->where('ref_id', $refId)->firstOrFail();
     }
 
-    private function ownFolder(Request $request): Exists
+    private function ownFolder(Owner $owner): Exists
     {
-        return Folders::rule($this->folderModel(), $request->user());
+        return Folders::rule($this->folderModel(), $owner);
     }
 
     private function folderId(?string $refId): ?int

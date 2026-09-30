@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,13 +11,12 @@ use Illuminate\Support\Carbon;
 
 /**
  * A folder of one kind of thing -- notes, boards, tables, Drive files -- owned
- * by one user and nested under another folder of its own kind through
+ * by a user or a project and nested under another folder of its own kind through
  * `parent_id`. Each kind keeps its folders in a table of its own; everything
  * else about a folder is the same, and lives here.
  *
  * @property int $id
  * @property string $ref_id
- * @property int $user_id
  * @property int|null $parent_id
  * @property string $name
  * @property Carbon|null $created_at
@@ -24,7 +24,7 @@ use Illuminate\Support\Carbon;
  */
 abstract class Folder extends Model
 {
-    use HasRefId;
+    use BelongsToOwner, HasRefId;
 
     /**
      * @var list<string>
@@ -37,16 +37,6 @@ abstract class Folder extends Model
      * @return class-string<Model>
      */
     abstract protected function itemModel(): string;
-
-    /**
-     * Get the user that owns the folder.
-     *
-     * @return BelongsTo<User, $this>
-     */
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
-    }
 
     /**
      * Delete the folder with everything inside it, at any depth.

@@ -2,10 +2,15 @@
 
 namespace App\Models\Board;
 
+use App\Events\Deleted;
+use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
-use App\Models\User;
+use App\Models\Concerns\RecordsEditor;
+use App\Support\Live\Collab;
+use App\Support\Live\Live;
 use Database\Factories\Board\BoardFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -16,19 +21,23 @@ use Illuminate\Support\Carbon;
  *
  * @property int $id
  * @property string $ref_id
- * @property int $user_id
  * @property int|null $folder_id
  * @property string $title
  * @property array<string, mixed>|null $content
  * @property string|null $plain_text
+ * @property string|null $ydoc the collaboration server's shared state, base64
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
 #[Fillable(['title', 'content'])]
+#[Hidden(['ydoc'])]
 class Board extends Model
 {
+    /** What the people editing a board share live, besides where it is filed. */
+    private const SHARED = ['content', 'title'];
+
     /** @use HasFactory<BoardFactory> */
-    use HasFactory, HasRefId;
+    use BelongsToOwner, HasFactory, HasRefId, RecordsEditor;
 
     /**
      * Mirror the column defaults so new instances match what the database stores.
@@ -48,7 +57,22 @@ class Board extends Model
             if ($board->isDirty('content')) {
                 $board->plain_text = $board->writtenText() ?: null;
             }
+
+            // Changed from elsewhere -- MCP, a rename from the list -- rather than
+            // by the collaboration server: its shared state no longer says the same
+            if ($board->exists && $board->isDirty(self::SHARED) && ! $board->isDirty('ydoc')) {
+                $board->ydoc = null;
+            }
         });
+
+        // ...so whoever has it open is sent the change
+        static::saved(function (Board $board) {
+            if ($board->ydoc === null && $board->wasChanged(self::SHARED)) {
+                Collab::replace($board, Collab::changes($board));
+            }
+        });
+
+        static::deleted(fn (Board $board) => Live::tell(new Deleted($board)));
     }
 
     /**
@@ -111,16 +135,6 @@ class Board extends Model
         return [
             'content' => 'array',
         ];
-    }
-
-    /**
-     * Get the user that owns the board.
-     *
-     * @return BelongsTo<User, $this>
-     */
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
     }
 
     /**

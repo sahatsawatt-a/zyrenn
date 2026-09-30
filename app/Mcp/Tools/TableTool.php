@@ -3,10 +3,10 @@
 namespace App\Mcp\Tools;
 
 use App\Mcp\Tools\Tables\TableProblem;
+use App\Models\Owner;
 use App\Models\Table\Table;
 use App\Models\Table\TableColumn;
 use App\Models\Table\TableFolder;
-use App\Models\User;
 use App\Support\Table\TableStorage;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Model;
@@ -39,19 +39,19 @@ abstract class TableTool extends FiledTool
     }
 
     /**
-     * @return HasMany<TableFolder, User>
+     * @return HasMany<TableFolder, covariant Model&Owner>
      */
-    protected function folders(User $user): HasMany
+    protected function folders(Owner $owner): HasMany
     {
-        return $user->tableFolders();
+        return $owner->tableFolders();
     }
 
     /**
-     * @return HasMany<Table, User>
+     * @return HasMany<Table, covariant Model&Owner>
      */
-    protected function things(User $user): HasMany
+    protected function things(Owner $owner): HasMany
     {
-        return $user->tables();
+        return $owner->tables();
     }
 
     protected function searchIn(): array

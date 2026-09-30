@@ -30,6 +30,7 @@ class UploadFile extends DriveTool
     public function handle(Request $request): Response|ResponseFactory
     {
         $user = $this->targetUser($request);
+        $owner = $this->targetOwner($request, changes: true);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -66,14 +67,14 @@ class UploadFile extends DriveTool
             return Response::error('That name is not a usable file name.');
         }
 
-        $folder = $this->ensureFolderAt($user, $validated['folder'] ?? '');
+        $folder = $this->ensureFolderAt($owner, $validated['folder'] ?? '', $user);
 
         $temp = tempnam(sys_get_temp_dir(), 'mcp-upload-');
         file_put_contents($temp, $bytes);
 
         try {
             // test: true -- these bytes arrived over MCP, not through a PHP upload
-            $file = DriveFile::store(new UploadedFile($temp, $name, mime_content_type($temp) ?: null, null, true), $user, $folder);
+            $file = DriveFile::store(new UploadedFile($temp, $name, mime_content_type($temp) ?: null, null, true), $owner, $folder, $user);
         } finally {
             @unlink($temp);
         }

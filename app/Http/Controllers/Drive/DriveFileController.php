@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Drive;
 
+use App\Http\Controllers\Concerns\ActsForOwner;
 use App\Http\Controllers\Controller;
 use App\Models\Drive\DriveFile;
 use App\Models\Drive\DriveFolder;
@@ -16,6 +17,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DriveFileController extends Controller
 {
+    use ActsForOwner;
+
     /**
      * Types the browser may render in place; anything else is downloaded, so
      * an uploaded HTML page can never run on this origin.
@@ -31,20 +34,20 @@ class DriveFileController extends Controller
      */
     public function store(Request $request): JsonResponse|RedirectResponse
     {
-        $user = $request->user();
+        $owner = $this->owner($request, 'contribute');
 
         $request->validate([
             'files' => ['required', 'array', 'max:50'],
             'files.*' => ['required', 'file', 'max:51200'],
-            'folder' => ['nullable', 'string', Folders::rule(DriveFolder::class, $user)],
+            'folder' => ['nullable', 'string', Folders::rule(DriveFolder::class, $owner)],
         ]);
 
         $folder = $request->filled('folder')
-            ? $user->driveFolders()->where('ref_id', $request->string('folder'))->first()
+            ? $owner->driveFolders()->where('ref_id', $request->string('folder'))->first()
             : null;
 
         $files = collect($request->file('files'))
-            ->map(fn ($upload) => DriveFile::store($upload, $user, $folder));
+            ->map(fn ($upload) => DriveFile::store($upload, $owner, $folder, $request->user()));
 
         if ($request->expectsJson()) {
             return response()->json([
@@ -58,7 +61,7 @@ class DriveFileController extends Controller
     }
 
     /**
-     * Stream a file to its owner.
+     * Stream a file to whoever may see it.
      */
     public function show(Request $request, DriveFile $file): StreamedResponse
     {
@@ -91,7 +94,7 @@ class DriveFileController extends Controller
 
         $validated = $request->validate([
             'name' => ['sometimes', 'required', 'string', 'max:255'],
-            'folder' => ['sometimes', 'nullable', 'string', Folders::rule(DriveFolder::class, $request->user())],
+            'folder' => ['sometimes', 'nullable', 'string', Folders::rule(DriveFolder::class, $file->owner())],
         ]);
 
         if (array_key_exists('name', $validated)) {

@@ -251,7 +251,7 @@ class McpNotesTest extends TestCase
         $token = $user->createToken('claude', ['mcp'])->plainTextToken;
         $this->withToken($token)->postJson('/mcp/user', $this->toolsListRequest())
             ->assertOk()
-            ->assertJsonPath('result.tools.0.name', 'list-notes');
+            ->assertJsonPath('result.tools.0.name', 'list-projects');
     }
 
     public function test_global_endpoint_is_disabled_without_a_configured_token()

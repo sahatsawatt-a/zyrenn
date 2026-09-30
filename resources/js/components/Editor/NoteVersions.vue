@@ -12,7 +12,13 @@ import {
     SheetTrigger,
 } from '@/components/ui/sheet';
 import { formatRelativeTime, xsrfToken } from '@/lib/utils';
-import { destroy, index, restore, store, update } from '@/routes/notes/versions';
+import {
+    destroy,
+    index,
+    restore,
+    store,
+    update,
+} from '@/routes/notes/versions';
 
 type Version = {
     ref_id: string;
@@ -154,10 +160,7 @@ async function restoreVersion(version: Version): Promise<void> {
                 </SheetDescription>
             </SheetHeader>
 
-            <form
-                class="flex gap-2 px-4 pb-3"
-                @submit.prevent="pinCurrent"
-            >
+            <form class="flex gap-2 px-4 pb-3" @submit.prevent="pinCurrent">
                 <input
                     v-model="label"
                     type="text"
@@ -193,9 +196,7 @@ async function restoreVersion(version: Version): Promise<void> {
                             />
                             <span class="truncate font-medium">
                                 {{
-                                    version.label ||
-                                    version.title ||
-                                    'Untitled'
+                                    version.label || version.title || 'Untitled'
                                 }}
                             </span>
                         </div>

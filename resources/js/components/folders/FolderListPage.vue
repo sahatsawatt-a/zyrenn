@@ -19,7 +19,8 @@ import type { FolderItem } from '@/composables/useFolderDialogs';
 import { useFolderPage } from '@/composables/useFolderPage';
 import type { FolderRef } from '@/composables/useFolderPage';
 import { useListFilters } from '@/composables/useListFilters';
-import type { RouteDefinition, RouteQueryOptions } from '@/wayfinder';
+import { canChange, owned } from '@/lib/projects';
+import type { OwnRoute, ProjectRoute } from '@/lib/projects';
 
 // A note, board or table as its list shows it; each kind adds what it counts
 export type ListItem = {
@@ -30,6 +31,8 @@ export type ListItem = {
     // Only in search results, which span every folder
     path?: string | null;
     snippet?: string | null;
+    // Only in a project: who changed it last
+    edited_by?: string | null;
 };
 
 type ByRef = { url: (ref_id: string) => string };
@@ -50,19 +53,23 @@ const props = defineProps<{
     // Said when there are none at all yet
     emptyHint: string;
     routes: {
-        index: ((options?: RouteQueryOptions) => RouteDefinition<'get'>) & {
-            url: () => string;
-        };
+        index: OwnRoute<'get'>;
         show: ByRef;
-        store: { form: () => { action: string; method: 'post' } };
+        store: OwnRoute<'post'>;
         update: ByRef;
         destroy: ByRef;
     };
     folderRoutes: {
-        store: { url: () => string };
+        store: OwnRoute<'post'>;
         update: ByRef;
         destroy: ByRef;
     };
+    // The same list and make routes in a project, at /p/{project}/...
+    projectRoutes: {
+        index: ProjectRoute<'get'>;
+        store: ProjectRoute<'post'>;
+    };
+    projectFolderRoutes: { store: ProjectRoute<'post'> };
     folder: FolderRef | null;
     breadcrumbs: FolderRef[];
     // `path` is only there in search results, which span every folder
@@ -78,6 +85,17 @@ defineSlots<{
 }>();
 
 const isEmpty = computed(() => !props.folders.length && !props.items.length);
+
+// A project's viewers look, but make nothing
+const editable = computed(canChange);
+
+// Listing and making go to the project the page is in, or the user's own
+const index = owned(props.routes.index, props.projectRoutes.index);
+const store = owned(props.routes.store, props.projectRoutes.store);
+const folderRoutes = {
+    ...props.folderRoutes,
+    store: owned(props.folderRoutes.store, props.projectFolderRoutes.store),
+};
 
 // Cards or rows, remembered for each kind
 const view = useLocalStorage<'grid' | 'list'>(
@@ -97,7 +115,7 @@ const {
         sort: props.filters.sort,
         filter: props.filters.edited,
     }),
-    url: () => props.routes.index.url(),
+    url: () => index.url(),
     filterParam: 'edited',
     defaultSort: 'edited',
     folder: () => props.folder?.ref_id ?? null,
@@ -141,14 +159,14 @@ const {
     isDragging,
 } = useFolderPage({
     rootLabel: props.rootLabel,
-    index: props.routes.index,
+    index,
     state: () => props,
     item: {
         kind: props.kind,
         routes: { update: props.routes.update, destroy: props.routes.destroy },
         nameField: 'title',
     },
-    folderRoutes: props.folderRoutes,
+    folderRoutes,
 });
 
 const asItem = (item: T): FolderItem => ({
@@ -169,11 +187,11 @@ const plural = computed(() => props.rootLabel.toLowerCase());
             :title="folder?.name ?? rootLabel"
             :description="description"
         >
-            <Button variant="outline" @click="newFolder">
+            <Button v-if="editable" variant="outline" @click="newFolder">
                 <FolderPlus />
                 New folder
             </Button>
-            <Form v-bind="routes.store.form()" v-slot="{ processing }">
+            <Form v-if="editable" v-bind="store.form()" v-slot="{ processing }">
                 <input
                     v-if="folder"
                     type="hidden"
@@ -262,6 +280,7 @@ const plural = computed(() => props.rootLabel.toLowerCase());
                     :root-label="rootLabel"
                     :time="byCreated ? item.created_at : item.updated_at"
                     :time-label="byCreated ? 'Created' : 'Last edited'"
+                    :by="byCreated ? null : item.edited_by"
                     :dragging="isDragging(asItem(item))"
                     @rename="rename(asItem(item))"
                     @move="move(asItem(item))"
@@ -292,11 +311,12 @@ const plural = computed(() => props.rootLabel.toLowerCase());
             :icon="icon"
             :title="folder ? 'This folder is empty' : `No ${plural} yet`"
         >
-            <p class="text-muted-foreground text-sm">
+            <p v-if="editable" class="text-muted-foreground text-sm">
                 {{ folder ? `Make a ${kind} or a folder in it.` : emptyHint }}
             </p>
             <Form
-                v-bind="routes.store.form()"
+                v-if="editable"
+                v-bind="store.form()"
                 v-slot="{ processing }"
                 class="mt-2"
             >

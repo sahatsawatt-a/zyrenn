@@ -1,6 +1,9 @@
+import { owned } from '@/lib/projects';
 import { xsrfToken } from '@/lib/utils';
 import { pick } from '@/routes/drive';
 import { store } from '@/routes/drive/files';
+import { pick as projectPick } from '@/routes/projects/drive';
+import { store as projectStore } from '@/routes/projects/drive/files';
 
 // A Drive file as the server describes it (DriveFile::card)
 export type DriveFile = {
@@ -33,13 +36,14 @@ const jsonHeaders = () => ({
 });
 
 /**
- * Upload one file into the root of the user's Drive.
+ * Upload one file into the root of the Drive of wherever the page is: the
+ * project's, so everyone in it can see the picture, or the user's own.
  */
 export async function uploadToDrive(file: File): Promise<DriveFile> {
     const body = new FormData();
     body.append('files[]', file);
 
-    const response = await fetch(store.url(), {
+    const response = await fetch(owned(store, projectStore).url(), {
         method: 'POST',
         headers: jsonHeaders(),
         body,
@@ -58,11 +62,12 @@ export async function uploadToDrive(file: File): Promise<DriveFile> {
 }
 
 /**
- * The user's Drive images, newest first, optionally filtered by name.
+ * The Drive images of wherever the page is, newest first, optionally
+ * filtered by name.
  */
 export async function listDriveImages(query = ''): Promise<DriveFile[]> {
     const response = await fetch(
-        pick.url({ query: query ? { q: query } : {} }),
+        owned(pick, projectPick).url({ query: query ? { q: query } : {} }),
         { headers: jsonHeaders() },
     );
 

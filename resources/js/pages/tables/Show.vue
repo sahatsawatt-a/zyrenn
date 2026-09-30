@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { Head, router, setLayoutProps } from '@inertiajs/vue3';
 import { Check, Copy, Trash2 } from '@lucide/vue';
+import { toast } from 'vue-sonner';
 import { useDebounceFn, useEventListener } from '@vueuse/core';
 import { computed, onBeforeUnmount, ref, watch, watchEffect } from 'vue';
+import PresenceAvatars from '@/components/PresenceAvatars.vue';
 import TableWorkspace from '@/components/Table/TableWorkspace.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,9 +17,15 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
+import { removeRows, upsertRow } from '@/composables/table/useTableLive';
+import type { TableChange } from '@/composables/table/useTableLive';
+import { columns, people, rows } from '@/composables/table/useTableState';
 import { useTableStore } from '@/composables/table/useTableStore';
+import { usePresence } from '@/composables/usePresence';
 import { copyToClipboard, formatRelativeTime } from '@/lib/utils';
-import { destroy, index, show } from '@/routes/tables';
+import { canChange, owned } from '@/lib/projects';
+import { destroy, index as ownIndex, show } from '@/routes/tables';
+import { index as projectIndex } from '@/routes/projects/tables';
 import type { ColumnMeta, RowData, TableDensity } from '@/types';
 
 type Table = {
@@ -31,6 +39,8 @@ const props = defineProps<{
     table: Table;
     columns: ColumnMeta[];
     rows: RowData[];
+    // Who a "user" column can name
+    people: string[];
     // The folders the table sits in, top level first
     breadcrumbs: { ref_id: string; name: string }[];
 }>();
@@ -52,6 +62,7 @@ const open = () => {
     );
     title.value = props.table.title;
     savedAt.value = props.table.updated_at;
+    people.value = props.people;
     opening = false;
 };
 
@@ -60,7 +71,16 @@ open();
 // Inertia keeps this page when going from one table to another; open the new one
 watch(() => props.table.ref_id, open);
 
+// A density someone else chose arrives already saved
+let heard: TableDensity | null = null;
+
 watch(store.density, (density) => {
+    if (density === heard) {
+        heard = null;
+
+        return;
+    }
+
     if (!opening) {
         void store.updateTable({ density });
     }
@@ -74,6 +94,49 @@ const saveTitle = useDebounceFn(async () => {
         savedAt.value = saved.updated_at;
     }
 }, 800);
+
+// Back to the list the page came from: the project's, or the user's own
+const index = owned(ownIndex, projectIndex);
+
+// Everyone with the table open sees each other's changes as they are saved
+const { others } = usePresence(() => `tables.${props.table.ref_id}`, {
+    changed: (change: TableChange) => {
+        switch (change.change) {
+            case 'row':
+                upsertRow(change.row);
+                break;
+            case 'rows.deleted':
+                removeRows(change.ids);
+                break;
+            case 'table':
+                title.value = change.title;
+
+                if (change.density !== store.density.value) {
+                    heard = change.density;
+                    store.density.value = change.density;
+                }
+
+                break;
+            case 'reload':
+                // New columns may bring new values to every row; keep the search and filters
+                router.reload({
+                    only: ['columns', 'rows'],
+                    onSuccess: () => {
+                        columns.value = props.columns;
+                        rows.value = props.rows;
+                    },
+                });
+                break;
+            case 'deleted':
+                toast.info('Someone deleted this table.');
+                router.visit(index());
+                break;
+        }
+    },
+});
+
+// A project's viewers read the rows; every control in the table is switched off
+const editable = canChange();
 
 watchEffect(() => {
     setLayoutProps({
@@ -92,6 +155,10 @@ watchEffect(() => {
 });
 
 const statusLabel = computed(() => {
+    if (!editable) {
+        return 'View only';
+    }
+
     switch (store.saveStatus.value) {
         case 'saving':
             return 'Saving…';
@@ -143,6 +210,7 @@ onBeforeUnmount(() => {
                 class="table-title"
                 placeholder="Untitled table"
                 data-test="table-title"
+                :readonly="!editable"
                 @input="saveTitle"
             />
             <span
@@ -153,6 +221,7 @@ onBeforeUnmount(() => {
             </span>
 
             <div class="ml-auto flex items-center gap-1">
+                <PresenceAvatars :others="others" class="mr-2" />
                 <Button
                     variant="ghost"
                     size="sm"
@@ -163,7 +232,7 @@ onBeforeUnmount(() => {
                     <Copy v-else />
                 </Button>
 
-                <Dialog>
+                <Dialog v-if="editable">
                     <DialogTrigger as-child>
                         <Button
                             variant="ghost"
@@ -201,13 +270,22 @@ onBeforeUnmount(() => {
             </div>
         </div>
 
-        <div class="min-h-0 flex-1">
+        <fieldset
+            :disabled="!editable"
+            class="m-0 min-h-0 min-w-0 flex-1 border-0 p-0"
+            :class="{ 'read-only': !editable }"
+        >
             <TableWorkspace />
-        </div>
+        </fieldset>
     </div>
 </template>
 
 <style scoped>
+/* A column's edge is dragged, not clicked, so the fieldset doesn't stop it */
+.read-only :deep(.cursor-col-resize) {
+    display: none;
+}
+
 .table-title {
     width: 20rem;
     height: 2.25rem;

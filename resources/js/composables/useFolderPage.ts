@@ -5,6 +5,7 @@ import { toast } from 'vue-sonner';
 import { useDragMove } from '@/composables/useDragMove';
 import { useFolderDialogs } from '@/composables/useFolderDialogs';
 import type { FolderItem } from '@/composables/useFolderDialogs';
+import { canChange } from '@/lib/projects';
 import type { RouteDefinition, RouteQueryOptions } from '@/wayfinder';
 
 export type FolderRef = { ref_id: string; name: string };
@@ -143,6 +144,9 @@ export function useFolderPage<ItemKind extends string>(
     return {
         ...dialogs,
         ...drag,
+        // A project's viewers can't move things, so nothing picks up
+        dragProps: (moving: FolderItem<Kind>) =>
+            canChange() ? drag.dragProps(moving) : {},
         folderHref,
         folderItem,
         parent,

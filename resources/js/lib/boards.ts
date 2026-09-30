@@ -1,7 +1,9 @@
 // Reading boards from somewhere that is not the board page -- a note showing
 // one, say. The board's own page holds its items already and needs none of this.
 import type { Item } from '@/composables/board/items';
+import { owned } from '@/lib/projects';
 import { content, pick } from '@/routes/boards';
+import { pick as projectPick } from '@/routes/projects/boards';
 
 export type BoardSummary = {
     ref_id: string;
@@ -20,10 +22,10 @@ const headers = () => ({
     'X-Requested-With': 'XMLHttpRequest',
 });
 
-/** The user's boards, newest first, for choosing one. */
+/** The boards of wherever the page is, newest first, for choosing one. */
 export async function listBoards(query = ''): Promise<BoardSummary[]> {
     const response = await fetch(
-        pick.url({ query: query ? { q: query } : {} }),
+        owned(pick, projectPick).url({ query: query ? { q: query } : {} }),
         {
             headers: headers(),
         },

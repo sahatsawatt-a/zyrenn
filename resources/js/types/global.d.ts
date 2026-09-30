@@ -1,3 +1,4 @@
+import type { CurrentProject, ProjectSummary } from '@/lib/projects';
 import type { Auth } from '@/types/auth';
 
 // Extend ImportMeta interface for Vite...
@@ -18,6 +19,10 @@ declare module '@inertiajs/core' {
         sharedPageProps: {
             name: string;
             auth: Auth;
+            // The project the page is in; null on the user's own things
+            project: CurrentProject | null;
+            // Every project the user is in, by name
+            projects: ProjectSummary[];
             sidebarOpen: boolean;
             [key: string]: unknown;
         };

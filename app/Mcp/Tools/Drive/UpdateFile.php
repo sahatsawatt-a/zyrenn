@@ -26,6 +26,7 @@ class UpdateFile extends DriveTool
     public function handle(Request $request): Response|ResponseFactory
     {
         $user = $this->targetUser($request);
+        $owner = $this->targetOwner($request, changes: true);
 
         $validated = $request->validate([
             'ref_id' => ['required', 'string', 'max:16'],
@@ -33,7 +34,7 @@ class UpdateFile extends DriveTool
             'folder' => ['sometimes', 'nullable', 'string', 'max:1000'],
         ]);
 
-        $file = $this->findFile($user, $validated['ref_id']);
+        $file = $this->findFile($owner, $validated['ref_id']);
 
         if (! $file) {
             return Response::error("File {$validated['ref_id']} was not found.");
@@ -44,7 +45,7 @@ class UpdateFile extends DriveTool
         }
 
         if (array_key_exists('folder', $validated)) {
-            $file->folder_id = $this->ensureFolderAt($user, $validated['folder'] ?? '')?->id;
+            $file->folder_id = $this->ensureFolderAt($owner, $validated['folder'] ?? '', $user)?->id;
         }
 
         $file->save();

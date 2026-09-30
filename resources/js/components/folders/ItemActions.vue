@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { FolderInput, MoreHorizontal, Pencil, Trash2 } from '@lucide/vue';
+import { computed, useSlots } from 'vue';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -8,19 +9,24 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { canChange } from '@/lib/projects';
 
 // The "…" menu on anything in a folder view: rename, move, delete, and
-// whatever a kind adds above them (Drive's open and download).
+// whatever a kind adds above them (Drive's open and download). A project's
+// viewers get only what a kind adds, or no menu at all.
 defineProps<{ label: string }>();
 
 // A class given to the menu lands on its button
 defineOptions({ inheritAttrs: false });
 
 defineEmits<{ rename: []; move: []; remove: [] }>();
+
+const slots = useSlots();
+const editable = computed(canChange);
 </script>
 
 <template>
-    <DropdownMenu>
+    <DropdownMenu v-if="editable || slots.default">
         <DropdownMenuTrigger as-child>
             <Button
                 variant="ghost"
@@ -34,16 +40,22 @@ defineEmits<{ rename: []; move: []; remove: [] }>();
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
             <slot />
-            <DropdownMenuItem @select="$emit('rename')">
-                <Pencil /> Rename
-            </DropdownMenuItem>
-            <DropdownMenuItem @select="$emit('move')">
-                <FolderInput /> Move
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" @select="$emit('remove')">
-                <Trash2 /> Delete
-            </DropdownMenuItem>
+            <template v-if="editable">
+                <DropdownMenuSeparator v-if="slots.default" />
+                <DropdownMenuItem @select="$emit('rename')">
+                    <Pencil /> Rename
+                </DropdownMenuItem>
+                <DropdownMenuItem @select="$emit('move')">
+                    <FolderInput /> Move
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                    variant="destructive"
+                    @select="$emit('remove')"
+                >
+                    <Trash2 /> Delete
+                </DropdownMenuItem>
+            </template>
         </DropdownMenuContent>
     </DropdownMenu>
 </template>

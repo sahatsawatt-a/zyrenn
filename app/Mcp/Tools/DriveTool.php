@@ -4,8 +4,9 @@ namespace App\Mcp\Tools;
 
 use App\Models\Drive\DriveFile;
 use App\Models\Drive\DriveFolder;
-use App\Models\User;
+use App\Models\Owner;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\JsonSchema\Types\Type;
 
@@ -21,16 +22,16 @@ abstract class DriveTool extends ScopedTool
     protected const MAX_INLINE_BYTES = 256 * 1024;
 
     /**
-     * @return HasMany<DriveFolder, User>
+     * @return HasMany<DriveFolder, covariant Model&Owner>
      */
-    protected function folders(User $user): HasMany
+    protected function folders(Owner $owner): HasMany
     {
-        return $user->driveFolders();
+        return $owner->driveFolders();
     }
 
-    protected function findFile(User $user, string $refId): ?DriveFile
+    protected function findFile(Owner $owner, string $refId): ?DriveFile
     {
-        return $user->driveFiles()->where('ref_id', $refId)->first();
+        return $owner->driveFiles()->where('ref_id', $refId)->first();
     }
 
     /**
@@ -70,6 +71,8 @@ abstract class DriveTool extends ScopedTool
         return [
             'ref_id' => $file->ref_id,
             'user_id' => $file->user_id,
+            // The ref_id of the project it is shared in; null when it is the user's own
+            'project' => $file->project_id !== null ? $file->project?->ref_id : null,
             'name' => $file->name,
             'folder' => $this->folderPath($file, $paths),
             'mime' => $file->mime,

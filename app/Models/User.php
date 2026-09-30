@@ -2,20 +2,16 @@
 
 namespace App\Models;
 
-use App\Models\Board\Board;
-use App\Models\Board\BoardFolder;
+use App\Models\Concerns\OwnsContent;
 use App\Models\Drive\DriveFile;
-use App\Models\Drive\DriveFolder;
-use App\Models\Note\Note;
-use App\Models\Note\NoteFolder;
-use App\Models\Table\Table;
-use App\Models\Table\TableFolder;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
@@ -40,10 +36,10 @@ use Laravel\Sanctum\HasApiTokens;
  */
 #[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
-class User extends Authenticatable implements PasskeyUser
+class User extends Authenticatable implements Owner, PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+    use HasApiTokens, HasFactory, Notifiable, OwnsContent, PasskeyAuthenticatable, TwoFactorAuthenticatable;
 
     /**
      * Sanctum's token table has no foreign key, so remove a user's tokens with them.
@@ -52,11 +48,14 @@ class User extends Authenticatable implements PasskeyUser
     {
         static::deleting(function (User $user) {
             $user->tokens()->delete();
+
+            // Nobody else could open these once the user was gone
+            $user->soloProjects()->each(fn (Project $project) => $project->delete());
         });
 
         // Drive rows go with the database cascade, which skips model events, so drop the bytes here
         static::deleted(function (User $user) {
-            Storage::disk(DriveFile::DISK)->deleteDirectory('drive/'.$user->id);
+            Storage::disk(DriveFile::DISK)->deleteDirectory($user->driveDirectory());
         });
     }
 
@@ -74,83 +73,53 @@ class User extends Authenticatable implements PasskeyUser
         ];
     }
 
-    /**
-     * Get the notes owned by the user.
-     *
-     * @return HasMany<Note, $this>
-     */
-    public function notes(): HasMany
+    public function driveDirectory(): string
     {
-        return $this->hasMany(Note::class);
+        return 'drive/'.$this->id;
     }
 
     /**
-     * Get the files in the user's Drive.
+     * The projects the user is a member of, with their role in each.
      *
-     * @return HasMany<DriveFile, $this>
+     * @return BelongsToMany<Project, $this, Membership>
      */
-    public function driveFiles(): HasMany
+    public function projects(): BelongsToMany
     {
-        return $this->hasMany(DriveFile::class);
+        return $this->belongsToMany(Project::class)
+            ->using(Membership::class)
+            ->withPivot('id', 'ref_id', 'role')
+            ->withTimestamps();
     }
 
     /**
-     * Get the folders in the user's Drive.
+     * The projects nobody else is in. They go with the user.
      *
-     * @return HasMany<DriveFolder, $this>
+     * @return Collection<int, Project>
      */
-    public function driveFolders(): HasMany
+    public function soloProjects(): Collection
     {
-        return $this->hasMany(DriveFolder::class);
+        return $this->projects()
+            ->whereDoesntHave('members', fn (Builder $others) => $others->whereKeyNot($this->id))
+            ->orderBy('name')
+            ->get();
     }
 
     /**
-     * Get the user's boards.
+     * The projects the user alone runs while others are in them. Those would
+     * be left with nobody to run them, so the account can't be deleted while
+     * there are any: another member has to be made an owner first.
      *
-     * @return HasMany<Board, $this>
+     * @return Collection<int, Project>
      */
-    public function boards(): HasMany
+    public function projectsNeedingAnOwner(): Collection
     {
-        return $this->hasMany(Board::class);
-    }
-
-    /**
-     * Get the folders the user files boards in.
-     *
-     * @return HasMany<BoardFolder, $this>
-     */
-    public function boardFolders(): HasMany
-    {
-        return $this->hasMany(BoardFolder::class);
-    }
-
-    /**
-     * Get the user's tables.
-     *
-     * @return HasMany<Table, $this>
-     */
-    public function tables(): HasMany
-    {
-        return $this->hasMany(Table::class);
-    }
-
-    /**
-     * Get the folders the user files tables in.
-     *
-     * @return HasMany<TableFolder, $this>
-     */
-    public function tableFolders(): HasMany
-    {
-        return $this->hasMany(TableFolder::class);
-    }
-
-    /**
-     * Get the folders the user files notes in.
-     *
-     * @return HasMany<NoteFolder, $this>
-     */
-    public function noteFolders(): HasMany
-    {
-        return $this->hasMany(NoteFolder::class);
+        return $this->projects()
+            ->wherePivot('role', Project::OWNER)
+            ->whereHas('members', fn (Builder $others) => $others->whereKeyNot($this->id))
+            ->whereDoesntHave('members', fn (Builder $others) => $others
+                ->whereKeyNot($this->id)
+                ->where('project_user.role', Project::OWNER))
+            ->orderBy('name')
+            ->get();
     }
 }

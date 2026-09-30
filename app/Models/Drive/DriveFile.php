@@ -2,7 +2,10 @@
 
 namespace App\Models\Drive;
 
+use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
+use App\Models\Concerns\RecordsEditor;
+use App\Models\Owner;
 use App\Models\User;
 use Database\Factories\Drive\DriveFileFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -15,12 +18,12 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
- * A file in a user's Drive. The bytes live on the private `local` disk and are
- * only ever streamed back to their owner through the drive.files.show route.
+ * A file in a user's or a project's Drive. The bytes live on the private
+ * `local` disk and are only ever streamed back, through the drive.files.show
+ * route, to whoever may see them.
  *
  * @property int $id
  * @property string $ref_id
- * @property int $user_id
  * @property int|null $folder_id
  * @property string $name
  * @property string $path
@@ -35,7 +38,7 @@ use Illuminate\Support\Str;
 class DriveFile extends Model
 {
     /** @use HasFactory<DriveFileFactory> */
-    use HasFactory, HasRefId;
+    use BelongsToOwner, HasFactory, HasRefId, RecordsEditor;
 
     public const DISK = 'local';
 
@@ -53,16 +56,6 @@ class DriveFile extends Model
     }
 
     /**
-     * Get the user that owns the file.
-     *
-     * @return BelongsTo<User, $this>
-     */
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
-    }
-
-    /**
      * @return BelongsTo<DriveFolder, $this>
      */
     public function folder(): BelongsTo
@@ -71,13 +64,13 @@ class DriveFile extends Model
     }
 
     /**
-     * Store an upload in the user's Drive.
+     * Store an upload in the owner's Drive, as uploaded by $by.
      */
-    public static function store(UploadedFile $upload, User $user, ?DriveFolder $folder = null): self
+    public static function store(UploadedFile $upload, Owner $owner, ?DriveFolder $folder = null, ?User $by = null): self
     {
         $ext = strtolower($upload->getClientOriginalExtension() ?: $upload->guessExtension() ?: 'bin');
         $mime = $upload->getMimeType() ?: $upload->getClientMimeType();
-        $path = $upload->storeAs('drive/'.$user->id, Str::random(32).'.'.$ext, self::DISK);
+        $path = $upload->storeAs($owner->driveDirectory(), Str::random(32).'.'.$ext, self::DISK);
 
         $file = new self([
             'folder_id' => $folder?->id,
@@ -88,7 +81,8 @@ class DriveFile extends Model
             'size' => $upload->getSize(),
             'kind' => self::kindFor($mime, $ext),
         ]);
-        $file->user()->associate($user)->save();
+        $file->created_by = $by?->id;
+        $owner->driveFiles()->save($file);
 
         return $file;
     }

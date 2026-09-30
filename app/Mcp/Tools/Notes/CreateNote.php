@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools\Notes;
 
 use App\Mcp\Tools\NoteTool;
+use App\Models\Note\Note;
 use App\Support\TiptapMarkdown;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
@@ -26,6 +27,7 @@ class CreateNote extends NoteTool
     public function handle(Request $request): ResponseFactory
     {
         $user = $this->targetUser($request);
+        $owner = $this->targetOwner($request, changes: true);
 
         $validated = $request->validate([
             'title' => ['required', 'string', 'max:255'],
@@ -34,12 +36,12 @@ class CreateNote extends NoteTool
             'folder' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $note = $user->notes()->make([
+        $note = (new Note([
             'title' => $validated['title'],
             'content' => isset($validated['markdown']) ? TiptapMarkdown::toDoc($validated['markdown']) : null,
             'is_wide' => $validated['is_wide'] ?? false,
-        ]);
-        $note->folder_id = $this->ensureFolderAt($user, $validated['folder'] ?? '')?->id;
+        ]))->ownedBy($owner, $user);
+        $note->folder_id = $this->ensureFolderAt($owner, $validated['folder'] ?? '', $user)?->id;
         $note->save();
 
         return Response::structured($this->full($note->refresh()));

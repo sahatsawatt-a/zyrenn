@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools\Boards;
 
 use App\Mcp\Tools\BoardTool;
+use App\Models\Board\Board;
 use App\Support\BoardItems;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
@@ -39,6 +40,7 @@ class CreateBoard extends BoardTool
     public function handle(Request $request): Response|ResponseFactory
     {
         $user = $this->targetUser($request);
+        $owner = $this->targetOwner($request, changes: true);
 
         $validated = $request->validate([
             'title' => ['required', 'string', 'max:255'],
@@ -53,11 +55,11 @@ class CreateBoard extends BoardTool
             return Response::error($problem);
         }
 
-        $board = $user->boards()->make([
+        $board = (new Board([
             'title' => $validated['title'],
             'content' => $specs === [] ? null : ['items' => BoardItems::fromSpec($specs)],
-        ]);
-        $board->folder_id = $this->ensureFolderAt($user, $validated['folder'] ?? '')?->id;
+        ]))->ownedBy($owner, $user);
+        $board->folder_id = $this->ensureFolderAt($owner, $validated['folder'] ?? '', $user)?->id;
         $board->save();
 
         return Response::structured($this->full($board->refresh()));

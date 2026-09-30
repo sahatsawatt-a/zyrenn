@@ -3,7 +3,7 @@
 namespace App\Support;
 
 use App\Models\Folder;
-use App\Models\User;
+use App\Models\Owner;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
@@ -16,17 +16,17 @@ use Illuminate\Validation\Rules\Exists;
 final class Folders
 {
     /**
-     * A folder ref_id, of this kind, that belongs to the user.
+     * A folder ref_id, of this kind, that belongs to the owner.
      *
      * @param  class-string<Folder>  $model
      */
-    public static function rule(string $model, User $user): Exists
+    public static function rule(string $model, Owner $owner): Exists
     {
-        return Rule::exists((new $model)->getTable(), 'ref_id')->where('user_id', $user->id);
+        return Rule::exists((new $model)->getTable(), 'ref_id')->where($owner->ownerColumn(), $owner->getKey());
     }
 
     /**
-     * The id of a folder given by ref_id, already validated as the user's own.
+     * The id of a folder given by ref_id, already validated as the owner's.
      *
      * @param  class-string<Folder>  $model
      */
@@ -36,37 +36,37 @@ final class Folders
     }
 
     /**
-     * The folder being browsed, or null for the top level. Someone else's is
-     * refused; one that doesn't exist is not found.
+     * The folder being browsed, or null for the top level. One the owner
+     * doesn't have is not found.
      *
      * @template TFolder of Folder
      *
      * @param  class-string<TFolder>  $model
      * @return TFolder|null
      */
-    public static function open(string $model, User $user, ?string $refId): ?Folder
+    public static function open(string $model, Owner $owner, ?string $refId): ?Folder
     {
         if (empty($refId)) {
             return null;
         }
 
-        $folder = $model::query()->where('user_id', $user->id)->where('ref_id', $refId)->firstOrFail();
+        $folder = $model::query()->where($owner->ownerColumn(), $owner->getKey())->where('ref_id', $refId)->firstOrFail();
         Gate::authorize('view', $folder);
 
         return $folder;
     }
 
     /**
-     * Every one of the user's folders of this kind, with just enough to list them.
+     * Every one of the owner's folders of this kind, with just enough to list them.
      *
      * @template TFolder of Folder
      *
      * @param  class-string<TFolder>  $model
      * @return Collection<int, TFolder>
      */
-    public static function all(string $model, User $user): Collection
+    public static function all(string $model, Owner $owner): Collection
     {
-        return $model::query()->where('user_id', $user->id)->get(['id', 'ref_id', 'parent_id', 'name']);
+        return $model::query()->where($owner->ownerColumn(), $owner->getKey())->get(['id', 'ref_id', 'parent_id', 'name']);
     }
 
     /**

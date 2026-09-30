@@ -18,10 +18,10 @@ trait DeletesThing
 
     public function handle(Request $request): Response
     {
-        $user = $this->targetUser($request);
+        $owner = $this->targetOwner($request, changes: true);
         $validated = $request->validate(['ref_id' => ['required', 'string', 'max:16']]);
 
-        $thing = $this->find($user, $validated['ref_id']);
+        $thing = $this->find($owner, $validated['ref_id']);
 
         if (! $thing) {
             return $this->notFound($validated['ref_id']);

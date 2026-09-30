@@ -4,7 +4,7 @@ namespace App\Mcp\Tools;
 
 use App\Models\Note\Note;
 use App\Models\Note\NoteFolder;
-use App\Models\User;
+use App\Models\Owner;
 use App\Support\TiptapMarkdown;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -31,19 +31,19 @@ abstract class NoteTool extends FiledTool
     }
 
     /**
-     * @return HasMany<NoteFolder, User>
+     * @return HasMany<NoteFolder, covariant Model&Owner>
      */
-    protected function folders(User $user): HasMany
+    protected function folders(Owner $owner): HasMany
     {
-        return $user->noteFolders();
+        return $owner->noteFolders();
     }
 
     /**
-     * @return HasMany<Note, User>
+     * @return HasMany<Note, covariant Model&Owner>
      */
-    protected function things(User $user): HasMany
+    protected function things(Owner $owner): HasMany
     {
-        return $user->notes();
+        return $owner->notes();
     }
 
     protected function searchIn(): array
