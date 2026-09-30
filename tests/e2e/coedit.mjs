@@ -172,6 +172,10 @@ await runBoard(
                 printed.includes(`Last words ${RUN}.`),
             printed.slice(0, 90),
         );
+        check(
+            'and not the prompt an empty line shows while typing',
+            !printed.includes("Type '/' for commands"),
+        );
 
         // --------------------------------- A change from elsewhere, while open
         tinker(

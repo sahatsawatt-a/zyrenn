@@ -65,6 +65,12 @@
     }
 
     /* --- the editor's screen furniture ------------------------------------ */
+    /* The prompt on an empty line ("Type '/' for commands...") is for typing */
+    .tiptap [data-placeholder]::before,
+    .tiptap .is-empty::before {
+        content: none !important;
+    }
+
     .editor-surface {
         display: block !important;
         min-height: 0 !important;
