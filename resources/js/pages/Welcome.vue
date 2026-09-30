@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
-import { Activity, ArrowRight, GitBranch, ShieldCheck, Zap } from '@lucide/vue';
+import {
+    ArrowRight,
+    FolderKanban,
+    HardDrive,
+    NotebookPen,
+    Presentation,
+    Table2,
+    Users,
+} from '@lucide/vue';
+import type { Component } from 'vue';
 import AppLogoIcon from '@/components/AppLogoIcon.vue';
 import { Button } from '@/components/ui/button';
 import { dashboard, login, register } from '@/routes';
@@ -15,12 +24,50 @@ const primaryCta = computed(() =>
         ? { href: dashboard(), label: 'Open Homepage' }
         : { href: register(), label: 'Create an account' },
 );
+
+// What there is to do here, as the sidebar names it
+const features: { icon: Component; title: string; text: string }[] = [
+    {
+        icon: NotebookPen,
+        title: 'Notes',
+        text: 'Write in blocks: headings, tasks, tables, maths, code and pictures. Type / for any of them.',
+    },
+    {
+        icon: Presentation,
+        title: 'Boards',
+        text: 'An endless canvas of sticky notes, shapes, connectors and frames you can present.',
+    },
+    {
+        icon: Table2,
+        title: 'Tables',
+        text: 'Rows and columns where each column is a kind: dates, choices, people, money and more.',
+    },
+    {
+        icon: HardDrive,
+        title: 'Drive',
+        text: 'Your files and pictures, kept privately, and put into notes and boards in a click.',
+    },
+    {
+        icon: FolderKanban,
+        title: 'Projects',
+        text: 'A shared space with notes, boards, tables and a Drive of its own. What is in it belongs to the project.',
+    },
+    {
+        icon: Users,
+        title: 'Live, together',
+        text: 'Write and draw at the same time as everyone else, and see their cursors and changes as they happen.',
+    },
+];
 </script>
 
 <template>
     <Head title="Welcome" />
 
-    <div class="bg-background text-foreground flex min-h-svh flex-col">
+    <!-- clip, not hidden: the hero's glow is wider than a phone, and a clip
+         keeps the sticky header working -->
+    <div
+        class="bg-background text-foreground flex min-h-svh flex-col overflow-x-clip"
+    >
         <header
             class="border-border/60 sticky top-0 z-10 border-b backdrop-blur-sm"
         >
@@ -70,16 +117,15 @@ const primaryCta = computed(() =>
                     <h1
                         class="text-foreground mt-6 text-4xl font-semibold tracking-tight text-balance sm:text-6xl"
                     >
-                        The all-in-one productivity hub
+                        Notes, boards and tables, together
                     </h1>
 
                     <p
                         class="text-muted-foreground mx-auto mt-6 max-w-xl text-lg text-pretty"
                     >
-                        <!-- {{ $page.props.name }} keeps every project, deploy and -->
-                        <!-- incident on one timeline your whole team can read. -->
-                        Where all your essential functions fuse into one
-                        powerful hub.
+                        {{ $page.props.name }} keeps your writing, whiteboards,
+                        tables and files in one place: on your own, or in a
+                        project you share and edit live with everyone in it.
                     </p>
 
                     <div
@@ -101,6 +147,41 @@ const primaryCta = computed(() =>
                         </Button>
                     </div>
                 </div>
+            </section>
+
+            <!-- what is here -->
+            <section
+                class="mx-auto w-full max-w-6xl px-6 pb-24"
+                aria-labelledby="features-heading"
+            >
+                <h2 id="features-heading" class="sr-only">What you can do</h2>
+
+                <ul class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <li
+                        v-for="feature in features"
+                        :key="feature.title"
+                        class="bg-card border-border/70 rounded-xl border p-5"
+                    >
+                        <div
+                            class="bg-primary/10 text-primary flex size-10 items-center justify-center rounded-lg"
+                        >
+                            <component
+                                :is="feature.icon"
+                                class="size-5"
+                                aria-hidden="true"
+                            />
+                        </div>
+                        <h3 class="mt-4 font-semibold">{{ feature.title }}</h3>
+                        <p class="text-muted-foreground mt-1.5 text-sm">
+                            {{ feature.text }}
+                        </p>
+                    </li>
+                </ul>
+
+                <p class="text-muted-foreground mt-8 text-center text-sm">
+                    Connect an AI assistant over MCP, and it can read and write
+                    your notes, boards, tables and Drive too.
+                </p>
             </section>
         </main>
         <footer class="border-border/60 border-t">
