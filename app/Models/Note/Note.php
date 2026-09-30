@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -101,5 +102,48 @@ class Note extends Model
     public function folder(): BelongsTo
     {
         return $this->belongsTo(NoteFolder::class, 'folder_id');
+    }
+
+    /**
+     * Get the snapshots of the note's past states, newest first.
+     *
+     * @return HasMany<NoteVersion, $this>
+     */
+    public function versions(): HasMany
+    {
+        return $this->hasMany(NoteVersion::class)->latest('id');
+    }
+
+    /**
+     * Snapshot the note as it is now. Unpinned snapshots beyond the newest
+     * NoteVersion::KEEP_UNPINNED are pruned; pinned ones never are.
+     */
+    public function snapshot(bool $pinned = false, ?string $label = null): NoteVersion
+    {
+        $version = $this->versions()->make([
+            'title' => $this->title,
+            'content' => $this->content,
+            'pinned_at' => $pinned ? now() : null,
+            'label' => $pinned ? $label : null,
+        ]);
+        $version->save();
+
+        $stale = $this->versions()->whereNull('pinned_at')->skip(NoteVersion::KEEP_UNPINNED)->take(PHP_INT_MAX)->pluck('id');
+        NoteVersion::whereIn('id', $stale)->delete();
+
+        return $version;
+    }
+
+    /**
+     * Snapshot the note unless it was snapshotted a moment ago, so autosave
+     * leaves one version per stretch of editing rather than one per keystroke.
+     */
+    public function snapshotIfDue(): void
+    {
+        $last = $this->versions()->first();
+
+        if (! $last || $last->created_at->lte(now()->subMinutes(NoteVersion::INTERVAL_MINUTES))) {
+            $this->snapshot();
+        }
     }
 }

@@ -21,6 +21,7 @@ import {
     useTemplateRef,
     watchEffect,
 } from 'vue';
+import NoteVersions from '@/components/Editor/NoteVersions.vue';
 import TiptapEditor from '@/components/Editor/TiptapEditor.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -329,6 +330,18 @@ async function exportPdf(to: 'download' | 'drive'): Promise<void> {
     }
 }
 
+// Flush edits before a pin or restore; false when they could not be saved
+async function saveBeforeVersionChange(): Promise<boolean> {
+    await save();
+
+    return status.value !== 'error';
+}
+
+// The editor holds its own copy of the content, so reload to show the restored one
+function onRestored(): void {
+    window.location.reload();
+}
+
 function focusEditor(): void {
     editorRef.value?.focus();
 }
@@ -429,6 +442,12 @@ const statusLabel = computed(() => {
                         <ChevronsLeftRight v-else />
                         {{ isWide ? 'Narrow' : 'Wide' }}
                     </Button>
+
+                    <NoteVersions
+                        :note-ref="note.ref_id"
+                        :before-change="saveBeforeVersionChange"
+                        @restored="onRestored"
+                    />
 
                     <DropdownMenu>
                         <DropdownMenuTrigger as-child>

@@ -93,6 +93,10 @@ class NoteController extends Controller
 
         $note->fill($validated)->save();
 
+        if ($note->wasChanged('content')) {
+            $note->snapshotIfDue();
+        }
+
         // The editor autosaves with fetch; the notes list moves notes through Inertia
         if (! $request->expectsJson()) {
             return back();
