@@ -177,6 +177,13 @@ await runBoard(
             !printed.includes("Type '/' for commands"),
         );
 
+        // ------------------------------------ Pinned, to come back to later
+        await page.locator('[data-test="note-history"]').click();
+        await page.getByPlaceholder('Label (optional)').fill('Shared draft');
+        await page.locator('[data-test="note-pin-current"]').click();
+        await page.waitForSelector('[data-test="note-version"]');
+        await page.keyboard.press('Escape');
+
         // --------------------------------- A change from elsewhere, while open
         tinker(
             `$n = App\\Models\\Note\\Note::where('ref_id', '${ref}')->first(); $n->update(['title' => 'Renamed by MCP ${RUN}', 'content' => ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Rewritten by MCP ${RUN}']]]]]]);`,
@@ -198,6 +205,21 @@ await runBoard(
             ),
         );
         await other.screenshot({ path: `${SHOTS}/coedit-2-member.png` });
+
+        // ------------------------ Restored by one, back for everyone, live
+        await page.locator('[data-test="note-history"]').click();
+        await page
+            .locator('[data-test="note-version"]', { hasText: 'Shared draft' })
+            .locator('[data-test="note-version-restore"]')
+            .click();
+        await other.waitForTimeout(2000);
+        const restored = await editor(other).innerText();
+        check(
+            'a version restored by the owner comes back in the member’s open note',
+            restored.includes(`Member added this ${RUN}.`) &&
+                !restored.includes(`Rewritten by MCP ${RUN}`),
+            restored.replace(/\s+/g, ' ').slice(0, 80),
+        );
 
         await context.close();
     },
