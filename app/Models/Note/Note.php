@@ -8,6 +8,7 @@ use App\Models\Concerns\HasRefId;
 use App\Models\Concerns\RecordsEditor;
 use App\Support\Live\Collab;
 use App\Support\Live\Live;
+use App\Support\NoteBlocks;
 use App\Support\TiptapMarkdown;
 use Database\Factories\Note\NoteFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -56,6 +57,13 @@ class Note extends Model
     protected static function booted(): void
     {
         static::saving(function (Note $note) {
+            // Every block can be named on its own (NoteBlocks). What the
+            // collaboration server keeps has its ids already, given where the
+            // blocks were written, so the live copy and this one agree
+            if ($note->isDirty('content') && ! $note->isDirty('ydoc')) {
+                $note->content = NoteBlocks::withIds($note->content);
+            }
+
             if ($note->isDirty('content')) {
                 $note->plain_text = $note->content ? TiptapMarkdown::toMarkdown($note->content) : null;
             }

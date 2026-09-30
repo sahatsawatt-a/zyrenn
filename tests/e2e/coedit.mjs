@@ -51,6 +51,17 @@ await runBoard(
         await other.goto(noteUrl, { waitUntil: 'networkidle' });
 
         const editor = (who) => who.locator('.ProseMirror');
+        // What the note says: the others' cursors, and the names over them,
+        // are drawn among its words, wherever they happen to be
+        const words = (who) =>
+            editor(who).evaluate((element) => {
+                const copy = element.cloneNode(true);
+                copy.querySelectorAll('.collaboration-carets__caret').forEach(
+                    (caret) => caret.remove(),
+                );
+
+                return copy.innerText;
+            });
         const status = (who) =>
             who.locator('[aria-live="polite"]').first().innerText();
 
@@ -80,9 +91,7 @@ await runBoard(
             .catch(() => {});
         check(
             'what the owner types appears for the member',
-            (await editor(other).innerText()).includes(
-                `Owner wrote this ${RUN}.`,
-            ),
+            (await words(other)).includes(`Owner wrote this ${RUN}.`),
         );
 
         await editor(other).click();
@@ -91,7 +100,7 @@ await runBoard(
         await other.keyboard.type(`Member added this ${RUN}.`);
         await page.waitForTimeout(1200);
 
-        const ownerSees = await editor(page).innerText();
+        const ownerSees = await words(page);
         check(
             'and what the member types appears for the owner, both kept',
             ownerSees.includes(`Owner wrote this ${RUN}.`) &&
@@ -142,11 +151,11 @@ await runBoard(
             null,
             { timeout: 10000 },
         );
+        const reopened = await words(other);
         check(
             'reopened, it is all still there',
-            (await editor(other).innerText()).includes(
-                `Member added this ${RUN}.`,
-            ),
+            reopened.includes(`Member added this ${RUN}.`),
+            JSON.stringify(reopened.slice(0, 120)),
         );
 
         // ------------------- Printed to PDF with the others' latest words in it
@@ -191,18 +200,14 @@ await runBoard(
         await page.waitForTimeout(1500);
         check(
             'a change made over MCP reaches the open note',
-            (await editor(page).innerText()).includes(
-                `Rewritten by MCP ${RUN}`,
-            ) &&
+            (await words(page)).includes(`Rewritten by MCP ${RUN}`) &&
                 (await page.getByPlaceholder('Untitled').inputValue()) ===
                     `Renamed by MCP ${RUN}`,
-            (await editor(page).innerText()).slice(0, 60),
+            (await words(page)).slice(0, 60),
         );
         check(
             'for everyone who has it open',
-            (await editor(other).innerText()).includes(
-                `Rewritten by MCP ${RUN}`,
-            ),
+            (await words(other)).includes(`Rewritten by MCP ${RUN}`),
         );
         await other.screenshot({ path: `${SHOTS}/coedit-2-member.png` });
 
@@ -213,7 +218,7 @@ await runBoard(
             .locator('[data-test="note-version-restore"]')
             .click();
         await other.waitForTimeout(2000);
-        const restored = await editor(other).innerText();
+        const restored = await words(other);
         check(
             'a version restored by the owner comes back in the member’s open note',
             restored.includes(`Member added this ${RUN}.`) &&

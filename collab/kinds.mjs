@@ -3,7 +3,13 @@
 // A kind is named by the first part of a document's name ("notes.k3x9m2p7qa")
 // and says three things: how to fill a new document from what Laravel keeps,
 // what to hand Laravel to keep, and how to take in a change made elsewhere.
-import { readDoc, replaceDoc, writeDoc } from './prosemirror.mjs';
+import {
+    applyBlockEdits,
+    giveBlockIds,
+    readDoc,
+    replaceDoc,
+    writeDoc,
+} from './prosemirror.mjs';
 
 /**
  * A note: its body is the editor's XML fragment ("default", where Tiptap's
@@ -18,6 +24,12 @@ const notes = {
     read(document) {
         const meta = document.getMap('meta');
 
+        // Blocks written before they had ids, or not yet named by an editor,
+        // are named here -- in the live copy too, so everyone's agrees
+        document.transact(() =>
+            giveBlockIds(document.getXmlFragment('default')),
+        );
+
         return {
             content: readDoc(document.getXmlFragment('default')),
             title: meta.get('title') ?? '',
@@ -31,6 +43,11 @@ const notes = {
         }
 
         notes.writeMeta(document, changed);
+    },
+
+    /** Block changes by id (NoteBlocks::apply); answers the ids not found. */
+    edit(document, edits) {
+        return applyBlockEdits(document.getXmlFragment('default'), edits);
     },
 
     writeMeta(document, values) {

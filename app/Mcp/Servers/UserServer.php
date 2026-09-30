@@ -15,6 +15,7 @@ use App\Mcp\Tools\Drive\UpdateFile;
 use App\Mcp\Tools\Drive\UploadFile;
 use App\Mcp\Tools\Notes\CreateNote;
 use App\Mcp\Tools\Notes\DeleteNote;
+use App\Mcp\Tools\Notes\EditNote;
 use App\Mcp\Tools\Notes\GetNote;
 use App\Mcp\Tools\Notes\ListFolders;
 use App\Mcp\Tools\Notes\ListNotes;
@@ -42,8 +43,11 @@ rather than to whoever made them. list-projects shows the user's, with their rol
 project's ref_id or name as "project" to any other tool to work in it; leave it out for the user's own.
 A viewer can only read a project; its owners and editors can change what is in it.
 
-Notes: bodies are read and written as Markdown (get-note, create-note, update-note). Notes live in
-folders addressed by path, e.g. "KT Plan/Lakeshore".
+Notes: bodies are read and written as Markdown (get-note, create-note, update-note, edit-note). Notes
+live in folders addressed by path, e.g. "KT Plan/Lakeshore". Every block of a note -- a paragraph,
+heading, list, table -- has an id: get-note gives a long note as an outline of them, and reads just
+the blocks or section you ask for; edit-note replaces, inserts, moves or deletes blocks by id. For
+anything short of rewriting a note, read and change only the part you need.
 
 Boards: endless whiteboard canvases of shapes, sticky notes, connectors, pictures and 16:9 frames
 (list-boards, get-board, create-board, update-board, delete-board). A board is a list of items, each
@@ -86,6 +90,7 @@ class UserServer extends Server
             new GetNote,
             new CreateNote,
             new UpdateNote,
+            new EditNote,
             new DeleteNote,
             new ListBoards,
             new ListBoardFolders,

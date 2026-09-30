@@ -1,0 +1,21 @@
+{
+    "about": "The kinds of block in a note that carry an id, so one can be read or changed on its own (over MCP, say) without sending the whole note. Read by the editor (UniqueID), the collaboration server (collab/prosemirror.mjs) and the app (App\\Support\\NoteBlocks).",
+    "attribute": "id",
+    "idLength": 8,
+    "types": [
+        "paragraph",
+        "heading",
+        "blockquote",
+        "bulletList",
+        "orderedList",
+        "taskList",
+        "listItem",
+        "taskItem",
+        "codeBlock",
+        "callout",
+        "table",
+        "horizontalRule",
+        "blockMath",
+        "image"
+    ]
+}

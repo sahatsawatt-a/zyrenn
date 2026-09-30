@@ -44,7 +44,9 @@ import { useEventListener } from '@vueuse/core';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
 import type { Content, JSONContent } from '@tiptap/vue-3';
 import StarterKit from '@tiptap/starter-kit';
-import Collaboration from '@tiptap/extension-collaboration';
+import Collaboration, { isChangeOrigin } from '@tiptap/extension-collaboration';
+import UniqueID from '@tiptap/extension-unique-id';
+import noteBlocks from '../../lib/note-blocks.json';
 import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import type { HocuspocusProvider } from '@hocuspocus/provider';
 import type * as Y from 'yjs';
@@ -77,6 +79,17 @@ import { commandItems } from '../../config/commandsConfig';
 import '../../../css/editor.css';
 import '../../../css/typography.css';
 import 'katex/dist/katex.min.css';
+
+/** A block id, as the app and the collaboration server make them. */
+const newBlockId = (): string => {
+    let id = '';
+
+    while (id.length < noteBlocks.idLength) {
+        id += Math.random().toString(36).slice(2);
+    }
+
+    return id.slice(0, noteBlocks.idLength);
+};
 
 const props = withDefaults(
     defineProps<{
@@ -197,6 +210,17 @@ const editor = useEditor({
             codeBlock: false,
             // Shared, undo is the collaboration's own: it takes back only your edits
             ...(props.shared ? { undoRedo: false as const } : {}),
+        }),
+
+        // Every block carries a short id of its own, so one can be read or
+        // changed alone -- over MCP, say (App\Support\NoteBlocks). A block
+        // someone else wrote arrives with theirs, so only this editor's own
+        // changes are given ids here.
+        UniqueID.configure({
+            types: noteBlocks.types,
+            attributeName: noteBlocks.attribute,
+            generateID: newBlockId,
+            filterTransaction: (transaction) => !isChangeOrigin(transaction),
         }),
 
         // Shared: one document for everyone, and where each of the others is typing

@@ -83,11 +83,13 @@ class McpNotesTest extends TestCase
             ->assertStructuredContent(fn (AssertableJson $json) => $json
                 ->where('title', 'Plan')
                 ->where('user_id', $user->id)
-                ->where('markdown', "# Goals\n\n- [ ] Ship MCP\n")
+                // Which note it made, not the note again: get-note reads it
+                ->missing('markdown')
                 ->etc());
 
         $note = $user->notes()->sole();
         $this->assertSame('taskList', $note->content['content'][1]['type']);
+        $this->assertSame("# Goals\n\n- [ ] Ship MCP\n", TiptapMarkdown::toMarkdown($note->content));
 
         UserServer::actingAs($user)
             ->tool(UpdateNote::class, ['ref_id' => $note->ref_id, 'markdown' => '- [x] Ship MCP', 'is_wide' => true])

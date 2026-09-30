@@ -2,7 +2,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as Y from 'yjs';
-import { readDoc, replaceDoc, writeDoc } from './prosemirror.mjs';
+import {
+    applyBlockEdits,
+    giveBlockIds,
+    readDoc,
+    replaceDoc,
+    writeDoc,
+} from './prosemirror.mjs';
 
 const roundTrip = (doc) => {
     const ydoc = new Y.Doc();
@@ -120,4 +126,69 @@ void test('replacing swaps everything at once', () => {
     assert.deepEqual(readDoc(fragment).content, [
         { type: 'paragraph', content: [{ type: 'text', text: 'New' }] },
     ]);
+});
+
+const para = (id, text) => ({
+    type: 'paragraph',
+    attrs: { id },
+    content: [{ type: 'text', text }],
+});
+
+void test('blocks without ids get ones of their own, and keep them', () => {
+    const ydoc = new Y.Doc();
+    const fragment = ydoc.getXmlFragment('default');
+    writeDoc(
+        {
+            type: 'doc',
+            content: [
+                { type: 'paragraph', content: [{ type: 'text', text: 'A' }] },
+                para('same', 'B'),
+                para('same', 'C'),
+            ],
+        },
+        fragment,
+    );
+
+    assert.equal(giveBlockIds(fragment), true);
+    const ids = readDoc(fragment).content.map((block) => block.attrs.id);
+
+    assert.equal(new Set(ids).size, 3);
+    assert.equal(ids[1], 'same');
+    assert.match(ids[0], /^[a-z0-9]{8}$/);
+    assert.equal(giveBlockIds(fragment), false);
+});
+
+void test('block edits change only the blocks they name', () => {
+    const ours = new Y.Doc();
+    writeDoc(
+        {
+            type: 'doc',
+            content: [para('a', 'A'), para('b', 'B'), para('c', 'C')],
+        },
+        ours.getXmlFragment('default'),
+    );
+    const theirs = new Y.Doc();
+    Y.applyUpdate(theirs, Y.encodeStateAsUpdate(ours));
+
+    // Someone types in block C while the edit to A and B is made
+    theirs.getXmlFragment('default').get(2).get(0).insert(1, ' typed live');
+    const missing = applyBlockEdits(ours.getXmlFragment('default'), [
+        { do: 'replace', id: 'a', nodes: [para('a', 'A, changed')] },
+        { do: 'insert', after: 'b', nodes: [para('b2', 'B2')] },
+        { do: 'insert', at: 'end', nodes: [para('z', 'Z')] },
+        { do: 'delete', id: 'nothere' },
+    ]);
+    Y.applyUpdate(ours, Y.encodeStateAsUpdate(theirs));
+    Y.applyUpdate(theirs, Y.encodeStateAsUpdate(ours));
+
+    assert.deepEqual(missing, ['nothere']);
+
+    for (const doc of [ours, theirs]) {
+        assert.deepEqual(
+            readDoc(doc.getXmlFragment('default')).content.map(
+                (block) => block.content[0].text,
+            ),
+            ['A, changed', 'B', 'B2', 'C typed live', 'Z'],
+        );
+    }
 });

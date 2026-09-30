@@ -83,7 +83,7 @@ class NoteVersionTest extends TestCase
 
         $note->refresh();
         $this->assertSame('Old', $note->title);
-        $this->assertSame($this->doc('old'), $note->content);
+        $this->assertSame($this->doc('old'), $this->withoutBlockIds($note->content));
         $this->assertSame('New', $note->versions()->first()->title);
     }
 

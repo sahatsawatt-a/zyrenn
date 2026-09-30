@@ -69,7 +69,7 @@ class NoteTest extends TestCase
 
         $note->refresh();
         $this->assertSame('Renamed', $note->title);
-        $this->assertSame($content, $note->content);
+        $this->assertSame($content, $this->withoutBlockIds($note->content));
     }
 
     public function test_notes_are_addressed_by_ref_id_not_numeric_id()
@@ -101,7 +101,7 @@ class NoteTest extends TestCase
             ->patchJson(route('notes.update', $note), ['content' => $content])
             ->assertOk();
 
-        $this->assertSame($content, $note->refresh()->content);
+        $this->assertSame($content, $this->withoutBlockIds($note->refresh()->content));
     }
 
     public function test_clearing_the_title_stores_an_empty_string()

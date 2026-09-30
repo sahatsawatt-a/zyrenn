@@ -70,7 +70,7 @@ class McpDriveTest extends TestCase
         // The image survives as an image node, not as a line of text
         $this->assertSame(
             ['type' => 'image', 'attrs' => ['src' => "/drive/files/{$file->ref_id}", 'alt' => 'chart.png']],
-            $note->content['content'][1],
+            $this->withoutBlockIds($note->content)['content'][1],
         );
 
         // ...and comes back out of the note as the same Markdown line

@@ -133,6 +133,20 @@ abstract class FiledTool extends ScopedTool
     }
 
     /**
+     * What create and update answer with: which one it is and where, not all
+     * of it again -- a big note or board would cost as much to hear back as it
+     * did to send. get-note, get-board and get-table read it.
+     *
+     * @param  TThing  $thing
+     * @param  array<string, mixed>  $also  what this change in particular made, e.g. new ids
+     * @return array<string, mixed>
+     */
+    protected function answer(Model $thing, array $also = []): array
+    {
+        return [...$this->summary($thing), ...$also];
+    }
+
+    /**
      * @param  TThing  $thing
      * @param  array<int, string>|null  $paths  folder paths by id, when listing many
      * @return array<string, mixed>

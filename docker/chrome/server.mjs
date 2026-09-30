@@ -29,7 +29,12 @@ const PAINT_MAX = 12_000; // ...and when to print what is there anyway
 const PAINT_POLL = 100;
 const READY_ATTR = 'data-print-ready'; // resources/js/lib/printReady.ts
 
-const DEFAULT_MARGIN = { top: '16mm', right: '14mm', bottom: '16mm', left: '14mm' };
+const DEFAULT_MARGIN = {
+    top: '16mm',
+    right: '14mm',
+    bottom: '16mm',
+    left: '14mm',
+};
 
 // A4 is 210mm across. The page is laid out at the width it will be printed at,
 // so what measures itself on screen -- a board's canvas -- is drawn at the size
@@ -48,7 +53,9 @@ async function browser() {
     }
     // --no-sandbox: already in a container, and the sandbox needs privileges.
     // --disable-dev-shm-usage: Docker's 64M /dev/shm crashes Chrome mid-render.
-    launching = chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+    launching = chromium.launch({
+        args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    });
 
     return launching;
 }
@@ -62,7 +69,12 @@ function readBody(req) {
             if (size > MAX_BODY) {
                 // Pause rather than destroy, so the 413 still reaches the sender
                 req.pause();
-                reject(Object.assign(new Error(`request body over ${MAX_BODY} bytes`), { status: 413 }));
+                reject(
+                    Object.assign(
+                        new Error(`request body over ${MAX_BODY} bytes`),
+                        { status: 413 },
+                    ),
+                );
 
                 return;
             }
@@ -74,7 +86,9 @@ function readBody(req) {
 }
 
 function fail(res, status, message) {
-    const body = JSON.stringify({ error: String(message || 'unknown error').slice(0, 2000) });
+    const body = JSON.stringify({
+        error: String(message || 'unknown error').slice(0, 2000),
+    });
     res.writeHead(status, {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(body),
@@ -88,8 +102,20 @@ function cleanCookies(raw) {
     if (!Array.isArray(raw)) return [];
 
     return raw
-        .filter((c) => c && typeof c.name === 'string' && typeof c.value === 'string' && c.domain && c.path)
-        .map((c) => ({ name: c.name, value: c.value, domain: String(c.domain), path: String(c.path) }));
+        .filter(
+            (c) =>
+                c &&
+                typeof c.name === 'string' &&
+                typeof c.value === 'string' &&
+                c.domain &&
+                c.path,
+        )
+        .map((c) => ({
+            name: c.name,
+            value: c.value,
+            domain: String(c.domain),
+            path: String(c.path),
+        }));
 }
 
 /**
@@ -99,7 +125,10 @@ function cleanCookies(raw) {
  */
 async function waitForReady(page) {
     try {
-        await page.waitForSelector(`html[${READY_ATTR}="1"]`, { state: 'attached', timeout: READY_MAX });
+        await page.waitForSelector(`html[${READY_ATTR}="1"]`, {
+            state: 'attached',
+            timeout: READY_MAX,
+        });
 
         return true;
     } catch {
@@ -135,7 +164,12 @@ async function waitForPaint(page) {
                     return {
                         total: imgs.length,
                         pending: imgs.filter((i) => !i.complete).length,
-                        broken: imgs.filter((i) => i.complete && i.naturalWidth === 0 && i.currentSrc !== '').length,
+                        broken: imgs.filter(
+                            (i) =>
+                                i.complete &&
+                                i.naturalWidth === 0 &&
+                                i.currentSrc !== '',
+                        ).length,
                     };
                 })
                 .catch(() => null);
@@ -154,8 +188,11 @@ async function waitForPaint(page) {
         const last = await page
             .evaluate(() => ({
                 total: document.images.length,
-                broken: [...document.images].filter((i) => !i.complete || (i.naturalWidth === 0 && i.currentSrc !== ''))
-                    .length,
+                broken: [...document.images].filter(
+                    (i) =>
+                        !i.complete ||
+                        (i.naturalWidth === 0 && i.currentSrc !== ''),
+                ).length,
             }))
             .catch(() => ({ total: 0, broken: 0 }));
 
@@ -169,7 +206,9 @@ async function waitForPaint(page) {
 
 async function renderPdf(opts) {
     const b = await browser();
-    const ctx = await b.newContext({ viewport: { width: opts.width, height: 1100 } });
+    const ctx = await b.newContext({
+        viewport: { width: opts.width, height: 1100 },
+    });
     try {
         const cookies = cleanCookies(opts.cookies);
         if (cookies.length) await ctx.addCookies(cookies);
@@ -181,12 +220,17 @@ async function renderPdf(opts) {
 
         let status = null;
         try {
-            const res = await page.goto(opts.url, { waitUntil: 'networkidle', timeout: NAV_TIMEOUT });
+            const res = await page.goto(opts.url, {
+                waitUntil: 'networkidle',
+                timeout: NAV_TIMEOUT,
+            });
             status = res ? res.status() : null;
         } catch (e) {
             // A page that never goes idle is still worth printing
             if (!/timeout/i.test(String(e && e.message))) throw e;
-            await page.waitForLoadState('domcontentloaded', { timeout: 10_000 });
+            await page.waitForLoadState('domcontentloaded', {
+                timeout: 10_000,
+            });
         }
         if (status !== null && status >= 400) {
             throw new Error(`${opts.url} answered HTTP ${status}`);
@@ -215,9 +259,16 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/healthz') {
         const warm = await browser().catch((e) => e);
         if (warm instanceof Error || !warm.isConnected()) {
-            return fail(res, 503, `chromium unavailable: ${warm instanceof Error ? warm.message : 'disconnected'}`);
+            return fail(
+                res,
+                503,
+                `chromium unavailable: ${warm instanceof Error ? warm.message : 'disconnected'}`,
+            );
         }
-        res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Length': 2 });
+        res.writeHead(200, {
+            'Content-Type': 'text/plain',
+            'Content-Length': 2,
+        });
 
         return res.end('ok');
     }
@@ -239,12 +290,18 @@ const server = http.createServer(async (req, res) => {
             return fail(res, 400, 'url is required and must be http(s)');
         }
 
-        const width = Number.isFinite(+body.width) && +body.width > 0 ? Math.min(2000, +body.width) : DEFAULT_WIDTH;
+        const width =
+            Number.isFinite(+body.width) && +body.width > 0
+                ? Math.min(2000, +body.width)
+                : DEFAULT_WIDTH;
         const out = await renderPdf({
             url: body.url,
             cookies: body.cookies,
             format: typeof body.format === 'string' ? body.format : 'A4',
-            margin: body.margin && typeof body.margin === 'object' ? body.margin : DEFAULT_MARGIN,
+            margin:
+                body.margin && typeof body.margin === 'object'
+                    ? body.margin
+                    : DEFAULT_MARGIN,
             width,
         });
 
@@ -266,7 +323,11 @@ const server = http.createServer(async (req, res) => {
         res.end(out.buffer);
     } catch (e) {
         console.error('[pdf]', e && e.stack ? e.stack : e);
-        fail(res, e && e.status ? e.status : 500, e && e.message ? e.message : e);
+        fail(
+            res,
+            e && e.status ? e.status : 500,
+            e && e.message ? e.message : e,
+        );
     }
 });
 
@@ -277,7 +338,12 @@ server.headersTimeout = 60_000;
 // /healthz reports the truth and the next request retries the launch
 browser()
     .then(() => console.log('[pdf] chromium warm'))
-    .catch((e) => console.error('[pdf] chromium failed to launch:', e && e.message ? e.message : e));
+    .catch((e) =>
+        console.error(
+            '[pdf] chromium failed to launch:',
+            e && e.message ? e.message : e,
+        ),
+    );
 
 for (const sig of ['SIGINT', 'SIGTERM']) {
     process.on(sig, async () => {

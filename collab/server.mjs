@@ -56,6 +56,27 @@ const readBody = (request) =>
         request.on('error', reject);
     });
 
+/**
+ * Hands a document to the app now, rather than after the pause it waits for
+ * while people type, and waits (a little) for one already under way.
+ */
+async function storeNow(documentName) {
+    const id = `onStoreDocument-${documentName}`;
+    const { debouncer } = server.hocuspocus;
+
+    if (debouncer.isDebounced(id)) {
+        await debouncer.executeNow(id);
+    }
+
+    for (
+        let waited = 0;
+        debouncer.isCurrentlyExecuting(id) && waited < 3000;
+        waited += 50
+    ) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+}
+
 const server = new Server({
     port: PORT,
     quiet: true,
@@ -154,30 +175,24 @@ const server = new Server({
             return;
         }
 
-        const id = `onStoreDocument-${documentName}`;
-        const { debouncer } = server.hocuspocus;
-
         try {
-            if (debouncer.isDebounced(id)) {
-                await debouncer.executeNow(id);
-            }
-
-            // One already under way: wait for it, a little
-            for (
-                let waited = 0;
-                debouncer.isCurrentlyExecuting(id) && waited < 3000;
-                waited += 50
-            ) {
-                await new Promise((resolve) => setTimeout(resolve, 50));
-            }
+            await storeNow(documentName);
         } finally {
             connection.sendStateless('flushed');
         }
     },
 
     /**
-     * Laravel telling an open document that it changed elsewhere (MCP, a
-     * rename from the list): the new version goes to everyone who has it open.
+     * What the app asks of an open document, with the shared secret:
+     *
+     * - /replace: it changed elsewhere (MCP, a rename from the list); the new
+     *   version goes to everyone who has it open.
+     * - /flush: hand what it holds to the app now, so the app reads it as it is.
+     * - /apply: make changes by block or item (NoteBlocks, BoardItems), which
+     *   touch only what they name, then hand the result to the app.
+     *
+     * Each answers whether the document is open here ("live"); one that isn't
+     * is the app's to change itself.
      */
     async onRequest({ request, response, instance }) {
         // The same whether asked directly or through nginx's /collab
@@ -192,7 +207,10 @@ const server = new Server({
             throw null;
         }
 
-        if (path !== '/replace' || request.method !== 'POST') {
+        if (
+            !['/replace', '/flush', '/apply'].includes(path) ||
+            request.method !== 'POST'
+        ) {
             return;
         }
 
@@ -202,25 +220,39 @@ const server = new Server({
             throw null;
         }
 
-        const { document: documentName, ...changed } = JSON.parse(
+        const { document: documentName, ...given } = JSON.parse(
             await readBody(request),
         );
         const kind = kindOf(documentName);
         const live = instance.documents.has(documentName);
+        const answer = { live };
 
-        if (live) {
+        if (live && path !== '/flush') {
+            // Changes made for someone are theirs: they become its last editor
             const connection = await instance.openDirectConnection(
                 documentName,
-                { system: true },
+                {
+                    system: true,
+                    user: given.by ? { id: given.by } : undefined,
+                },
             );
-            await connection.transact((document) =>
-                kind.replace(document, changed),
-            );
+            await connection.transact((document) => {
+                if (path === '/replace') {
+                    kind.replace(document, given);
+                } else {
+                    answer.missing = kind.edit(document, given.edits ?? []);
+                }
+            });
             await connection.disconnect();
         }
 
+        // The app reads what it asked for straight after
+        if (live && path !== '/replace') {
+            await storeNow(documentName);
+        }
+
         response.writeHead(200, { 'Content-Type': 'application/json' });
-        response.end(JSON.stringify({ live }));
+        response.end(JSON.stringify(answer));
         throw null;
     },
 });
