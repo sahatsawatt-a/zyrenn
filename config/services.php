@@ -40,4 +40,12 @@ return [
         'global_token' => env('MCP_GLOBAL_TOKEN'),
     ],
 
+    'chrome' => [
+        // The PDF printer (docker/chrome), private on the compose network
+        'url' => env('CHROME_URL', 'http://chrome:3000'),
+        // The app as the printer reaches it: `web`, not APP_URL, which is the
+        // address a person's browser uses and may not resolve in a container
+        'origin' => env('CHROME_APP_ORIGIN', 'http://web:8080'),
+    ],
+
 ];

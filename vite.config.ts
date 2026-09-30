@@ -23,8 +23,10 @@ const devIsSecure = devUrl?.protocol === 'https:';
 // Vite answers "Blocked request" for a Host header it does not recognise. nginx
 // forwards the host the user typed, and bare IP addresses are allowed already,
 // so only the named hosts need listing -- a tunnel's host goes in
-// VITE_ALLOWED_HOSTS, comma separated.
+// VITE_ALLOWED_HOSTS, comma separated. `web` is the PDF printer, which opens
+// notes on the compose network (docker/chrome).
 const allowedHosts = [
+    'web',
     process.env.APP_HOST,
     process.env.VITE_HOST,
     ...(process.env.VITE_ALLOWED_HOSTS ?? '').split(','),

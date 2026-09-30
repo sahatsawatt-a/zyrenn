@@ -7,8 +7,12 @@ import {
     ChevronsLeftRight,
     ChevronsRightLeft,
     Copy,
+    Download,
+    FileDown,
+    HardDrive,
     Trash2,
 } from '@lucide/vue';
+import { toast } from 'vue-sonner';
 import {
     computed,
     onBeforeUnmount,
@@ -29,8 +33,19 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuRadioGroup,
+    DropdownMenuRadioItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { uploadToDrive } from '@/lib/drive';
 import { copyToClipboard, formatRelativeTime, xsrfToken } from '@/lib/utils';
-import { destroy, index, show, update } from '@/routes/notes';
+import { destroy, index, pdf, show, update } from '@/routes/notes';
 
 type Note = {
     ref_id: string;
@@ -176,6 +191,144 @@ async function copyRefId(): Promise<void> {
     }
 }
 
+// How the note looks on paper (NotePdf::STYLES, styled in print.css)
+type PdfStyle = 'simple' | 'report';
+
+const pdfStyles: { id: PdfStyle; label: string; hint: string }[] = [
+    { id: 'simple', label: 'Simple', hint: 'As it looks on screen' },
+    {
+        id: 'report',
+        label: 'Report',
+        hint: 'Serif type, page header and numbers',
+    },
+];
+
+const PDF_STYLE_KEY = 'zyrenn.pdfStyle';
+const pdfStyle = ref<PdfStyle>('simple');
+
+try {
+    const saved = localStorage.getItem(PDF_STYLE_KEY);
+
+    if (pdfStyles.some((style) => style.id === saved)) {
+        pdfStyle.value = saved as PdfStyle;
+    }
+} catch {
+    // Storage blocked: every export starts from Simple
+}
+
+function choosePdfStyle(style: PdfStyle): void {
+    pdfStyle.value = style;
+
+    try {
+        localStorage.setItem(PDF_STYLE_KEY, style);
+    } catch {
+        // Storage blocked: remembered for this visit only
+    }
+}
+
+// The report's running header and title block read these; a CSS string, so
+// quotes and backslashes in the title are escaped
+watchEffect(() => {
+    const text = (title.value || 'Untitled').replace(/["\\]/g, '\\$&');
+    document.documentElement.style.setProperty('--note-title', `"${text}"`);
+});
+
+onBeforeUnmount(() => {
+    document.documentElement.style.removeProperty('--note-title');
+});
+
+const editedOn = computed(() =>
+    new Date(savedAt.value).toLocaleDateString(undefined, {
+        dateStyle: 'long',
+    }),
+);
+
+// The server prints the saved note, so anything still unsaved goes first
+async function printPdf(): Promise<File> {
+    await save();
+
+    if (status.value === 'error') {
+        throw new Error(
+            'Couldn’t save the latest changes, so the PDF would be out of date.',
+        );
+    }
+
+    const url = pdf.url(props.note.ref_id, {
+        query: { style: pdfStyle.value },
+    });
+    const response = await fetch(url, {
+        headers: {
+            Accept: 'application/pdf, application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+    });
+
+    if (!response.ok) {
+        const body = response.headers
+            .get('Content-Type')
+            ?.includes('application/json')
+            ? await response.json()
+            : null;
+
+        throw new Error(
+            body?.message ??
+                (response.status === 429
+                    ? 'Too many exports at once. Try again in a minute.'
+                    : 'Couldn’t print this note to PDF.'),
+        );
+    }
+
+    const warning = response.headers.get('X-Pdf-Warning');
+
+    if (warning) {
+        toast.warning(warning);
+    }
+
+    // A slash would make the Drive keep only what follows it as the file's name
+    return new File(
+        [await response.blob()],
+        `${(title.value.trim() || 'Untitled').replace(/[/\\]/g, '-')}.pdf`,
+        { type: 'application/pdf' },
+    );
+}
+
+const exporting = ref(false);
+
+async function exportPdf(to: 'download' | 'drive'): Promise<void> {
+    if (exporting.value) {
+        return;
+    }
+
+    exporting.value = true;
+    const loading = toast.loading('Printing to PDF…');
+
+    try {
+        const file = await printPdf();
+
+        if (to === 'download') {
+            const url = URL.createObjectURL(file);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = file.name;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } else {
+            const stored = await uploadToDrive(file);
+            toast.success(`Saved “${stored.name}” to your Drive`, {
+                action: {
+                    label: 'Open',
+                    onClick: () => window.open(stored.url, '_blank'),
+                },
+            });
+        }
+    } catch (error) {
+        toast.error((error as Error).message);
+    } finally {
+        toast.dismiss(loading);
+        exporting.value = false;
+    }
+}
+
 function focusEditor(): void {
     editorRef.value?.focus();
 }
@@ -223,13 +376,13 @@ const statusLabel = computed(() => {
 <template>
     <Head :title="title || 'Untitled'" />
 
-    <div class="mx-8 flex flex-1 flex-col">
+    <div class="mx-8 flex flex-1 flex-col print:mx-0">
         <div
-            class="mx-auto w-full px-10 pt-8"
+            class="mx-auto w-full px-10 pt-8 print:max-w-none print:px-0 print:pt-0"
             :class="isWide ? 'max-w-none' : 'max-w-[800px]'"
         >
             <div
-                class="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2"
+                class="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 print:hidden"
             >
                 <div class="flex min-w-0 items-center gap-3">
                     <button
@@ -277,6 +430,62 @@ const statusLabel = computed(() => {
                         {{ isWide ? 'Narrow' : 'Wide' }}
                     </Button>
 
+                    <DropdownMenu>
+                        <DropdownMenuTrigger as-child>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                :disabled="exporting"
+                                data-test="note-export"
+                            >
+                                <FileDown />
+                                Export
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" class="w-60">
+                            <DropdownMenuLabel>PDF style</DropdownMenuLabel>
+                            <DropdownMenuRadioGroup
+                                :model-value="pdfStyle"
+                                @update:model-value="
+                                    choosePdfStyle($event as PdfStyle)
+                                "
+                            >
+                                <!-- Picking a style keeps the menu open for the export -->
+                                <DropdownMenuRadioItem
+                                    v-for="style in pdfStyles"
+                                    :key="style.id"
+                                    :value="style.id"
+                                    :data-test="`note-export-style-${style.id}`"
+                                    @select.prevent
+                                >
+                                    <span class="flex flex-col">
+                                        <span>{{ style.label }}</span>
+                                        <span
+                                            class="text-muted-foreground text-xs"
+                                        >
+                                            {{ style.hint }}
+                                        </span>
+                                    </span>
+                                </DropdownMenuRadioItem>
+                            </DropdownMenuRadioGroup>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                data-test="note-export-download"
+                                @select="exportPdf('download')"
+                            >
+                                <Download />
+                                Download PDF
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                data-test="note-export-drive"
+                                @select="exportPdf('drive')"
+                            >
+                                <HardDrive />
+                                Save PDF to Drive
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+
                     <Dialog>
                         <DialogTrigger as-child>
                             <Button variant="ghost" size="sm">
@@ -321,10 +530,18 @@ const statusLabel = computed(() => {
                 maxlength="255"
                 placeholder="Untitled"
                 aria-label="Note title"
-                class="placeholder:text-muted-foreground/60 w-full bg-transparent text-4xl font-bold tracking-tight outline-none"
+                class="placeholder:text-muted-foreground/60 w-full bg-transparent text-4xl font-bold tracking-tight outline-none print:hidden"
                 @input="markDirty('title')"
                 @keydown.enter.prevent="focusEditor"
             />
+            <!-- An input is one line and clips a long title on paper; this wraps -->
+            <h1
+                class="note-print-title hidden text-4xl font-bold tracking-tight break-words print:block"
+            >
+                {{ title || 'Untitled' }}
+            </h1>
+            <!-- Shown under the title by the report style only (print.css) -->
+            <p class="note-print-meta hidden">Last edited {{ editedOn }}</p>
         </div>
 
         <TiptapEditor

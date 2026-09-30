@@ -1,11 +1,20 @@
 <script setup lang="ts">
 import { NodeViewWrapper } from '@tiptap/vue-3';
 import type { NodeViewProps } from '@tiptap/vue-3';
-import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue';
+import {
+    computed,
+    defineAsyncComponent,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+    watch,
+} from 'vue';
 import type { Item } from '@/composables/board/items';
 import { nameOf } from '@/composables/board/items';
 import type { BoardContent, BoardSummary } from '@/lib/boards';
 import { boardContent, listBoards } from '@/lib/boards';
+import { holdPrint } from '@/lib/printReady';
 import { show } from '@/routes/boards';
 
 // A board shown in a note: pick the board, pick a frame, and there it is.
@@ -17,9 +26,12 @@ import { show } from '@/routes/boards';
 const props = defineProps<NodeViewProps>();
 
 // Konva is heavy and most notes hold no board at all
-const BoardView = defineAsyncComponent(
-    () => import('@/components/Board/BoardView.vue'),
-);
+const loadBoardView = () => import('@/components/Board/BoardView.vue');
+const BoardView = defineAsyncComponent(loadBoardView);
+
+// The PDF printer waits for the board to be drawn (see printReady)
+const releasePrint = holdPrint();
+onBeforeUnmount(releasePrint);
 
 const WHOLE_BOARD = 'all';
 
@@ -91,6 +103,13 @@ onMounted(async () => {
     }
 
     await load(reference.value.ref);
+
+    if (board.value) {
+        await loadBoardView().catch(() => undefined);
+        await nextTick();
+    }
+
+    releasePrint();
 });
 
 watch(

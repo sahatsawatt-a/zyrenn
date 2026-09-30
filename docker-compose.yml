@@ -119,6 +119,44 @@ services:
         ports:
             - '${VITE_PORT:-5173}:5173'
 
+    # The PDF printer: a headless Chrome that prints a note as the app draws it
+    # (docker/chrome/server.mjs). The app hands it a URL on `web` and the user's
+    # own session cookie, and gets the bytes back.
+    #
+    # The Playwright image ships the browsers but not the npm package, and ESM
+    # ignores NODE_PATH, so the package is installed into /work with the server
+    # copied beside it -- /srv is the read-only repo mount. A restart finds it
+    # already there; only a recreate pays for the install again.
+    #
+    # No `ports`: something that takes a session cookie and fetches pages as
+    # that user is not left listening on the LAN. `app` reaches it privately.
+    chrome:
+        image: mcr.microsoft.com/playwright:v1.61.0-noble
+        restart: unless-stopped
+        working_dir: /srv
+        volumes:
+            - ./docker/chrome:/srv:ro
+        command: >
+            bash -lc "mkdir -p /work && cd /work &&
+                      { [ -d node_modules/playwright ] || npm i playwright@1.61.0 >/tmp/npm.log 2>&1 ||
+                        { echo 'npm install failed:'; tail -20 /tmp/npm.log; exit 1; }; } &&
+                      cp /srv/server.mjs /work/server.mjs && exec node /work/server.mjs"
+        expose:
+            - '3000'
+        healthcheck:
+            test:
+                [
+                    'CMD-SHELL',
+                    "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+                ]
+            interval: 10s
+            timeout: 5s
+            retries: 6
+            # The first boot installs playwright, then launches chromium
+            start_period: 90s
+        depends_on:
+            - web
+
     postgres:
         image: postgres:17-alpine
         restart: unless-stopped
