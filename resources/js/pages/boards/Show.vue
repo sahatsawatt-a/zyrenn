@@ -20,7 +20,9 @@ import {
 } from '@/components/ui/dialog';
 import { copyToClipboard, formatRelativeTime, xsrfToken } from '@/lib/utils';
 import PresenceAvatars from '@/components/PresenceAvatars.vue';
+import { useSharedItems } from '@/composables/board/useBoardSync';
 import { usePresence } from '@/composables/usePresence';
+import { sharingIsOn, useShared } from '@/composables/useShared';
 import { canChange, owned } from '@/lib/projects';
 import { destroy, index as ownIndex, show, update } from '@/routes/boards';
 import { index as projectIndex } from '@/routes/projects/boards';
@@ -52,6 +54,26 @@ const { others } = usePresence(() => `boards.${props.board.ref_id}`, {
 
 const title = ref(props.board.title);
 let items: Item[] = props.board.content?.items ?? [];
+
+// Drawn on live with everyone who has it open, when the collaboration server
+// is on: the items are the shared document, the title a map beside it. The
+// title is written there only once the saved one has arrived, so the two
+// never race. Otherwise the page saves as it goes, below.
+const shared = sharingIsOn() ? useShared(`boards.${props.board.ref_id}`) : null;
+const meta = shared?.document.getMap('meta');
+
+meta?.observe(() => {
+    const next = meta.get('title');
+
+    if (typeof next === 'string' && next !== title.value) {
+        title.value = next;
+    }
+});
+
+// A viewer's board follows the others' drawing as it happens
+const viewed = shared
+    ? useSharedItems(shared.document, items)
+    : ref<Item[]>(items);
 
 // Saving works the same way a note does: mark what changed, send it debounced,
 // and never let an older request land after a newer one.
@@ -154,8 +176,23 @@ function markDirty(field: Field): void {
 }
 
 function onBoardChange(next: Item[]): void {
+    // Shared, the collaboration server keeps the board
+    if (shared) {
+        return;
+    }
+
     items = next;
     markDirty('content');
+}
+
+function onTitleInput(): void {
+    if (meta) {
+        meta.set('title', title.value);
+
+        return;
+    }
+
+    markDirty('title');
 }
 
 const refCopied = ref(false);
@@ -191,6 +228,10 @@ onBeforeUnmount(() => {
 });
 
 const statusLabel = computed(() => {
+    if (shared) {
+        return shared.label.value;
+    }
+
     switch (status.value) {
         case 'saving':
             return 'Saving…';
@@ -232,7 +273,7 @@ const statusLabel = computed(() => {
             </Button>
         </div>
         <div class="min-h-0 flex-1 overflow-hidden rounded-xl border">
-            <BoardView :items="props.board.content?.items ?? []" />
+            <BoardView :items="viewed" />
         </div>
     </div>
 
@@ -241,6 +282,7 @@ const statusLabel = computed(() => {
         :items="props.board.content?.items ?? []"
         :title="title || 'Untitled board'"
         :status="statusLabel"
+        :shared="shared"
         @change="onBoardChange"
     >
         <template #actions>
@@ -250,7 +292,8 @@ const statusLabel = computed(() => {
                 class="board-title"
                 placeholder="Untitled board"
                 data-test="board-title"
-                @input="markDirty('title')"
+                :readonly="shared !== null && !shared.synced.value"
+                @input="onTitleInput"
             />
 
             <Button

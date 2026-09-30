@@ -175,6 +175,21 @@ class CollabTest extends TestCase
             && ! isset($request['content']));
     }
 
+    public function test_a_board_changed_elsewhere_sends_its_items()
+    {
+        $board = Board::factory()->create(['title' => 'Map']);
+        $board->forceFill(['ydoc' => 'c3RhdGU='])->save();
+        $items = [['id' => 'mcp1', 'kind' => 'sticky', 'text' => 'From MCP']];
+
+        // e.g. update-board over MCP
+        $board->update(['content' => ['items' => $items]]);
+
+        $this->assertNull($board->fresh()->ydoc);
+        Http::assertSent(fn (SentRequest $request) => $request['document'] === "boards.{$board->ref_id}"
+            && $request['items'] === $items
+            && ! isset($request['title']));
+    }
+
     public function test_moving_a_note_to_a_folder_changes_nothing_anyone_is_editing()
     {
         $note = Note::factory()->create();

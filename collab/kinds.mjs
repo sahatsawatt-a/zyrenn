@@ -46,4 +46,76 @@ const notes = {
     },
 };
 
-export const documentKinds = { notes };
+/**
+ * A board: each item under its id in a map, so two people changing two
+ * items never touch the same entry, and the order they are painted in as a
+ * list of ids beside it. The last change to one item wins.
+ */
+const boards = {
+    seed(document, saved) {
+        boards.replace(document, saved);
+    },
+
+    read(document) {
+        return {
+            items: orderedItems(document),
+            title: document.getMap('meta').get('title') ?? '',
+        };
+    },
+
+    replace(document, changed) {
+        if ('items' in changed) {
+            const items = document.getMap('items');
+            const order = document.getArray('order');
+            const given = (changed.items ?? []).filter(
+                (item) => item && typeof item.id === 'string',
+            );
+
+            items.clear();
+            order.delete(0, order.length);
+
+            for (const item of given) {
+                items.set(item.id, item);
+            }
+
+            order.insert(
+                0,
+                given.map((item) => item.id),
+            );
+        }
+
+        if ('title' in changed) {
+            document.getMap('meta').set('title', changed.title ?? '');
+        }
+    },
+};
+
+/**
+ * A board's items in the order they are painted. Two people adding at once
+ * can each rewrite the order without the other's new item; an item missing
+ * from it still belongs on the board, so it goes on top rather than away.
+ *
+ * @param {import('yjs').Doc} document
+ */
+export function orderedItems(document) {
+    const items = document.getMap('items');
+    const seen = new Set();
+    const ordered = [];
+
+    for (const id of document.getArray('order').toArray()) {
+        if (items.has(id) && !seen.has(id)) {
+            seen.add(id);
+            ordered.push(items.get(id));
+        }
+    }
+
+    for (const [id, item] of items) {
+        if (!seen.has(id)) {
+            ordered.push(item);
+        }
+    }
+
+    return ordered;
+}
+
+export const documentKinds = { notes, boards };

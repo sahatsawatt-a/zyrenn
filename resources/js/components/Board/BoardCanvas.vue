@@ -8,8 +8,11 @@ import {
     Undo2,
     X,
 } from '@lucide/vue';
+import type { HocuspocusProvider } from '@hocuspocus/provider';
 import { useElementSize, useEventListener } from '@vueuse/core';
 import Konva from 'konva';
+import type { Ref } from 'vue';
+import type * as Y from 'yjs';
 import {
     computed,
     nextTick,
@@ -72,6 +75,10 @@ import { useFormulae } from '../../composables/board/useFormulae.js';
 import { usePictures } from '../../composables/board/usePictures.js';
 import { useBoard } from '../../composables/board/useBoard.js';
 import { useCamera } from '../../composables/board/useCamera.js';
+import {
+    useBoardPointers,
+    useBoardSync,
+} from '../../composables/board/useBoardSync.js';
 
 const props = withDefaults(
     defineProps<{
@@ -80,13 +87,24 @@ const props = withDefaults(
         title?: string;
         // Shown beside the title, e.g. "Saved 2 minutes ago"
         status?: string;
+        // Drawn on live with others (useShared): the board is the shared document
+        shared?: {
+            document: Y.Doc;
+            provider: HocuspocusProvider;
+            me: { name: string; color: string };
+            synced: Ref<boolean>;
+        } | null;
     }>(),
-    { items: null, title: '', status: '' },
+    { items: null, title: '', status: '', shared: null },
 );
 
 const emit = defineEmits<{ change: [Item[]] }>();
 
 const board = useBoard(props.items);
+
+if (props.shared) {
+    useBoardSync(board, props.shared.document, props.shared.synced);
+}
 
 // Anything that changes an item changes the board: one watcher rather than a
 // call in every action, which is the same reason history takes snapshots.
@@ -126,6 +144,24 @@ const stageRef = useTemplateRef<{ getNode: () => Konva.Stage }>('stageRef');
 const stage = () => stageRef.value?.getNode();
 
 const camera = useCamera(stage, { width, height });
+
+// ---------------------------------------------------- Everyone else's hand
+const pointers = props.shared
+    ? useBoardPointers(props.shared.provider, props.shared.me)
+    : null;
+
+const onCanvasPointer = (event: PointerEvent) => {
+    const box = canvas.value?.getBoundingClientRect();
+
+    if (pointers && box) {
+        pointers.point(
+            camera.toBoard({
+                x: event.clientX - box.left,
+                y: event.clientY - box.top,
+            }),
+        );
+    }
+};
 
 const tool = ref<Tool>('select');
 
@@ -512,6 +548,8 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
                 :data-zoom="Math.round(camera.scale.value * 100)"
                 @dragover.prevent
                 @drop="onDropFiles"
+                @pointermove="onCanvasPointer"
+                @pointerleave="pointers?.point(null)"
                 :data-camera="`${camera.position.value.x},${camera.position.value.y},${camera.scale.value}`"
                 class="border-sidebar-border/70 dark:border-sidebar-border relative min-h-[480px] flex-1 overflow-hidden rounded-xl border bg-white"
                 :class="{ 'cursor-grab': panning }"
@@ -596,6 +634,37 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
                         />
                     </Layer>
                 </Stage>
+
+                <!-- Where the others' pointers are, in their colours -->
+                <div
+                    v-for="pointer in pointers?.pointers.value ?? []"
+                    :key="pointer.id"
+                    class="pointer-events-none absolute top-0 left-0 z-10 flex items-start transition-transform duration-75"
+                    :style="{
+                        transform: `translate(${pointer.x * camera.scale.value + camera.position.value.x}px, ${pointer.y * camera.scale.value + camera.position.value.y}px)`,
+                    }"
+                    data-test="board-pointer"
+                >
+                    <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 16 16"
+                        aria-hidden="true"
+                    >
+                        <path
+                            d="M1 1l5.5 13 2-5.5L14 6.5z"
+                            :fill="pointer.color"
+                            stroke="white"
+                            stroke-width="1.2"
+                            stroke-linejoin="round"
+                        />
+                    </svg>
+                    <span
+                        class="mt-3 rounded px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap text-white"
+                        :style="{ backgroundColor: pointer.color }"
+                        >{{ pointer.name }}</span
+                    >
+                </div>
 
                 <!-- Formulae, set by KaTeX over the canvas. They take no
                      clicks: the shape underneath is what gets selected. -->

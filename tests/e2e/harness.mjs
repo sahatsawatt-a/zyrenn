@@ -54,6 +54,64 @@ export async function openBoard(path = '/demo/konva', size = {}) {
 
     await page.goto(`${APP}${path}`, { waitUntil: 'networkidle' });
 
+    const check = (label, passed, detail = '') => {
+        results.push(
+            `${passed ? 'PASS' : 'FAIL'}  ${label}${detail ? ` — ${detail}` : ''}`,
+        );
+
+        if (!passed) {
+            problems.push(label);
+        }
+    };
+
+    const board = boardOn(page);
+
+    if (size.canvas !== false) {
+        await board.ready();
+    }
+
+    // Tidying a suite asks for, done even when it falls over part way
+    const cleanups = [];
+    const afterwards = (cleanup) => cleanups.push(cleanup);
+
+    const done = async () => {
+        for (const cleanup of cleanups.reverse()) {
+            try {
+                await cleanup();
+            } catch (error) {
+                problems.push(
+                    `cleanup: ${error.message.split('\n')[0].slice(0, 160)}`,
+                );
+            }
+        }
+
+        await browser.close();
+        console.log(results.join('\n'));
+        console.log(
+            'problems:',
+            problems.length ? problems.join('; ') : 'none',
+        );
+
+        return problems.length;
+    };
+
+    return {
+        browser,
+        page,
+        results,
+        problems,
+        check,
+        ...board,
+        afterwards,
+        done,
+    };
+}
+
+/**
+ * The helpers for working a board on a page -- anyone's page, so a second
+ * person in the same suite can draw too. Call ready() once a board is open.
+ */
+export function boardOn(page) {
     // Where the canvas sits on screen. A page that has no board on it yet --
     // the list, say -- says so, and calls ready() once one is open.
     const view = { box: null };
@@ -64,20 +122,6 @@ export async function openBoard(path = '/demo/konva', size = {}) {
         view.box = await page.locator('[data-zoom]').boundingBox();
 
         return view.box;
-    };
-
-    if (size.canvas !== false) {
-        await ready();
-    }
-
-    const check = (label, passed, detail = '') => {
-        results.push(
-            `${passed ? 'PASS' : 'FAIL'}  ${label}${detail ? ` — ${detail}` : ''}`,
-        );
-
-        if (!passed) {
-            problems.push(label);
-        }
     };
 
     /** A point a fraction of the way across the canvas, in screen coordinates. */
@@ -236,39 +280,9 @@ export async function openBoard(path = '/demo/konva', size = {}) {
         (await page.locator(`[data-test="side-${end}"]`).inputValue()) ||
         'auto';
 
-    // Tidying a suite asks for, done even when it falls over part way
-    const cleanups = [];
-    const afterwards = (cleanup) => cleanups.push(cleanup);
-
-    const done = async () => {
-        for (const cleanup of cleanups.reverse()) {
-            try {
-                await cleanup();
-            } catch (error) {
-                problems.push(
-                    `cleanup: ${error.message.split('\n')[0].slice(0, 160)}`,
-                );
-            }
-        }
-
-        await browser.close();
-        console.log(results.join('\n'));
-        console.log(
-            'problems:',
-            problems.length ? problems.join('; ') : 'none',
-        );
-
-        return problems.length;
-    };
-
     return {
-        browser,
-        page,
         view,
         ready,
-        results,
-        problems,
-        check,
         at,
         camera,
         screenOf,
@@ -284,8 +298,6 @@ export async function openBoard(path = '/demo/konva', size = {}) {
         join,
         label,
         pinnedSide,
-        afterwards,
-        done,
     };
 }
 
