@@ -149,6 +149,30 @@ await runBoard(
             ),
         );
 
+        // ------------------- Printed to PDF with the others' latest words in it
+        await editor(other).click();
+        await other.keyboard.press('Control+End');
+        await other.keyboard.type(` Last words ${RUN}.`);
+        await page.waitForTimeout(400);
+
+        await page.locator('[data-test="note-export"]').click();
+        const [download] = await Promise.all([
+            page.waitForEvent('download', { timeout: 30000 }),
+            page.locator('[data-test="note-export-download"]').click(),
+        ]);
+        const pdfPath = `${SHOTS}/coedit-${RUN}.pdf`;
+        await download.saveAs(pdfPath);
+        const printed = execFileSync('pdftotext', [pdfPath, '-'], {
+            encoding: 'utf8',
+        }).replace(/\s+/g, ' ');
+        check(
+            'a PDF of the shared note has everyone’s words, the latest too',
+            printed.includes(`Owner wrote this ${RUN}.`) &&
+                printed.includes(`Member added this ${RUN}.`) &&
+                printed.includes(`Last words ${RUN}.`),
+            printed.slice(0, 90),
+        );
+
         // --------------------------------- A change from elsewhere, while open
         tinker(
             `$n = App\\Models\\Note\\Note::where('ref_id', '${ref}')->first(); $n->update(['title' => 'Renamed by MCP ${RUN}', 'content' => ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Rewritten by MCP ${RUN}']]]]]]);`,
