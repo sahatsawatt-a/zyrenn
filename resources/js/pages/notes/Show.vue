@@ -30,7 +30,7 @@ import {
     DialogTrigger,
 } from '@/components/ui/dialog';
 import { copyToClipboard, formatRelativeTime, xsrfToken } from '@/lib/utils';
-import { owned } from '@/lib/projects';
+import { canChange, owned } from '@/lib/projects';
 import { destroy, index as ownIndex, show, update } from '@/routes/notes';
 import { index as projectIndex } from '@/routes/projects/notes';
 
@@ -47,6 +47,9 @@ const props = defineProps<{
     // The folders the note sits in, top level first
     breadcrumbs: { ref_id: string; name: string }[];
 }>();
+
+// A project's viewers read the note; nothing they do is saved
+const editable = canChange();
 
 const editorRef = useTemplateRef('editorRef');
 const titleInput = useTemplateRef('titleInput');
@@ -201,7 +204,7 @@ const removeBeforeListener = router.on('before', (event) => {
 });
 
 onMounted(() => {
-    if (!props.note.title) {
+    if (editable && !props.note.title) {
         titleInput.value?.focus();
     }
 });
@@ -212,6 +215,10 @@ onBeforeUnmount(() => {
 });
 
 const statusLabel = computed(() => {
+    if (!editable) {
+        return 'View only';
+    }
+
     switch (status.value) {
         case 'saving':
             return 'Saving…';
@@ -265,7 +272,7 @@ const statusLabel = computed(() => {
                     </span>
                 </div>
 
-                <div class="flex items-center gap-1">
+                <div v-if="editable" class="flex items-center gap-1">
                     <Button
                         variant="ghost"
                         size="sm"
@@ -326,6 +333,7 @@ const statusLabel = computed(() => {
                 maxlength="255"
                 placeholder="Untitled"
                 aria-label="Note title"
+                :readonly="!editable"
                 class="placeholder:text-muted-foreground/60 w-full bg-transparent text-4xl font-bold tracking-tight outline-none"
                 @input="markDirty('title')"
                 @keydown.enter.prevent="focusEditor"
@@ -337,6 +345,7 @@ const statusLabel = computed(() => {
             :key="note.ref_id"
             :content="note.content"
             :wide="isWide"
+            :editable="editable"
             class="min-h-0! pt-2!"
             @update="onContentUpdate"
         />

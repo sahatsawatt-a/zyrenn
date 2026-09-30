@@ -48,6 +48,9 @@ class User extends Authenticatable implements Owner, PasskeyUser
     {
         static::deleting(function (User $user) {
             $user->tokens()->delete();
+
+            // Nobody else could open these once the user was gone
+            $user->soloProjects()->each(fn (Project $project) => $project->delete());
         });
 
         // Drive rows go with the database cascade, which skips model events, so drop the bytes here
@@ -78,23 +81,41 @@ class User extends Authenticatable implements Owner, PasskeyUser
     /**
      * The projects the user is a member of, with their role in each.
      *
-     * @return BelongsToMany<Project, $this>
+     * @return BelongsToMany<Project, $this, Membership>
      */
     public function projects(): BelongsToMany
     {
-        return $this->belongsToMany(Project::class)->withPivot('role')->withTimestamps();
+        return $this->belongsToMany(Project::class)
+            ->using(Membership::class)
+            ->withPivot('id', 'ref_id', 'role')
+            ->withTimestamps();
     }
 
     /**
-     * The projects nobody but this user runs. They'd be left with no owner if
-     * the user went, so the account can't be deleted while there are any.
+     * The projects nobody else is in. They go with the user.
      *
      * @return Collection<int, Project>
      */
-    public function soleOwnedProjects(): Collection
+    public function soloProjects(): Collection
+    {
+        return $this->projects()
+            ->whereDoesntHave('members', fn (Builder $others) => $others->whereKeyNot($this->id))
+            ->orderBy('name')
+            ->get();
+    }
+
+    /**
+     * The projects the user alone runs while others are in them. Those would
+     * be left with nobody to run them, so the account can't be deleted while
+     * there are any: another member has to be made an owner first.
+     *
+     * @return Collection<int, Project>
+     */
+    public function projectsNeedingAnOwner(): Collection
     {
         return $this->projects()
             ->wherePivot('role', Project::OWNER)
+            ->whereHas('members', fn (Builder $others) => $others->whereKeyNot($this->id))
             ->whereDoesntHave('members', fn (Builder $others) => $others
                 ->whereKeyNot($this->id)
                 ->where('project_user.role', Project::OWNER))

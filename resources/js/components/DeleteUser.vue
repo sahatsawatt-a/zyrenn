@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Form } from '@inertiajs/vue3';
-import { useTemplateRef } from 'vue';
+import { Form, usePage } from '@inertiajs/vue3';
+import { computed, useTemplateRef } from 'vue';
 import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
@@ -19,6 +19,12 @@ import {
 import { Label } from '@/components/ui/label';
 
 const passwordInput = useTemplateRef('passwordInput');
+
+// Projects nobody else is in, which go with the account (ProfileController::edit)
+const page = usePage();
+const soloProjects = computed(
+    () => (page.props.soloProjects as string[] | undefined) ?? [],
+);
 </script>
 
 <template>
@@ -66,6 +72,18 @@ const passwordInput = useTemplateRef('passwordInput');
                                 you would like to permanently delete your
                                 account.
                             </DialogDescription>
+                            <p
+                                v-if="soloProjects.length"
+                                class="text-destructive text-sm"
+                                data-test="solo-projects"
+                            >
+                                {{
+                                    soloProjects.length === 1
+                                        ? 'Nobody else is in this project, so it is deleted too:'
+                                        : 'Nobody else is in these projects, so they are deleted too:'
+                                }}
+                                {{ soloProjects.join(', ') }}.
+                            </p>
                         </DialogHeader>
 
                         <div class="grid gap-2">

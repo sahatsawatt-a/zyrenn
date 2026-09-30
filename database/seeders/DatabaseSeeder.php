@@ -21,5 +21,11 @@ class DatabaseSeeder extends Seeder
             'name' => 'Test User',
             'email' => 'test@example.com',
         ]);
+
+        // Someone for the browser suites to add to a project (tests/e2e/members.mjs)
+        User::factory()->create([
+            'name' => 'E2E Member',
+            'email' => 'e2e-member@example.com',
+        ]);
     }
 }

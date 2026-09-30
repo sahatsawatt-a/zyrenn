@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 
@@ -65,11 +66,24 @@ class Project extends Model implements Owner
     /**
      * Everyone in the project, with their role.
      *
-     * @return BelongsToMany<User, $this>
+     * @return BelongsToMany<User, $this, Membership>
      */
     public function members(): BelongsToMany
     {
-        return $this->belongsToMany(User::class)->withPivot('role')->withTimestamps();
+        return $this->belongsToMany(User::class)
+            ->using(Membership::class)
+            ->withPivot('id', 'ref_id', 'role')
+            ->withTimestamps();
+    }
+
+    /**
+     * Each member's place in the project, to change or end.
+     *
+     * @return HasMany<Membership, $this>
+     */
+    public function memberships(): HasMany
+    {
+        return $this->hasMany(Membership::class);
     }
 
     /**
@@ -87,6 +101,15 @@ class Project extends Model implements Owner
      */
     public function roleOf(User $user): ?string
     {
-        return $this->members()->whereKey($user->id)->first()?->getRelationValue('pivot')?->getAttribute('role');
+        return $this->memberships()->where('user_id', $user->id)->value('role');
+    }
+
+    /**
+     * Whether the membership is the last owner's: the project must keep one.
+     */
+    public function isLastOwner(Membership $membership): bool
+    {
+        return $membership->role === self::OWNER
+            && $this->memberships()->where('role', self::OWNER)->count() === 1;
     }
 }

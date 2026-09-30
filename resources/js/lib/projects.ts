@@ -22,6 +22,16 @@ export type ProjectSummary = { ref_id: string; name: string };
 export const currentProject = (): CurrentProject | null =>
     usePage().props.project ?? null;
 
+/**
+ * Whether the user can make and change things where the page is: always in
+ * their own, and as a project's owner or editor. Viewers only look.
+ */
+export const canChange = (): boolean => {
+    const project = currentProject();
+
+    return !project || project.role === 'owner' || project.role === 'editor';
+};
+
 type Method = 'get' | 'post';
 
 // e.g. notes.index: "/notes"

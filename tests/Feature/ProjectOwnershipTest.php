@@ -57,7 +57,7 @@ class ProjectOwnershipTest extends TestCase
     public function test_project_things_outlive_the_member_who_made_them()
     {
         $maker = User::factory()->create();
-        $project = Project::factory()->withMember($maker)->create();
+        $project = Project::factory()->withMember($maker)->withMember(User::factory()->create())->create();
         $shared = $this->projectNote($project, $maker);
         $own = Note::factory()->for($maker)->create();
 
@@ -66,6 +66,20 @@ class ProjectOwnershipTest extends TestCase
         $this->assertModelMissing($own);
         $this->assertModelExists($shared);
         $this->assertNull($shared->fresh()->created_by);
+    }
+
+    public function test_a_project_nobody_else_is_in_goes_with_its_only_member()
+    {
+        $user = User::factory()->create();
+        $solo = Project::factory()->withMember($user)->create();
+        $shared = Project::factory()->withMember($user)->withMember(User::factory()->create())->create();
+        $note = $this->projectNote($solo, $user);
+
+        $user->delete();
+
+        $this->assertModelMissing($solo);
+        $this->assertModelMissing($note);
+        $this->assertModelExists($shared);
     }
 
     public function test_deleting_a_project_deletes_what_it_owns()

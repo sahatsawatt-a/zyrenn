@@ -12,10 +12,7 @@ import {
 import { computed } from 'vue';
 import Highlight from '@/components/folders/Highlight.vue';
 import ItemActions from '@/components/folders/ItemActions.vue';
-import {
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-} from '@/components/ui/dropdown-menu';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import type { DriveFile } from '@/lib/drive';
 import { formatBytes, formatRelativeTime } from '@/lib/utils';
 import { show } from '@/routes/drive/files';
@@ -106,7 +103,6 @@ const icon = computed(
                 <DropdownMenuItem as-child>
                     <a :href="downloadUrl"><Download /> Download</a>
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
             </ItemActions>
         </div>
     </div>

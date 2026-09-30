@@ -50,7 +50,8 @@ class ProjectController extends Controller
     }
 
     /**
-     * The project's settings: its name, who is in it, and deleting it.
+     * The project's settings: its name, who is in it and in what role, and
+     * leaving or deleting it.
      */
     public function edit(Request $request, Project $project): Response
     {
@@ -60,12 +61,16 @@ class ProjectController extends Controller
             'settings' => [
                 ...$project->only(['ref_id', 'name', 'created_at']),
                 'members' => $project->members()->orderBy('name')->get()->map(fn (User $member) => [
+                    // The membership's, for changing or ending it
+                    'ref_id' => $member->getRelationValue('pivot')?->getAttribute('ref_id'),
                     'name' => $member->name,
                     'email' => $member->email,
                     'role' => $member->getRelationValue('pivot')?->getAttribute('role'),
+                    'is_me' => $member->is($request->user()),
                 ]),
                 'can' => [
                     'update' => $request->user()->can('update', $project),
+                    'manage_members' => $request->user()->can('manageMembers', $project),
                     'delete' => $request->user()->can('delete', $project),
                 ],
             ],

@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { useTableStore } from '@/composables/table/useTableStore';
 import { copyToClipboard, formatRelativeTime } from '@/lib/utils';
-import { owned } from '@/lib/projects';
+import { canChange, owned } from '@/lib/projects';
 import { destroy, index as ownIndex, show } from '@/routes/tables';
 import { index as projectIndex } from '@/routes/projects/tables';
 import type { ColumnMeta, RowData, TableDensity } from '@/types';
@@ -80,6 +80,9 @@ const saveTitle = useDebounceFn(async () => {
 // Back to the list the page came from: the project's, or the user's own
 const index = owned(ownIndex, projectIndex);
 
+// A project's viewers read the rows; every control in the table is switched off
+const editable = canChange();
+
 watchEffect(() => {
     setLayoutProps({
         breadcrumbs: [
@@ -97,6 +100,10 @@ watchEffect(() => {
 });
 
 const statusLabel = computed(() => {
+    if (!editable) {
+        return 'View only';
+    }
+
     switch (store.saveStatus.value) {
         case 'saving':
             return 'Saving…';
@@ -148,6 +155,7 @@ onBeforeUnmount(() => {
                 class="table-title"
                 placeholder="Untitled table"
                 data-test="table-title"
+                :readonly="!editable"
                 @input="saveTitle"
             />
             <span
@@ -168,7 +176,7 @@ onBeforeUnmount(() => {
                     <Copy v-else />
                 </Button>
 
-                <Dialog>
+                <Dialog v-if="editable">
                     <DialogTrigger as-child>
                         <Button
                             variant="ghost"
@@ -206,13 +214,22 @@ onBeforeUnmount(() => {
             </div>
         </div>
 
-        <div class="min-h-0 flex-1">
+        <fieldset
+            :disabled="!editable"
+            class="m-0 min-h-0 min-w-0 flex-1 border-0 p-0"
+            :class="{ 'read-only': !editable }"
+        >
             <TableWorkspace />
-        </div>
+        </fieldset>
     </div>
 </template>
 
 <style scoped>
+/* A column's edge is dragged, not clicked, so the fieldset doesn't stop it */
+.read-only :deep(.cursor-col-resize) {
+    display: none;
+}
+
 .table-title {
     width: 20rem;
     height: 2.25rem;

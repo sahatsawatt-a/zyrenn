@@ -4,6 +4,7 @@ import { Check, Copy, Trash2 } from '@lucide/vue';
 import { useDebounceFn, useEventListener } from '@vueuse/core';
 import { computed, onBeforeUnmount, ref, watchEffect } from 'vue';
 import BoardCanvas from '@/components/Board/BoardCanvas.vue';
+import BoardView from '@/components/Board/BoardView.vue';
 import type { Item } from '@/composables/board/items';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,7 +18,7 @@ import {
     DialogTrigger,
 } from '@/components/ui/dialog';
 import { copyToClipboard, formatRelativeTime, xsrfToken } from '@/lib/utils';
-import { owned } from '@/lib/projects';
+import { canChange, owned } from '@/lib/projects';
 import { destroy, index as ownIndex, show, update } from '@/routes/boards';
 import { index as projectIndex } from '@/routes/projects/boards';
 
@@ -33,6 +34,9 @@ const props = defineProps<{
     // The folders the board sits in, top level first
     breadcrumbs: { ref_id: string; name: string }[];
 }>();
+
+// A project's viewers see the whole board, drawn as it is, and change nothing
+const editable = canChange();
 
 const title = ref(props.board.title);
 let items: Item[] = props.board.content?.items ?? [];
@@ -191,7 +195,36 @@ const statusLabel = computed(() => {
 <template>
     <Head :title="title || 'Untitled board'" />
 
+    <div
+        v-if="!editable"
+        class="flex h-[calc(100svh-6rem)] min-h-0 flex-col gap-3 p-4 md:p-6"
+        data-test="board-read-only"
+    >
+        <div class="flex items-center gap-3">
+            <h1 class="truncate text-lg font-semibold">
+                {{ title || 'Untitled board' }}
+            </h1>
+            <span class="text-muted-foreground text-xs whitespace-nowrap"
+                >View only</span
+            >
+            <Button
+                variant="ghost"
+                size="sm"
+                class="ml-auto"
+                :title="`Copy this board's reference (${props.board.ref_id})`"
+                @click="copyRefId"
+            >
+                <Check v-if="refCopied" class="text-emerald-600" />
+                <Copy v-else />
+            </Button>
+        </div>
+        <div class="min-h-0 flex-1 overflow-hidden rounded-xl border">
+            <BoardView :items="props.board.content?.items ?? []" />
+        </div>
+    </div>
+
     <BoardCanvas
+        v-else
         :items="props.board.content?.items ?? []"
         :title="title || 'Untitled board'"
         :status="statusLabel"

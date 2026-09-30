@@ -225,7 +225,7 @@ class ProjectTest extends TestCase
                 ->where('settings.ref_id', $project->ref_id)
                 ->has('settings.members', 1)
                 ->where('settings.members.0.role', Project::EDITOR)
-                ->where('settings.can', ['update' => false, 'delete' => false])
+                ->where('settings.can', ['update' => false, 'manage_members' => false, 'delete' => false])
             );
 
         $this->actingAs(User::factory()->create())
@@ -233,18 +233,36 @@ class ProjectTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_an_account_cant_be_deleted_while_it_alone_runs_a_project()
+    public function test_deleting_an_account_takes_the_projects_nobody_else_is_in()
     {
         $user = User::factory()->create();
-        $project = Project::factory()->withMember($user)->create(['name' => 'Lakeshore']);
+        $solo = Project::factory()->withMember($user)->create(['name' => 'Sketches']);
+
+        $this->actingAs($user)
+            ->get(route('profile.edit'))
+            ->assertInertia(fn (Assert $page) => $page->where('soloProjects', ['Sketches']));
 
         $this->actingAs($user)
             ->delete(route('profile.destroy'), ['password' => 'password'])
-            ->assertSessionHasErrors(['projects' => 'You still run “Lakeshore”. Delete it first.']);
+            ->assertSessionHasNoErrors();
+
+        $this->assertModelMissing($user);
+        $this->assertModelMissing($solo);
+    }
+
+    public function test_an_account_cant_be_deleted_while_it_alone_runs_a_project_others_are_in()
+    {
+        $user = User::factory()->create();
+        $project = Project::factory()->withMember($user)->create(['name' => 'Lakeshore']);
+        $editor = $this->member($project, Project::EDITOR);
+
+        $this->actingAs($user)
+            ->delete(route('profile.destroy'), ['password' => 'password'])
+            ->assertSessionHasErrors(['projects' => 'You alone run “Lakeshore”, and others are in it. Make one of them an owner first.']);
         $this->assertModelExists($user);
 
-        // With someone else to run it, the project can do without them
-        $this->member($project, Project::OWNER);
+        // Handed over, the project can do without them
+        $project->memberships()->where('user_id', $editor->id)->update(['role' => Project::OWNER]);
 
         $this->actingAs($user)
             ->delete(route('profile.destroy'), ['password' => 'password'])

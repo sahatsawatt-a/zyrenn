@@ -5,7 +5,7 @@
             <editor-content :editor="editor" />
 
             <!-- + / drag handle / block menu in the left gutter -->
-            <BlockHandle v-if="editor" :editor="editor" />
+            <BlockHandle v-if="editor && editable" :editor="editor" />
         </div>
 
         <!-- Floating Slash Command Menu (teleported so page coordinates aren't offset by a positioned layout ancestor) -->
@@ -80,11 +80,14 @@ const props = withDefaults(
         autofocus?: boolean;
         // Use the full page width instead of the 720px reading column
         wide?: boolean;
+        // False to only read: a project's viewers
+        editable?: boolean;
     }>(),
     {
         content: null,
         autofocus: false,
         wide: false,
+        editable: true,
     },
 );
 
@@ -206,11 +209,13 @@ const editor = useEditor({
         // LaTeX math via KaTeX: $$x^2$$ inline, a line of $$$…$$$ for a block; click a formula to edit it
         // (registered separately so block equations render in KaTeX display mode)
         InlineMath.configure({
-            onClick: (_node, pos) => editMath({ type: 'inline', pos }),
+            onClick: (_node, pos) =>
+                props.editable && editMath({ type: 'inline', pos }),
         }),
         BlockMath.configure({
             katexOptions: { displayMode: true },
-            onClick: (_node, pos) => editMath({ type: 'block', pos }),
+            onClick: (_node, pos) =>
+                props.editable && editMath({ type: 'block', pos }),
         }),
 
         // Images from the Drive or a link (see ImageNode)
@@ -226,6 +231,7 @@ const editor = useEditor({
         }),
     ],
     content: props.content,
+    editable: props.editable,
     autofocus: props.autofocus ? 'end' : false,
     editorProps: {
         handlePaste: (view, event) => {

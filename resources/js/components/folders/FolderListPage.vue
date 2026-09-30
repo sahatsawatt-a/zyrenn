@@ -19,7 +19,7 @@ import type { FolderItem } from '@/composables/useFolderDialogs';
 import { useFolderPage } from '@/composables/useFolderPage';
 import type { FolderRef } from '@/composables/useFolderPage';
 import { useListFilters } from '@/composables/useListFilters';
-import { owned } from '@/lib/projects';
+import { canChange, owned } from '@/lib/projects';
 import type { OwnRoute, ProjectRoute } from '@/lib/projects';
 
 // A note, board or table as its list shows it; each kind adds what it counts
@@ -83,6 +83,9 @@ defineSlots<{
 }>();
 
 const isEmpty = computed(() => !props.folders.length && !props.items.length);
+
+// A project's viewers look, but make nothing
+const editable = computed(canChange);
 
 // Listing and making go to the project the page is in, or the user's own
 const index = owned(props.routes.index, props.projectRoutes.index);
@@ -182,11 +185,11 @@ const plural = computed(() => props.rootLabel.toLowerCase());
             :title="folder?.name ?? rootLabel"
             :description="description"
         >
-            <Button variant="outline" @click="newFolder">
+            <Button v-if="editable" variant="outline" @click="newFolder">
                 <FolderPlus />
                 New folder
             </Button>
-            <Form v-bind="store.form()" v-slot="{ processing }">
+            <Form v-if="editable" v-bind="store.form()" v-slot="{ processing }">
                 <input
                     v-if="folder"
                     type="hidden"
@@ -305,10 +308,15 @@ const plural = computed(() => props.rootLabel.toLowerCase());
             :icon="icon"
             :title="folder ? 'This folder is empty' : `No ${plural} yet`"
         >
-            <p class="text-muted-foreground text-sm">
+            <p v-if="editable" class="text-muted-foreground text-sm">
                 {{ folder ? `Make a ${kind} or a folder in it.` : emptyHint }}
             </p>
-            <Form v-bind="store.form()" v-slot="{ processing }" class="mt-2">
+            <Form
+                v-if="editable"
+                v-bind="store.form()"
+                v-slot="{ processing }"
+                class="mt-2"
+            >
                 <input
                     v-if="folder"
                     type="hidden"

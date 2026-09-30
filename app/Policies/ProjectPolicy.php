@@ -36,6 +36,15 @@ class ProjectPolicy
     }
 
     /**
+     * Determine whether the user can add members, change their roles and
+     * remove them. Anyone can leave on their own.
+     */
+    public function manageMembers(User $user, Project $project): bool
+    {
+        return $project->roleOf($user) === Project::OWNER;
+    }
+
+    /**
      * Determine whether the user can delete the project with everything in it.
      */
     public function delete(User $user, Project $project): bool

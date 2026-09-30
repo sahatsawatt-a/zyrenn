@@ -33,11 +33,11 @@ class ProfileDeleteRequest extends FormRequest
     {
         return [
             function (Validator $validator) {
-                $projects = $this->user()->soleOwnedProjects();
+                $projects = $this->user()->projectsNeedingAnOwner();
 
                 if ($projects->isNotEmpty()) {
                     $validator->errors()->add('projects', trans_choice(
-                        'You still run :names. Delete it first.|You still run :names. Delete them first.',
+                        'You alone run :names, and others are in it. Make one of them an owner first.|You alone run :names, and others are in them. Make one of their members an owner first.',
                         $projects->count(),
                         ['names' => $projects->pluck('name')->map(fn (string $name) => "“{$name}”")->join(', ', ' and ')],
                     ));

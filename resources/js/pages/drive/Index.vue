@@ -22,7 +22,7 @@ import type { FolderRef } from '@/composables/useFolderPage';
 import { useListFilters } from '@/composables/useListFilters';
 import { useMediaViewer } from '@/composables/useMediaViewer';
 import type { DriveFile } from '@/lib/drive';
-import { owned } from '@/lib/projects';
+import { canChange, currentProject, owned } from '@/lib/projects';
 import * as driveRoutes from '@/routes/drive';
 import * as fileRoutes from '@/routes/drive/files';
 import * as folderRoutes from '@/routes/drive/folders';
@@ -44,6 +44,17 @@ const props = defineProps<{
 }>();
 
 const isEmpty = computed(() => !props.folders.length && !props.files.length);
+
+// A project's viewers look and download, but add nothing
+const editable = computed(canChange);
+
+// Whose Drive it is, in what the page says
+const inProject = computed(() => currentProject() !== null);
+const description = computed(() =>
+    inProject.value
+        ? 'Files shared with everyone in the project. Images added to its notes are saved here.'
+        : 'Your private files. Images you add to notes are saved here.',
+);
 
 // Listing, uploading and new folders go to the project the page is in, or the user's own
 const index = owned(driveRoutes.index, projectDriveRoutes.index);
@@ -184,18 +195,22 @@ const openFile = (file: DriveFile) => {
 
     <div
         class="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-4 md:p-6"
-        v-bind="dropZoneProps"
+        v-bind="editable ? dropZoneProps : {}"
     >
         <PageHeader
             :icon="HardDrive"
             :title="folder?.name ?? 'Drive'"
-            description="Your private files. Images you add to notes are saved here."
+            :description="description"
         >
-            <Button variant="outline" @click="newFolder">
+            <Button v-if="editable" variant="outline" @click="newFolder">
                 <FolderPlus />
                 New folder
             </Button>
-            <Button :disabled="progress !== null" @click="fileDialog.open()">
+            <Button
+                v-if="editable"
+                :disabled="progress !== null"
+                @click="fileDialog.open()"
+            >
                 <Upload />
                 Upload
             </Button>
@@ -205,7 +220,7 @@ const openFile = (file: DriveFile) => {
             v-model:q="filters.q"
             v-model:sort="filters.sort"
             v-model:filter="filters.filter"
-            placeholder="Search file and folder names in your Drive"
+            :placeholder="`Search file and folder names in ${inProject ? 'this' : 'your'} Drive`"
             :sort-options="sortOptions"
             :filter-options="typeOptions"
             filter-all="All types"
@@ -295,9 +310,15 @@ const openFile = (file: DriveFile) => {
         <EmptyState
             v-else-if="isEmpty"
             :icon="HardDrive"
-            :title="folder ? 'This folder is empty' : 'Your Drive is empty'"
+            :title="
+                folder
+                    ? 'This folder is empty'
+                    : inProject
+                      ? 'Nothing in this Drive yet'
+                      : 'Your Drive is empty'
+            "
         >
-            <p class="text-muted-foreground text-sm">
+            <p v-if="editable" class="text-muted-foreground text-sm">
                 Drop files here, or use Upload.
             </p>
         </EmptyState>
