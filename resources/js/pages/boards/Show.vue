@@ -3,6 +3,7 @@ import { Head, router, setLayoutProps } from '@inertiajs/vue3';
 import { Check, Copy, Trash2 } from '@lucide/vue';
 import { useDebounceFn, useEventListener } from '@vueuse/core';
 import { computed, onBeforeUnmount, ref, watchEffect } from 'vue';
+import { toast } from 'vue-sonner';
 import BoardCanvas from '@/components/Board/BoardCanvas.vue';
 import BoardView from '@/components/Board/BoardView.vue';
 import type { Item } from '@/composables/board/items';
@@ -41,7 +42,13 @@ const props = defineProps<{
 const editable = canChange();
 
 // Who else has the board open
-const { others } = usePresence(() => `boards.${props.board.ref_id}`);
+const { others } = usePresence(() => `boards.${props.board.ref_id}`, {
+    // Deleted by someone else: close it rather than edit into nothing
+    deleted: () => {
+        toast.info('Someone deleted this board.');
+        router.visit(index());
+    },
+});
 
 const title = ref(props.board.title);
 let items: Item[] = props.board.content?.items ?? [];

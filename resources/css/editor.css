@@ -105,3 +105,37 @@
     color: #7a7a78;
     text-align: center;
 }
+
+/* ---------------------------------------------------------------------------
+   Someone else typing in a shared note: a thin caret in their colour, with
+   their name over it (CollaborationCaret sets the colours inline).
+   --------------------------------------------------------------------------- */
+.collaboration-carets__caret {
+    position: relative;
+    margin-right: -1px;
+    margin-left: -1px;
+    border-right: 1px solid;
+    border-left: 1px solid;
+    word-break: normal;
+    pointer-events: none;
+}
+
+.collaboration-carets__label {
+    position: absolute;
+    top: -1.4em;
+    left: -1px;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px 3px 3px 0;
+    color: #fff;
+    font-size: 0.7rem;
+    font-style: normal;
+    font-weight: 600;
+    line-height: normal;
+    white-space: nowrap;
+    user-select: none;
+}
+
+/* What they have selected, in their colour, faintly */
+.collaboration-carets__selection {
+    opacity: 0.25;
+}

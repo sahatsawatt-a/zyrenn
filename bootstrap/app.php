@@ -29,8 +29,14 @@ return Application::configure(basePath: dirname(__DIR__))
         // and a board's shapes carry empty strings that mean "nothing written here"
         // -- turned into nulls, the canvas has no label to draw. Both run before
         // routing, so they match on method + path rather than route name.
-        $autosave = fn (Request $request) => $request->isMethod('PATCH')
-            && ($request->is('notes/*') || $request->is('boards/*'));
+        // The collaboration server stores the same documents, whole.
+        $autosave = fn (Request $request) => ($request->isMethod('PATCH')
+            && ($request->is('notes/*') || $request->is('boards/*')))
+            || $request->is('internal/collab/*');
+
+        // The collaboration server stores shared documents with its own secret
+        // (VerifyCollabSecret); it has no session to carry a CSRF token in.
+        $middleware->preventRequestForgery(except: ['internal/collab/*']);
 
         $middleware->trimStrings(except: [$autosave]);
         $middleware->convertEmptyStringsToNull(except: [$autosave]);

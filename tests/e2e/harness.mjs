@@ -236,7 +236,21 @@ export async function openBoard(path = '/demo/konva', size = {}) {
         (await page.locator(`[data-test="side-${end}"]`).inputValue()) ||
         'auto';
 
+    // Tidying a suite asks for, done even when it falls over part way
+    const cleanups = [];
+    const afterwards = (cleanup) => cleanups.push(cleanup);
+
     const done = async () => {
+        for (const cleanup of cleanups.reverse()) {
+            try {
+                await cleanup();
+            } catch (error) {
+                problems.push(
+                    `cleanup: ${error.message.split('\n')[0].slice(0, 160)}`,
+                );
+            }
+        }
+
         await browser.close();
         console.log(results.join('\n'));
         console.log(
@@ -270,6 +284,7 @@ export async function openBoard(path = '/demo/konva', size = {}) {
         join,
         label,
         pinnedSide,
+        afterwards,
         done,
     };
 }
@@ -295,4 +310,58 @@ export async function runBoard(path, suite, size) {
     process.exitCode = failures ? 1 : 0;
 
     return failures;
+}
+
+/**
+ * A second person, signed in in a browser context of their own -- someone to
+ * share a project with. Close the context when done.
+ */
+export async function signIn(browser, base, email, password = 'password') {
+    const context = await browser.newContext({
+        viewport: { width: 1500, height: 950 },
+    });
+    const page = await context.newPage();
+
+    await page.goto(`${base}/login`, { waitUntil: 'networkidle' });
+    await page.getByLabel('Email address').fill(email);
+    await page.getByLabel('Password', { exact: true }).fill(password);
+    await page.getByRole('button', { name: /log in/i }).click();
+    await page.waitForURL(/dashboard/);
+
+    return { context, page };
+}
+
+/**
+ * A new project made from the switcher, with `email` added in `role`. Answers
+ * with its ref_id and the app's origin; deleteProject() takes it away again.
+ */
+export async function shareProject(page, name, email, role = 'editor') {
+    await page.locator('[data-test="project-switcher"]').click();
+    await page.locator('[data-test="new-project"]').click();
+    await page.getByPlaceholder('Name').fill(name);
+    await page.getByRole('button', { name: 'Create' }).click();
+    await page.waitForURL(/\/p\/\w+\/notes$/);
+
+    const project = page.url().match(/\/p\/(\w+)\//)[1];
+    const base = new URL(page.url()).origin;
+
+    await page.goto(`${base}/p/${project}/settings`);
+    const addForm = page.locator('[data-test="add-member"]');
+    await addForm.getByPlaceholder('Their email address').fill(email);
+    await addForm.locator('select').selectOption(role);
+    await addForm.getByRole('button', { name: 'Add' }).click();
+    await page.getByText(email).waitFor();
+
+    return { project, base };
+}
+
+/** Deletes a project from its settings, as its owner. */
+export async function deleteProject(page, base, project) {
+    await page.goto(`${base}/p/${project}/settings`);
+    await page.locator('[data-test="delete-project"]').click();
+    await page
+        .getByRole('dialog')
+        .getByRole('button', { name: 'Delete' })
+        .click();
+    await page.waitForURL((url) => new URL(url).pathname === '/notes');
 }

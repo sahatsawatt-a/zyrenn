@@ -44,6 +44,10 @@ import { useEventListener } from '@vueuse/core';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
 import type { Content, JSONContent } from '@tiptap/vue-3';
 import StarterKit from '@tiptap/starter-kit';
+import Collaboration from '@tiptap/extension-collaboration';
+import CollaborationCaret from '@tiptap/extension-collaboration-caret';
+import type { HocuspocusProvider } from '@hocuspocus/provider';
+import type * as Y from 'yjs';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { TableKit } from '@tiptap/extension-table';
@@ -82,12 +86,19 @@ const props = withDefaults(
         wide?: boolean;
         // False to only read: a project's viewers
         editable?: boolean;
+        // Edited live with others (useShared): the document comes from here, not `content`
+        shared?: {
+            document: Y.Doc;
+            provider: HocuspocusProvider;
+            me: { name: string; color: string };
+        } | null;
     }>(),
     {
         content: null,
         autofocus: false,
         wide: false,
         editable: true,
+        shared: null,
     },
 );
 
@@ -183,7 +194,20 @@ const editor = useEditor({
             blockquote: {},
             // 💡 Turn off standard code blocks to prevent layout collision with our interactive NodeView
             codeBlock: false,
+            // Shared, undo is the collaboration's own: it takes back only your edits
+            ...(props.shared ? { undoRedo: false as const } : {}),
         }),
+
+        // Shared: one document for everyone, and where each of the others is typing
+        ...(props.shared
+            ? [
+                  Collaboration.configure({ document: props.shared.document }),
+                  CollaborationCaret.configure({
+                      provider: props.shared.provider,
+                      user: props.shared.me,
+                  }),
+              ]
+            : []),
 
         // Custom isolated structural Callout and CodeBlock view modules
         CalloutNode,
@@ -230,7 +254,7 @@ const editor = useEditor({
             return filteredItems.value;
         }),
     ],
-    content: props.content,
+    content: props.shared ? undefined : props.content,
     editable: props.editable,
     autofocus: props.autofocus ? 'end' : false,
     editorProps: {

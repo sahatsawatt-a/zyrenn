@@ -68,6 +68,29 @@ services:
                 condition: service_healthy
         command: php artisan reverb:start --host=0.0.0.0 --port=8080
 
+    # Live co-editing of notes and boards (collab/server.mjs): a Yjs server
+    # that passes every edit between the people who have one open, and loads
+    # and stores each document through the app. Shares the app image for its
+    # node and the bind-mounted node_modules.
+    #
+    # Unpublished like reverb: the browser reaches it through `web` at /collab.
+    collab:
+        image: zyrenn-app:local
+        restart: unless-stopped
+        working_dir: /var/www/html
+        init: true
+        volumes:
+            - .:/var/www/html
+        expose:
+            - '1234'
+        environment:
+            COLLAB_APP_URL: 'http://app:8000'
+            COLLAB_SECRET: '${COLLAB_SECRET:-}'
+        depends_on:
+            app:
+                condition: service_healthy
+        command: node collab/server.mjs
+
     # Dev-only. While this runs it writes public/hot and Laravel serves assets
     # from the Vite dev server, which is unreachable from outside this machine.
     # Left out unless COMPOSE_PROFILES=dev, so the default `up` serves the built

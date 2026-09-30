@@ -3,7 +3,13 @@
 //
 // Needs the second account E2E_MEMBER (e2e-member@example.com by default,
 // password "password"), as members.mjs does.
-import { SHOTS, runBoard } from './harness.mjs';
+import {
+    SHOTS,
+    deleteProject,
+    runBoard,
+    shareProject,
+    signIn,
+} from './harness.mjs';
 
 const MEMBER = process.env.E2E_MEMBER ?? 'e2e-member@example.com';
 const RUN = Date.now().toString().slice(-6);
@@ -11,24 +17,10 @@ const NAME = `Live ${RUN}`;
 
 await runBoard(
     '/notes',
-    async ({ browser, page, check }) => {
-        const switcher = page.locator('[data-test="project-switcher"]');
-
+    async ({ browser, page, check, afterwards }) => {
         // -------------------------- A project with both of them in it, and a table
-        await switcher.click();
-        await page.locator('[data-test="new-project"]').click();
-        await page.getByPlaceholder('Name').fill(NAME);
-        await page.getByRole('button', { name: 'Create' }).click();
-        await page.waitForURL(/\/p\/\w+\/notes$/);
-        const project = page.url().match(/\/p\/(\w+)\//)[1];
-        const base = new URL(page.url()).origin;
-
-        await page.goto(`${base}/p/${project}/settings`);
-        const addForm = page.locator('[data-test="add-member"]');
-        await addForm.getByPlaceholder('Their email address').fill(MEMBER);
-        await addForm.locator('select').selectOption('editor');
-        await addForm.getByRole('button', { name: 'Add' }).click();
-        await page.waitForTimeout(800);
+        const { project, base } = await shareProject(page, NAME, MEMBER);
+        afterwards(() => deleteProject(page, base, project));
 
         await page.goto(`${base}/p/${project}/tables`);
         await page
@@ -40,15 +32,7 @@ await runBoard(
         await page.waitForSelector('[data-test="table-workspace"]');
 
         // ------------------------------------------------ The member opens it too
-        const context = await browser.newContext({
-            viewport: { width: 1500, height: 950 },
-        });
-        const other = await context.newPage();
-        await other.goto(`${base}/login`, { waitUntil: 'networkidle' });
-        await other.getByLabel('Email address').fill(MEMBER);
-        await other.getByLabel('Password', { exact: true }).fill('password');
-        await other.getByRole('button', { name: /log in/i }).click();
-        await other.waitForURL(/dashboard/);
+        const { context, page: other } = await signIn(browser, base, MEMBER);
         await other.goto(tableUrl, { waitUntil: 'networkidle' });
         await other.waitForSelector('[data-test="table-workspace"]');
         await page.waitForTimeout(1500);
@@ -144,14 +128,6 @@ await runBoard(
             other.url(),
         );
 
-        // Tidy up: the project and everything in it
-        await page.goto(`${base}/p/${project}/settings`);
-        await page.locator('[data-test="delete-project"]').click();
-        await page
-            .getByRole('dialog')
-            .getByRole('button', { name: 'Delete' })
-            .click();
-        await page.waitForURL((url) => new URL(url).pathname === '/notes');
         await context.close();
     },
     { canvas: false },

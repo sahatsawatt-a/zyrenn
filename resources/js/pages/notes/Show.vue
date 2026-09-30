@@ -17,6 +17,7 @@ import {
     useTemplateRef,
     watchEffect,
 } from 'vue';
+import { toast } from 'vue-sonner';
 import TiptapEditor from '@/components/Editor/TiptapEditor.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,6 +33,7 @@ import {
 import { copyToClipboard, formatRelativeTime, xsrfToken } from '@/lib/utils';
 import PresenceAvatars from '@/components/PresenceAvatars.vue';
 import { usePresence } from '@/composables/usePresence';
+import { sharingIsOn, useShared } from '@/composables/useShared';
 import { canChange, owned } from '@/lib/projects';
 import { destroy, index as ownIndex, show, update } from '@/routes/notes';
 import { index as projectIndex } from '@/routes/projects/notes';
@@ -54,7 +56,13 @@ const props = defineProps<{
 const editable = canChange();
 
 // Who else has the note open
-const { others } = usePresence(() => `notes.${props.note.ref_id}`);
+const { others } = usePresence(() => `notes.${props.note.ref_id}`, {
+    // Deleted by someone else: close it rather than edit into nothing
+    deleted: () => {
+        toast.info('Someone deleted this note.');
+        router.visit(index());
+    },
+});
 
 const editorRef = useTemplateRef('editorRef');
 const titleInput = useTemplateRef('titleInput');
@@ -62,6 +70,27 @@ const titleInput = useTemplateRef('titleInput');
 const title = ref(props.note.title);
 let content: JSONContent | null = props.note.content;
 const isWide = ref(props.note.is_wide);
+
+// Edited live with everyone who has it open, when the collaboration server is
+// on: the body is the shared document, the title and width a map beside it.
+// Otherwise the page saves as it goes, below.
+const shared = sharingIsOn() ? useShared(`notes.${props.note.ref_id}`) : null;
+// The title is written into the shared map only once the saved one has
+// arrived: set before that, the two would race and either could win
+const meta = shared?.document.getMap('meta');
+
+meta?.observe(() => {
+    const nextTitle = meta.get('title');
+    const nextWide = meta.get('is_wide');
+
+    if (typeof nextTitle === 'string' && nextTitle !== title.value) {
+        title.value = nextTitle;
+    }
+
+    if (typeof nextWide === 'boolean') {
+        isWide.value = nextWide;
+    }
+});
 
 type Field = 'title' | 'content' | 'is_wide';
 
@@ -163,8 +192,25 @@ function markDirty(field: Field): void {
     void debouncedSave();
 }
 
+function onTitleInput(): void {
+    if (meta) {
+        meta.set('title', title.value);
+
+        return;
+    }
+
+    markDirty('title');
+}
+
 function toggleWide(): void {
     isWide.value = !isWide.value;
+
+    if (meta) {
+        meta.set('is_wide', isWide.value);
+
+        return;
+    }
+
     dirty.add('is_wide');
     status.value = 'unsaved';
     // A layout switch is a single deliberate click, so save it right away
@@ -172,6 +218,11 @@ function toggleWide(): void {
 }
 
 function onContentUpdate(json: JSONContent): void {
+    // Shared, the collaboration server keeps the document
+    if (shared) {
+        return;
+    }
+
     content = json;
     markDirty('content');
 }
@@ -222,6 +273,10 @@ onBeforeUnmount(() => {
 const statusLabel = computed(() => {
     if (!editable) {
         return 'View only';
+    }
+
+    if (shared) {
+        return shared.label.value;
     }
 
     switch (status.value) {
@@ -339,9 +394,11 @@ const statusLabel = computed(() => {
                 maxlength="255"
                 placeholder="Untitled"
                 aria-label="Note title"
-                :readonly="!editable"
+                :readonly="
+                    !editable || (shared !== null && !shared.synced.value)
+                "
                 class="placeholder:text-muted-foreground/60 w-full bg-transparent text-4xl font-bold tracking-tight outline-none"
-                @input="markDirty('title')"
+                @input="onTitleInput"
                 @keydown.enter.prevent="focusEditor"
             />
         </div>
@@ -352,6 +409,7 @@ const statusLabel = computed(() => {
             :content="note.content"
             :wide="isWide"
             :editable="editable"
+            :shared="shared"
             class="min-h-0! pt-2!"
             @update="onContentUpdate"
         />

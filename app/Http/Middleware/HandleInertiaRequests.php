@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Project;
+use App\Support\Live\Collab;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -47,6 +48,8 @@ class HandleInertiaRequests extends Middleware
             'project' => fn () => $this->currentProject($request),
             'projects' => fn () => $request->user()?->projects()->orderBy('name')->get()
                 ->map(fn (Project $project) => $project->only(['ref_id', 'name'])),
+            // Whether notes and boards are edited live, through the collaboration server
+            'collab' => Collab::enabled(),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }

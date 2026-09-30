@@ -40,4 +40,11 @@ return [
         'global_token' => env('MCP_GLOBAL_TOKEN'),
     ],
 
+    'collab' => [
+        // The collaboration server (collab/server.mjs), as the app reaches it; empty turns live editing off
+        'url' => env('COLLAB_URL'),
+        // Shared by the app and that server, for the calls between them
+        'secret' => env('COLLAB_SECRET'),
+    ],
+
 ];
