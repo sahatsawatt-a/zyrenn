@@ -36,6 +36,7 @@ class UpdateBoard extends BoardTool
     public function handle(Request $request): Response|ResponseFactory
     {
         $user = $this->targetUser($request);
+        $owner = $this->targetOwner($request, changes: true);
 
         $validated = $request->validate([
             'ref_id' => ['required', 'string', 'max:16'],
@@ -44,7 +45,7 @@ class UpdateBoard extends BoardTool
             ...$this->itemRules(sometimes: true),
         ]);
 
-        $board = $this->find($user, $validated['ref_id']);
+        $board = $this->find($owner, $validated['ref_id']);
 
         if (! $board) {
             return $this->notFound($validated['ref_id']);
@@ -67,7 +68,7 @@ class UpdateBoard extends BoardTool
         }
 
         if (array_key_exists('folder', $validated)) {
-            $board->folder_id = $this->ensureFolderAt($user, $validated['folder'] ?? '')?->id;
+            $board->folder_id = $this->ensureFolderAt($owner, $validated['folder'] ?? '', $user)?->id;
         }
 
         $board->save();

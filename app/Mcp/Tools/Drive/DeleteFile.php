@@ -22,10 +22,10 @@ class DeleteFile extends DriveTool
 
     public function handle(Request $request): Response
     {
-        $user = $this->targetUser($request);
+        $owner = $this->targetOwner($request, changes: true);
         $validated = $request->validate(['ref_id' => ['required', 'string', 'max:16']]);
 
-        $file = $this->findFile($user, $validated['ref_id']);
+        $file = $this->findFile($owner, $validated['ref_id']);
 
         if (! $file) {
             return Response::error("File {$validated['ref_id']} was not found.");

@@ -19,6 +19,7 @@ use App\Mcp\Tools\Notes\GetNote;
 use App\Mcp\Tools\Notes\ListFolders;
 use App\Mcp\Tools\Notes\ListNotes;
 use App\Mcp\Tools\Notes\UpdateNote;
+use App\Mcp\Tools\Projects\ListProjects;
 use App\Mcp\Tools\Tables\CreateTable;
 use App\Mcp\Tools\Tables\DeleteTable;
 use App\Mcp\Tools\Tables\GetTable;
@@ -33,8 +34,13 @@ use Laravel\Mcp\Server\Attributes\Version;
 #[Name('Zyrenn (personal)')]
 #[Version('1.0.0')]
 #[Instructions(<<<'TEXT'
-Zyrenn is a personal app holding notes, whiteboard boards, tables, and a private file Drive. Every tool here
-acts only on the content of the user who owns the access token.
+Zyrenn holds notes, whiteboard boards, tables and a file Drive. Every tool here acts as the user who owns
+the access token, on their own content -- or, given a "project" argument, on a project they are in.
+
+Projects: shared spaces with notes, boards, tables and a Drive of their own, which belong to the project
+rather than to whoever made them. list-projects shows the user's, with their role in each. Pass a
+project's ref_id or name as "project" to any other tool to work in it; leave it out for the user's own.
+A viewer can only read a project; its owners and editors can change what is in it.
 
 Notes: bodies are read and written as Markdown (get-note, create-note, update-note). Notes live in
 folders addressed by path, e.g. "KT Plan/Lakeshore".
@@ -54,11 +60,12 @@ get-table, create-table, update-table, delete-table). A row is written as an obj
 by column label, e.g. {"Owner": "Ada", "Budget": 300}; update-table changes or deletes rows by the
 "id" get-table shows. Tables have their own folder tree, listed by list-table-folders.
 
-Drive: the user's private files (list-drive, get-file, upload-file, update-file, delete-file). Files
-are served only to their owner, from a URL like /drive/files/k3x9m2p7qa.
+Drive: files (list-drive, get-file, upload-file, update-file, delete-file) -- the user's private ones,
+or a project's, which its members can all open. Files are served from a URL like /drive/files/k3x9m2p7qa.
 
 To put a picture in a note or on a board, the picture must be in the Drive first -- neither can carry
-image bytes of its own:
+image bytes of its own. For a project's note or board, upload it to that project's Drive (the same
+"project"), or its other members won't be able to see it:
 
   1. upload-file with the image bytes base64 encoded in "content_base64" and a name like "chart.png".
   2. For a note: take the "markdown" line from the response, e.g. ![chart.png](/drive/files/k3x9m2p7qa),
@@ -73,6 +80,7 @@ class UserServer extends Server
     protected function boot(): void
     {
         $this->tools = [
+            new ListProjects,
             new ListNotes,
             new ListFolders,
             new GetNote,

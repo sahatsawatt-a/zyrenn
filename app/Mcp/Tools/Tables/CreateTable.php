@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools\Tables;
 
 use App\Mcp\Tools\TableTool;
+use App\Models\Table\Table;
 use App\Support\Table\TableStorage;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\DB;
@@ -35,6 +36,7 @@ class CreateTable extends TableTool
     public function handle(Request $request): Response|ResponseFactory
     {
         $user = $this->targetUser($request);
+        $owner = $this->targetOwner($request, changes: true);
 
         $validated = $request->validate([
             'title' => ['required', 'string', 'max:255'],
@@ -45,9 +47,9 @@ class CreateTable extends TableTool
         ]);
 
         try {
-            $table = DB::transaction(function () use ($user, $validated) {
-                $table = $user->tables()->make(['title' => $validated['title']]);
-                $table->folder_id = $this->ensureFolderAt($user, $validated['folder'] ?? '')?->id;
+            $table = DB::transaction(function () use ($owner, $user, $validated) {
+                $table = (new Table(['title' => $validated['title']]))->ownedBy($owner, $user);
+                $table->folder_id = $this->ensureFolderAt($owner, $validated['folder'] ?? '', $user)?->id;
                 $table->save();
 
                 TableStorage::create($table);

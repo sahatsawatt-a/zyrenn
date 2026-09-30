@@ -3,37 +3,28 @@
 namespace App\Mcp\Tools;
 
 use App\Models\Owner;
+use App\Models\Project;
 use App\Models\User;
-use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\JsonSchema\Types\Type;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Laravel\Mcp\Request;
-use Laravel\Mcp\Server\Tool;
 
 /**
- * Base for every tool that acts on one user's content.
+ * Base for every tool that acts on content: the user's own, or with a
+ * `project` argument, a project's the user is in.
  *
- * - User mode: the target is always the authenticated token's owner.
- * - Global mode: the caller picks the target with a required `user_id` argument.
- *
- * Rows are always reached through the target user's own relations, so a tool
- * can never touch another user's note or file.
+ * Rows are always reached through the owner's own relations, so a tool can
+ * never touch a note or file of anyone else's. In a project, a viewer can
+ * only read; changing anything takes an owner or an editor.
  *
  * @template TFolder of Model  the folder model this tool's content lives in
  */
-abstract class ScopedTool extends Tool
+abstract class ScopedTool extends UserTool
 {
-    public function __construct(protected bool $global = false) {}
-
-    /**
-     * Arguments specific to this tool.
-     *
-     * @return array<string, Type>
-     */
-    abstract protected function arguments(JsonSchema $schema): array;
-
     /**
      * The owner's folders of the kind this tool works with.
      *
@@ -46,36 +37,61 @@ abstract class ScopedTool extends Tool
      */
     public function schema(JsonSchema $schema): array
     {
-        $user = $this->global
-            ? ['user_id' => $schema->integer()->description('ID of the user whose content to act on (see list-users).')->required()]
-            : [];
-
-        return [...$user, ...$this->arguments($schema)];
+        return [
+            ...parent::schema($schema),
+            'project' => $schema->string()->max(255)->description('A project the user is in, by ref_id or name (see list-projects), to work on its shared content. Leave out for the user\'s own.'),
+        ];
     }
 
     /**
-     * Resolves the user this call acts on.
+     * Whose content this call is about: the project it names, or the user's
+     * own. $changes when the call makes, changes or deletes something.
      */
-    protected function targetUser(Request $request): User
+    protected function targetOwner(Request $request, bool $changes = false): Owner
     {
-        if (! $this->global) {
-            $user = $request->user();
+        $user = $this->targetUser($request);
+        $named = trim((string) $request->get('project', ''));
 
-            // e.g. the token behind a running stdio session was revoked
-            if (! $user instanceof User) {
-                throw new AuthenticationException('This MCP token is no longer valid.');
-            }
-
+        if ($named === '') {
             return $user;
         }
 
-        $validated = $request->validate([
-            'user_id' => ['required', 'integer', 'exists:users,id'],
-        ], [
-            'user_id.exists' => 'No user exists with that user_id.',
-        ]);
+        $project = $this->projectNamed($user, $named);
+        $role = $project->getRelationValue('pivot')?->getAttribute('role');
 
-        return User::query()->whereKey($validated['user_id'])->firstOrFail();
+        if ($changes && ! in_array($role, [Project::OWNER, Project::EDITOR], true)) {
+            throw ValidationException::withMessages([
+                'project' => "The user is a {$role} in \"{$project->name}\": only its owners and editors can change what is in it.",
+            ]);
+        }
+
+        return $project;
+    }
+
+    /**
+     * One of the user's projects, by ref_id or, failing that, by name.
+     */
+    private function projectNamed(User $user, string $named): Project
+    {
+        $project = $user->projects()->where('projects.ref_id', $named)->first();
+
+        if ($project) {
+            return $project;
+        }
+
+        $matches = $user->projects()
+            ->where(DB::raw('lower(projects.name)'), mb_strtolower($named))
+            ->get();
+
+        return match ($matches->count()) {
+            1 => $matches->first(),
+            0 => throw ValidationException::withMessages([
+                'project' => "The user is in no project \"{$named}\". See list-projects.",
+            ]),
+            default => throw ValidationException::withMessages([
+                'project' => "The user is in several projects called \"{$named}\"; pass one's ref_id instead (see list-projects).",
+            ]),
+        };
     }
 
     /**
@@ -112,16 +128,29 @@ abstract class ScopedTool extends Tool
      *
      * @return TFolder|null
      */
-    protected function ensureFolderAt(Owner $owner, string $path): ?Model
+    protected function ensureFolderAt(Owner $owner, string $path, User $by): ?Model
     {
         $folder = null;
 
         foreach ($this->pathNames($path) as $name) {
-            $folder = $this->childFolder($owner, $folder, $name) ?? $this->folders($owner)->create([
-                'name' => mb_substr($name, 0, 255),
-                'parent_id' => $folder?->getKey(),
-            ]);
+            $folder = $this->childFolder($owner, $folder, $name) ?? $this->newFolder($owner, $folder, $name, $by);
         }
+
+        return $folder;
+    }
+
+    /**
+     * @param  TFolder|null  $parent
+     * @return TFolder
+     */
+    private function newFolder(Owner $owner, ?Model $parent, string $name, User $by): Model
+    {
+        $folder = $this->folders($owner)->make([
+            'name' => mb_substr($name, 0, 255),
+            'parent_id' => $parent?->getKey(),
+        ]);
+        $folder->setAttribute('created_by', $by->id);
+        $folder->save();
 
         return $folder;
     }

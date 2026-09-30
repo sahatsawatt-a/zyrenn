@@ -142,6 +142,8 @@ abstract class FiledTool extends ScopedTool
         return [
             'ref_id' => $thing->getAttribute('ref_id'),
             'user_id' => $thing->getAttribute('user_id'),
+            // The ref_id of the project it is shared in; null when it is the user's own
+            'project' => $thing->getAttribute('project_id') !== null ? $thing->getRelationValue('project')?->ref_id : null,
             'title' => $thing->getAttribute('title'),
             'folder' => $this->folderPath($thing, $paths),
             ...$this->details($thing),

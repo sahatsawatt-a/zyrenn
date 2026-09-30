@@ -71,6 +71,8 @@ abstract class DriveTool extends ScopedTool
         return [
             'ref_id' => $file->ref_id,
             'user_id' => $file->user_id,
+            // The ref_id of the project it is shared in; null when it is the user's own
+            'project' => $file->project_id !== null ? $file->project?->ref_id : null,
             'name' => $file->name,
             'folder' => $this->folderPath($file, $paths),
             'mime' => $file->mime,

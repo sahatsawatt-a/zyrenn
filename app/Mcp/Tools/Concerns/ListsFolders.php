@@ -20,11 +20,11 @@ trait ListsFolders
 
     public function handle(Request $request): ResponseFactory
     {
-        $user = $this->targetUser($request);
+        $owner = $this->targetOwner($request);
         $count = "{$this->plural()}_count";
 
-        $folders = $this->folders($user)->withCount($this->plural())->get();
-        $paths = $this->folders($user)->getRelated()::pathsById($folders, '/');
+        $folders = $this->folders($owner)->withCount($this->plural())->get();
+        $paths = $this->folders($owner)->getRelated()::pathsById($folders, '/');
 
         $list = $folders
             ->map(fn ($folder) => [
@@ -37,7 +37,7 @@ trait ListsFolders
 
         return Response::structured([
             'folders' => $list,
-            "top_level_{$count}" => $this->things($user)->whereNull('folder_id')->count(),
+            "top_level_{$count}" => $this->things($owner)->whereNull('folder_id')->count(),
         ]);
     }
 }

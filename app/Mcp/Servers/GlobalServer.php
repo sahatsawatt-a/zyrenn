@@ -19,6 +19,7 @@ use App\Mcp\Tools\Notes\GetNote;
 use App\Mcp\Tools\Notes\ListFolders;
 use App\Mcp\Tools\Notes\ListNotes;
 use App\Mcp\Tools\Notes\UpdateNote;
+use App\Mcp\Tools\Projects\ListProjects;
 use App\Mcp\Tools\Tables\CreateTable;
 use App\Mcp\Tools\Tables\DeleteTable;
 use App\Mcp\Tools\Tables\GetTable;
@@ -34,9 +35,13 @@ use Laravel\Mcp\Server\Attributes\Version;
 #[Name('Zyrenn (admin)')]
 #[Version('1.0.0')]
 #[Instructions(<<<'TEXT'
-Zyrenn is a personal app holding notes, whiteboard boards, tables, and a private file Drive. This server
-reaches every user's content: call list-users first, then pass that user's id as "user_id" to every
-other tool.
+Zyrenn holds notes, whiteboard boards, tables and a file Drive. This server can act as any user: call
+list-users first, then pass that user's id as "user_id" to every other tool.
+
+Projects: shared spaces with notes, boards, tables and a Drive of their own, which belong to the project
+rather than to whoever made them. list-projects shows the ones a user is in, with their role in each.
+Pass a project's ref_id or name as "project" to any other tool to work in it as that user; leave it out
+for the user's own content. A viewer can only read a project; its owners and editors can change it.
 
 Notes: bodies are read and written as Markdown (get-note, create-note, update-note). Notes live in
 folders addressed by path, e.g. "KT Plan/Lakeshore".
@@ -56,15 +61,16 @@ get-table, create-table, update-table, delete-table). A row is written as an obj
 by column label, e.g. {"Owner": "Ada", "Budget": 300}; update-table changes or deletes rows by the
 "id" get-table shows. Tables have their own folder tree, listed by list-table-folders.
 
-Drive: each user's private files (list-drive, get-file, upload-file, update-file, delete-file). Files
-are served only to their owner, from a URL like /drive/files/k3x9m2p7qa.
+Drive: files (list-drive, get-file, upload-file, update-file, delete-file) -- each user's private ones,
+or a project's, which its members can all open. Files are served from a URL like /drive/files/k3x9m2p7qa.
 
-To put a picture in a note or on a board, the picture must be in that same user's Drive first --
-neither can carry image bytes of its own:
+To put a picture in a note or on a board, the picture must be in the same Drive first -- the same
+user_id, and for a project's note or board the same "project" -- as neither can carry image bytes of
+its own:
 
   1. upload-file with the image bytes base64 encoded in "content_base64" and a name like "chart.png".
   2. For a note: take the "markdown" line from the response, e.g. ![chart.png](/drive/files/k3x9m2p7qa),
-     and put it in the "markdown" you pass to create-note or update-note, for the same user_id.
+     and put it in the "markdown" you pass to create-note or update-note, for the same user_id and project.
   3. For a board: take the "url" from the response and pass it as an item's "src" with kind "image".
 
 An image already on the public web can be used instead -- ![alt](https://...) in a note, or that URL
@@ -76,6 +82,7 @@ class GlobalServer extends Server
     {
         $this->tools = [
             new ListUsers,
+            new ListProjects(global: true),
             new ListNotes(global: true),
             new ListFolders(global: true),
             new GetNote(global: true),

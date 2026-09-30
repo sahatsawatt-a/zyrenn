@@ -29,6 +29,7 @@ class UpdateNote extends NoteTool
     public function handle(Request $request): Response|ResponseFactory
     {
         $user = $this->targetUser($request);
+        $owner = $this->targetOwner($request, changes: true);
 
         $validated = $request->validate([
             'ref_id' => ['required', 'string', 'max:16'],
@@ -38,7 +39,7 @@ class UpdateNote extends NoteTool
             'folder' => ['sometimes', 'nullable', 'string', 'max:1000'],
         ]);
 
-        $note = $this->find($user, $validated['ref_id']);
+        $note = $this->find($owner, $validated['ref_id']);
 
         if (! $note) {
             return $this->notFound($validated['ref_id']);
@@ -57,7 +58,7 @@ class UpdateNote extends NoteTool
         }
 
         if (array_key_exists('folder', $validated)) {
-            $note->folder_id = $this->ensureFolderAt($user, $validated['folder'] ?? '')?->id;
+            $note->folder_id = $this->ensureFolderAt($owner, $validated['folder'] ?? '', $user)?->id;
         }
 
         $note->save();
