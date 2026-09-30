@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 import TableWorkspace from '@/components/Table/TableWorkspace.vue';
+import { people } from '@/composables/table/useTableState';
 import { useTableStore } from '@/composables/table/useTableStore';
 import { mockColumns, mockRows } from '@/mocks/tableDataMock';
 
@@ -11,6 +12,16 @@ useTableStore().setInertiaStateData(
     structuredClone(mockRows),
     '',
 );
+
+// Sample people to assign rows to
+people.value = [
+    'Sahat S.',
+    'Alex Mercer',
+    'Sarah Connor',
+    'Miles Morales',
+    'Elena Rostova',
+    'David Chen',
+];
 </script>
 
 <template>

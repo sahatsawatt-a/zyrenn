@@ -2,9 +2,11 @@
 
 namespace App\Mcp\Tools\Tables;
 
+use App\Events\TableChanged;
 use App\Mcp\Tools\TableTool;
 use App\Models\Table\Table;
 use App\Models\User;
+use App\Support\Live\Live;
 use App\Support\Table\TableStorage;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\DB;
@@ -59,6 +61,9 @@ class UpdateTable extends TableTool
 
         try {
             DB::transaction(fn () => $this->apply($table, $user, $validated));
+
+            // Rows and columns may both have changed; whoever has it open loads it again
+            Live::tell(new TableChanged($table, 'reload'));
         } catch (TableProblem $problem) {
             return Response::error($problem->getMessage());
         }

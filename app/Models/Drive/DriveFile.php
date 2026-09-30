@@ -4,6 +4,7 @@ namespace App\Models\Drive;
 
 use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
+use App\Models\Concerns\RecordsEditor;
 use App\Models\Owner;
 use App\Models\User;
 use Database\Factories\Drive\DriveFileFactory;
@@ -37,7 +38,7 @@ use Illuminate\Support\Str;
 class DriveFile extends Model
 {
     /** @use HasFactory<DriveFileFactory> */
-    use BelongsToOwner, HasFactory, HasRefId;
+    use BelongsToOwner, HasFactory, HasRefId, RecordsEditor;
 
     public const DISK = 'local';
 

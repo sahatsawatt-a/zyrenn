@@ -11,23 +11,15 @@ import {
     initialsOf,
     useCellCell,
 } from '@/composables/table/useCellCell';
+import { people } from '@/composables/table/useTableState';
 
-// Who a row is assigned to. The people are a fixed list for now.
+// Who a row is assigned to: someone in the project, by name.
 const props = defineProps<{ modelValue?: string | null }>();
 const emit = defineEmits<{
     (e: 'update:modelValue', value: string | null): void;
 }>();
 
 const cell = useCellCell();
-
-const PEOPLE = [
-    'Sahat S.',
-    'Alex Mercer',
-    'Sarah Connor',
-    'Miles Morales',
-    'Elena Rostova',
-    'David Chen',
-];
 
 const BADGES = [
     'bg-sky-500',
@@ -41,8 +33,8 @@ const shown = computed(() => {
     const search = cell.searchQuery.value.toLowerCase();
 
     return search
-        ? PEOPLE.filter((name) => name.toLowerCase().includes(search))
-        : PEOPLE;
+        ? people.value.filter((name) => name.toLowerCase().includes(search))
+        : people.value;
 });
 
 /** Each person keeps the same badge colour, worked out from their name. */

@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Table;
 
+use App\Events\TableChanged;
 use App\Http\Controllers\Controller;
 use App\Models\Table\Table;
+use App\Support\Live\Live;
 use App\Support\Table\TableStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -25,8 +27,11 @@ class TableRowController extends Controller
         Gate::authorize('update', $table);
 
         $id = TableStorage::insertRow($table);
+        $row = TableStorage::row($table, $id);
 
-        return response()->json(['row' => TableStorage::row($table, $id)], 201);
+        Live::tell(new TableChanged($table, 'row', ['row' => $row]));
+
+        return response()->json(['row' => $row], 201);
     }
 
     /**
@@ -56,6 +61,8 @@ class TableRowController extends Controller
 
         abort_unless(TableStorage::updateRow($table, $row, [$column->name => $validated['value']]), 404);
 
+        Live::tell(new TableChanged($table, 'row', ['row' => TableStorage::row($table, $row)]));
+
         return response()->json(['updated_at' => $table->updated_at]);
     }
 
@@ -76,8 +83,11 @@ class TableRowController extends Controller
         $id = DB::table(TableStorage::physicalName($table))
             ->insertGetId([...$values, 'created_at' => now(), 'updated_at' => now()]);
         $table->touch();
+        $copy = TableStorage::row($table, $id);
 
-        return response()->json(['row' => TableStorage::row($table, $id)], 201);
+        Live::tell(new TableChanged($table, 'row', ['row' => $copy]));
+
+        return response()->json(['row' => $copy], 201);
     }
 
     /**
@@ -93,6 +103,8 @@ class TableRowController extends Controller
         ]);
 
         $deleted = TableStorage::deleteRows($table, $validated['ids']);
+
+        Live::tell(new TableChanged($table, 'rows.deleted', ['ids' => array_map('intval', $validated['ids'])]));
 
         return response()->json(['deleted' => $deleted]);
     }

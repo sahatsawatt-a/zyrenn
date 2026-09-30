@@ -17,6 +17,8 @@ export const filters = ref<TableFilter[]>([]);
 export const sort = ref<TableSort | null>(null);
 export const density = ref<TableDensity>('normal');
 export const selectedRowIds = ref<number[]>([]);
+// Who a "user" column can name: the project's members, or the table's owner
+export const people = ref<string[]>([]);
 
 // 🌟 TRANSACTIONAL HISTORY STACKS MAPPED FROM BOARD CORE PATTERNS
 export interface TableHistorySnapshot {

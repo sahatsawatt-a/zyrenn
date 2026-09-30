@@ -27,7 +27,7 @@ class NoteController extends Controller
             $request,
             'notes/Index',
             'notes',
-            $this->owner($request)->notes()->select(['id', 'ref_id', 'folder_id', 'title', 'plain_text', 'updated_at', 'created_at']),
+            $this->owner($request)->notes()->select(['id', 'ref_id', 'folder_id', 'title', 'plain_text', 'updated_by', 'updated_at', 'created_at']),
             ['title', 'plain_text'],
             fn (Note $note, string $query) => $query !== ''
                 ? ['snippet' => $note->snippet($query)]

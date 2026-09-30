@@ -31,6 +31,8 @@ export type ListItem = {
     // Only in search results, which span every folder
     path?: string | null;
     snippet?: string | null;
+    // Only in a project: who changed it last
+    edited_by?: string | null;
 };
 
 type ByRef = { url: (ref_id: string) => string };
@@ -278,6 +280,7 @@ const plural = computed(() => props.rootLabel.toLowerCase());
                     :root-label="rootLabel"
                     :time="byCreated ? item.created_at : item.updated_at"
                     :time-label="byCreated ? 'Created' : 'Last edited'"
+                    :by="byCreated ? null : item.edited_by"
                     :dragging="isDragging(asItem(item))"
                     @rename="rename(asItem(item))"
                     @move="move(asItem(item))"

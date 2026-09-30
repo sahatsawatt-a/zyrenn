@@ -4,6 +4,7 @@ namespace App\Models\Note;
 
 use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
+use App\Models\Concerns\RecordsEditor;
 use App\Support\TiptapMarkdown;
 use Database\Factories\Note\NoteFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -27,7 +28,7 @@ use Illuminate\Support\Carbon;
 class Note extends Model
 {
     /** @use HasFactory<NoteFactory> */
-    use BelongsToOwner, HasFactory, HasRefId;
+    use BelongsToOwner, HasFactory, HasRefId, RecordsEditor;
 
     /**
      * Mirror the column defaults so new instances match what the database stores.

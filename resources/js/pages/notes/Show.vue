@@ -30,6 +30,8 @@ import {
     DialogTrigger,
 } from '@/components/ui/dialog';
 import { copyToClipboard, formatRelativeTime, xsrfToken } from '@/lib/utils';
+import PresenceAvatars from '@/components/PresenceAvatars.vue';
+import { usePresence } from '@/composables/usePresence';
 import { canChange, owned } from '@/lib/projects';
 import { destroy, index as ownIndex, show, update } from '@/routes/notes';
 import { index as projectIndex } from '@/routes/projects/notes';
@@ -50,6 +52,9 @@ const props = defineProps<{
 
 // A project's viewers read the note; nothing they do is saved
 const editable = canChange();
+
+// Who else has the note open
+const { others } = usePresence(() => `notes.${props.note.ref_id}`);
 
 const editorRef = useTemplateRef('editorRef');
 const titleInput = useTemplateRef('titleInput');
@@ -270,6 +275,7 @@ const statusLabel = computed(() => {
                     >
                         {{ statusLabel }}
                     </span>
+                    <PresenceAvatars :others="others" />
                 </div>
 
                 <div v-if="editable" class="flex items-center gap-1">

@@ -18,6 +18,8 @@ import {
     DialogTrigger,
 } from '@/components/ui/dialog';
 import { copyToClipboard, formatRelativeTime, xsrfToken } from '@/lib/utils';
+import PresenceAvatars from '@/components/PresenceAvatars.vue';
+import { usePresence } from '@/composables/usePresence';
 import { canChange, owned } from '@/lib/projects';
 import { destroy, index as ownIndex, show, update } from '@/routes/boards';
 import { index as projectIndex } from '@/routes/projects/boards';
@@ -37,6 +39,9 @@ const props = defineProps<{
 
 // A project's viewers see the whole board, drawn as it is, and change nothing
 const editable = canChange();
+
+// Who else has the board open
+const { others } = usePresence(() => `boards.${props.board.ref_id}`);
 
 const title = ref(props.board.title);
 let items: Item[] = props.board.content?.items ?? [];
@@ -207,6 +212,7 @@ const statusLabel = computed(() => {
             <span class="text-muted-foreground text-xs whitespace-nowrap"
                 >View only</span
             >
+            <PresenceAvatars :others="others" />
             <Button
                 variant="ghost"
                 size="sm"
@@ -231,6 +237,7 @@ const statusLabel = computed(() => {
         @change="onBoardChange"
     >
         <template #actions>
+            <PresenceAvatars :others="others" class="mr-1" />
             <input
                 v-model="title"
                 class="board-title"

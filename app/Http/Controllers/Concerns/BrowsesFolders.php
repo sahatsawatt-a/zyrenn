@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Concerns;
 
 use App\Models\Folder;
 use App\Models\Owner;
+use App\Models\Project;
 use App\Support\Folders;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
@@ -96,6 +97,13 @@ trait BrowsesFolders
             $items->where('updated_at', '>=', $days === 0 ? now()->startOfDay() : now()->subDays($days));
         }
 
+        // In a project, say who changed each one last; one's own are all one's own
+        $shared = $owner instanceof Project;
+
+        if ($shared) {
+            $items->with('editor:id,name');
+        }
+
         $found = $items->orderBy($column, $direction)->orderByDesc('id')->get()
             ->map(fn ($thing) => [
                 'ref_id' => $thing->getAttribute('ref_id'),
@@ -103,6 +111,7 @@ trait BrowsesFolders
                 ...$describe($thing, $query),
                 'updated_at' => $thing->getAttribute('updated_at'),
                 'created_at' => $thing->getAttribute('created_at'),
+                ...($shared ? ['edited_by' => $thing->getRelationValue('editor')?->getAttribute('name')] : []),
                 // Search results come from every folder, so say where each one lives
                 ...($searching ? ['path' => $paths[$thing->getAttribute('folder_id')] ?? null] : []),
             ]);

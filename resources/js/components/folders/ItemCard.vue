@@ -22,6 +22,8 @@ defineProps<{
     rootLabel: string;
     time: string;
     timeLabel: string;
+    // Who changed it last, in a project
+    by?: string | null;
     dragging: boolean;
 }>();
 
@@ -87,6 +89,12 @@ defineEmits<{ rename: []; move: []; remove: [] }>();
                     <time :datetime="time" :title="timeLabel">
                         {{ formatRelativeTime(time) }}
                     </time>
+                    <template v-if="by">
+                        <span aria-hidden="true">·</span>
+                        <span class="truncate" data-test="edited-by">{{
+                            by
+                        }}</span>
+                    </template>
                 </span>
             </span>
         </Link>

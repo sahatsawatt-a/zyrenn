@@ -2,8 +2,11 @@
 
 namespace App\Models\Table;
 
+use App\Events\TableChanged;
 use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
+use App\Models\Concerns\RecordsEditor;
+use App\Support\Live\Live;
 use App\Support\Table\TableStorage;
 use Database\Factories\Table\TableFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -29,7 +32,7 @@ use Illuminate\Support\Carbon;
 class Table extends Model
 {
     /** @use HasFactory<TableFactory> */
-    use BelongsToOwner, HasFactory, HasRefId;
+    use BelongsToOwner, HasFactory, HasRefId, RecordsEditor;
 
     /** How tightly the rows are drawn. */
     public const DENSITIES = ['compact', 'normal', 'spacious'];
@@ -50,6 +53,9 @@ class Table extends Model
     protected static function booted(): void
     {
         static::deleting(fn (Table $table) => TableStorage::drop($table));
+
+        // Whoever has it open is told, however it went: from its page, MCP or with its project
+        static::deleted(fn (Table $table) => Live::tell(new TableChanged($table, 'deleted')));
     }
 
     /**

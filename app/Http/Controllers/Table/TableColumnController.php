@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\Table;
 
+use App\Events\TableChanged;
 use App\Http\Controllers\Controller;
 use App\Models\Table\Table;
 use App\Models\Table\TableColumn;
+use App\Support\Live\Live;
 use App\Support\Table\TableStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -41,6 +43,9 @@ class TableColumnController extends Controller
         ]);
 
         $table->touch();
+
+        // Its columns changed; others load the table again
+        Live::tell(new TableChanged($table, 'reload'));
 
         return response()->json(['column' => $column->toGrid()], 201);
     }
@@ -92,6 +97,9 @@ class TableColumnController extends Controller
         $column->save();
         $table->touch();
 
+        // Its columns changed; others load the table again
+        Live::tell(new TableChanged($table, 'reload'));
+
         return response()->json(['column' => $column->toGrid()]);
     }
 
@@ -114,6 +122,9 @@ class TableColumnController extends Controller
         });
 
         $table->touch();
+
+        // Its columns changed; others load the table again
+        Live::tell(new TableChanged($table, 'reload'));
 
         return response()->json(['deleted' => $column->name]);
     }

@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Table;
 
+use App\Events\TableChanged;
 use App\Http\Controllers\Concerns\BrowsesFolders;
 use App\Http\Controllers\Controller;
 use App\Models\Table\Table;
 use App\Models\Table\TableColumn;
 use App\Models\Table\TableFolder;
+use App\Support\Live\Live;
 use App\Support\Table\TableStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -76,6 +78,10 @@ class TableController extends Controller
             'table' => $table->only(['ref_id', 'title', 'density', 'updated_at']),
             'columns' => $table->columns->map(fn (TableColumn $column) => $column->toGrid())->values(),
             'rows' => TableStorage::rows($table),
+            // Who a "user" column can name: the project's members, or on one's own table, oneself
+            'people' => $table->project_id !== null
+                ? $table->project->members()->orderBy('name')->pluck('name')
+                : [$table->user->name],
             'breadcrumbs' => self::crumbs($table->folder),
         ]);
     }
@@ -102,7 +108,13 @@ class TableController extends Controller
             unset($validated['folder']);
         }
 
-        $table->fill($validated)->save();
+        $table->fill($validated);
+        $looksDifferent = $table->isDirty(['title', 'density']);
+        $table->save();
+
+        if ($looksDifferent) {
+            Live::tell(new TableChanged($table, 'table', $table->only(['title', 'density'])));
+        }
 
         // The grid saves with fetch; the tables list moves tables through Inertia
         if (! $request->expectsJson()) {
