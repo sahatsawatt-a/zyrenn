@@ -142,6 +142,44 @@ services:
         ports:
             - '${VITE_PORT:-5173}:5173'
 
+    # The PDF printer: a headless Chrome that prints a note as the app draws it
+    # (docker/chrome/server.mjs). The app hands it a URL on `web` and the user's
+    # own session cookie, and gets the bytes back.
+    #
+    # The Playwright image ships the browsers but not the npm package, and ESM
+    # ignores NODE_PATH, so the package is installed into /work with the server
+    # copied beside it -- /srv is the read-only repo mount. A restart finds it
+    # already there; only a recreate pays for the install again.
+    #
+    # No `ports`: something that takes a session cookie and fetches pages as
+    # that user is not left listening on the LAN. `app` reaches it privately.
+    chrome:
+        image: mcr.microsoft.com/playwright:v1.61.0-noble
+        restart: unless-stopped
+        working_dir: /srv
+        volumes:
+            - ./docker/chrome:/srv:ro
+        command: >
+            bash -lc "mkdir -p /work && cd /work &&
+                      { [ -d node_modules/playwright ] || npm i playwright@1.61.0 >/tmp/npm.log 2>&1 ||
+                        { echo 'npm install failed:'; tail -20 /tmp/npm.log; exit 1; }; } &&
+                      cp /srv/server.mjs /work/server.mjs && exec node /work/server.mjs"
+        expose:
+            - '3000'
+        healthcheck:
+            test:
+                [
+                    'CMD-SHELL',
+                    "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+                ]
+            interval: 10s
+            timeout: 5s
+            retries: 6
+            # The first boot installs playwright, then launches chromium
+            start_period: 90s
+        depends_on:
+            - web
+
     postgres:
         image: postgres:17-alpine
         restart: unless-stopped
@@ -164,6 +202,48 @@ services:
             interval: 5s
             timeout: 5s
             retries: 10
+
+    # Backups of the database and the Drive's files together, with old ones
+    # removed on a rotation (docker/backup/backup.sh). They land OUTSIDE the
+    # repo, next to it by default: a backup inside the project is one
+    # `git clean` or bind-mount accident away from going with it.
+    #
+    # The postgres image, so pg_dump matches the server's version. It runs as
+    # the host user, so it can read storage/app/private and the files it writes
+    # are yours. Take one now:
+    #     docker compose exec backup /backup.sh once
+    backup:
+        image: postgres:17-alpine
+        restart: unless-stopped
+        user: '${UID:-1000}:${GID:-1000}'
+        entrypoint: ['/backup.sh']
+        environment:
+            PGHOST: postgres
+            PGDATABASE: '${DB_DATABASE:-zyrenn}'
+            PGUSER: '${DB_USERNAME:-zyrenn}'
+            PGPASSWORD: '${DB_PASSWORD:-secret}'
+            BACKUP_INTERVAL_HOURS: '${BACKUP_INTERVAL_HOURS:-6}'
+            BACKUP_KEEP_DAYS: '${BACKUP_KEEP_DAYS:-14}'
+            BACKUP_KEEP_MIN: '${BACKUP_KEEP_MIN:-3}'
+        volumes:
+            - ./docker/backup/backup.sh:/backup.sh:ro
+            - ./storage/app/private:/storage/private:ro
+            # Name backups in this machine's time, not UTC
+            - /etc/localtime:/etc/localtime:ro
+            - '${BACKUP_DIR:-../zyrenn-backups}:/backups'
+        healthcheck:
+            # Healthy while the newest backup is under two intervals old
+            test:
+                [
+                    'CMD-SHELL',
+                    'find /backups -maxdepth 1 -name "auto-*" -mmin -$$((BACKUP_INTERVAL_HOURS * 120)) | grep -q .',
+                ]
+            interval: 5m
+            timeout: 10s
+            start_period: 10m
+        depends_on:
+            postgres:
+                condition: service_healthy
 
 volumes:
     pgdata:

@@ -76,10 +76,12 @@ export function useShared(name: string) {
     /**
      * Asks the server to hand what was changed here to the app now, rather
      * than after the pause it waits for while people type. Never waits long.
+     * `everyone`: what the others typed too, not only what was typed here --
+     * for when the app is about to read it, as the PDF printer does.
      */
-    const flush = (): Promise<void> =>
+    const flush = ({ everyone = false } = {}): Promise<void> =>
         new Promise((resolve) => {
-            if (!pending || status.value !== 'connected') {
+            if ((!pending && !everyone) || status.value !== 'connected') {
                 resolve();
 
                 return;

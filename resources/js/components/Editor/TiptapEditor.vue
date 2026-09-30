@@ -62,6 +62,7 @@ import MediaViewer from '../MediaViewer.vue';
 import ImagePickerDialog from '../media/ImagePickerDialog.vue';
 import type { PickedImage } from '../media/ImagePickerDialog.vue';
 import { isImageFile, uploadToDrive } from '../../lib/drive';
+import { markEditorReady } from '../../lib/printReady';
 import CustomMenu from './CustomMenu.vue';
 import TableMenu from './TableMenu.vue';
 import BlockHandle from './BlockHandle.vue';
@@ -283,6 +284,9 @@ const editor = useEditor({
             void uploadImages(files, drop?.pos ?? view.state.selection.from);
             return true;
         },
+    },
+    onCreate: () => {
+        markEditorReady();
     },
     onUpdate: ({ editor }) => {
         emit('update', editor.getJSON());

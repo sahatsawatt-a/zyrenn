@@ -1,0 +1,350 @@
+/*
+  The printed note.
+
+  PDF export is headless Chrome printing the note page itself (docker/chrome),
+  so the PDF is shaped by these rules and nothing else -- and Ctrl+P on a note
+  gives the same document. Everything print-only lives here rather than in a
+  @media block in each component, so the next toolbar added to the editor is
+  hidden by editing one file.
+
+  `!important` because component styles are scoped and load after this file:
+  on a tie, the later rule wins, and a lost tie prints a toolbar into the PDF.
+
+  Two styles, picked with `data-print-style` on <html> (App\Support\NotePdf):
+  the rules straight under @media print are both -- the Simple look, as on
+  screen -- and the report section at the bottom is layered on top of them.
+  Ctrl+P, with no style asked for, prints Simple.
+*/
+
+/*
+  Page numbers in the bottom margin, and in a report the note's title in the
+  top one. @page cannot be scoped to a style, so the header reads a variable
+  only the report sets; Show.vue keeps --note-title up to date.
+*/
+@page {
+    @top-left {
+        content: var(--print-running-title, '');
+        font-family: var(--report-serif, sans-serif);
+        font-size: 8pt;
+        color: #6b6b6b;
+    }
+
+    @bottom-right {
+        content: counter(page) ' / ' counter(pages);
+        font-size: 8pt;
+        color: #6b6b6b;
+    }
+}
+
+/* The title page states the title in full; the margin repeating it is noise */
+@page :first {
+    @top-left {
+        content: '';
+    }
+}
+
+@media print {
+    /* Paper is white, whatever tint the theme gives the screen */
+    :root,
+    [data-theme] {
+        --background: oklch(1 0 0) !important;
+    }
+
+    /* --- the app around the note ------------------------------------------ */
+    [data-slot='sidebar'],
+    [data-sonner-toaster],
+    .block-handle,
+    .block-drop-line {
+        display: none !important;
+    }
+
+    [data-slot='sidebar-inset'] {
+        margin: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+    }
+
+    /* --- the editor's screen furniture ------------------------------------ */
+    .editor-surface {
+        display: block !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    .editor-container {
+        max-width: none !important;
+    }
+
+    .tiptap {
+        min-height: 0 !important;
+    }
+
+    .code-block-header,
+    .mermaid-toolbar,
+    .board-toolbar {
+        display: none !important;
+    }
+
+    /* --- blocks on paper -------------------------------------------------- */
+
+    /* A code line too long for the page wraps instead of being cut off */
+    .code-block-wrapper {
+        box-shadow: none !important;
+    }
+    .code-block-wrapper pre {
+        overflow: visible !important;
+    }
+    .code-block-wrapper code {
+        white-space: pre-wrap !important;
+        overflow-wrap: anywhere;
+    }
+
+    /* Keep a block whole rather than splitting it across two pages */
+    pre,
+    blockquote,
+    img,
+    table,
+    tr,
+    .code-block-wrapper,
+    .mermaid-block,
+    .board-block,
+    .katex-display {
+        break-inside: avoid;
+    }
+
+    /* A heading stays with what follows it, not alone at the foot of a page */
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        break-after: avoid;
+    }
+}
+
+/*
+  Report: a document to hand to somebody, not a picture of the app. Serif
+  text in black ink, a title block with the date, the title running along
+  the top of every page after the first, hairline tables (horizontal rules
+  only -- a full grid reads as a pasted spreadsheet), and code on light paper.
+*/
+@media print {
+    html[data-print-style='report'] {
+        --report-serif:
+            Charter, 'Bitstream Charter', 'Iowan Old Style', Cambria, Georgia,
+            'Liberation Serif', Loma, serif;
+        --report-sans:
+            'Instrument Sans', 'Helvetica Neue', Arial, 'Liberation Sans', Loma,
+            sans-serif;
+        --report-ink: #1a1a1a;
+        --report-muted: #5f5f5f;
+        --report-rule: #c8c8c8;
+        --print-running-title: var(--note-title);
+
+        /* Checked boxes and the like in ink, not the theme's accent */
+        --primary: #1a1a1a !important;
+        --primary-foreground: #fff !important;
+        --muted: #f4f4f2 !important;
+        --border: var(--report-rule) !important;
+    }
+
+    /* --- the title block -------------------------------------------------- */
+    html[data-print-style='report'] .note-print-title {
+        padding-bottom: 8pt;
+        border-bottom: 0.75pt solid var(--report-ink);
+        font-family: var(--report-serif);
+        font-size: 24pt;
+        font-weight: 600;
+        line-height: 1.2;
+        letter-spacing: normal;
+        color: var(--report-ink);
+    }
+
+    html[data-print-style='report'] .note-print-meta {
+        display: block !important;
+        margin: 6pt 0 8pt;
+        font-family: var(--report-sans);
+        font-size: 8.5pt;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--report-muted);
+    }
+
+    /* --- text ------------------------------------------------------------- */
+    html[data-print-style='report'] .editor-surface,
+    html[data-print-style='report'] .tiptap {
+        font-family: var(--report-serif);
+        color: var(--report-ink) !important;
+    }
+
+    html[data-print-style='report'] .tiptap p,
+    html[data-print-style='report'] .tiptap li {
+        font-size: 11pt;
+        line-height: 1.55;
+        color: var(--report-ink);
+        orphans: 3;
+        widows: 3;
+    }
+
+    html[data-print-style='report'] .tiptap h1,
+    html[data-print-style='report'] .tiptap h2,
+    html[data-print-style='report'] .tiptap h3 {
+        font-family: var(--report-serif);
+        color: var(--report-ink);
+        line-height: 1.25;
+    }
+
+    html[data-print-style='report'] .tiptap h1 {
+        margin: 22pt 0 8pt;
+        font-size: 18pt;
+        font-weight: 600;
+    }
+
+    html[data-print-style='report'] .tiptap h2 {
+        margin: 18pt 0 6pt;
+        padding-bottom: 3pt;
+        border-bottom: 0.5pt solid var(--report-rule);
+        font-size: 14pt;
+        font-weight: 600;
+    }
+
+    html[data-print-style='report'] .tiptap h3 {
+        margin: 14pt 0 4pt;
+        font-size: 12pt;
+        font-weight: 600;
+    }
+
+    html[data-print-style='report'] .tiptap a {
+        color: var(--report-ink);
+        text-decoration: underline;
+        text-decoration-thickness: 0.5pt;
+    }
+
+    /* Paper cannot be clicked, so a link says where it goes */
+    html[data-print-style='report'] .tiptap a[href^='http']::after {
+        content: ' (' attr(href) ')';
+        font-size: 0.85em;
+        color: var(--report-muted);
+        overflow-wrap: anywhere;
+    }
+
+    html[data-print-style='report'] .tiptap :not(pre) > code {
+        background: #f1f1ef;
+        color: var(--report-ink);
+        font-size: 0.85em;
+    }
+
+    /* --- quotes and callouts: a rule, not a coloured box ------------------- */
+    html[data-print-style='report'] .tiptap blockquote {
+        border-left: 1.5pt solid var(--report-muted) !important;
+        background: none !important;
+        padding: 0 0 0 12pt !important;
+        font-style: italic;
+        color: #333 !important;
+    }
+
+    html[data-print-style='report'] .tiptap div[data-type='callout'] {
+        background: none !important;
+        border: 0.5pt solid var(--report-rule);
+        border-radius: 3pt;
+    }
+
+    html[data-print-style='report']
+        .tiptap
+        div[data-type='callout']
+        .callout-content {
+        font-size: 10.5pt;
+        color: var(--report-ink);
+    }
+
+    /* --- tables ----------------------------------------------------------- */
+    html[data-print-style='report'] .tiptap th,
+    html[data-print-style='report'] .tiptap td {
+        border: 0 !important;
+        border-bottom: 0.5pt solid var(--report-rule) !important;
+        padding: 4pt 8pt 4pt 0;
+        color: var(--report-ink);
+    }
+
+    html[data-print-style='report'] .tiptap th {
+        background: none !important;
+        border-bottom: 1pt solid var(--report-ink) !important;
+    }
+
+    html[data-print-style='report'] .tiptap th > p {
+        font-family: var(--report-sans);
+        font-size: 8.5pt;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+    html[data-print-style='report'] .tiptap td > p {
+        font-size: 10pt;
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* --- code on light paper ---------------------------------------------- */
+    html[data-print-style='report'] .code-block-wrapper {
+        background: #f7f7f5 !important;
+        border: 0.5pt solid var(--report-rule) !important;
+        border-radius: 3pt !important;
+    }
+
+    html[data-print-style='report'] .code-block-wrapper code {
+        font-size: 8.5pt !important;
+        line-height: 1.5 !important;
+    }
+
+    html[data-print-style='report'] .tiptap pre code.hljs {
+        color: #24292f !important;
+    }
+    html[data-print-style='report'] .tiptap .hljs-keyword,
+    html[data-print-style='report'] .tiptap .hljs-selector-tag,
+    html[data-print-style='report'] .tiptap .hljs-built_in,
+    html[data-print-style='report'] .tiptap .hljs-name {
+        color: #cf222e !important;
+    }
+    html[data-print-style='report'] .tiptap .hljs-string,
+    html[data-print-style='report'] .tiptap .hljs-selector-attr,
+    html[data-print-style='report'] .tiptap .hljs-selector-pseudo,
+    html[data-print-style='report'] .tiptap .hljs-regexp {
+        color: #0a3069 !important;
+    }
+    html[data-print-style='report'] .tiptap .hljs-number,
+    html[data-print-style='report'] .tiptap .hljs-literal,
+    html[data-print-style='report'] .tiptap .hljs-variable,
+    html[data-print-style='report'] .tiptap .hljs-template-variable,
+    html[data-print-style='report'] .tiptap .hljs-tag,
+    html[data-print-style='report'] .tiptap .hljs-meta {
+        color: #0550ae !important;
+    }
+    html[data-print-style='report'] .tiptap .hljs-title,
+    html[data-print-style='report'] .tiptap .hljs-title.function_,
+    html[data-print-style='report'] .tiptap .hljs-class .hljs-title {
+        color: #8250df !important;
+    }
+    html[data-print-style='report'] .tiptap .hljs-params,
+    html[data-print-style='report'] .tiptap .hljs-attr,
+    html[data-print-style='report'] .tiptap .hljs-attribute {
+        color: #953800 !important;
+    }
+    html[data-print-style='report'] .tiptap .hljs-comment,
+    html[data-print-style='report'] .tiptap .hljs-quote {
+        color: #6e7781 !important;
+    }
+
+    /* --- figures: the drawing, without the app's card around it ----------- */
+    html[data-print-style='report'] .mermaid-block,
+    html[data-print-style='report'] .board-block {
+        border: 0 !important;
+        border-radius: 0 !important;
+        background: none !important;
+    }
+
+    html[data-print-style='report'] .mermaid-preview {
+        padding: 6pt 0 !important;
+    }
+}

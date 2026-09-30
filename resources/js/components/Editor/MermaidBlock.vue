@@ -82,6 +82,7 @@ import { NodeViewWrapper, NodeViewContent, nodeViewProps } from '@tiptap/vue-3';
 import { Selection } from '@tiptap/pm/state';
 import { useDebounceFn, useMutationObserver } from '@vueuse/core';
 import { renderMermaid } from '../../lib/mermaid';
+import { holdPrint } from '../../lib/printReady';
 import { useMediaViewer } from '../../composables/useMediaViewer';
 import { copyToClipboard } from '../../lib/utils';
 import {
@@ -144,7 +145,11 @@ useMutationObserver(document.documentElement, () => void render(), {
     attributeFilter: ['class'],
 });
 
-onMounted(() => void render());
+// The PDF printer waits for the first drawing (see printReady)
+const releasePrint = holdPrint();
+onBeforeUnmount(releasePrint);
+
+onMounted(() => void render().finally(releasePrint));
 
 // -------------------------------------------------------------- Edit / preview
 // The source is visible whenever the cursor is inside this block
