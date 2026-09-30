@@ -70,10 +70,10 @@ abstract class BoardTool extends FiledTool
     /**
      * Schema for the list of things to put on a board.
      */
-    protected function itemsArgument(JsonSchema $schema, string $description): Type
+    protected function itemsArgument(JsonSchema $schema, string $description, bool $kindRequired = true): Type
     {
         return $schema->array()
-            ->items($this->itemArgument($schema))
+            ->items($this->itemArgument($schema, $kindRequired))
             ->max(self::MAX_ITEMS)
             ->description($description);
     }
@@ -83,47 +83,47 @@ abstract class BoardTool extends FiledTool
      *
      * @return array<string, array<int, mixed>>
      */
-    protected function itemRules(bool $sometimes = false): array
+    protected function itemRules(bool $sometimes = false, string $key = 'items', bool $kindRequired = true): array
     {
         $kinds = implode(',', BoardItems::KINDS);
         $sides = implode(',', BoardItems::SIDES);
         $heads = implode(',', BoardItems::HEADS);
 
         return [
-            'items' => [$sometimes ? 'sometimes' : 'nullable', 'array', 'max:'.self::MAX_ITEMS],
-            'items.*' => ['array'],
-            'items.*.id' => ['nullable', 'string', 'max:64', 'regex:/^[A-Za-z0-9_-]+$/'],
-            'items.*.kind' => ['required', 'string', 'in:'.$kinds],
-            'items.*.x' => ['nullable', 'numeric', 'between:-100000,100000'],
-            'items.*.y' => ['nullable', 'numeric', 'between:-100000,100000'],
-            'items.*.width' => ['nullable', 'numeric', 'between:1,20000'],
-            'items.*.height' => ['nullable', 'numeric', 'between:1,20000'],
-            'items.*.rotation' => ['nullable', 'numeric', 'between:-360,360'],
-            'items.*.text' => ['nullable', 'string', 'max:5000'],
-            'items.*.fill' => ['nullable', 'string', 'max:32'],
-            'items.*.stroke' => ['nullable', 'string', 'max:32'],
-            'items.*.fontSize' => ['nullable', 'numeric', 'between:6,400'],
-            'items.*.align' => ['nullable', 'string', 'in:'.implode(',', BoardItems::ALIGNS)],
-            'items.*.verticalAlign' => ['nullable', 'string', 'in:'.implode(',', BoardItems::VERTICAL_ALIGNS)],
-            'items.*.hidden' => ['nullable', 'boolean'],
-            'items.*.locked' => ['nullable', 'boolean'],
-            'items.*.src' => ['nullable', 'string', 'max:200', 'regex:#^(https?://|/drive/files/)#'],
-            'items.*.from' => ['nullable'],
-            'items.*.to' => ['nullable'],
-            'items.*.from.item' => ['nullable', 'string', 'max:64'],
-            'items.*.from.side' => ['nullable', 'string', 'in:'.$sides],
-            'items.*.from.x' => ['nullable', 'numeric', 'between:-100000,100000'],
-            'items.*.from.y' => ['nullable', 'numeric', 'between:-100000,100000'],
-            'items.*.to.item' => ['nullable', 'string', 'max:64'],
-            'items.*.to.side' => ['nullable', 'string', 'in:'.$sides],
-            'items.*.to.x' => ['nullable', 'numeric', 'between:-100000,100000'],
-            'items.*.to.y' => ['nullable', 'numeric', 'between:-100000,100000'],
-            'items.*.routing' => ['nullable', 'string', 'in:'.implode(',', BoardItems::ROUTINGS)],
-            'items.*.lineStyle' => ['nullable', 'string', 'in:'.implode(',', BoardItems::LINE_STYLES)],
-            'items.*.lineWidth' => ['nullable', 'numeric', 'between:1,40'],
-            'items.*.startHead' => ['nullable', 'string', 'in:'.$heads],
-            'items.*.endHead' => ['nullable', 'string', 'in:'.$heads],
-            'items.*.headSize' => ['nullable', 'numeric', 'between:4,80'],
+            $key => [$sometimes ? 'sometimes' : 'nullable', 'array', 'max:'.self::MAX_ITEMS],
+            "{$key}.*" => ['array'],
+            "{$key}.*.id" => ['nullable', 'string', 'max:64', 'regex:/^[A-Za-z0-9_-]+$/'],
+            "{$key}.*.kind" => [$kindRequired ? 'required' : 'nullable', 'string', 'in:'.$kinds],
+            "{$key}.*.x" => ['nullable', 'numeric', 'between:-100000,100000'],
+            "{$key}.*.y" => ['nullable', 'numeric', 'between:-100000,100000'],
+            "{$key}.*.width" => ['nullable', 'numeric', 'between:1,20000'],
+            "{$key}.*.height" => ['nullable', 'numeric', 'between:1,20000'],
+            "{$key}.*.rotation" => ['nullable', 'numeric', 'between:-360,360'],
+            "{$key}.*.text" => ['nullable', 'string', 'max:5000'],
+            "{$key}.*.fill" => ['nullable', 'string', 'max:32'],
+            "{$key}.*.stroke" => ['nullable', 'string', 'max:32'],
+            "{$key}.*.fontSize" => ['nullable', 'numeric', 'between:6,400'],
+            "{$key}.*.align" => ['nullable', 'string', 'in:'.implode(',', BoardItems::ALIGNS)],
+            "{$key}.*.verticalAlign" => ['nullable', 'string', 'in:'.implode(',', BoardItems::VERTICAL_ALIGNS)],
+            "{$key}.*.hidden" => ['nullable', 'boolean'],
+            "{$key}.*.locked" => ['nullable', 'boolean'],
+            "{$key}.*.src" => ['nullable', 'string', 'max:200', 'regex:#^(https?://|/drive/files/)#'],
+            "{$key}.*.from" => ['nullable'],
+            "{$key}.*.to" => ['nullable'],
+            "{$key}.*.from.item" => ['nullable', 'string', 'max:64'],
+            "{$key}.*.from.side" => ['nullable', 'string', 'in:'.$sides],
+            "{$key}.*.from.x" => ['nullable', 'numeric', 'between:-100000,100000'],
+            "{$key}.*.from.y" => ['nullable', 'numeric', 'between:-100000,100000'],
+            "{$key}.*.to.item" => ['nullable', 'string', 'max:64'],
+            "{$key}.*.to.side" => ['nullable', 'string', 'in:'.$sides],
+            "{$key}.*.to.x" => ['nullable', 'numeric', 'between:-100000,100000'],
+            "{$key}.*.to.y" => ['nullable', 'numeric', 'between:-100000,100000'],
+            "{$key}.*.routing" => ['nullable', 'string', 'in:'.implode(',', BoardItems::ROUTINGS)],
+            "{$key}.*.lineStyle" => ['nullable', 'string', 'in:'.implode(',', BoardItems::LINE_STYLES)],
+            "{$key}.*.lineWidth" => ['nullable', 'numeric', 'between:1,40'],
+            "{$key}.*.startHead" => ['nullable', 'string', 'in:'.$heads],
+            "{$key}.*.endHead" => ['nullable', 'string', 'in:'.$heads],
+            "{$key}.*.headSize" => ['nullable', 'numeric', 'between:4,80'],
         ];
     }
 
@@ -138,9 +138,9 @@ abstract class BoardTool extends FiledTool
      * @param  array<string, mixed>  $validated
      * @return list<array<string, mixed>>
      */
-    protected function specs(array $validated): array
+    protected function specs(array $validated, string $key = 'items'): array
     {
-        $items = is_array($validated['items'] ?? null) ? $validated['items'] : [];
+        $items = is_array($validated[$key] ?? null) ? $validated[$key] : [];
         ksort($items);
 
         /** @var list<array<string, mixed>> */
@@ -174,11 +174,13 @@ abstract class BoardTool extends FiledTool
      * One item, as a client writes it. Everything but the kind is optional:
      * what is left out gets the same default the toolbar would have given it.
      */
-    private function itemArgument(JsonSchema $schema): Type
+    private function itemArgument(JsonSchema $schema, bool $kindRequired = true): Type
     {
+        $kind = $schema->string()->enum(BoardItems::KINDS)->description('What to draw. Shapes: rect, pill, ellipse, triangle, diamond, hexagon, star. Flowchart: cylinder (a database), parallelogram (data), document, process, cloud. Also sticky, text, frame (a 16:9 slide for present mode), image, math (a formula, with LaTeX in "text"), arrow (a connector) and draw (freehand ink).');
+
         return $schema->object([
             'id' => $schema->string()->max(64)->description('Your name for this item, so a connector can point at it (letters, digits, "-" and "_"). Made up for you if you leave it out.'),
-            'kind' => $schema->string()->enum(BoardItems::KINDS)->description('What to draw. Shapes: rect, pill, ellipse, triangle, diamond, hexagon, star. Flowchart: cylinder (a database), parallelogram (data), document, process, cloud. Also sticky, text, frame (a 16:9 slide for present mode), image, math (a formula, with LaTeX in "text"), arrow (a connector) and draw (freehand ink).')->required(),
+            'kind' => $kindRequired ? $kind->required() : $kind,
             'x' => $schema->number()->description('Left edge on the board. Leave x and y out and items are laid out in rows for you.'),
             'y' => $schema->number()->description('Top edge on the board.'),
             'width' => $schema->number()->description('Width in board units; each kind has a sensible default.'),

@@ -23,7 +23,7 @@ const tinker = (php) =>
 
 await runBoard(
     '/notes',
-    async ({ page, check, afterwards }) => {
+    async ({ page, check, afterwards, ready, draw, screenOf, itemCount }) => {
         const base = new URL(page.url()).origin;
         const token = tinker(
             `echo App\\Models\\User::where('email', 'test@example.com')->first()->createToken('${TOKEN_NAME}', ['mcp'])->plainTextToken;`,
@@ -137,6 +137,80 @@ await runBoard(
             answerSize < 800,
             `${answerSize} bytes`,
         );
+
+        // --------------------------------------------- A board, drawn on
+        await page.goto(`${base}/boards`);
+        await page
+            .getByRole('button', { name: /new board/i })
+            .first()
+            .click();
+        await page.waitForURL(/\/boards\/\w+$/);
+        const board = page.url().match(/\/boards\/(\w+)$/)[1];
+        afterwards(() =>
+            tinker(
+                `App\\Models\\Board\\Board::where('ref_id', '${board}')->first()?->delete();`,
+            ),
+        );
+        await ready();
+        await page.waitForFunction(
+            () => /Saved/.test(document.body.innerText),
+            null,
+            { timeout: 10000 },
+        );
+        await draw('rect', 0.2, 0.3);
+        await draw('rect', 0.5, 0.3);
+        await page.waitForTimeout(800);
+
+        const outlined = (
+            await mcp('get-board', { ref_id: board, outline: true })
+        ).structuredContent;
+        const [first, second] = outlined.items;
+        check(
+            'get-board gives the board in outline, without colours',
+            outlined.items.length === 2 &&
+                !('fill' in first) &&
+                typeof first.x === 'number',
+        );
+
+        // --------- One shape dragged while MCP changes another and adds a sticky
+        const grab = await screenOf(
+            second.x + second.width / 2,
+            second.y + second.height / 2,
+        );
+        await page.mouse.move(grab.x, grab.y);
+        await page.mouse.down();
+        await page.mouse.move(grab.x + 60, grab.y + 40, { steps: 6 });
+        const changed = await mcp('update-board', {
+            ref_id: board,
+            update_items: [{ id: first.id, text: `From MCP ${RUN}` }],
+            add_items: [{ kind: 'sticky', text: `Added by MCP ${RUN}` }],
+        });
+        await page.mouse.move(grab.x + 140, grab.y + 90, { steps: 6 });
+        await page.mouse.up();
+        await page.waitForTimeout(2500);
+
+        const after = (await mcp('get-board', { ref_id: board, outline: true }))
+            .structuredContent.items;
+        const byId = Object.fromEntries(after.map((item) => [item.id, item]));
+        check(
+            'update-board answers with what it added and changed, not the board',
+            changed.structuredContent?.changed?.[0] === first.id &&
+                changed.structuredContent?.added?.length === 1 &&
+                !('items' in (changed.structuredContent ?? {})),
+        );
+        check(
+            'the changed shape and the new sticky are on the open board',
+            byId[first.id]?.text === `From MCP ${RUN}` &&
+                after.some((item) => item.text === `Added by MCP ${RUN}`) &&
+                (await itemCount()) === 3,
+            `${after.length} items, ${await itemCount()} drawn`,
+        );
+        check(
+            'and the shape being dragged meanwhile went where it was dragged',
+            byId[second.id] !== undefined && byId[second.id].x > second.x + 50,
+            `${second.x} → ${byId[second.id]?.x}`,
+        );
+        await page.screenshot({ path: `${SHOTS}/mcp-board.png` });
     },
     { canvas: false },
 );

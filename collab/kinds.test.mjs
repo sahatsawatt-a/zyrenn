@@ -83,3 +83,37 @@ void test('a note keeps its title and width beside the body', () => {
         is_wide: true,
     });
 });
+
+void test('a change by item touches only the items it names', () => {
+    const ours = new Y.Doc();
+    boards.seed(ours, {
+        items: [sticky('a', 'A'), sticky('b', 'B')],
+        title: '',
+    });
+    const theirs = new Y.Doc();
+    Y.applyUpdate(theirs, Y.encodeStateAsUpdate(ours));
+
+    // Someone moves B on the canvas while A is changed and C added over MCP
+    theirs.getMap('items').set('b', { ...sticky('b', 'B'), x: 300 });
+    const missing = boards.edit(ours, [
+        { do: 'set', items: [sticky('a', 'A, changed'), sticky('c', 'C')] },
+        { do: 'delete', ids: ['gone'] },
+    ]);
+    Y.applyUpdate(ours, Y.encodeStateAsUpdate(theirs));
+
+    assert.deepEqual(missing, ['gone']);
+    assert.deepEqual(
+        orderedItems(ours).map((item) => [item.id, item.text, item.x]),
+        [
+            ['a', 'A, changed', 0],
+            ['b', 'B', 300],
+            ['c', 'C', 0],
+        ],
+    );
+
+    boards.edit(ours, [{ do: 'delete', ids: ['a'] }]);
+    assert.deepEqual(
+        orderedItems(ours).map((item) => item.id),
+        ['b', 'c'],
+    );
+});

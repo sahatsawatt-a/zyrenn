@@ -235,6 +235,106 @@ class BoardItems
     }
 
     /**
+     * Changes by item: new items added on top, some changed by id -- only the
+     * fields given -- and others deleted. They go the way a whole list does
+     * (fromSpec), so whatever a change leaves out keeps what the canvas has,
+     * and connectors pin to anything on the board, old or new.
+     *
+     * Answers with every item as it now is, those that differ from before
+     * (all a live copy needs sent), and the ids added, changed and deleted.
+     *
+     * @param  list<array<string, mixed>>  $current  the board's items as stored
+     * @param  list<array<string, mixed>>  $add
+     * @param  list<array<string, mixed>>  $update  each with the item's "id"
+     * @param  list<string>  $delete
+     * @return array{items: list<array<string, mixed>>, set: list<array<string, mixed>>, added: list<string>, changed: list<string>, deleted: list<string>}
+     *
+     * @throws BoardItemProblem when a change can't be made; then none are
+     */
+    public static function change(array $current, array $add = [], array $update = [], array $delete = []): array
+    {
+        $specs = [];
+
+        foreach (self::toSpec(['items' => $current]) as $spec) {
+            $specs[$spec['id']] = $spec;
+        }
+
+        $missing = fn (string $id) => new BoardItemProblem("There is no item \"{$id}\" on this board. get-board lists its items.");
+
+        foreach ($delete as $id) {
+            if (! isset($specs[$id])) {
+                throw $missing($id);
+            }
+
+            unset($specs[$id]);
+        }
+
+        foreach ($update as $spec) {
+            $id = (string) ($spec['id'] ?? '');
+
+            if (! isset($specs[$id])) {
+                throw $missing($id);
+            }
+
+            $specs[$id] = [...$specs[$id], ...$spec];
+        }
+
+        $added = [];
+        $next = self::nextNumber(array_keys($specs));
+
+        foreach ($add as $spec) {
+            $id = is_string($spec['id'] ?? null) && $spec['id'] !== '' ? $spec['id'] : 'i'.$next++;
+
+            if (isset($specs[$id])) {
+                throw new BoardItemProblem("An item \"{$id}\" is on the board already; leave \"id\" out and one is made up, or change it with update_items.");
+            }
+
+            $specs[$id] = [...$spec, 'id' => $id];
+            $added[] = $id;
+        }
+
+        $specs = array_values($specs);
+        $problems = self::badReferences($specs);
+
+        if ($problems !== []) {
+            throw new BoardItemProblem('A connector points at something it cannot pin to. '.implode(' ', $problems));
+        }
+
+        $items = self::fromSpec($specs, $current);
+        $before = [];
+
+        foreach ($current as $item) {
+            $before[(string) ($item['id'] ?? '')] = $item;
+        }
+
+        return [
+            'items' => $items,
+            'set' => array_values(array_filter($items, fn (array $item) => ($before[$item['id']] ?? null) != $item)),
+            'added' => $added,
+            'changed' => array_map(fn (array $spec) => (string) $spec['id'], $update),
+            'deleted' => $delete,
+        ];
+    }
+
+    /**
+     * The number after the highest "i<n>" id in use, so a made-up id is new.
+     *
+     * @param  list<string>  $ids
+     */
+    private static function nextNumber(array $ids): int
+    {
+        $highest = 0;
+
+        foreach ($ids as $id) {
+            if (preg_match('/^i(\d+)$/', $id, $number)) {
+                $highest = max($highest, (int) $number[1]);
+            }
+        }
+
+        return $highest + 1;
+    }
+
+    /**
      * The ids that appear more than once in a client's list.
      *
      * @param  list<array<string, mixed>>  $specs

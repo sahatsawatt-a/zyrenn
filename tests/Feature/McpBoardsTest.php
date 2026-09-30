@@ -54,6 +54,14 @@ class McpBoardsTest extends TestCase
                 ->where('title', 'Ordering')
                 ->where('folder', 'Plans/Q3')
                 ->where('item_count', 4)
+                // Which board it made, not the board again: get-board reads it
+                ->missing('items')
+                ->etc()
+            );
+
+        UserServer::actingAs($user)
+            ->tool(GetBoard::class, ['ref_id' => $user->boards()->sole()->ref_id])
+            ->assertStructuredContent(fn (AssertableJson $json) => $json
                 // In the order they were sent, which is the order they are drawn in
                 ->where('items.0.text', 'Order placed')
                 ->where('items.1.align', 'left')
@@ -126,6 +134,12 @@ class McpBoardsTest extends TestCase
                 ->where('title', 'Ordering v2')
                 ->where('folder', 'Archive')
                 ->where('item_count', 2)
+                ->etc()
+            );
+
+        UserServer::actingAs($user)
+            ->tool(GetBoard::class, ['ref_id' => $board->ref_id])
+            ->assertStructuredContent(fn (AssertableJson $json) => $json
                 ->where('items.0.text', 'Order received')
                 // Not mentioned, so it kept the colour it was given
                 ->where('items.0.fill', '#bfdbfe')

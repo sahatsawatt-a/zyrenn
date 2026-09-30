@@ -105,6 +105,48 @@ const boards = {
             document.getMap('meta').set('title', changed.title ?? '');
         }
     },
+
+    /**
+     * Changes by item (BoardItems::change): {do: 'set', items} puts each item
+     * under its id -- a new one on top -- and {do: 'delete', ids} takes them
+     * off. Nothing else on the board is touched. Answers the ids not found.
+     */
+    edit(document, edits) {
+        const items = document.getMap('items');
+        const order = document.getArray('order');
+        const missing = [];
+
+        for (const edit of edits) {
+            if (edit.do === 'set') {
+                for (const item of edit.items ?? []) {
+                    const isNew = !items.has(item.id);
+                    items.set(item.id, item);
+
+                    if (isNew && !order.toArray().includes(item.id)) {
+                        order.push([item.id]);
+                    }
+                }
+            }
+
+            if (edit.do === 'delete') {
+                for (const id of edit.ids ?? []) {
+                    if (!items.has(id)) {
+                        missing.push(id);
+                        continue;
+                    }
+
+                    items.delete(id);
+                    const at = order.toArray().indexOf(id);
+
+                    if (at !== -1) {
+                        order.delete(at, 1);
+                    }
+                }
+            }
+        }
+
+        return missing;
+    },
 };
 
 /**
