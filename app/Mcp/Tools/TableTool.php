@@ -72,22 +72,42 @@ abstract class TableTool extends FiledTool
     }
 
     /**
-     * @param  Table  $thing
+     * The table's columns as a client reads them, or just those named.
+     *
+     * @param  list<string>|null  $only  column names
+     * @return list<array<string, mixed>>
      */
-    protected function full(Model $thing): array
+    protected function describeColumns(Table $table, ?array $only = null): array
     {
-        $thing->unsetRelation('columns');
-
-        return [
-            ...$this->summary($thing),
-            'columns' => $thing->columns->map(fn (TableColumn $column) => array_filter([
+        return array_values($table->columns
+            ->filter(fn (TableColumn $column) => $only === null || $column->is_primary || in_array($column->name, $only, true))
+            ->map(fn (TableColumn $column) => array_filter([
                 'name' => $column->name,
                 'label' => $column->label,
                 'type' => $column->type,
                 'choices' => $this->choices($column) ?: null,
-            ], fn ($value) => $value !== null))->all(),
-            'rows' => array_slice(TableStorage::rows($thing), 0, self::MAX_ROWS),
-        ];
+            ], fn ($value) => $value !== null))
+            ->all());
+    }
+
+    /**
+     * Columns given by name or label (any case), as their names.
+     *
+     * @param  list<string>  $given
+     * @return list<string>
+     *
+     * @throws TableProblem when one is not a column of the table
+     */
+    protected function columnNames(Table $table, array $given): array
+    {
+        $columns = $table->columns->reject(fn (TableColumn $column) => $column->is_primary);
+
+        return array_map(function (string $key) use ($columns) {
+            $column = $columns->first(fn (TableColumn $column) => $column->name === $key)
+                ?? $columns->first(fn (TableColumn $column) => Str::lower($column->label) === Str::lower($key));
+
+            return $column->name ?? throw new TableProblem("This table has no column \"{$key}\". Its columns are: ".$columns->pluck('label')->join(', ').'.');
+        }, $given);
     }
 
     /**

@@ -64,7 +64,9 @@ Tables: rows and columns, each column of one kind -- varchar, text, integer, num
 select, multi_select, date, email, url, phone, currency, percent, rating, user (list-tables,
 get-table, create-table, update-table, delete-table). A row is written as an object of values keyed
 by column label, e.g. {"Owner": "Ada", "Budget": 300}; update-table changes or deletes rows by the
-"id" get-table shows. Tables have their own folder tree, listed by list-table-folders.
+"id" get-table shows. Tables have their own folder tree, listed by list-table-folders. get-table reads
+a page of rows at a time ("limit", "offset"), and can keep only rows matching a "search" and only the
+"columns" you name -- read what you need rather than the whole table.
 
 Drive: files (list-drive, get-file, upload-file, update-file, delete-file) -- the user's private ones,
 or a project's, which its members can all open. Files are served from a URL like /drive/files/k3x9m2p7qa.

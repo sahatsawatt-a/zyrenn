@@ -57,17 +57,6 @@ abstract class BoardTool extends FiledTool
     }
 
     /**
-     * @param  Board  $thing
-     */
-    protected function full(Model $thing): array
-    {
-        return [
-            ...$this->summary($thing),
-            'items' => BoardItems::toSpec($thing->content),
-        ];
-    }
-
-    /**
      * Schema for the list of things to put on a board.
      */
     protected function itemsArgument(JsonSchema $schema, string $description, bool $kindRequired = true): Type

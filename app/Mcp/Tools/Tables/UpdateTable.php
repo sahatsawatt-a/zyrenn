@@ -60,7 +60,7 @@ class UpdateTable extends TableTool
         }
 
         try {
-            DB::transaction(fn () => $this->apply($table, $user, $validated));
+            $added = DB::transaction(fn () => $this->apply($table, $user, $validated));
 
             // Rows and columns may both have changed; whoever has it open loads it again
             Live::tell(new TableChanged($table, 'reload'));
@@ -68,7 +68,12 @@ class UpdateTable extends TableTool
             return Response::error($problem->getMessage());
         }
 
-        return Response::structured($this->full($table->refresh()));
+        return Response::structured($this->answer($table->refresh(), array_filter([
+            // A new row's id is how it is changed or deleted later
+            'added_rows' => $added,
+            'updated_rows' => count($validated['update_rows'] ?? []),
+            'deleted_rows' => count($validated['delete_rows'] ?? []),
+        ])));
     }
 
     /**
@@ -76,8 +81,9 @@ class UpdateTable extends TableTool
      * transaction around this keeps none of them.
      *
      * @param  array<string, mixed>  $validated
+     * @return list<int> the ids of the rows added
      */
-    private function apply(Table $table, User $user, array $validated): void
+    private function apply(Table $table, User $user, array $validated): array
     {
         if (array_key_exists('title', $validated)) {
             $table->title = $validated['title'];
@@ -90,8 +96,10 @@ class UpdateTable extends TableTool
         $table->save();
         $this->addColumns($table, $validated['add_columns'] ?? []);
 
+        $added = [];
+
         foreach ($validated['add_rows'] ?? [] as $given) {
-            TableStorage::insertRow($table, $this->rowValues($table, $given));
+            $added[] = TableStorage::insertRow($table, $this->rowValues($table, $given));
         }
 
         foreach ($validated['update_rows'] ?? [] as $row) {
@@ -103,5 +111,7 @@ class UpdateTable extends TableTool
         if (! empty($validated['delete_rows'])) {
             TableStorage::deleteRows($table, $validated['delete_rows']);
         }
+
+        return $added;
     }
 }

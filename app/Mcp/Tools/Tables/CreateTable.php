@@ -65,6 +65,6 @@ class CreateTable extends TableTool
             return Response::error($problem->getMessage());
         }
 
-        return Response::structured($this->full($table->refresh()));
+        return Response::structured($this->answer($table->refresh()));
     }
 }

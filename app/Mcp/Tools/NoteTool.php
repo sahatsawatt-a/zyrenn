@@ -5,7 +5,6 @@ namespace App\Mcp\Tools;
 use App\Models\Note\Note;
 use App\Models\Note\NoteFolder;
 use App\Models\Owner;
-use App\Support\TiptapMarkdown;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -57,16 +56,5 @@ abstract class NoteTool extends FiledTool
     protected function details(Model $thing): array
     {
         return ['is_wide' => $thing->is_wide];
-    }
-
-    /**
-     * @param  Note  $thing
-     */
-    protected function full(Model $thing): array
-    {
-        return [
-            ...$this->summary($thing),
-            'markdown' => TiptapMarkdown::toMarkdown($thing->content),
-        ];
     }
 }

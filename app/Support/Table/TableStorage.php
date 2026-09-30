@@ -227,6 +227,49 @@ class TableStorage
     }
 
     /**
+     * A page of rows, in the order they were added, as the grid reads them:
+     * optionally only those whose text holds $search (any case), and only the
+     * columns named. Answers with the page and how many rows match in all.
+     *
+     * @param  list<string>|null  $only  column names; null for every column
+     * @return array{rows: list<array<string, mixed>>, total: int}
+     */
+    public static function page(Table $table, int $limit, int $offset = 0, ?string $search = null, ?array $only = null): array
+    {
+        $query = DB::table(self::physicalName($table));
+
+        if (filled($search)) {
+            $searchable = $table->columns
+                ->filter(fn (TableColumn $column) => in_array(self::storageOf($column->type), ['string', 'text'], true))
+                ->pluck('name');
+
+            $query->where(function ($match) use ($searchable, $search) {
+                foreach ($searchable as $name) {
+                    $match->orWhereLike($name, '%'.$search.'%');
+                }
+
+                // No column holds text: nothing can match
+                if ($searchable->isEmpty()) {
+                    $match->whereRaw('1 = 0');
+                }
+            });
+        }
+
+        $total = (clone $query)->count();
+
+        $rows = $query->orderBy('id')->offset($offset)->limit($limit)->get()
+            ->map(function (object $row) use ($table, $only) {
+                $values = self::forGrid($table, $row);
+
+                return $only === null ? $values : array_intersect_key($values, array_flip(['id', ...$only]));
+            })
+            ->values()
+            ->all();
+
+        return ['rows' => array_values($rows), 'total' => $total];
+    }
+
+    /**
      * Adds a row, with any values given, keyed by column name, and returns its id.
      *
      * @param  array<string, mixed>  $values

@@ -45,14 +45,6 @@ abstract class FiledTool extends ScopedTool
     abstract protected function searchIn(): array;
 
     /**
-     * Everything about one, as get returns it and create and update answer with.
-     *
-     * @param  TThing  $thing
-     * @return array<string, mixed>
-     */
-    abstract protected function full(Model $thing): array;
-
-    /**
      * What a list says of one beyond its title, folder and dates.
      *
      * @param  TThing  $thing
