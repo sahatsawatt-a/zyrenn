@@ -67,6 +67,40 @@ docker compose up -d
 Set `APP_DEBUG=false` before exposing the app to anyone else: with it on, any
 500 renders a stack trace including config values.
 
+### Backups
+
+The `backup` service takes one every 6 hours: the database and the files on
+disk (Drive files, pictures in notes and boards) together, because a dump alone
+restores rows that point at files which are gone. Each one is a folder in
+`../zyrenn-backups`, next to the repo rather than in it:
+
+```
+auto-20260930-141129/db.dump         # pg_restore
+auto-20260930-141129/files.tar.gz    # storage/app/private
+```
+
+Folders named `auto-*` older than 14 days are removed after each successful
+backup, keeping the newest 3 whatever their age. Anything else in that folder
+-- a dump taken by hand before a risky migration, say -- is never touched.
+Change the schedule in `.env` with `BACKUP_INTERVAL_HOURS`, `BACKUP_KEEP_DAYS`,
+`BACKUP_KEEP_MIN` and `BACKUP_DIR`.
+
+```sh
+docker compose exec backup /backup.sh once   # take one now
+docker compose logs backup                   # what it has done
+```
+
+To restore one, stop the app so nothing writes meanwhile, then put back both
+halves:
+
+```sh
+B=../zyrenn-backups/auto-20260930-141129
+docker compose stop app reverb
+docker compose exec -T postgres pg_restore -U zyrenn -d zyrenn --clean --if-exists --no-owner < $B/db.dump
+tar -xzf $B/files.tar.gz -C storage/app      # restores storage/app/private
+docker compose start app reverb
+```
+
 ## Tests
 
 ```sh
