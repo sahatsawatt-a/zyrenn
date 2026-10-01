@@ -2,7 +2,7 @@
 import { Head, Link, router } from '@inertiajs/vue3';
 import type { JSONContent } from '@tiptap/vue-3';
 import { Send, Settings2, Square, Trash2 } from '@lucide/vue';
-import { nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import ModelPicker from '@/components/chat/ModelPicker.vue';
 import TiptapEditor from '@/components/Editor/TiptapEditor.vue';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,13 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { xsrfToken } from '@/lib/utils';
 import { index as connectionsIndex, models } from '@/routes/ai-connections';
 import { destroy, index, show, update } from '@/routes/chats';
@@ -224,6 +231,19 @@ const offeredFree = ref<string[] | null>(null);
 const offeredFailure = ref<string | null>(null);
 const loadingModels = ref(false);
 
+// Reka's Select can't hold an empty value, so "no connection" has a name of its own
+const NONE = '__none';
+const chosenConnection = computed(() =>
+    props.connections.find((c) => c.ref_id === connection.value),
+);
+
+// A model of the old connection means nothing to the new one, so a change starts the choice over
+function chooseConnection(value: unknown) {
+    connection.value = value === NONE ? '' : String(value);
+    model.value = '';
+    void loadModels();
+}
+
 async function loadModels() {
     offered.value = [];
     offeredFree.value = null;
@@ -430,23 +450,46 @@ function saveSettings() {
                 <form class="space-y-4" @submit.prevent="saveSettings">
                     <div class="grid gap-2">
                         <Label for="chat-connection">Connection</Label>
-                        <select
-                            id="chat-connection"
-                            v-model="connection"
-                            class="border-input dark:bg-input/30 h-9 w-full rounded-md border bg-transparent px-3 text-sm"
-                            @change="loadModels"
+                        <Select
+                            :model-value="connection || NONE"
+                            @update:model-value="chooseConnection"
                         >
-                            <option value="">
-                                None: only keep what I write
-                            </option>
-                            <option
-                                v-for="c in connections"
-                                :key="c.ref_id"
-                                :value="c.ref_id"
+                            <SelectTrigger
+                                id="chat-connection"
+                                class="w-full"
+                                data-connection-select
                             >
-                                {{ c.name }} ({{ c.label }})
-                            </option>
-                        </select>
+                                <SelectValue>
+                                    <template v-if="chosenConnection">
+                                        {{ chosenConnection.name }}
+                                        <span
+                                            class="text-muted-foreground text-xs"
+                                            >{{ chosenConnection.label }}</span
+                                        >
+                                    </template>
+                                    <template v-else
+                                        >None: only keep what I write</template
+                                    >
+                                </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem :value="NONE">
+                                    None: only keep what I write
+                                </SelectItem>
+                                <SelectItem
+                                    v-for="c in connections"
+                                    :key="c.ref_id"
+                                    :value="c.ref_id"
+                                    :data-connection-option="c.name"
+                                >
+                                    {{ c.name }}
+                                    <span
+                                        class="text-muted-foreground text-xs"
+                                        >{{ c.label }}</span
+                                    >
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
                         <p
                             v-if="!connections.length"
                             class="text-muted-foreground text-xs"

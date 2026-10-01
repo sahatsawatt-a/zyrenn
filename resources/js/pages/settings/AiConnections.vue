@@ -331,6 +331,7 @@ async function checkSaved(connection: Connection) {
             v-else
             class="bg-muted/30 space-y-4 rounded-lg border p-4"
             data-connection-form
+            autocomplete="off"
             @submit.prevent="save"
         >
             <h2 class="text-sm font-medium">
@@ -360,6 +361,8 @@ async function checkSaved(connection: Connection) {
                 <Label for="ai-name">Name</Label>
                 <Input
                     id="ai-name"
+                    name="ai-name"
+                    autocomplete="off"
                     v-model="form.name"
                     required
                     maxlength="60"
@@ -379,6 +382,8 @@ async function checkSaved(connection: Connection) {
                 </Label>
                 <Input
                     id="ai-host"
+                    name="ai-host"
+                    autocomplete="off"
                     v-model="form.base_url"
                     :placeholder="preset.url || 'https://llm.example.com/v1'"
                     :required="!preset.url"
@@ -408,7 +413,12 @@ async function checkSaved(connection: Connection) {
                     id="ai-key"
                     v-model="form.api_key"
                     type="password"
-                    autocomplete="off"
+                    name="ai-api-key"
+                    autocomplete="new-password"
+                    data-1p-ignore
+                    data-lpignore="true"
+                    data-bwignore
+                    data-form-type="other"
                     :placeholder="
                         changing?.has_key
                             ? 'Leave blank to keep the saved key'

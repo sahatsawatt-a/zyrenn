@@ -24,6 +24,16 @@ await runBoard(
         );
 
         await page.getByRole('button', { name: /add a connection/i }).click();
+        // Not a login: without this a browser fills the host with an email and the key with a password
+        const attr = (id, name) => page.locator(id).getAttribute(name);
+        check(
+            'the form says it is not a login, so a browser does not fill it from one',
+            (await attr('#ai-key', 'autocomplete')) === 'new-password' &&
+                (await attr('#ai-name', 'autocomplete')) === 'off' &&
+                (await attr('#ai-host', 'autocomplete')) === 'off' &&
+                (await attr('#ai-key', 'data-1p-ignore')) !== null,
+        );
+
         const kinds = await page.locator('[data-kind]').count();
         check(
             'more than two kinds can be connected',
@@ -275,6 +285,40 @@ await runBoard(
 
         // The agent's settings: pick a model from what the host offers
         await page.getByRole('button', { name: /agent/i }).click();
+        // The connection is chosen from the app's own dropdown, not the browser's
+        await page.locator('[data-connection-select]').click();
+        await page.waitForSelector('[role="option"]');
+        const choices = await page.getByRole('option').allInnerTexts();
+        check(
+            'the connection dropdown lists none and the connections, with their kinds',
+            choices.length >= 2 &&
+                choices[0].includes('None') &&
+                choices.some(
+                    (text) => text.includes(NAME) && text.includes('Ollama'),
+                ),
+            choices.join(' | '),
+        );
+        await page.screenshot({
+            path: '/tmp/zyrenn-e2e/connection-dropdown.png',
+        });
+
+        await page.getByRole('option', { name: /^None/ }).click();
+        await page.waitForTimeout(300);
+        check(
+            'choosing none takes the model choice away',
+            (await page.locator('[data-model-picker]').count()) === 0,
+        );
+
+        await page.locator('[data-connection-select]').click();
+        await page.getByRole('option', { name: new RegExp(NAME) }).click();
+        await page.waitForSelector('[data-model-picker]');
+        check(
+            'choosing it again brings it back, starting from its usual model',
+            (await page.locator('[data-model-picker]').innerText()).includes(
+                'the usual',
+            ),
+        );
+
         await page.locator('[data-model-picker]').click();
         await page.waitForSelector('[data-model-list] [role="option"]');
         const all = await page
