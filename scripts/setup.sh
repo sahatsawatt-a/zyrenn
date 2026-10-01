@@ -2,40 +2,33 @@
 # First-run setup for a fresh clone. Safe to run again: it only fills in what is
 # missing and never overwrites a value you have set.
 #
-#   ./scripts/setup.sh              # dev: Vite with HMR
-#   ./scripts/setup.sh --build      # serve the built bundle (no Vite), for a server
+# A plain `docker compose up -d` also works: docker/init.sh installs everything
+# then. This adds what a container cannot do: your UID, free host ports, and
+# Traefik.
+#
+#   ./scripts/setup.sh              # built assets; Vite only on `docker compose up -d vite`
+#   ./scripts/setup.sh --dev        # Vite with HMR on every `up`, APP_DEBUG=true
 #   ./scripts/setup.sh --traefik zyrenn.example.com
-#                                   # behind Traefik over HTTPS (implies --build)
+#                                   # behind Traefik over HTTPS
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-BUILD=0 HOST=
+DEV=0 HOST=
 while [ $# -gt 0 ]; do
     case $1 in
-        --build) BUILD=1 ;;
-        --traefik) HOST=${2:?--traefik needs the public hostname}; BUILD=1; shift ;;
+        --dev) DEV=1 ;;
+        --build) ;; # the default now; still accepted
+        --traefik) HOST=${2:?--traefik needs the public hostname}; shift ;;
         *) echo "unknown option: $1" >&2; exit 1 ;;
     esac
     shift
 done
+[ "$DEV" = 1 ] && [ -n "$HOST" ] && { echo "--dev is for this machine only; leave it off with --traefik" >&2; exit 1; }
 
 command -v docker >/dev/null || { echo "Docker is required: https://docs.docker.com/engine/install/" >&2; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "Docker Compose v2 is required ('docker compose')." >&2; exit 1; }
 
 [ -f .env ] || { cp .env.example .env; echo "• created .env"; }
-
-# Set KEY=value in .env only while KEY is empty or absent.
-fill() {
-    local key=$1 value=$2
-    if grep -q -E "^${key}=$" .env; then
-        sed -i "s|^${key}=\$|${key}=${value}|" .env
-        echo "• set ${key}"
-    elif ! grep -q -E "^${key}=" .env; then
-        echo "${key}=${value}" >> .env
-        echo "• set ${key}"
-    fi
-}
-secret() { openssl rand -hex 16 2>/dev/null || head -c16 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 
 # The host user, so bind-mounted storage/ stays writable (compose cannot read $UID itself)
 sed -i "s|^UID=.*|UID=$(id -u)|; s|^GID=.*|GID=$(id -g)|" .env
@@ -60,17 +53,15 @@ if [ -z "$(docker compose ps -q 2>/dev/null)" ]; then
     done
 fi
 
-fill REVERB_APP_ID "$(shuf -i 100000-999999 -n 1)"
-fill REVERB_APP_KEY "$(secret)"
-fill REVERB_APP_SECRET "$(secret)"
-fill COLLAB_SECRET "$(secret)$(secret)"
-
 # Set KEY=value in .env, replacing any line or commented-out example of it.
 put() {
     if grep -q -E "^#? ?${1}=" .env; then sed -i "s|^#\? \?${1}=.*|${1}=${2}|" .env; else echo "${1}=${2}" >> .env; fi
 }
 
-if [ "$BUILD" = 1 ]; then
+if [ "$DEV" = 1 ]; then
+    sed -i 's|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=dev|; s|^APP_DEBUG=.*|APP_DEBUG=true|' .env
+    echo "• dev: Vite with every up, APP_DEBUG=true"
+elif [ -n "$HOST" ]; then
     sed -i 's|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=|; s|^APP_DEBUG=.*|APP_DEBUG=false|' .env
 fi
 
@@ -90,17 +81,10 @@ fi
 echo "• building the image"
 docker compose build app
 
-echo "• installing PHP and JS dependencies"
-docker compose run --rm --no-deps app composer install --no-interaction
-docker compose run --rm --no-deps app npm install
-
-grep -q -E '^APP_KEY=base64:' .env || docker compose run --rm --no-deps app php artisan key:generate --force
-
-echo "• starting the stack"
-[ "$BUILD" = 1 ] && docker compose run --rm --no-deps app npm run build
-docker compose up -d --wait postgres app
-
-docker compose exec app php artisan migrate --force
+# The `init` service (docker/init.sh) does the rest before app starts: secrets,
+# dependencies, the key, built assets, migrations.
+echo "• starting the stack (the first time installs everything: a few minutes)"
+docker compose up -d --wait app || { docker compose logs --tail 40 init; exit 1; }
 docker compose up -d
 
 port=$(grep -E '^APP_PORT=' .env | cut -d= -f2)

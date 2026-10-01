@@ -15,13 +15,16 @@ A personal workspace: notes, boards, tables, and a private Drive behind them.
 
 ## Running ZyrenN locally
 
-Everything runs in Docker; nothing but Docker is needed on the host. On a fresh
-clone, run `./scripts/setup.sh` first (`.\scripts\setup.ps1` on Windows); [docs/SETUP.md](docs/SETUP.md) has the
+Everything runs in Docker; nothing but Docker is needed on the host. A fresh
+clone needs only `docker compose up -d`: the first one installs everything, in a
+few minutes. `./scripts/setup.sh` (`.\scripts\setup.ps1` on Windows) also
+matches your UID and picks free ports; [docs/SETUP.md](docs/SETUP.md) has the
 steps, HTTPS behind Traefik (`./scripts/setup.sh --traefik <host>`), and one for
 each way of connecting an AI client.
 
 ```sh
-docker compose up -d                     # postgres, app, nginx, reverb, vite
+docker compose up -d                     # postgres, app, nginx, reverb, collab, ...
+docker compose up -d vite                # Vite with HMR, only while you need it
 docker compose logs -f app
 docker compose exec app php artisan ...
 docker compose exec app php artisan test
@@ -31,7 +34,7 @@ docker compose down                      # add -v to drop the database too
 |          |                                                                 |
 | -------- | --------------------------------------------------------------- |
 | app      | <http://localhost:8001>                                         |
-| vite     | <http://localhost:5173> (dev profile, HMR)                      |
+| vite     | <http://localhost:5173> (on demand, HMR)                        |
 | postgres | `localhost:5434`, database and user `zyrenn`, password `secret` |
 
 Those ports were free when this project was scaffolded; they are recorded in
@@ -44,8 +47,15 @@ docker compose port web 8080
 
 ### Assets
 
-`COMPOSE_PROFILES=dev` in `.env` runs Vite for HMR. While it runs it writes an
-empty `public/hot`, which makes Laravel emit relative asset URLs, and `web`
+The page is served from the built bundle in `public/build`. The `init` service
+(`docker/init.sh`) rebuilds it on `docker compose up` whenever the sources have
+changed, so a pull needs nothing more.
+
+Vite runs only when asked for: `docker compose up -d vite` starts it, and
+`docker compose stop vite && docker compose up -d` goes back to the bundle,
+rebuilt with whatever you changed meanwhile. `COMPOSE_PROFILES=dev` in `.env`
+(or `./scripts/setup.sh --dev`) starts it with every `up` instead. While it runs
+it writes an empty `public/hot`, which makes Laravel emit relative asset URLs, and `web`
 proxies the dev server on the page's own origin. So `http://localhost:8001`,
 this machine's LAN IP and a hostname in front of it all serve the same HTML and
 all get HMR, with no dev-server address baked in.
@@ -58,16 +68,7 @@ Set `VITE_DEV_ORIGIN` to an absolute URL to skip the proxy and have the browser
 talk to the dev server directly — that address then becomes the only one that
 works.
 
-To serve the built bundle instead — the mode to deploy — build first, then drop
-the profile:
-
-```sh
-docker compose exec app npm run build
-# remove COMPOSE_PROFILES=dev from .env, then
-docker compose up -d
-```
-
-Set `APP_DEBUG=false` before exposing the app to anyone else: with it on, any
+Keep `APP_DEBUG=false`, the default, before exposing the app to anyone else: with it on, any
 500 renders a stack trace including config values.
 
 ### Backups

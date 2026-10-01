@@ -10,14 +10,38 @@ You need Docker with Compose v2 and git. Nothing else is installed on the host.
 
 ```sh
 git clone <repo-url> zyrenn && cd zyrenn
-./scripts/setup.sh            # dev: Vite with hot reload
-./scripts/setup.sh --build    # server: built assets, APP_DEBUG=false
+docker compose up -d
+```
+
+That is all. The first `up` takes a few minutes: a one-off `init` container
+(`docker/init.sh`) creates `.env` with fresh secrets, installs the PHP and JS
+dependencies, generates `APP_KEY`, builds the assets and migrates, then the app
+starts. Watch it with `docker compose logs -f init`. Every later `up` runs it
+again and skips whatever is already done, so after a `git pull` the same command
+installs new packages, rebuilds and migrates.
+
+The Vite dev server is not part of it. Start it when you are working on the
+front end and stop it after:
+
+```sh
+docker compose up -d vite                            # hot reload
+docker compose stop vite && docker compose up -d     # back to the built assets
+```
+
+`./scripts/setup.sh` does the same plus what a container cannot: it sets UID/GID
+to your user (plain compose assumes 1000, the first user on most Linux machines;
+Docker Desktop on Windows and macOS does not care), and moves any port that is
+already taken to a free one.
+
+```sh
+./scripts/setup.sh            # built assets, Vite on demand
+./scripts/setup.sh --dev      # Vite with every `up`, APP_DEBUG=true
 ```
 
 On Windows, the same script for PowerShell, with the same options:
 
 ```powershell
-.\scripts\setup.ps1           # or -Build, or -Traefik zyrenn.example.com
+.\scripts\setup.ps1           # or -Dev, or -Traefik zyrenn.example.com
 # blocked by the execution policy? powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 ```
 
@@ -26,24 +50,7 @@ WSL2 is faster: clone into the Linux filesystem (`~`, not `/mnt/c`) and run
 containers read crosses Docker Desktop's file sharing, and Vite never hears that
 a file changed.
 
-The script copies `.env.example` to `.env`, fills in your UID/GID and the
-secrets (`REVERB_*`, `COLLAB_SECRET`), installs dependencies, generates
-`APP_KEY`, migrates and starts everything. Run it again any time; it never
-overwrites a value you have set.
-
-Prefer to do it by hand? Those are exactly these steps:
-
-```sh
-cp .env.example .env                         # then set UID/GID (`id -u`, `id -g`),
-                                             # REVERB_APP_ID/KEY/SECRET, COLLAB_SECRET
-docker compose build app
-docker compose run --rm --no-deps app composer install
-docker compose run --rm --no-deps app npm install
-docker compose run --rm --no-deps app php artisan key:generate
-docker compose up -d postgres app
-docker compose exec app php artisan migrate --force
-docker compose up -d
-```
+Run either script again any time; neither overwrites a value you have set.
 
 Open <http://localhost:8001> (`APP_PORT` in `.env`; change it if the port is
 taken, along with `VITE_PORT` and `FORWARD_DB_PORT`). Register an account, or
@@ -59,7 +66,8 @@ If you changed `APP_PORT` after setup, also update `APP_URL` and
 Find what holds a port with `ss -ltnp | grep :8001`. An error such as
 "port is already allocated" from `docker compose up` means exactly this.
 
-If it does not come up: `docker compose ps`, then `docker compose logs app`.
+If it does not come up: `docker compose ps`, then `docker compose logs init` (the
+first-run installs) and `docker compose logs app`.
 
 ## 2. Serve it over HTTPS with Traefik (optional, for a server)
 
@@ -89,11 +97,11 @@ reachable from the internet (Let's Encrypt checks over port 80).
    ./scripts/setup.sh --traefik zyrenn.example.com
    ```
 
-   This builds the assets, turns debug off, creates the `traefik` network if
-   missing, and sets `COMPOSE_FILE`, `APP_HOST`, `VITE_HOST` and
+   This turns Vite and debug off, creates the `traefik` network if missing, and
+   sets `COMPOSE_FILE`, `APP_HOST`, `VITE_HOST` and
    `APP_URL=https://zyrenn.example.com` in `.env`. (By hand: set those four,
    keep `VITE_HOST` one label under the same parent domain, then
-   `docker compose run --rm app npm run build` and `docker compose up -d`.)
+   `docker compose up -d`.)
 
 3. Open `https://zyrenn.example.com`. The first certificate takes a few seconds;
    if it never arrives, `docker compose -f docs/traefik/docker-compose.yml logs traefik`.

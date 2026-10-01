@@ -2,9 +2,12 @@
 # step for step. Safe to run again: it only fills in what is missing and never
 # overwrites a value you have set.
 #
-#   .\scripts\setup.ps1                                # dev: Vite with HMR
-#   .\scripts\setup.ps1 -Build                         # serve the built bundle (no Vite), for a server
-#   .\scripts\setup.ps1 -Traefik zyrenn.example.com    # behind Traefik over HTTPS (implies -Build)
+# A plain `docker compose up -d` also works: docker/init.sh installs everything
+# then. This adds free host ports and Traefik.
+#
+#   .\scripts\setup.ps1                                # built assets; Vite only on `docker compose up -d vite`
+#   .\scripts\setup.ps1 -Dev                           # Vite with HMR on every `up`, APP_DEBUG=true
+#   .\scripts\setup.ps1 -Traefik zyrenn.example.com    # behind Traefik over HTTPS
 #
 # Blocked by the execution policy? powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 #
@@ -15,13 +18,14 @@
 # Keep this file ASCII: Windows PowerShell 5.1 reads a script without a BOM as
 # ANSI, and some UTF-8 punctuation decodes to characters it parses as quotes.
 param(
-    [switch]$Build,
+    [switch]$Dev,
+    [switch]$Build, # the default now; still accepted
     [string]$Traefik = ''
 )
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
-$doBuild = $Build.IsPresent -or [bool]$Traefik
+if ($Dev -and $Traefik) { throw '-Dev is for this machine only; leave it off with -Traefik' }
 
 # Windows PowerShell turns a native command's redirected stderr into a
 # terminating error under 'Stop', so docker is run through these.
@@ -70,15 +74,6 @@ function Set-EnvValue($key, $value, [switch]$OrExample) {
     }
     $lines.Add("$key=$value")
 }
-# Set KEY=value only while KEY is empty or absent.
-function Add-EnvValue($key, $value) {
-    if ([string]::IsNullOrEmpty((Get-EnvValue $key))) { Set-EnvValue $key $value; Write-Host "- set $key" }
-}
-function New-Secret {
-    $bytes = New-Object byte[] 16
-    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-    return -join ($bytes | ForEach-Object { $_.ToString('x2') })
-}
 
 # UID and GID stay at 1000 from .env.example: Docker Desktop shares files on
 # C:\ with every user in the containers, so there is no host user to match.
@@ -108,12 +103,11 @@ if (-not (Get-DockerOutput compose ps -q)) {
     }
 }
 
-Add-EnvValue REVERB_APP_ID (Get-Random -Minimum 100000 -Maximum 1000000)
-Add-EnvValue REVERB_APP_KEY (New-Secret)
-Add-EnvValue REVERB_APP_SECRET (New-Secret)
-Add-EnvValue COLLAB_SECRET ((New-Secret) + (New-Secret))
-
-if ($doBuild) {
+if ($Dev) {
+    Set-EnvValue COMPOSE_PROFILES 'dev'
+    Set-EnvValue APP_DEBUG 'true'
+    Write-Host '- dev: Vite with every up, APP_DEBUG=true'
+} elseif ($Traefik) {
     Set-EnvValue COMPOSE_PROFILES ''
     Set-EnvValue APP_DEBUG 'false'
 }
@@ -139,19 +133,11 @@ if ($Traefik) {
 Write-Host '- building the image'
 Invoke-Docker compose build app
 
-Write-Host '- installing PHP and JS dependencies'
-Invoke-Docker compose run --rm --no-deps app composer install --no-interaction
-Invoke-Docker compose run --rm --no-deps app npm install
-
-if ((Get-EnvValue APP_KEY) -notmatch '^base64:') {
-    Invoke-Docker compose run --rm --no-deps app php artisan key:generate --force
-}
-
-Write-Host '- starting the stack'
-if ($doBuild) { Invoke-Docker compose run --rm --no-deps app npm run build }
-Invoke-Docker compose up -d --wait postgres app
-
-Invoke-Docker compose exec app php artisan migrate --force
+# The `init` service (docker/init.sh) does the rest before app starts: secrets,
+# dependencies, the key, built assets, migrations.
+Write-Host '- starting the stack (the first time installs everything: a few minutes)'
+& docker compose up -d --wait app
+if ($LASTEXITCODE -ne 0) { & docker compose logs --tail 40 init; throw 'init failed; its log is above' }
 Invoke-Docker compose up -d
 
 $port = Get-EnvValue APP_PORT

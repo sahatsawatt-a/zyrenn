@@ -5,6 +5,24 @@
 # Machines fronted by Traefik additionally load docker-compose.traefik.yml --
 # see that file's header.
 services:
+    # Readies the checkout before `app` starts (docker/init.sh): .env and its
+    # secrets, PHP and JS dependencies, the key, built assets, migrations. Each
+    # step is skipped once done, so a fresh clone needs nothing but
+    # `docker compose up -d`, and the next `up` after a pull catches up.
+    # The first run takes a few minutes: `docker compose logs -f init`.
+    init:
+        image: zyrenn-app:local
+        working_dir: /var/www/html
+        volumes:
+            - .:/var/www/html
+        environment:
+            # Whether Vite serves the assets or they are built
+            COMPOSE_PROFILES: '${COMPOSE_PROFILES:-}'
+        depends_on:
+            postgres:
+                condition: service_healthy
+        command: bash docker/init.sh
+
     app:
         build:
             context: .
@@ -20,6 +38,8 @@ services:
         expose:
             - '8000'
         depends_on:
+            init:
+                condition: service_completed_successfully
             postgres:
                 condition: service_healthy
         healthcheck:
@@ -41,7 +61,7 @@ services:
         volumes:
             - ./docker/nginx/app.conf:/etc/nginx/conf.d/default.conf:ro
         ports:
-            - '${APP_PORT:-8000}:8080'
+            - '${APP_PORT:-8001}:8080'
         depends_on:
             app:
                 condition: service_healthy
@@ -85,11 +105,12 @@ services:
             - '1234'
         environment:
             COLLAB_APP_URL: 'http://app:8000'
-            COLLAB_SECRET: '${COLLAB_SECRET:-}'
         depends_on:
             app:
                 condition: service_healthy
-        command: node collab/server.mjs
+        # COLLAB_SECRET comes from .env as the app reads it, not through compose:
+        # on a fresh clone compose reads .env before init has written the secret.
+        command: node --env-file-if-exists=.env collab/server.mjs
 
     # Dev-only. While this runs it writes public/hot and Laravel serves assets
     # from the Vite dev server, which is unreachable from outside this machine.
@@ -190,7 +211,7 @@ services:
             POSTGRES_PASSWORD: '${DB_PASSWORD:-secret}'
         ports:
             # Set FORWARD_DB_PORT in .env when 5432 is already taken on the host.
-            - '${FORWARD_DB_PORT:-5432}:5432'
+            - '${FORWARD_DB_PORT:-5434}:5432'
         volumes:
             - pgdata:/var/lib/postgresql/data
         healthcheck:
