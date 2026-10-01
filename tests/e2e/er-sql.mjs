@@ -1,14 +1,11 @@
 // An erDiagram in a note turned into SQL from its toolbar: inserted below it,
 // rewritten in place in another dialect, and copied.
 //
-// The note is made over the app's own MCP endpoint (/mcp/user) with a token
-// for the test account, as mcp-blocks.mjs does, and taken away again after.
-import { execFileSync } from 'node:child_process';
-import { SHOTS, runBoard } from './harness.mjs';
+// The note is made over the app's own MCP endpoint (see makeNote) and taken
+// away again after.
+import { SHOTS, makeNote, runBoard } from './harness.mjs';
 
-const APP_CONTAINER = process.env.E2E_APP_CONTAINER ?? 'zyrenn-app-1';
 const RUN = Date.now().toString().slice(-6);
-const TOKEN_NAME = `e2e er-sql ${RUN}`;
 
 const DIAGRAM = `erDiagram
   USER ||--o{ NOTE : writes
@@ -27,54 +24,46 @@ const DIAGRAM = `erDiagram
     string label
   }`;
 
-const tinker = (php) =>
-    execFileSync(
-        'docker',
-        ['exec', APP_CONTAINER, 'php', 'artisan', 'tinker', '--execute', php],
-        { encoding: 'utf8' },
-    )
-        .trim()
-        .split('\n')
-        .pop();
+// Lines that bend just short of a box: Mermaid drew their circles off the line
+const CROWDED = `erDiagram
+  USER ||--o{ NOTE : writes
+  USER ||--|| PROFILE : has
+  PROJECT |o--o{ NOTE : holds
+  USER }o--o{ PROJECT : "is a member of"
+  FOLDER |o--o{ FOLDER : contains
+  FOLDER |o--o{ NOTE : files
+  NOTE }o--o{ TAG : "is tagged"
+  USER {
+    int id PK
+    string email UK
+  }
+  PROFILE {
+    int id PK
+  }
+  PROJECT {
+    uuid id PK
+  }
+  FOLDER {
+    int id PK
+    int parent_id FK
+  }
+  NOTE {
+    int id PK
+    int user_id FK
+  }
+  TAG {
+    int id PK
+  }`;
 
 await runBoard(
     '/notes',
-    async ({ page, check, afterwards }) => {
+    async (board) => {
+        const { page, check } = board;
         const base = new URL(page.url()).origin;
-        const token = tinker(
-            `echo App\\Models\\User::where('email', 'test@example.com')->first()->createToken('${TOKEN_NAME}', ['mcp'])->plainTextToken;`,
-        );
-        afterwards(() =>
-            tinker(
-                `App\\Models\\User::where('email', 'test@example.com')->first()->tokens()->where('name', '${TOKEN_NAME}')->delete();`,
-            ),
-        );
-
-        const response = await fetch(`${base}/mcp/user`, {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                Accept: 'application/json, text/event-stream',
-            },
-            body: JSON.stringify({
-                jsonrpc: '2.0',
-                id: 1,
-                method: 'tools/call',
-                params: {
-                    name: 'create-note',
-                    arguments: {
-                        title: `ER to SQL ${RUN}`,
-                        markdown: `Schema:\n\n\`\`\`mermaid\n${DIAGRAM}\n\`\`\`\n\nThe end.`,
-                    },
-                },
-            }),
-        });
-        const ref = (await response.json()).result.structuredContent.ref_id;
-        afterwards(() =>
-            tinker(
-                `App\\Models\\Note\\Note::where('ref_id', '${ref}')->first()?->delete();`,
-            ),
+        const ref = await makeNote(
+            board,
+            `ER to SQL ${RUN}`,
+            `Schema:\n\n\`\`\`mermaid\n${DIAGRAM}\n\`\`\`\n\nThe end.`,
         );
 
         await page
@@ -94,6 +83,32 @@ await runBoard(
             await page.locator('[data-test="mermaid-sql"]').click();
             if (item) await page.locator(`[data-test="${item}"]`).click();
         };
+
+        // ------------------------------- Every label fits the box it was given
+        // (the note's own paragraph style once drew them past it: "writes"
+        // came out as "write")
+        const overflowing = await page
+            .locator('.mermaid-svg svg foreignObject')
+            .evaluateAll((boxes) =>
+                boxes
+                    .filter((box) => {
+                        const label = box.firstElementChild;
+                        return (
+                            label &&
+                            label.scrollWidth >
+                                Number(box.getAttribute('width')) + 1
+                        );
+                    })
+                    .map((box) => box.textContent),
+            );
+        check(
+            'every label fits inside its box',
+            overflowing.length === 0,
+            overflowing.join(', ') || 'all fit',
+        );
+        await page
+            .locator('.mermaid-block')
+            .screenshot({ path: `${SHOTS}/er-labels.png` });
 
         // ------------------------------------------------ Insert it below
         check(
@@ -193,6 +208,45 @@ await runBoard(
             'only an erDiagram has the SQL menu',
             (await page.locator('[data-test="mermaid-sql"]').count()) === 1,
         );
+
+        // ------------------- Markers sit on a straight stretch of their line
+        const crowded = await makeNote(
+            board,
+            `ER markers ${RUN}`,
+            `\`\`\`mermaid\n${CROWDED}\n\`\`\``,
+        );
+        await page.goto(`${base}/notes/${crowded}`, {
+            waitUntil: 'networkidle',
+        });
+        await page.waitForSelector('.mermaid-svg svg', { timeout: 15000 });
+        const stretches = await page.evaluate(() =>
+            [
+                ...document.querySelectorAll(
+                    '.mermaid-svg path.relationshipLine[data-points]',
+                ),
+            ].map((line) => {
+                const points = JSON.parse(atob(line.dataset.points));
+                const run = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+                const n = points.length;
+                return {
+                    id: line.dataset.id.replace(/id_entity-|-\d+/g, ''),
+                    first: Math.round(run(points[0], points[1])),
+                    last: Math.round(run(points[n - 2], points[n - 1])),
+                };
+            }),
+        );
+        const cramped = stretches.filter(
+            (line) => line.first < 40 || line.last < 40,
+        );
+        check(
+            'every marker has a straight stretch of line to sit on',
+            stretches.length === 7 && cramped.length === 0,
+            cramped.map((l) => `${l.id} ${l.first}/${l.last}`).join(', ') ||
+                `${stretches.length} lines`,
+        );
+        await page
+            .locator('.mermaid-block')
+            .screenshot({ path: `${SHOTS}/er-markers.png` });
     },
     { canvas: false },
 );

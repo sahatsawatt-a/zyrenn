@@ -6,6 +6,7 @@
 //
 //     node tests/e2e/board.mjs          # watch it happen
 //     HEADED=0 node tests/e2e/board.mjs # quietly
+import { execFileSync } from 'node:child_process';
 import { chromium } from 'playwright-core';
 
 const APP = process.env.APP_URL ?? 'http://127.0.0.1:8001';
@@ -394,4 +395,61 @@ export async function removeAt(page, path) {
             redirect: 'manual',
         });
     }, path);
+}
+
+const APP_CONTAINER = process.env.E2E_APP_CONTAINER ?? 'zyrenn-app-1';
+
+/** Runs PHP in the app's container and answers with the last line it printed. */
+export const tinker = (php) =>
+    execFileSync(
+        'docker',
+        ['exec', APP_CONTAINER, 'php', 'artisan', 'tinker', '--execute', php],
+        { encoding: 'utf8' },
+    )
+        .trim()
+        .split('\n')
+        .pop();
+
+/**
+ * A note for the test account, made over the app's own MCP endpoint
+ * (/mcp/user) with a token of its own. The token and the note are taken away
+ * again when the suite is done. Answers with the note's ref_id.
+ */
+export async function makeNote({ page, afterwards }, title, markdown) {
+    const base = new URL(page.url()).origin;
+    const tokenName = `e2e ${title}`;
+    const user = `App\\Models\\User::where('email', '${WHO.email}')->first()`;
+
+    const token = tinker(
+        `echo ${user}->createToken('${tokenName}', ['mcp'])->plainTextToken;`,
+    );
+    afterwards(() =>
+        tinker(`${user}->tokens()->where('name', '${tokenName}')->delete();`),
+    );
+
+    const response = await fetch(`${base}/mcp/user`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json, text/event-stream',
+        },
+        body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'tools/call',
+            params: {
+                name: 'create-note',
+                arguments: { title, markdown },
+            },
+        }),
+    });
+    const ref = (await response.json()).result.structuredContent.ref_id;
+    afterwards(() =>
+        tinker(
+            `App\\Models\\Note\\Note::where('ref_id', '${ref}')->first()?->delete();`,
+        ),
+    );
+
+    return ref;
 }

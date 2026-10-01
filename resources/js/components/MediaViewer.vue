@@ -2,7 +2,9 @@
 import {
     ChevronLeft,
     ChevronRight,
+    Download,
     ExternalLink,
+    HardDrive,
     Maximize,
     Minus,
     Plus,
@@ -10,6 +12,16 @@ import {
 } from '@lucide/vue';
 import { useElementSize, useEventListener, useScrollLock } from '@vueuse/core';
 import { computed, nextTick, reactive, ref, watch } from 'vue';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuRadioGroup,
+    DropdownMenuRadioItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useMediaViewer } from '@/composables/useMediaViewer';
 
 const { items, index, isOpen, current, close, step } = useMediaViewer();
@@ -110,6 +122,57 @@ const title = computed(() => {
 
     return item.type === 'image' ? (item.alt ?? '') : (item.title ?? '');
 });
+
+// A diagram kept as a picture, by whoever opened it
+const save = computed(() =>
+    current.value?.type === 'svg' ? current.value.save : undefined,
+);
+const saveMenuOpen = ref(false);
+const saving = ref(false);
+
+type ImageType = 'png' | 'svg';
+
+const imageTypes: { id: ImageType; label: string; hint: string }[] = [
+    { id: 'png', label: 'PNG', hint: 'A picture, for slides and chats' },
+    { id: 'svg', label: 'SVG', hint: 'Sharp at any size, and editable' },
+];
+
+const IMAGE_TYPE_KEY = 'zyrenn.diagramImageType';
+const imageType = ref<ImageType>('png');
+
+try {
+    const saved = localStorage.getItem(IMAGE_TYPE_KEY);
+
+    if (imageTypes.some((type) => type.id === saved)) {
+        imageType.value = saved as ImageType;
+    }
+} catch {
+    // Storage blocked: every save starts from PNG
+}
+
+function chooseImageType(type: ImageType): void {
+    imageType.value = type;
+
+    try {
+        localStorage.setItem(IMAGE_TYPE_KEY, type);
+    } catch {
+        // Storage blocked: remembered for this visit only
+    }
+}
+
+const saveAs = async (to: 'download' | 'drive') => {
+    if (!save.value || saving.value) {
+        return;
+    }
+
+    saving.value = true;
+
+    try {
+        await save.value.run(imageType.value, to);
+    } finally {
+        saving.value = false;
+    }
+};
 
 // A video is played rather than looked over: no zoom, no panning, and the
 // keys and clicks on it are its own player's
@@ -228,7 +291,8 @@ useEventListener(
     window,
     'keydown',
     (event: KeyboardEvent) => {
-        if (!isOpen.value) {
+        // An open menu has the keys (Escape shuts the menu, not the viewer)
+        if (!isOpen.value || saveMenuOpen.value) {
             return;
         }
 
@@ -314,6 +378,62 @@ useEventListener(
                         <Maximize class="size-4" />
                     </button>
                 </template>
+                <DropdownMenu v-if="save" v-model:open="saveMenuOpen">
+                    <DropdownMenuTrigger as-child>
+                        <button
+                            type="button"
+                            class="viewer-btn gap-1.5"
+                            title="Save as a picture"
+                            :disabled="saving"
+                            data-test="viewer-save"
+                        >
+                            <Download class="size-4" />
+                            Save
+                        </button>
+                    </DropdownMenuTrigger>
+                    <!-- Above the viewer, which sits over everything else -->
+                    <DropdownMenuContent align="end" class="z-[110] w-60">
+                        <DropdownMenuLabel>File type</DropdownMenuLabel>
+                        <DropdownMenuRadioGroup
+                            :model-value="imageType"
+                            @update:model-value="
+                                chooseImageType($event as ImageType)
+                            "
+                        >
+                            <!-- Picking a type keeps the menu open for the save -->
+                            <DropdownMenuRadioItem
+                                v-for="type in imageTypes"
+                                :key="type.id"
+                                :value="type.id"
+                                :data-test="`viewer-save-type-${type.id}`"
+                                @select.prevent
+                            >
+                                <span class="flex flex-col">
+                                    <span>{{ type.label }}</span>
+                                    <span class="text-muted-foreground text-xs">
+                                        {{ type.hint }}
+                                    </span>
+                                </span>
+                            </DropdownMenuRadioItem>
+                        </DropdownMenuRadioGroup>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                            data-test="viewer-save-download"
+                            @select="saveAs('download')"
+                        >
+                            <Download />
+                            Download {{ imageType.toUpperCase() }}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            v-if="save.drive"
+                            data-test="viewer-save-drive"
+                            @select="saveAs('drive')"
+                        >
+                            <HardDrive />
+                            Save {{ imageType.toUpperCase() }} to Drive
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
                 <a
                     v-if="current.type !== 'svg'"
                     :href="current.src"

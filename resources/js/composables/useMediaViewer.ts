@@ -4,8 +4,15 @@ export type ViewerItem =
     | { type: 'image'; src: string; alt?: string }
     // Played, not zoomed; `start` picks up where a smaller player left off
     | { type: 'video'; src: string; title?: string; start?: number }
-    // Already-rendered markup, e.g. a Mermaid diagram
-    | { type: 'svg'; svg: string; title?: string };
+    // Already-rendered markup, e.g. a Mermaid diagram, with a way to keep it
+    // as a picture when whoever opened it can make one
+    | { type: 'svg'; svg: string; title?: string; save?: SaveImage };
+
+export type SaveImage = {
+    /** Whether the Drive of wherever the page is will take it. */
+    drive: boolean;
+    run: (type: 'png' | 'svg', to: 'download' | 'drive') => Promise<void>;
+};
 
 // One viewer for the whole page, so any block can open it
 const items = shallowRef<ViewerItem[]>([]);

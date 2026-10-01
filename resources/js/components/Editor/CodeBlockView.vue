@@ -14,7 +14,6 @@
                 <option value="markdown">Markdown</option>
                 <option value="bash">Bash / Shell</option>
                 <option value="rust">Rust</option>
-                <option value="mermaid">Mermaid Diagram</option>
             </select>
 
             <button class="copy-btn" @click="copyCode">

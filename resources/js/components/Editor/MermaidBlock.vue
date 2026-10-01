@@ -126,7 +126,9 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { NodeViewWrapper, NodeViewContent, nodeViewProps } from '@tiptap/vue-3';
 import { Selection } from '@tiptap/pm/state';
 import { useDebounceFn, useMutationObserver } from '@vueuse/core';
-import { renderMermaid } from '../../lib/mermaid';
+import { mermaidImage, renderMermaid } from '../../lib/mermaid';
+import { deliver } from '../../lib/exporting';
+import { canChange } from '../../lib/projects';
 import { holdPrint } from '../../lib/printReady';
 import { useMediaViewer } from '../../composables/useMediaViewer';
 import { copyToClipboard } from '../../lib/utils';
@@ -265,6 +267,23 @@ const finishEditing = () => {
         .run();
 };
 
+// ---------------------------------------------------------------------- Image
+// A picture of the diagram to keep, offered from the full-size view:
+// downloaded, or put in the Drive of wherever the note is -- which a
+// project's viewer cannot add to
+const canSaveToDrive = canChange();
+
+const saveImage = async (type: 'png' | 'svg', to: 'download' | 'drive') => {
+    try {
+        const name = `${detected.value?.label ?? 'Diagram'}.${type}`;
+        const image = await mermaidImage(source.value, type);
+
+        await deliver(new File([image], name, { type: image.type }), to);
+    } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err));
+    }
+};
+
 const viewer = useMediaViewer();
 
 const expand = () => {
@@ -273,6 +292,7 @@ const expand = () => {
             type: 'svg',
             svg: svg.value,
             title: detected.value?.label ?? 'Diagram',
+            save: { drive: canSaveToDrive, run: saveImage },
         },
     ]);
 };
@@ -531,6 +551,14 @@ const copySql = async () => {
 .mermaid-svg :deep(svg) {
     max-width: 100%;
     height: auto;
+}
+/* Mermaid's labels are paragraphs it measured at its own size; the note's
+   paragraph style (.tiptap p) would draw them bigger, past their boxes */
+.mermaid-svg :deep(foreignObject p) {
+    margin: 0;
+    font-size: inherit;
+    line-height: inherit;
+    color: inherit;
 }
 
 .mermaid-hint {
