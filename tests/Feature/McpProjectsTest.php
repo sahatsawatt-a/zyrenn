@@ -30,8 +30,6 @@ class McpProjectsTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-
     private function inProject(Project $project, string $role): User
     {
         $user = User::factory()->create();
@@ -161,7 +159,7 @@ class McpProjectsTest extends TestCase
             ->assertOk();
 
         UserServer::actingAs($editor)
-            ->tool(UploadFile::class, ['project' => 'Lakeshore', 'name' => 'chart.png', 'content_base64' => self::PNG])
+            ->tool(UploadFile::class, ['project' => 'Lakeshore', 'name' => 'minutes.md', 'text' => '# Minutes'])
             ->assertOk();
 
         $note = $project->notes()->sole();

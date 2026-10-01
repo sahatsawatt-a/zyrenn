@@ -3,6 +3,7 @@
 use App\Http\Controllers\Drive\DriveController;
 use App\Http\Controllers\Drive\DriveFileController;
 use App\Http\Controllers\Drive\DriveFolderController;
+use App\Http\Controllers\Drive\DriveUploadLinkController;
 use Illuminate\Support\Facades\Route;
 
 // A user's private file store, and each project's. Every file is streamed back
@@ -23,3 +24,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::resource('folders', DriveFolderController::class)->only(['update', 'destroy']);
     });
 });
+
+// One file, from an agent's own disk through a link from the request-upload MCP
+// tool; the controller checks the signature itself, to answer in JSON
+Route::post('drive/upload', DriveUploadLinkController::class)
+    ->middleware('throttle:mcp')
+    ->name('drive.upload-link');

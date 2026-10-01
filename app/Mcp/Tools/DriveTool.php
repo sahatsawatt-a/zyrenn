@@ -48,7 +48,7 @@ abstract class DriveTool extends ScopedTool
      *
      * @param  array<int, string>|null  $paths  folder paths by id, when listing many files
      */
-    protected function folderPath(DriveFile $file, ?array $paths = null): ?string
+    public static function folderPath(DriveFile $file, ?array $paths = null): ?string
     {
         if ($file->folder_id === null) {
             return null;
@@ -63,11 +63,12 @@ abstract class DriveTool extends ScopedTool
      *
      * `markdown` is the ready-made line for putting an image or a video into a
      * note with create-note or update-note, so a client never has to build it.
+     * Also what a request-upload link answers with (DriveUploadLinkController).
      *
      * @param  array<int, string>|null  $paths  folder paths by id, when listing many files
      * @return array<string, mixed>
      */
-    protected function summary(DriveFile $file, ?array $paths = null): array
+    public static function summary(DriveFile $file, ?array $paths = null): array
     {
         return [
             'ref_id' => $file->ref_id,
@@ -75,7 +76,7 @@ abstract class DriveTool extends ScopedTool
             // The ref_id of the project it is shared in; null when it is the user's own
             'project' => $file->project_id !== null ? $file->project?->ref_id : null,
             'name' => $file->name,
-            'folder' => $this->folderPath($file, $paths),
+            'folder' => self::folderPath($file, $paths),
             'mime' => $file->mime,
             'kind' => $file->kind,
             'size' => $file->size,

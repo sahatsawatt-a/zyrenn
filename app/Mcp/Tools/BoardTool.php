@@ -181,7 +181,7 @@ abstract class BoardTool extends FiledTool
             'align' => $schema->string()->enum(BoardItems::ALIGNS)->description('Where the label sits across the item: left, center or right. Shapes centre it, a text item starts at the left.'),
             'verticalAlign' => $schema->string()->enum(BoardItems::VERTICAL_ALIGNS)->description('Where the label sits down the item: top, middle or bottom.'),
             'rotation' => $schema->number()->description('Degrees clockwise.'),
-            'src' => $schema->string()->max(200)->description('For kind "image": the URL of the picture; for kind "video", of the video (MP4 or WebM). Upload it with upload-file first and pass the "url" from the response.'),
+            'src' => $schema->string()->max(200)->description('For kind "image": the URL of the picture; for kind "video", of the video (MP4 or WebM). Upload it first -- request-upload for a file on your disk, or upload-file -- and pass the "url" from the response.'),
             'hidden' => $schema->boolean()->description('Keep it off the board without deleting it.'),
             'locked' => $schema->boolean()->description('Stop it being picked up on the canvas.'),
             'from' => $schema->object([

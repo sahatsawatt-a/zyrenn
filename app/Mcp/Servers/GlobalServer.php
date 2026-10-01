@@ -11,6 +11,7 @@ use App\Mcp\Tools\Boards\UpdateBoard;
 use App\Mcp\Tools\Drive\DeleteFile;
 use App\Mcp\Tools\Drive\GetFile;
 use App\Mcp\Tools\Drive\ListDrive;
+use App\Mcp\Tools\Drive\RequestUpload;
 use App\Mcp\Tools\Drive\UpdateFile;
 use App\Mcp\Tools\Drive\UploadFile;
 use App\Mcp\Tools\Notes\CreateNote;
@@ -69,14 +70,16 @@ by column label, e.g. {"Owner": "Ada", "Budget": 300}; update-table changes or d
 a page of rows at a time ("limit", "offset"), and can keep only rows matching a "search" and only the
 "columns" you name -- read what you need rather than the whole table.
 
-Drive: files (list-drive, get-file, upload-file, update-file, delete-file) -- each user's private ones,
+Drive: files (list-drive, get-file, upload-file, request-upload, update-file, delete-file) -- each user's private ones,
 or a project's, which its members can all open. Files are served from a URL like /drive/files/k3x9m2p7qa.
 
 To put a picture in a note or on a board, the picture must be in the same Drive first -- the same
 user_id, and for a project's note or board the same "project" -- as neither can carry image bytes of
 its own:
 
-  1. upload-file with the image bytes base64 encoded in "content_base64" and a name like "chart.png".
+  1. Upload it -- the bytes never go through a tool call:
+     - a file on your own disk: request-upload, then run the "curl" command it gives with the file's path;
+     - a file on the public web: upload-file with its URL in "source_url".
   2. For a note: take the "markdown" line from the response, e.g. ![chart.png](/drive/files/k3x9m2p7qa),
      and put it in the "markdown" you pass to create-note or update-note, for the same user_id and project.
   3. For a board: take the "url" from the response and pass it as an item's "src" with kind "image".
@@ -117,6 +120,7 @@ class GlobalServer extends Server
             new ListDrive(global: true),
             new GetFile(global: true),
             new UploadFile(global: true),
+            new RequestUpload(global: true),
             new UpdateFile(global: true),
             new DeleteFile(global: true),
         ];
