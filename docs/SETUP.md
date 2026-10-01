@@ -14,6 +14,18 @@ git clone <repo-url> zyrenn && cd zyrenn
 ./scripts/setup.sh --build    # server: built assets, APP_DEBUG=false
 ```
 
+On Windows, the same script for PowerShell, with the same options:
+
+```powershell
+.\scripts\setup.ps1           # or -Build, or -Traefik zyrenn.example.com
+# blocked by the execution policy? powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
+```
+
+WSL2 is faster: clone into the Linux filesystem (`~`, not `/mnt/c`) and run
+`./scripts/setup.sh` there. With the project on `C:\`, every file the
+containers read crosses Docker Desktop's file sharing, and Vite never hears that
+a file changed.
+
 The script copies `.env.example` to `.env`, fills in your UID/GID and the
 secrets (`REVERB_*`, `COLLAB_SECRET`), installs dependencies, generates
 `APP_KEY`, migrates and starts everything. Run it again any time; it never

@@ -16,7 +16,7 @@ A personal workspace: notes, boards, tables, and a private Drive behind them.
 ## Running ZyrenN locally
 
 Everything runs in Docker; nothing but Docker is needed on the host. On a fresh
-clone, run `./scripts/setup.sh` first; [docs/SETUP.md](docs/SETUP.md) has the
+clone, run `./scripts/setup.sh` first (`.\scripts\setup.ps1` on Windows); [docs/SETUP.md](docs/SETUP.md) has the
 steps, HTTPS behind Traefik (`./scripts/setup.sh --traefik <host>`), and one for
 each way of connecting an AI client.
 
