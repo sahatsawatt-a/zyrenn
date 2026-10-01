@@ -48,6 +48,15 @@ class DriveFile extends Model
      */
     public const IMAGE_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/svg+xml'];
 
+    /**
+     * Videos a browser's <video> can play: MP4 (and its M4V and QuickTime
+     * cousins, which hold the same H.264 inside), WebM and Ogg.
+     */
+    public const VIDEO_MIMES = ['video/mp4', 'video/x-m4v', 'video/quicktime', 'video/webm', 'video/ogg'];
+
+    /** The largest upload, in kilobytes (docker/php/uploads.ini allows the same). */
+    public const MAX_KB = 512000;
+
     protected static function booted(): void
     {
         static::deleted(function (DriveFile $file) {
@@ -115,6 +124,14 @@ class DriveFile extends Model
     }
 
     /**
+     * Whether the file can be played in a note, on a board or in the Drive.
+     */
+    public function isVideo(): bool
+    {
+        return in_array($this->mime, self::VIDEO_MIMES, true);
+    }
+
+    /**
      * The URL the file is served from.
      */
     public function url(): string
@@ -136,6 +153,7 @@ class DriveFile extends Model
             'mime' => $this->mime,
             'size' => $this->size,
             'is_image' => $this->isImage(),
+            'is_video' => $this->isVideo(),
             'url' => $this->url(),
             'created_at' => $this->created_at,
         ];

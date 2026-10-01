@@ -1,9 +1,6 @@
 // The board's data model. Everything on the canvas is one flat list of items in
 // paint order, which keeps z-order, undo snapshots and hit-testing simple.
 
-// The board's data model. Everything on the canvas is one flat list of items in
-// paint order, which keeps z-order, undo snapshots and hit-testing simple.
-
 export type ItemKind =
     | 'frame'
     | 'sticky'
@@ -22,6 +19,8 @@ export type ItemKind =
     | 'process'
     | 'cloud'
     | 'image'
+    // A video from the Drive or a link, played on the board (useVideos)
+    | 'video'
     // A formula, written as LaTeX and set with KaTeX
     | 'math'
     | 'arrow'
@@ -98,7 +97,8 @@ export type Item = {
     // Out of sight, and out of reach of the pointer, from the layers list
     hidden: boolean;
     locked: boolean;
-    // A picture -- SVG, PNG, JPEG -- as a data URL drawn through an <img>
+    // A picture -- SVG, PNG, JPEG -- as a data URL drawn through an <img>;
+    // or, on a video, where the video is
     src: string;
     // Connectors only: where each end is pinned and how the line is drawn
     from: Endpoint | null;
@@ -152,11 +152,12 @@ export const bumpIdsTo = (highest: number): void => {
 };
 
 /**
- * Items that hold editable text: everything except ink and arrows, so a
- * database or a decision diamond can be labelled by double-clicking it.
+ * Items that hold editable text: everything except ink, arrows and videos, so
+ * a database or a decision diamond can be labelled by double-clicking it. A
+ * video is double-clicked to watch it full size instead.
  */
 export const hasText = (item: Item): boolean =>
-    item.kind !== 'arrow' && item.kind !== 'draw';
+    item.kind !== 'arrow' && item.kind !== 'draw' && item.kind !== 'video';
 
 /** Items drawn from a point list rather than a box. */
 export const isStroke = (item: Item): boolean =>
@@ -258,6 +259,16 @@ export const makeItem = (
                 fill: 'transparent',
                 stroke: 'transparent',
             };
+        case 'video':
+            return {
+                ...base,
+                // 16:9, the shape most videos are; any other plays with
+                // black bars round it
+                width: 480,
+                height: 270,
+                fill: '#000000',
+                stroke: 'transparent',
+            };
         case 'math':
             return {
                 ...base,
@@ -337,6 +348,8 @@ export const nameOf = (item: Item): string => {
             return 'Ink';
         case 'image':
             return 'Picture';
+        case 'video':
+            return 'Video';
         case 'math':
             return 'Formula';
         case 'cylinder':

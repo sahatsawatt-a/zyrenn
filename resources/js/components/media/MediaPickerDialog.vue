@@ -2,10 +2,12 @@
 import {
     Code,
     Workflow,
+    FileVideo,
     HardDrive,
     ImageUp,
     Link2,
     LoaderCircle,
+    Play,
     Search,
 } from '@lucide/vue';
 import { useDebounceFn } from '@vueuse/core';
@@ -22,42 +24,74 @@ import {
 import { Input } from '@/components/ui/input';
 import {
     IMAGE_MIMES,
+    VIDEO_MIMES,
     isImageFile,
-    listDriveImages,
+    isVideoFile,
+    listDriveMedia,
     uploadToDrive,
 } from '@/lib/drive';
-import type { DriveFile } from '@/lib/drive';
+import type { DriveFile, MediaKind } from '@/lib/drive';
 import { cn } from '@/lib/utils';
 
-export type PickedImage = { src: string; alt: string };
+// What was chosen, whichever way: by then it is just where it lives and its name
+export type PickedMedia = { kind: MediaKind; src: string; name: string };
 
 const open = defineModel<boolean>('open', { required: true });
 
 const props = withDefaults(
     defineProps<{
+        // Pictures, or videos that play where they are put
+        kind?: MediaKind;
         // Where the picked image is going, said plainly in the dialog
         destination?: string;
         // A board can take SVG markup as a drawing, and a Mermaid diagram as
         // shapes it can then edit; a note writes Mermaid inline already
         allowMarkup?: boolean;
     }>(),
-    { destination: 'the note', allowMarkup: false },
+    { kind: 'image', destination: 'the note', allowMarkup: false },
 );
 
 const emit = defineEmits<{
-    (e: 'insert', images: PickedImage[]): void;
+    (e: 'insert', picked: PickedMedia[]): void;
     (e: 'markup', svg: string): void;
     (e: 'mermaid', source: string): void;
 }>();
 
 type Tab = 'upload' | 'drive' | 'link' | 'markup' | 'mermaid';
 
+const video = computed(() => props.kind === 'video');
+
+// Everything the dialog says that depends on what it is picking
+const words = computed(() =>
+    video.value
+        ? {
+              title: 'Add video',
+              plural: 'videos',
+              types: 'MP4, WebM, MOV or Ogg',
+              accept: VIDEO_MIMES,
+              accepts: isVideoFile,
+              example: 'https://example.com/clip.mp4',
+          }
+        : {
+              title: 'Add image',
+              plural: 'images',
+              types: 'JPG, PNG, GIF, WebP, AVIF or SVG',
+              accept: IMAGE_MIMES,
+              accepts: isImageFile,
+              example: 'https://example.com/picture.png',
+          },
+);
+
 const tabs = computed(() =>
     [
-        { id: 'upload' as const, label: 'Upload', icon: ImageUp },
+        {
+            id: 'upload' as const,
+            label: 'Upload',
+            icon: video.value ? FileVideo : ImageUp,
+        },
         { id: 'drive' as const, label: 'From Drive', icon: HardDrive },
         { id: 'link' as const, label: 'Link', icon: Link2 },
-        ...(props.allowMarkup
+        ...(props.allowMarkup && !video.value
             ? [
                   { id: 'markup' as const, label: 'SVG', icon: Code },
                   //   { id: 'mermaid' as const, label: 'Mermaid', icon: Workflow },
@@ -110,40 +144,51 @@ const insertMarkup = () => {
     open.value = false;
 };
 
-const finish = (images: PickedImage[]) => {
-    if (images.length) {
-        emit('insert', images);
+const finish = (picked: PickedMedia[]) => {
+    if (picked.length) {
+        emit('insert', picked);
     }
 
     open.value = false;
 };
 
+const pickedFrom = (file: DriveFile): PickedMedia => ({
+    kind: props.kind,
+    src: file.url,
+    name: file.name,
+});
+
 // ------------------------------------------------------------------ Upload
 const fileInput = ref<HTMLInputElement | null>(null);
 const uploading = ref(0);
+// How much of the file going up now has gone, 0 to 1
+const progress = ref(0);
 const dragging = ref(false);
 
 const upload = async (files: File[]) => {
-    const images = files.filter(isImageFile);
+    const accepted = files.filter(words.value.accepts);
 
-    if (images.length < files.length) {
-        toast.error(
-            'Only JPG, PNG, GIF, WebP, AVIF and SVG images can be added.',
-        );
+    if (accepted.length < files.length) {
+        toast.error(`Only ${words.value.types} files can be added here.`);
     }
 
-    if (!images.length) {
+    if (!accepted.length) {
         return;
     }
 
-    uploading.value = images.length;
-    const picked: PickedImage[] = [];
+    uploading.value = accepted.length;
+    const picked: PickedMedia[] = [];
 
-    // Sequential, so the images land in the order they were chosen
-    for (const file of images) {
+    // Sequential, so they land in the order they were chosen
+    for (const file of accepted) {
+        progress.value = 0;
+
         try {
-            const stored = await uploadToDrive(file);
-            picked.push({ src: stored.url, alt: stored.name });
+            const stored = await uploadToDrive(
+                file,
+                (fraction) => (progress.value = fraction),
+            );
+            picked.push(pickedFrom(stored));
         } catch (error) {
             toast.error((error as Error).message);
         } finally {
@@ -176,7 +221,7 @@ const loadDrive = async () => {
     loadingDrive.value = true;
 
     try {
-        driveFiles.value = await listDriveImages(query.value.trim());
+        driveFiles.value = await listDriveMedia(props.kind, query.value.trim());
     } catch (error) {
         toast.error((error as Error).message);
     } finally {
@@ -201,7 +246,7 @@ const insertSelected = () => {
         selected.value
             .map((id) => byId.get(id))
             .filter((file): file is DriveFile => !!file)
-            .map((file) => ({ src: file.url, alt: file.name })),
+            .map(pickedFrom),
     );
 };
 
@@ -231,7 +276,7 @@ const insertLink = () => {
         new URL(url).pathname.split('/').pop() ?? '',
     );
 
-    finish([{ src: url, alt: name }]);
+    finish([{ kind: props.kind, src: url, name }]);
 };
 
 // Start fresh each time the dialog opens
@@ -260,10 +305,10 @@ watch(tab, (current) => {
     <Dialog v-model:open="open">
         <DialogContent class="sm:max-w-2xl">
             <DialogHeader>
-                <DialogTitle>Add image</DialogTitle>
+                <DialogTitle>{{ words.title }}</DialogTitle>
                 <DialogDescription>
                     Uploads are saved to your Drive. You can also paste or drop
-                    images straight into {{ destination }}.
+                    {{ words.plural }} straight into {{ destination }}.
                 </DialogDescription>
             </DialogHeader>
 
@@ -306,11 +351,19 @@ watch(tab, (current) => {
                     <LoaderCircle
                         class="text-muted-foreground size-8 animate-spin"
                     />
-                    <p class="text-sm">Uploading {{ uploading }}…</p>
+                    <p class="text-sm tabular-nums">
+                        Uploading{{ uploading > 1 ? ` ${uploading}` : '' }}…
+                        {{ Math.round(progress * 100) }}%
+                    </p>
                 </template>
                 <template v-else>
-                    <ImageUp class="text-muted-foreground size-8" />
-                    <p class="text-sm font-medium">Drop images here</p>
+                    <component
+                        :is="tabs[0].icon"
+                        class="text-muted-foreground size-8"
+                    />
+                    <p class="text-sm font-medium">
+                        Drop {{ words.plural }} here
+                    </p>
                     <Button
                         type="button"
                         variant="outline"
@@ -319,14 +372,14 @@ watch(tab, (current) => {
                         Choose from computer
                     </Button>
                     <p class="text-muted-foreground text-xs">
-                        JPG, PNG, GIF, WebP, AVIF or SVG · up to 50 MB each
+                        {{ words.types }} · up to 500 MB each
                     </p>
                 </template>
 
                 <input
                     ref="fileInput"
                     type="file"
-                    :accept="IMAGE_MIMES.join(',')"
+                    :accept="words.accept.join(',')"
                     multiple
                     hidden
                     @change="onFilesChosen"
@@ -341,7 +394,7 @@ watch(tab, (current) => {
                     />
                     <Input
                         v-model="query"
-                        placeholder="Search your images"
+                        :placeholder="`Search your ${words.plural}`"
                         class="pl-9"
                     />
                 </div>
@@ -363,8 +416,8 @@ watch(tab, (current) => {
                         <HardDrive class="size-8" />
                         {{
                             query
-                                ? 'No images match.'
-                                : 'No images in your Drive yet.'
+                                ? `No ${words.plural} match.`
+                                : `No ${words.plural} in your Drive yet.`
                         }}
                     </div>
 
@@ -383,11 +436,22 @@ watch(tab, (current) => {
                                 )
                             "
                             @click="toggle(file)"
-                            @dblclick="
-                                finish([{ src: file.url, alt: file.name }])
-                            "
+                            @dblclick="finish([pickedFrom(file)])"
                         >
+                            <!-- A video's first moments stand in for a thumbnail -->
+                            <template v-if="video">
+                                <video
+                                    :src="`${file.url}#t=0.5`"
+                                    preload="metadata"
+                                    muted
+                                    class="size-full object-cover"
+                                />
+                                <Play
+                                    class="absolute top-1/2 left-1/2 size-7 -translate-x-1/2 -translate-y-1/2 fill-white/90 text-white/90 drop-shadow"
+                                />
+                            </template>
                             <img
+                                v-else
                                 :src="file.url"
                                 :alt="file.name"
                                 loading="lazy"
@@ -416,7 +480,7 @@ watch(tab, (current) => {
                     >
                         Insert{{
                             selected.length > 1
-                                ? ` ${selected.length} images`
+                                ? ` ${selected.length} ${words.plural}`
                                 : ''
                         }}
                     </Button>
@@ -432,35 +496,45 @@ watch(tab, (current) => {
                 <Input
                     v-model="linkUrl"
                     type="url"
-                    placeholder="https://example.com/picture.png"
+                    :placeholder="words.example"
                     autofocus
                 />
 
                 <div
                     class="bg-muted flex h-52 items-center justify-center overflow-hidden rounded-lg"
                 >
-                    <img
-                        v-if="linkIsValid && !linkBroken"
-                        :src="linkUrl.trim()"
-                        alt=""
-                        class="max-h-full max-w-full object-contain"
-                        @error="linkBroken = true"
-                    />
+                    <template v-if="linkIsValid && !linkBroken">
+                        <video
+                            v-if="video"
+                            :src="linkUrl.trim()"
+                            preload="metadata"
+                            controls
+                            class="max-h-full max-w-full"
+                            @error="linkBroken = true"
+                        />
+                        <img
+                            v-else
+                            :src="linkUrl.trim()"
+                            alt=""
+                            class="max-h-full max-w-full object-contain"
+                            @error="linkBroken = true"
+                        />
+                    </template>
                     <p
                         v-else
                         class="text-muted-foreground px-6 text-center text-sm"
                     >
                         {{
                             linkBroken
-                                ? 'That link doesn’t load as an image.'
-                                : 'Paste an image link to preview it.'
+                                ? `That link doesn’t load as ${video ? 'a video' : 'an image'}.`
+                                : `Paste a link to ${video ? 'a video file' : 'an image'} to preview it.`
                         }}
                     </p>
                 </div>
 
                 <p class="text-muted-foreground text-xs">
-                    Linked images stay on the other site and aren’t copied to
-                    your Drive.
+                    Linked {{ words.plural }} stay on the other site and aren’t
+                    copied to your Drive.
                 </p>
 
                 <div class="flex justify-end">

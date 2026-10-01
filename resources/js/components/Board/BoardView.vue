@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useElementSize } from '@vueuse/core';
-import { computed, ref, useTemplateRef } from 'vue';
+import type Konva from 'konva';
+import { computed, ref, useTemplateRef, watch } from 'vue';
 import { Group, Layer, Stage } from 'vue-konva';
 import { connectorPoints } from '../../composables/board/connectors';
 import { boundsOf, boundsOfAll } from '../../composables/board/geometry';
@@ -8,6 +9,7 @@ import type { Item } from '../../composables/board/items';
 import { hydrate, isConnector } from '../../composables/board/items';
 import { groupKeys } from '../../composables/board/layers';
 import { useImageCache } from '../../composables/board/useImageCache';
+import { useVideos } from '../../composables/board/useVideos';
 import BoardItem from './BoardItem.vue';
 
 /** How much room a frame's title needs above it, in board units. */
@@ -15,7 +17,8 @@ const TITLE_ROOM = 34;
 
 // A board shown somewhere that is not its own page: in a note, say. It draws
 // with the same component the canvas does, so a board looks the same wherever
-// it is read, and nothing here can be moved or edited.
+// it is read, and nothing here can be moved or edited -- though a video on it
+// still plays when clicked.
 const props = withDefaults(
     defineProps<{
         items: Item[];
@@ -91,12 +94,39 @@ const view = computed(() => {
 });
 
 const { imageFor } = useImageCache();
+
+const layer = useTemplateRef<{ getNode: () => Konva.Layer }>('layer');
+const hovering = ref(false);
+const videos = useVideos(shown, () => layer.value?.getNode());
+
+// Only a video hears the pointer, so whatever the layer hears is one: a click
+// plays it. Listened for on the layer, as the canvas does -- vue-konva can't
+// take listeners on a group.
+watch(
+    () => layer.value?.getNode(),
+    (node) => {
+        node?.on('click tap', (event) => {
+            const id = event.target.getParent()?.id();
+
+            if (id) {
+                videos.toggle(id);
+            }
+        });
+        node?.on('mouseover', () => (hovering.value = true));
+        node?.on('mouseout', () => (hovering.value = false));
+    },
+);
 const empty = computed(() => shown.value.length === 0);
 const path = (item: Item) => connectorPoints(item, byId.value);
 </script>
 
 <template>
-    <div ref="wrapper" class="board-view" data-test="board-view">
+    <div
+        ref="wrapper"
+        class="board-view"
+        :class="{ 'cursor-pointer': hovering }"
+        data-test="board-view"
+    >
         <p v-if="empty" class="board-view-empty">Nothing on it yet</p>
 
         <Stage
@@ -108,19 +138,20 @@ const path = (item: Item) => connectorPoints(item, byId.value);
                 scaleY: view.scale,
                 x: view.x,
                 y: view.y,
-                listening: false,
             }"
         >
-            <Layer>
+            <Layer ref="layer">
                 <Group
                     v-for="item in shown"
                     :key="item.id"
                     :config="{
+                        id: item.id,
                         x: item.x,
                         y: item.y,
                         rotation: item.rotation,
                         width: item.width,
                         height: item.height,
+                        listening: item.kind === 'video',
                     }"
                 >
                     <BoardItem
@@ -128,6 +159,8 @@ const path = (item: Item) => connectorPoints(item, byId.value);
                         :selected="false"
                         :editing="false"
                         :image="imageFor(item)"
+                        :video="videos.videoFor(item)"
+                        :playing="videos.isPlaying(item.id)"
                         :path="path(item)"
                     />
                 </Group>

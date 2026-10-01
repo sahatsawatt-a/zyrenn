@@ -21,6 +21,19 @@ final class TiptapToMarkdown
     }
 
     /**
+     * A video block, written the way Markdown carries one: as HTML, on a line
+     * of its own (MarkdownToTiptap reads it back as a video).
+     */
+    public static function video(string $src, ?string $title = null): string
+    {
+        $attribute = fn (string $value) => htmlspecialchars($value, ENT_QUOTES | ENT_HTML5);
+
+        return '<video src="'.$attribute($src).'"'
+            .($title !== null && $title !== '' ? ' title="'.$attribute($title).'"' : '')
+            .'></video>';
+    }
+
+    /**
      * @param  array<int, array<string, mixed>>  $blocks
      */
     private function blocksToMarkdown(array $blocks): string
@@ -54,6 +67,7 @@ final class TiptapToMarkdown
             'horizontalRule' => '---',
             'blockMath' => "$$\n".($attrs['latex'] ?? '')."\n$$",
             'image' => '!['.($attrs['alt'] ?? '').']('.($attrs['src'] ?? '').')',
+            'video' => self::video((string) ($attrs['src'] ?? ''), $attrs['title'] ?? null),
             default => $this->inlineToMarkdown($content),
         };
     }

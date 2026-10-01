@@ -2,6 +2,8 @@ import { computed, ref, shallowRef } from 'vue';
 
 export type ViewerItem =
     | { type: 'image'; src: string; alt?: string }
+    // Played, not zoomed; `start` picks up where a smaller player left off
+    | { type: 'video'; src: string; title?: string; start?: number }
     // Already-rendered markup, e.g. a Mermaid diagram
     | { type: 'svg'; svg: string; title?: string };
 

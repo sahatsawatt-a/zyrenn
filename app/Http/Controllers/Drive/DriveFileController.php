@@ -12,8 +12,9 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class DriveFileController extends Controller
 {
@@ -25,6 +26,7 @@ class DriveFileController extends Controller
      */
     private const INLINE_MIMES = [
         ...DriveFile::IMAGE_MIMES,
+        ...DriveFile::VIDEO_MIMES,
         'application/pdf',
         'text/plain',
     ];
@@ -38,7 +40,7 @@ class DriveFileController extends Controller
 
         $request->validate([
             'files' => ['required', 'array', 'max:50'],
-            'files.*' => ['required', 'file', 'max:51200'],
+            'files.*' => ['required', 'file', 'max:'.DriveFile::MAX_KB],
             'folder' => ['nullable', 'string', Folders::rule(DriveFolder::class, $owner)],
         ]);
 
@@ -61,27 +63,36 @@ class DriveFileController extends Controller
     }
 
     /**
-     * Stream a file to whoever may see it.
+     * Send a file to whoever may see it. Served from disk rather than streamed,
+     * so a browser can ask for a range of it: a video seeks by fetching the
+     * part it jumps to, and Safari won't play one at all without that.
      */
-    public function show(Request $request, DriveFile $file): StreamedResponse
+    public function show(Request $request, DriveFile $file): BinaryFileResponse
     {
         Gate::authorize('view', $file);
 
-        abort_unless(Storage::disk(DriveFile::DISK)->exists($file->path), 404);
+        $disk = Storage::disk(DriveFile::DISK);
+
+        abort_unless($disk->exists($file->path), 404);
 
         $inline = ! $request->boolean('download') && in_array($file->mime, self::INLINE_MIMES, true);
 
-        return Storage::disk(DriveFile::DISK)->response(
-            $file->path,
-            $file->name,
-            [
-                'Content-Type' => $file->mime ?? 'application/octet-stream',
-                'Cache-Control' => 'private, max-age=31536000, immutable',
-                'X-Content-Type-Options' => 'nosniff',
-                // Opened directly, an SVG is a document: keep any script in it from running
-                'Content-Security-Policy' => "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox",
-            ],
+        $response = response()->file($disk->path($file->path), [
+            'Content-Type' => $file->mime ?? 'application/octet-stream',
+            'Cache-Control' => 'private, max-age=31536000, immutable',
+            'X-Content-Type-Options' => 'nosniff',
+            // Opened directly, an SVG is a document: keep any script in it from running.
+            // A video opened directly is a document too, which plays only with media-src.
+            'Content-Security-Policy' => "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; sandbox",
+        ]);
+
+        // A header can't carry a slash in a file name, and needs a plain-ASCII fallback
+        $name = str_replace(['/', '\\'], '-', $file->name);
+
+        return $response->setContentDisposition(
             $inline ? 'inline' : 'attachment',
+            $name,
+            str_replace('%', '', Str::ascii($name)),
         );
     }
 

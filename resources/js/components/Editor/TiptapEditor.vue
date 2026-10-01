@@ -25,13 +25,14 @@
         <!-- LaTeX editor for inline / block math -->
         <MathPopover v-if="editor" ref="mathPopover" :editor="editor" />
 
-        <!-- /image: upload, pick from Drive, or link -->
-        <ImagePickerDialog
-            v-model:open="showImagePicker"
-            @insert="onImagesPicked"
+        <!-- /image and /video: upload, pick from Drive, or link -->
+        <MediaPickerDialog
+            v-model:open="showPicker"
+            :kind="pickKind"
+            @insert="onMediaPicked"
         />
 
-        <!-- Full-size view of images and diagrams -->
+        <!-- Full-size view of images, videos and diagrams -->
         <MediaViewer />
     </div>
 </template>
@@ -60,17 +61,19 @@ import { CalloutNode } from '../../editor-nodes/CalloutNode';
 import { CodeBlockNode } from '../../editor-nodes/CodeBlockNode';
 import { CurrentLinePlaceholder } from '../../editor-nodes/CurrentLinePlaceholder';
 import { ImageNode } from '../../editor-nodes/ImageNode';
+import { VideoNode } from '../../editor-nodes/VideoNode';
 import MediaViewer from '../MediaViewer.vue';
-import ImagePickerDialog from '../media/ImagePickerDialog.vue';
-import type { PickedImage } from '../media/ImagePickerDialog.vue';
-import { isImageFile, uploadToDrive } from '../../lib/drive';
+import MediaPickerDialog from '../media/MediaPickerDialog.vue';
+import type { PickedMedia } from '../media/MediaPickerDialog.vue';
+import { isImageFile, isVideoFile, uploadToDrive } from '../../lib/drive';
+import type { MediaKind } from '../../lib/drive';
 import { markEditorReady } from '../../lib/printReady';
 import CustomMenu from './CustomMenu.vue';
 import TableMenu from './TableMenu.vue';
 import BlockHandle from './BlockHandle.vue';
 import MathPopover from './MathPopover.vue';
 import type { MathTarget } from './MathPopover.vue';
-import { IMAGE_PICK_EVENT, MATH_EDIT_EVENT } from '../../config/commandsConfig';
+import { MATH_EDIT_EVENT, MEDIA_PICK_EVENT } from '../../config/commandsConfig';
 import { CustomSlash } from '../../composables/useSlashCommands';
 import { useMenuRenderer } from '../../composables/useMenuRenderer';
 import { commandItems } from '../../config/commandsConfig';
@@ -140,32 +143,44 @@ const trackPosition = (target: Editor, pos: number) => {
     return tracker;
 };
 
-const insertImageAt = (target: Editor, pos: number, image: PickedImage) => {
+const insertMediaAt = (target: Editor, pos: number, media: PickedMedia) => {
     const at = Math.min(pos, target.state.doc.content.size);
-    target.chain().insertContentAt(at, { type: 'image', attrs: image }).run();
+    const node =
+        media.kind === 'video'
+            ? { type: 'video', attrs: { src: media.src, title: media.name } }
+            : { type: 'image', attrs: { src: media.src, alt: media.name } };
+    target.chain().insertContentAt(at, node).run();
     return target.state.selection.to;
 };
 
+// What a pasted or dropped file can become in a note
+const isMediaFile = (file: File) => isImageFile(file) || isVideoFile(file);
+
 // Pasted / dropped files: save each to the Drive, then place it where it was pasted or dropped
-const uploadImages = async (files: File[], pos: number) => {
+const uploadMedia = async (files: File[], pos: number) => {
     const target = editor.value;
     if (!target) return;
 
     const tracker = trackPosition(target, pos);
     const loading = toast.loading(
-        files.length > 1
-            ? `Uploading ${files.length} images…`
-            : 'Uploading image…',
+        files.length > 1 ? `Uploading ${files.length} files…` : 'Uploading…',
     );
 
     try {
         for (const file of files) {
             try {
-                const stored = await uploadToDrive(file);
+                // A video can take a while; say how far along it is
+                const stored = await uploadToDrive(file, (fraction) =>
+                    toast.loading(
+                        `Uploading ${file.name}… ${Math.round(fraction * 100)}%`,
+                        { id: loading },
+                    ),
+                );
                 if (target.isDestroyed) return;
-                tracker.pos = insertImageAt(target, tracker.pos, {
+                tracker.pos = insertMediaAt(target, tracker.pos, {
+                    kind: isVideoFile(file) ? 'video' : 'image',
                     src: stored.url,
-                    alt: stored.name,
+                    name: stored.name,
                 });
             } catch (error) {
                 toast.error((error as Error).message);
@@ -177,16 +192,17 @@ const uploadImages = async (files: File[], pos: number) => {
     }
 };
 
-// /image opens the picker; its choice goes where the command was typed
-const showImagePicker = ref(false);
+// /image and /video open the picker; its choice goes where the command was typed
+const showPicker = ref(false);
+const pickKind = ref<MediaKind>('image');
 let pickPos = 0;
 
-const onImagesPicked = (images: PickedImage[]) => {
+const onMediaPicked = (picked: PickedMedia[]) => {
     const target = editor.value;
     if (!target) return;
 
     let pos = pickPos;
-    for (const image of images) pos = insertImageAt(target, pos, image);
+    for (const media of picked) pos = insertMediaAt(target, pos, media);
     target.commands.focus();
 };
 
@@ -267,8 +283,9 @@ const editor = useEditor({
                 props.editable && editMath({ type: 'block', pos }),
         }),
 
-        // Images from the Drive or a link (see ImageNode)
+        // Images and videos from the Drive or a link (see ImageNode, VideoNode)
         ImageNode,
+        VideoNode,
 
         // Notion-style placeholder on the current empty line (see CurrentLinePlaceholder for why not Placeholder)
         CurrentLinePlaceholder,
@@ -285,11 +302,11 @@ const editor = useEditor({
     editorProps: {
         handlePaste: (view, event) => {
             const files = Array.from(event.clipboardData?.files ?? []).filter(
-                isImageFile,
+                isMediaFile,
             );
             if (!files.length) return false;
 
-            void uploadImages(files, view.state.selection.from);
+            void uploadMedia(files, view.state.selection.from);
             return true;
         },
         handleDrop: (view, event, _slice, moved) => {
@@ -297,7 +314,7 @@ const editor = useEditor({
             if (moved) return false;
 
             const files = Array.from(event.dataTransfer?.files ?? []).filter(
-                isImageFile,
+                isMediaFile,
             );
             if (!files.length) return false;
 
@@ -305,7 +322,7 @@ const editor = useEditor({
                 left: event.clientX,
                 top: event.clientY,
             });
-            void uploadImages(files, drop?.pos ?? view.state.selection.from);
+            void uploadMedia(files, drop?.pos ?? view.state.selection.from);
             return true;
         },
     },
@@ -324,13 +341,14 @@ useEventListener(
     (event: Event) => editMath((event as CustomEvent<MathTarget>).detail),
 );
 
-// The /image slash command asks for the file picker
+// The /image and /video slash commands ask for the picker
 useEventListener(
     () => editor.value?.view.dom,
-    IMAGE_PICK_EVENT,
-    () => {
+    MEDIA_PICK_EVENT,
+    (event: Event) => {
+        pickKind.value = (event as CustomEvent<MediaKind>).detail;
         pickPos = editor.value?.state.selection.from ?? 0;
-        showImagePicker.value = true;
+        showPicker.value = true;
     },
 );
 

@@ -79,14 +79,20 @@ class DriveController extends Controller
     }
 
     /**
-     * The user's or the project's images, newest first, for the note editor's picker.
+     * The user's or the project's images -- or videos -- newest first, for
+     * the pickers in notes and on boards.
      */
     public function pick(Request $request): JsonResponse
     {
-        $request->validate(['q' => ['nullable', 'string', 'max:255']]);
+        $request->validate([
+            'q' => ['nullable', 'string', 'max:255'],
+            'kind' => ['nullable', Rule::in(['image', 'video'])],
+        ]);
+
+        $mimes = $request->input('kind') === 'video' ? DriveFile::VIDEO_MIMES : DriveFile::IMAGE_MIMES;
 
         $files = $this->owner($request)->driveFiles()
-            ->whereIn('mime', DriveFile::IMAGE_MIMES)
+            ->whereIn('mime', $mimes)
             ->when($request->filled('q'), fn ($query) => $query->whereLike('name', '%'.$request->string('q').'%'))
             ->latest()
             ->limit(120)

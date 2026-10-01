@@ -309,6 +309,10 @@ final class NoteBlocks
             return (string) ($node['attrs']['alt'] ?? '');
         }
 
+        if ($type === 'video') {
+            return (string) ($node['attrs']['title'] ?? '');
+        }
+
         if (in_array($type, ['blockMath', 'inlineMath'], true)) {
             return (string) ($node['attrs']['latex'] ?? '');
         }

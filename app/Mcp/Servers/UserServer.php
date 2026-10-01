@@ -52,7 +52,7 @@ anything short of rewriting a note, read and change only the part you need.
 Boards: endless whiteboard canvases of shapes, sticky notes, connectors, pictures and 16:9 frames
 (list-boards, get-board, create-board, update-board, delete-board). A board is a list of items, each
 with a "kind" -- rect, pill, ellipse, triangle, diamond, hexagon, star, sticky, text, frame, image,
-"math" for a formula written as LaTeX, the flowchart set (cylinder for a database, parallelogram,
+video, "math" for a formula written as LaTeX, the flowchart set (cylinder for a database, parallelogram,
 document, process, cloud), "arrow" for a connector and "draw" for freehand ink. Leave an item's x and y out and it is laid out for you. A
 connector's "from" and "to" name other items by id and stay pinned to their edges as those shapes are
 moved or resized, so a diagram survives being rearranged by hand afterwards. Boards have their own
@@ -82,6 +82,10 @@ image bytes of its own. For a project's note or board, upload it to that project
 
 An image already on the public web can be used instead -- ![alt](https://...) in a note, or that URL
 as "src" on a board -- but it is not stored with the account and breaks if that site goes away.
+
+A video (MP4 or WebM) goes the same way and plays where it is put: upload it, then put the "markdown"
+line from the response -- <video src="/drive/files/k3x9m2p7qa" title="demo.mp4"></video> -- on a line
+of its own in a note, or pass the "url" as "src" with kind "video" on a board.
 TEXT)]
 class UserServer extends Server
 {

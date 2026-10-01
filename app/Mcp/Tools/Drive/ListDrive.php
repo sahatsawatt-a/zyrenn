@@ -13,7 +13,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[IsReadOnly]
-#[Description('List the files and folders in the user\'s Drive, newest first. Optionally narrow to one folder, search file names, or keep only one kind (image, pdf, doc, audio, video, archive, other). Each image comes back with a "markdown" line ready to put in a note.')]
+#[Description('List the files and folders in the user\'s Drive, newest first. Optionally narrow to one folder, search file names, or keep only one kind (image, pdf, doc, audio, video, archive, other). Each image and video comes back with a "markdown" line ready to put in a note.')]
 class ListDrive extends DriveTool
 {
     protected function arguments(JsonSchema $schema): array

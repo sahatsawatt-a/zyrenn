@@ -21,6 +21,7 @@ import { useFolderPage } from '@/composables/useFolderPage';
 import type { FolderRef } from '@/composables/useFolderPage';
 import { useListFilters } from '@/composables/useListFilters';
 import { useMediaViewer } from '@/composables/useMediaViewer';
+import type { ViewerItem } from '@/composables/useMediaViewer';
 import type { DriveFile } from '@/lib/drive';
 import { canChange, currentProject, owned } from '@/lib/projects';
 import * as driveRoutes from '@/routes/drive';
@@ -164,17 +165,21 @@ const { droppingFiles, dropZoneProps } = useFileDrop(upload);
 // ----------------------------------------------------------------- Opening
 const viewer = useMediaViewer();
 
-const images = computed(() => props.files.filter((file) => file.is_image));
+// What the viewer can show, in the order the folder lists them: a swipe goes
+// from a picture to the next video and on
+const media = computed(() =>
+    props.files.filter((file) => file.is_image || file.is_video),
+);
 
 const openFile = (file: DriveFile) => {
-    if (file.is_image) {
+    if (file.is_image || file.is_video) {
         viewer.open(
-            images.value.map((image) => ({
-                type: 'image' as const,
-                src: image.url,
-                alt: image.name,
-            })),
-            images.value.indexOf(file),
+            media.value.map((item): ViewerItem =>
+                item.is_video
+                    ? { type: 'video', src: item.url, title: item.name }
+                    : { type: 'image', src: item.url, alt: item.name },
+            ),
+            media.value.indexOf(file),
         );
 
         return;

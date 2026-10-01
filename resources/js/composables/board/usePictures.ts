@@ -2,8 +2,8 @@ import { useEventListener } from '@vueuse/core';
 import type { Ref } from 'vue';
 import { ref } from 'vue';
 import { toast } from 'vue-sonner';
-import { isImageFile, uploadToDrive } from '@/lib/drive';
-import type { PickedImage } from '@/components/media/ImagePickerDialog.vue';
+import { isImageFile, isVideoFile, uploadToDrive } from '@/lib/drive';
+import type { PickedMedia } from '@/components/media/MediaPickerDialog.vue';
 import { fitOnBoard } from './geometry';
 import type { Item } from './items';
 import { itemsFromMermaid } from './mermaid';
@@ -12,7 +12,7 @@ import { useImageCache } from './useImageCache';
 
 type Placer = {
     board: {
-        makeItem: (kind: 'image', x: number, y: number) => Item;
+        makeItem: (kind: 'image' | 'video', x: number, y: number) => Item;
         add: (item: Item) => void;
         insert: (items: Item[]) => void;
     };
@@ -25,21 +25,28 @@ type Placer = {
 /**
  * Pictures on a board: decoding them for the canvas, and every way one can
  * arrive -- chosen in the dialog, pasted, dropped, or written as SVG markup.
+ * Videos arrive the same ways (but markup), and play where they land.
  */
 export function usePictures({ board, middleOfView, editingId }: Placer) {
     const importing = ref(false);
 
     const { imageFor } = useImageCache();
 
-    /** Puts a picture in the middle of what is on screen. */
-    const placeImage = (source: {
-        src: string;
-        width: number;
-        height: number;
-    }) => {
+    // Which the dialog is choosing; the board's own button says which
+    const importKind = ref<'image' | 'video'>('image');
+
+    /** Puts a picture (or a video) in the middle of what is on screen. */
+    const placeImage = (
+        source: {
+            src: string;
+            width: number;
+            height: number;
+        },
+        kind: 'image' | 'video' = 'image',
+    ) => {
         const middle = middleOfView();
         const item = board.makeItem(
-            'image',
+            kind,
             middle.x - source.width / 2,
             middle.y - source.height / 2,
         );
@@ -93,13 +100,57 @@ export function usePictures({ board, middleOfView, editingId }: Placer) {
             probe.src = src;
         });
 
+    /** How big a video should land: its own shape, as wide as a picture. */
+    const videoSizeOf = (src: string) =>
+        new Promise<{ width: number; height: number }>((resolve) => {
+            const probe = document.createElement('video');
+
+            probe.preload = 'metadata';
+            probe.onloadedmetadata = () =>
+                resolve(fitOnBoard(probe.videoWidth, probe.videoHeight));
+            // 16:9, until it can say otherwise
+            probe.onerror = () => resolve({ width: 480, height: 270 });
+            probe.src = src;
+        });
+
+    const placeVideo = async (src: string) =>
+        placeImage({ src, ...(await videoSizeOf(src)) }, 'video');
+
     /**
-     * Pictures chosen in the dialog -- uploaded from this machine, taken from
-     * the Drive, or linked. They are all just a URL by the time they get here.
+     * Pictures or videos chosen in the dialog -- uploaded from this machine,
+     * taken from the Drive, or linked. They are all just a URL by the time
+     * they get here.
      */
-    const onImagesPicked = async (images: PickedImage[]) => {
-        for (const image of images) {
-            placeImage({ src: image.src, ...(await sizeOf(image.src)) });
+    const onMediaPicked = async (picked: PickedMedia[]) => {
+        for (const media of picked) {
+            if (media.kind === 'video') {
+                await placeVideo(media.src);
+            } else {
+                placeImage({ src: media.src, ...(await sizeOf(media.src)) });
+            }
+        }
+    };
+
+    /**
+     * A video file dropped or pasted onto the board. Unlike a picture it is
+     * never kept in the board itself -- far too big -- so it goes to the Drive
+     * or not at all.
+     */
+    const addVideoFile = async (file: File) => {
+        const loading = toast.loading(`Uploading ${file.name}…`);
+
+        try {
+            const stored = await uploadToDrive(file, (fraction) =>
+                toast.loading(
+                    `Uploading ${file.name}… ${Math.round(fraction * 100)}%`,
+                    { id: loading },
+                ),
+            );
+            await placeVideo(stored.url);
+        } catch (error) {
+            toast.error((error as Error).message);
+        } finally {
+            toast.dismiss(loading);
         }
     };
 
@@ -111,6 +162,12 @@ export function usePictures({ board, middleOfView, editingId }: Placer) {
      * so the picture is not simply lost.
      */
     const addImageFile = async (file: File) => {
+        if (isVideoFile(file)) {
+            await addVideoFile(file);
+
+            return;
+        }
+
         if (file.type === 'image/svg+xml' || file.name.endsWith('.svg')) {
             addSvg(await file.text());
 
@@ -175,12 +232,20 @@ export function usePictures({ board, middleOfView, editingId }: Placer) {
         }
     };
 
+    /** Opens the dialog, for a picture or for a video. */
+    const startImport = (kind: 'image' | 'video') => {
+        importKind.value = kind;
+        importing.value = true;
+    };
+
     return {
         importing,
+        importKind,
+        startImport,
         imageFor,
         addSvg,
         addMermaid,
-        onImagesPicked,
+        onMediaPicked,
         onDropFiles,
     };
 }

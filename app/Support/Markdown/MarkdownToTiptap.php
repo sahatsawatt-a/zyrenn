@@ -40,7 +40,7 @@ use League\CommonMark\Parser\MarkdownParser;
  * NoteSyntaxExtension) and each node of the tree maps to a Tiptap node.
  *
  * A single newline inside a paragraph is a hard break, and an image on a line
- * of its own is an image block.
+ * of its own is an image block. So is a <video> tag, as a video block.
  */
 final class MarkdownToTiptap
 {
@@ -106,14 +106,15 @@ final class MarkdownToTiptap
             $node instanceof Table => [$this->table($node)],
             $node instanceof Callout => [$this->node('callout', ['icon' => $node->icon], $this->blocks($node) ?: [['type' => 'paragraph']])],
             $node instanceof MathBlock => $node->latex === '' ? [] : [$this->node('blockMath', ['latex' => $node->latex])],
-            $node instanceof HtmlBlock => [$this->textParagraph($node->getLiteral())],
+            $node instanceof HtmlBlock => [$this->video($node->getLiteral()) ?? $this->textParagraph($node->getLiteral())],
             default => [],
         };
     }
 
     /**
-     * Splits the paragraph into lines, so a line holding only an image becomes
-     * an image block and the other lines stay paragraphs joined by hard breaks.
+     * Splits the paragraph into lines, so a line holding only an image (or a
+     * video tag) becomes a block of its own and the other lines stay
+     * paragraphs joined by hard breaks.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -132,14 +133,15 @@ final class MarkdownToTiptap
         $content = [];
 
         foreach ($lines as $line) {
-            if (count($line) === 1 && $line[0] instanceof Image) {
+            $media = $this->mediaLine($line);
+
+            if ($media) {
                 if ($content) {
                     $blocks[] = $this->node('paragraph', content: $this->mergeText($content));
                     $content = [];
                 }
 
-                $alt = $this->plainText($line[0]);
-                $blocks[] = $this->node('image', ['src' => $line[0]->getUrl(), 'alt' => $alt !== '' ? $alt : null]);
+                $blocks[] = $media;
 
                 continue;
             }
@@ -155,6 +157,61 @@ final class MarkdownToTiptap
         }
 
         return $blocks;
+    }
+
+    /**
+     * The image or video block a line of a paragraph is, when that is all
+     * the line holds.
+     *
+     * @param  array<int, Node>  $line
+     * @return array<string, mixed>|null
+     */
+    private function mediaLine(array $line): ?array
+    {
+        if (count($line) === 1 && $line[0] instanceof Image) {
+            $alt = $this->plainText($line[0]);
+
+            return $this->node('image', ['src' => $line[0]->getUrl(), 'alt' => $alt !== '' ? $alt : null]);
+        }
+
+        $html = '';
+
+        foreach ($line as $node) {
+            if (! $node instanceof HtmlInline) {
+                return null;
+            }
+
+            $html .= $node->getLiteral();
+        }
+
+        return $html !== '' ? $this->video($html) : null;
+    }
+
+    /**
+     * A video block, from HTML that is one <video> tag and nothing else.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function video(string $html): ?array
+    {
+        if (! preg_match('~^\s*<video\b([^>]*)>\s*(?:</video>)?\s*$~i', $html, $tag)) {
+            return null;
+        }
+
+        // name="value" or name='value'
+        preg_match_all('~\b(src|title)\s*=\s*(["\'])(.*?)\2~i', $tag[1], $found, PREG_SET_ORDER);
+
+        $attrs = [];
+
+        foreach ($found as $attribute) {
+            $attrs[strtolower($attribute[1])] = html_entity_decode($attribute[3], ENT_QUOTES | ENT_HTML5);
+        }
+
+        if (($attrs['src'] ?? '') === '') {
+            return null;
+        }
+
+        return $this->node('video', ['src' => $attrs['src'], 'title' => ($attrs['title'] ?? '') !== '' ? $attrs['title'] : null]);
     }
 
     /**

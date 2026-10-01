@@ -6,8 +6,9 @@ import { defaultMermaidTemplate, mermaidTemplates } from './mermaidTemplates';
 // Fired on the editor DOM so TiptapEditor opens the LaTeX popover for a new formula
 export const MATH_EDIT_EVENT = 'math:edit';
 
-// Fired on the editor DOM so TiptapEditor opens its image picker
-export const IMAGE_PICK_EVENT = 'image:pick';
+// Fired on the editor DOM so TiptapEditor opens its picker; the detail says
+// for what ('image' or 'video')
+export const MEDIA_PICK_EVENT = 'media:pick';
 
 const insertMath = (
     editor: Editor,
@@ -135,7 +136,21 @@ export const commandItems: SlashCommandItem[] = [
         keywords: ['picture', 'photo', 'upload', 'img', 'drive'],
         command: ({ editor, range }) => {
             editor.chain().focus().deleteRange(range).run();
-            editor.view.dom.dispatchEvent(new CustomEvent(IMAGE_PICK_EVENT));
+            editor.view.dom.dispatchEvent(
+                new CustomEvent(MEDIA_PICK_EVENT, { detail: 'image' }),
+            );
+        },
+    },
+    {
+        title: 'Video',
+        description: 'Play a video from Drive, an upload, or a link.',
+        icon: '🎬',
+        keywords: ['movie', 'clip', 'film', 'mp4', 'upload', 'drive'],
+        command: ({ editor, range }) => {
+            editor.chain().focus().deleteRange(range).run();
+            editor.view.dom.dispatchEvent(
+                new CustomEvent(MEDIA_PICK_EVENT, { detail: 'video' }),
+            );
         },
     },
     {

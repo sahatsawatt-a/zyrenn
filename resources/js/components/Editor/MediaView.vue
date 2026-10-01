@@ -5,8 +5,21 @@
         data-drag-handle
     >
         <div class="image-frame">
+            <!-- Played right here; the toolbar's expand opens it full size -->
+            <video
+                v-if="isVideo && !failed"
+                ref="player"
+                :src="node.attrs.src"
+                :title="node.attrs.title ?? undefined"
+                controls
+                preload="metadata"
+                playsinline
+                data-test="note-video"
+                @error="failed = true"
+                @loadedmetadata="failed = false"
+            />
             <img
-                v-if="!failed"
+                v-else-if="!failed"
                 :src="node.attrs.src"
                 :alt="node.attrs.alt ?? ''"
                 :title="node.attrs.title ?? undefined"
@@ -16,9 +29,14 @@
                 @load="failed = false"
             />
             <div v-else class="image-missing" contenteditable="false">
-                Image couldn’t be loaded
+                {{ isVideo ? 'Video' : 'Image' }} couldn’t be loaded
                 <span>{{ node.attrs.src }}</span>
             </div>
+
+            <!-- A PDF can't play a video, so it says what was there -->
+            <p v-if="isVideo" class="video-print" contenteditable="false">
+                ▶ Video: {{ node.attrs.title || node.attrs.src }}
+            </p>
 
             <!-- Hover toolbar -->
             <div v-if="!failed" class="image-toolbar" contenteditable="false">
@@ -48,7 +66,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { NodeViewWrapper, nodeViewProps } from '@tiptap/vue-3';
 import { Maximize2 } from '@lucide/vue';
 import { useMediaViewer } from '../../composables/useMediaViewer';
@@ -56,6 +74,10 @@ import type { ViewerItem } from '../../composables/useMediaViewer';
 import type { ImageSize } from '../../editor-nodes/ImageNode';
 
 const props = defineProps(nodeViewProps);
+
+// The one view for both picture and video blocks: same widths, same viewer
+const isVideo = computed(() => props.node.type.name === 'video');
+const player = ref<HTMLVideoElement | null>(null);
 
 const failed = ref(false);
 watch(
@@ -71,22 +93,35 @@ const sizes: { value: ImageSize; label: string; title: string }[] = [
 
 const viewer = useMediaViewer();
 
-// Open the viewer on this image, with the note's other images a swipe away
+// Open the viewer on this one, with the note's other pictures and videos a
+// swipe away. A video playing here carries on there from the same moment.
 const expand = () => {
     const items: ViewerItem[] = [];
     let start = 0;
     const self = props.getPos();
 
     props.editor.state.doc.descendants((node, pos) => {
-        if (node.type.name !== props.node.type.name) return;
-        if (pos === self) start = items.length;
-        items.push({
-            type: 'image',
-            src: node.attrs.src,
-            alt: node.attrs.alt ?? undefined,
-        });
+        const mine = pos === self;
+
+        if (mine) start = items.length;
+
+        if (node.type.name === 'image') {
+            items.push({
+                type: 'image',
+                src: node.attrs.src,
+                alt: node.attrs.alt ?? undefined,
+            });
+        } else if (node.type.name === 'video') {
+            items.push({
+                type: 'video',
+                src: node.attrs.src,
+                title: node.attrs.title ?? undefined,
+                start: mine ? player.value?.currentTime : undefined,
+            });
+        }
     });
 
+    player.value?.pause();
     viewer.open(items, start);
 };
 </script>
@@ -114,12 +149,37 @@ const expand = () => {
     width: 100%;
 }
 
-.image-frame img {
+.image-frame img,
+.image-frame video {
     display: block;
     width: 100%;
     height: auto;
     border-radius: 0.5rem;
+}
+.image-frame img {
     cursor: zoom-in;
+}
+.image-frame video {
+    background: #000;
+    /* 16:9 until it knows its own shape */
+    aspect-ratio: auto 16 / 9;
+}
+
+.video-print {
+    display: none;
+}
+@media print {
+    .image-frame video {
+        display: none;
+    }
+    .video-print {
+        display: block;
+        padding: 0.75rem 1rem;
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        font-size: 13px;
+        line-height: 1.4;
+    }
 }
 
 .is-selected .image-frame {

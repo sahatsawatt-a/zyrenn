@@ -165,7 +165,7 @@ abstract class BoardTool extends FiledTool
      */
     private function itemArgument(JsonSchema $schema, bool $kindRequired = true): Type
     {
-        $kind = $schema->string()->enum(BoardItems::KINDS)->description('What to draw. Shapes: rect, pill, ellipse, triangle, diamond, hexagon, star. Flowchart: cylinder (a database), parallelogram (data), document, process, cloud. Also sticky, text, frame (a 16:9 slide for present mode), image, math (a formula, with LaTeX in "text"), arrow (a connector) and draw (freehand ink).');
+        $kind = $schema->string()->enum(BoardItems::KINDS)->description('What to draw. Shapes: rect, pill, ellipse, triangle, diamond, hexagon, star. Flowchart: cylinder (a database), parallelogram (data), document, process, cloud. Also sticky, text, frame (a 16:9 slide for present mode), image, video (plays on the board), math (a formula, with LaTeX in "text"), arrow (a connector) and draw (freehand ink).');
 
         return $schema->object([
             'id' => $schema->string()->max(64)->description('Your name for this item, so a connector can point at it (letters, digits, "-" and "_"). Made up for you if you leave it out.'),
@@ -181,7 +181,7 @@ abstract class BoardTool extends FiledTool
             'align' => $schema->string()->enum(BoardItems::ALIGNS)->description('Where the label sits across the item: left, center or right. Shapes centre it, a text item starts at the left.'),
             'verticalAlign' => $schema->string()->enum(BoardItems::VERTICAL_ALIGNS)->description('Where the label sits down the item: top, middle or bottom.'),
             'rotation' => $schema->number()->description('Degrees clockwise.'),
-            'src' => $schema->string()->max(200)->description('For kind "image": the URL of the picture. Upload it with upload-file first and pass the "url" from the response.'),
+            'src' => $schema->string()->max(200)->description('For kind "image": the URL of the picture; for kind "video", of the video (MP4 or WebM). Upload it with upload-file first and pass the "url" from the response.'),
             'hidden' => $schema->boolean()->description('Keep it off the board without deleting it.'),
             'locked' => $schema->boolean()->description('Stop it being picked up on the canvas.'),
             'from' => $schema->object([

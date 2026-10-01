@@ -8,6 +8,7 @@ import {
     FileText,
     FileVideo,
     Folder,
+    Play,
 } from '@lucide/vue';
 import { computed } from 'vue';
 import Highlight from '@/components/folders/Highlight.vue';
@@ -27,6 +28,11 @@ const props = defineProps<{
 }>();
 
 defineEmits<{ open: []; rename: []; move: []; remove: [] }>();
+
+// Pictures are viewed and videos played, in place; anything else is opened
+const action = computed(() =>
+    props.file.is_image ? 'View' : props.file.is_video ? 'Play' : 'Open',
+);
 
 const downloadUrl = computed(() =>
     show.url(props.file.ref_id, { query: { download: 1 } }),
@@ -52,11 +58,25 @@ const icon = computed(
         <button
             type="button"
             class="bg-muted flex aspect-[4/3] items-center justify-center overflow-hidden"
-            :title="file.is_image ? 'View' : 'Open'"
+            :title="action"
             @click="$emit('open')"
         >
+            <!-- A frame from just in stands in for a thumbnail -->
+            <div v-if="file.is_video" class="relative size-full">
+                <video
+                    :src="`${file.url}#t=0.5`"
+                    preload="metadata"
+                    muted
+                    class="size-full bg-black object-cover"
+                />
+                <span
+                    class="absolute top-1/2 left-1/2 flex size-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-white transition-transform group-hover:scale-110"
+                >
+                    <Play class="size-5 fill-current" />
+                </span>
+            </div>
             <img
-                v-if="file.is_image"
+                v-else-if="file.is_image"
                 :src="file.url"
                 :alt="file.name"
                 loading="lazy"
@@ -98,7 +118,7 @@ const icon = computed(
                 @remove="$emit('remove')"
             >
                 <DropdownMenuItem @select="$emit('open')">
-                    <ExternalLink /> {{ file.is_image ? 'View' : 'Open' }}
+                    <ExternalLink /> {{ action }}
                 </DropdownMenuItem>
                 <DropdownMenuItem as-child>
                     <a :href="downloadUrl"><Download /> Download</a>

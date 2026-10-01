@@ -34,6 +34,29 @@ class McpBoardsTest extends TestCase
         return array_column($board->refresh()->content['items'], null, 'id');
     }
 
+    public function test_a_video_goes_on_a_board_as_a_16_by_9_player()
+    {
+        $user = User::factory()->create();
+
+        UserServer::actingAs($user)
+            ->tool(CreateBoard::class, [
+                'title' => 'Demo',
+                'items' => [
+                    ['id' => 'clip', 'kind' => 'video', 'src' => '/drive/files/abc'],
+                    ['id' => 'note', 'kind' => 'sticky', 'text' => 'Watch this'],
+                    ['kind' => 'arrow', 'from' => ['item' => 'note'], 'to' => ['item' => 'clip']],
+                ],
+            ])
+            ->assertOk();
+
+        $items = $this->stored($user->boards()->sole());
+
+        $this->assertSame('/drive/files/abc', $items['clip']['src']);
+        $this->assertEquals([480, 270], [$items['clip']['width'], $items['clip']['height']]);
+        // A connector can point at it like any other box
+        $this->assertSame('clip', collect($items)->firstWhere('kind', 'arrow')['to']['item']);
+    }
+
     public function test_create_board_draws_what_it_was_given()
     {
         $user = User::factory()->create();

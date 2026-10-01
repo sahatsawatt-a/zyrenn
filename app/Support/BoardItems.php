@@ -24,14 +24,14 @@ class BoardItems
     public const KINDS = [
         'frame', 'sticky', 'text', 'rect', 'pill', 'ellipse', 'triangle',
         'diamond', 'hexagon', 'star', 'cylinder', 'parallelogram', 'document',
-        'process', 'cloud', 'image', 'math', self::CONNECTOR, 'draw',
+        'process', 'cloud', 'image', 'video', 'math', self::CONNECTOR, 'draw',
     ];
 
     /** Kinds a connector may pin itself to. */
     public const CONNECTABLE = [
         'sticky', 'text', 'rect', 'pill', 'ellipse', 'triangle', 'diamond',
         'hexagon', 'star', 'cylinder', 'parallelogram', 'document', 'process',
-        'cloud', 'image', 'math',
+        'cloud', 'image', 'video', 'math',
     ];
 
     public const SIDES = BoardPins::SIDES;
@@ -436,6 +436,8 @@ class BoardItems
             'ellipse' => [...$base, 'width' => 200.0, 'height' => 200.0],
             'star' => [...$base, 'width' => 180.0, 'height' => 180.0, 'fill' => '#fde68a'],
             'image' => [...$base, 'width' => 200.0, 'height' => 200.0, 'fill' => 'transparent', 'stroke' => 'transparent'],
+            // 16:9, the shape most videos are; it plays on the board with black bars round any other
+            'video' => [...$base, 'width' => 480.0, 'height' => 270.0, 'fill' => '#000000', 'stroke' => 'transparent'],
             // A formula is its own picture: no box, no outline, just the maths
             'math' => [...$base, 'width' => 260.0, 'height' => 90.0, 'fill' => 'transparent',
                 'stroke' => 'transparent', 'fontSize' => 24.0],

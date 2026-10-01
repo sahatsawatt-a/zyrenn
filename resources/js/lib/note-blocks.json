@@ -16,6 +16,7 @@
         "table",
         "horizontalRule",
         "blockMath",
-        "image"
+        "image",
+        "video"
     ]
 }

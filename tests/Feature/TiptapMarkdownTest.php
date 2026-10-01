@@ -120,6 +120,28 @@ MD;
         $this->assertSame($markdown."\n", TiptapMarkdown::toMarkdown($doc));
     }
 
+    public function test_a_video_on_its_own_line_round_trips_as_a_video_block()
+    {
+        $markdown = "Before\n\n<video src=\"/drive/files/abc\" title=\"Tom &amp; Jerry.mp4\"></video>\n\nAfter";
+
+        $doc = TiptapMarkdown::toDoc($markdown);
+
+        $this->assertSame(
+            ['type' => 'video', 'attrs' => ['src' => '/drive/files/abc', 'title' => 'Tom & Jerry.mp4']],
+            $doc['content'][1],
+        );
+        $this->assertSame($markdown."\n", TiptapMarkdown::toMarkdown($doc));
+
+        // Written by hand: next to other lines, single quotes, no closing tag
+        $doc = TiptapMarkdown::toDoc("Watch this:\n<video src='/drive/files/xyz'>\nThat was it.");
+
+        $this->assertSame(['paragraph', 'video', 'paragraph'], array_column($doc['content'], 'type'));
+        $this->assertSame(['src' => '/drive/files/xyz', 'title' => null], $doc['content'][1]['attrs']);
+
+        // Any other HTML is still kept as the words it is
+        $this->assertSame('paragraph', TiptapMarkdown::toDoc('<div>hi</div>')['content'][0]['type']);
+    }
+
     public function test_it_follows_commonmark_for_escapes_and_nested_emphasis()
     {
         $this->assertSame(

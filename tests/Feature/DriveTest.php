@@ -33,6 +33,19 @@ class DriveTest extends TestCase
         );
     }
 
+    /**
+     * The start of an MP4 -- its "ftyp" box, which is what sniffing reads. A
+     * fake file guesses its type from the name instead, and guesses
+     * application/mp4, so it is told what sniffing would have said.
+     */
+    private static function mp4(string $name = 'clip.mp4'): UploadedFile
+    {
+        return UploadedFile::fake()->createWithContent(
+            $name,
+            "\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom".str_repeat("\x00", 1000),
+        )->mimeType('video/mp4');
+    }
+
     private function upload(User $user, UploadedFile $file, ?DriveFolder $folder = null): DriveFile
     {
         $this->actingAs($user)
@@ -144,6 +157,43 @@ class DriveTest extends TestCase
         $this->assertStringStartsWith('attachment', $this->get(route('drive.files.show', [$image, 'download' => 1]))->headers->get('Content-Disposition'));
     }
 
+    public function test_videos_play_in_place_and_can_be_fetched_a_range_at_a_time()
+    {
+        $user = User::factory()->create();
+        $video = $this->upload($user, self::mp4());
+
+        $this->assertSame('video', $video->kind);
+        $this->assertTrue($video->isVideo());
+
+        $this->actingAs($user)
+            ->getJson(route('drive.pick', ['kind' => 'video']))
+            ->assertJsonCount(1, 'files')
+            ->assertJsonPath('files.0.is_video', true);
+
+        $whole = $this->get(route('drive.files.show', $video));
+        $whole->assertOk()->assertHeader('Content-Type', 'video/mp4')->assertHeader('Accept-Ranges', 'bytes');
+        $this->assertStringStartsWith('inline', $whole->headers->get('Content-Disposition'));
+
+        // A <video> seeks by asking for the bytes it jumps to
+        $part = $this->get(route('drive.files.show', $video), ['Range' => 'bytes=4-11']);
+        $part->assertStatus(206)->assertHeader('Content-Range', 'bytes 4-11/1024');
+        $this->assertSame('ftypmp42', $part->streamedContent());
+    }
+
+    public function test_a_file_name_that_is_not_plain_ascii_still_downloads()
+    {
+        $user = User::factory()->create();
+        $file = $this->upload($user, self::png('ภาพ 100%.png'));
+
+        $disposition = $this->actingAs($user)
+            ->get(route('drive.files.show', [$file, 'download' => 1]))
+            ->assertOk()
+            ->headers->get('Content-Disposition');
+
+        $this->assertStringStartsWith('attachment', $disposition);
+        $this->assertStringContainsString("filename*=utf-8''", $disposition);
+    }
+
     public function test_a_file_can_be_renamed_and_moved()
     {
         $user = User::factory()->create();
@@ -250,6 +300,14 @@ class DriveTest extends TestCase
         $this->getJson(route('drive.pick', ['q' => 'diag']))
             ->assertJsonCount(1, 'files')
             ->assertJsonPath('files.0.name', 'diagram.png');
+
+        // Videos are picked on their own, and never mixed in with the images
+        DriveFile::factory()->for($user)->create(['name' => 'demo.mp4', 'mime' => 'video/mp4', 'kind' => 'video']);
+
+        $this->getJson(route('drive.pick'))->assertJsonCount(2, 'files');
+        $this->getJson(route('drive.pick', ['kind' => 'video']))
+            ->assertJsonCount(1, 'files')
+            ->assertJsonPath('files.0.name', 'demo.mp4');
     }
 
     public function test_deleting_a_user_removes_their_drive_files()

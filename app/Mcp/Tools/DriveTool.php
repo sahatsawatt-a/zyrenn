@@ -5,6 +5,7 @@ namespace App\Mcp\Tools;
 use App\Models\Drive\DriveFile;
 use App\Models\Drive\DriveFolder;
 use App\Models\Owner;
+use App\Support\Markdown\TiptapToMarkdown;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -60,8 +61,8 @@ abstract class DriveTool extends ScopedTool
     /**
      * The shape every Drive tool reports a file in.
      *
-     * `markdown` is the ready-made line for putting an image into a note with
-     * create-note or update-note, so a client never has to build the URL.
+     * `markdown` is the ready-made line for putting an image or a video into a
+     * note with create-note or update-note, so a client never has to build it.
      *
      * @param  array<int, string>|null  $paths  folder paths by id, when listing many files
      * @return array<string, mixed>
@@ -82,6 +83,7 @@ abstract class DriveTool extends ScopedTool
             'url' => $file->url(),
             'updated_at' => $file->updated_at?->toIso8601String(),
             ...$file->isImage() ? ['markdown' => '!['.$file->name.']('.$file->url().')'] : [],
+            ...$file->isVideo() ? ['markdown' => TiptapToMarkdown::video($file->url(), $file->name)] : [],
         ];
     }
 }

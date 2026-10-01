@@ -40,10 +40,12 @@ import {
 } from 'vue-konva';
 import InspectorPanel from './InspectorPanel.vue';
 import { isImageFile, uploadToDrive } from '@/lib/drive';
-import ImagePickerDialog from '@/components/media/ImagePickerDialog.vue';
+import MediaPickerDialog from '@/components/media/MediaPickerDialog.vue';
+import MediaViewer from '@/components/MediaViewer.vue';
+import { useMediaViewer } from '@/composables/useMediaViewer';
 import BoardItem from './BoardItem.vue';
 import BoardOverlay from './BoardOverlay.vue';
-import type { PickedImage } from '@/components/media/ImagePickerDialog.vue';
+import BoardVideoControls from './BoardVideoControls.vue';
 import ShapeLibrary from './ShapeLibrary.vue';
 import { connectorPoints } from '../../composables/board/connectors.js';
 import type { Guide } from '../../composables/board/connectors.js';
@@ -73,6 +75,7 @@ import { useDrawing } from '../../composables/board/useDrawing.js';
 import { useShortcuts } from '../../composables/board/useShortcuts.js';
 import { useFormulae } from '../../composables/board/useFormulae.js';
 import { usePictures } from '../../composables/board/usePictures.js';
+import { VIDEO_PLAY, useVideos } from '../../composables/board/useVideos.js';
 import { useBoard } from '../../composables/board/useBoard.js';
 import { useCamera } from '../../composables/board/useCamera.js';
 import {
@@ -345,13 +348,21 @@ const { formulae, mathHtml, mathStyle } = useFormulae({
 });
 
 // ------------------------------------------------------------------ Pictures
-const { importing, imageFor, addSvg, addMermaid, onImagesPicked, onDropFiles } =
-    usePictures({
-        board,
-        middleOfView: () =>
-            camera.toBoard({ x: width.value / 2, y: height.value / 2 }),
-        editingId,
-    });
+const {
+    importing,
+    importKind,
+    startImport,
+    imageFor,
+    addSvg,
+    addMermaid,
+    onMediaPicked,
+    onDropFiles,
+} = usePictures({
+    board,
+    middleOfView: () =>
+        camera.toBoard({ x: width.value / 2, y: height.value / 2 }),
+    editingId,
+});
 
 // ------------------------------------------------------------------ Actions
 const fitAll = () => camera.focus(boundsOfAll(board.items.value));
@@ -401,6 +412,105 @@ const contentLayer = useTemplateRef<{ getNode: () => Konva.Layer }>(
 const overlayLayer = useTemplateRef<{ getNode: () => Konva.Layer }>(
     'overlayLayer',
 );
+
+// -------------------------------------------------------------------- Videos
+// A hidden video is let go of, so it does not play on where nobody sees it
+const videos = useVideos(
+    computed(() => board.items.value.filter((item) => !item.hidden)),
+    () => contentLayer.value?.getNode(),
+);
+
+const viewer = useMediaViewer();
+
+/** The video item a click landed on, if it landed on one. */
+const videoAt = (event: Konva.KonvaEventObject<MouseEvent>) => {
+    const id = event.target.id() || event.target.getParent()?.id();
+    const item = id ? board.byId.value.get(id) : undefined;
+
+    return item?.kind === 'video' ? item : undefined;
+};
+
+// A click on a video's play button plays it, and so does any click on one
+// while presenting. Clicking the selected video pauses it; otherwise a click
+// is the usual select.
+const onClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
+    const video = videoAt(event);
+
+    if (video && tool.value === 'select') {
+        const chosen =
+            board.selection.value.length === 1 &&
+            board.selection.value[0] === video.id;
+
+        if (
+            presenting.value ||
+            event.target.name() === VIDEO_PLAY ||
+            (chosen && videos.isPlaying(video.id))
+        ) {
+            videos.toggle(video.id);
+        }
+    }
+
+    onItemClick(event);
+};
+
+/** Watch a video full size, from wherever it had got to. */
+const expandVideo = (item: Item) => {
+    const element = videos.elementOf(item.id);
+
+    videos.pause(item.id);
+    viewer.open([
+        {
+            type: 'video',
+            src: item.src,
+            start: element?.currentTime,
+        },
+    ]);
+};
+
+// Double-clicking a video watches it full size; anything else is labelled
+const onDoubleClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
+    const video = videoAt(event);
+
+    if (video) {
+        expandVideo(video);
+
+        return;
+    }
+
+    onItemDoubleClick(event);
+};
+
+/** The one selected video, and where its controls go: just under it. */
+const videoBar = computed(() => {
+    const item = board.selected.value[0];
+
+    if (
+        presenting.value ||
+        board.selected.value.length !== 1 ||
+        item?.kind !== 'video'
+    ) {
+        return null;
+    }
+
+    const element = videos.elementOf(item.id);
+
+    if (!element) {
+        return null;
+    }
+
+    const scale = camera.scale.value;
+    const { x, y } = camera.position.value;
+
+    return {
+        item,
+        element,
+        style: {
+            left: `${item.x * scale + x}px`,
+            top: `${(item.y + item.height) * scale + y + 10}px`,
+            width: `${Math.max(300, item.width * scale)}px`,
+        },
+    };
+});
 
 onMounted(() => {
     const layer = contentLayer.value?.getNode();
@@ -540,7 +650,8 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
                 v-show="!presenting"
                 :tool="tool"
                 @update:tool="tool = $event"
-                @add-picture="importing = true"
+                @add-picture="startImport('image')"
+                @add-video="startImport('video')"
             />
 
             <div
@@ -567,8 +678,8 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
                     @pointerdown="onPointerDown"
                     @pointermove="onPointerMove"
                     @pointerup="onPointerUp"
-                    @click="onItemClick"
-                    @dblclick="onItemDoubleClick"
+                    @click="onClick"
+                    @dblclick="onDoubleClick"
                 >
                     <Layer ref="contentLayer">
                         <Group
@@ -600,6 +711,8 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
                                 :selected="isSelected(item)"
                                 :editing="editingId === item.id"
                                 :image="imageFor(item)"
+                                :video="videos.videoFor(item)"
+                                :playing="videos.isPlaying(item.id)"
                                 :path="connectorPath(item)"
                             />
                         </Group>
@@ -677,6 +790,15 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
                     v-html="mathHtml(item)"
                 />
 
+                <BoardVideoControls
+                    v-if="videoBar"
+                    :video="videoBar.element"
+                    :playing="videos.isPlaying(videoBar.item.id)"
+                    :style="videoBar.style"
+                    @toggle="videos.toggle(videoBar.item.id)"
+                    @expand="expandVideo(videoBar.item)"
+                />
+
                 <!-- Typing happens in a real textarea laid over the canvas -->
                 <textarea
                     v-if="editingItem"
@@ -730,14 +852,17 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
                 </div>
             </div>
 
-            <ImagePickerDialog
+            <MediaPickerDialog
                 v-model:open="importing"
+                :kind="importKind"
                 destination="the board"
                 allow-markup
-                @insert="onImagesPicked"
+                @insert="onMediaPicked"
                 @markup="addSvg"
                 @mermaid="addMermaid"
             />
+
+            <MediaViewer />
 
             <InspectorPanel
                 v-show="!presenting"

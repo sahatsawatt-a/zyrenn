@@ -12,6 +12,7 @@ import {
     MousePointer2,
     Pencil,
     RectangleHorizontal,
+    Clapperboard,
     ImagePlus,
     Search,
     Shapes,
@@ -28,7 +29,11 @@ import type { Tool } from '../../composables/board/items';
 // The shape library Lucidchart puts down the left: grouped, searchable, and
 // the thing you reach for before every other control.
 defineProps<{ tool: Tool }>();
-const emit = defineEmits<{ 'update:tool': [Tool]; 'add-picture': [] }>();
+const emit = defineEmits<{
+    'update:tool': [Tool];
+    'add-picture': [];
+    'add-video': [];
+}>();
 
 type Entry = { tool: Tool; icon: unknown; label: string; key: string };
 
@@ -142,6 +147,16 @@ const shown = computed(() => {
                 >
                     <ImagePlus class="size-5" />
                     <span>Add picture</span>
+                </button>
+                <button
+                    type="button"
+                    class="library-item is-wide"
+                    title="From this computer, your Drive, or a link. It plays on the board."
+                    data-test="open-video-picker"
+                    @click="emit('add-video')"
+                >
+                    <Clapperboard class="size-5" />
+                    <span>Add video</span>
                 </button>
             </section>
 

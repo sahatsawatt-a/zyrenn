@@ -111,6 +111,18 @@ const title = computed(() => {
     return item.type === 'image' ? (item.alt ?? '') : (item.title ?? '');
 });
 
+// A video is played rather than looked over: no zoom, no panning, and the
+// keys and clicks on it are its own player's
+const playing = computed(() => current.value?.type === 'video');
+
+const onVideoReady = (event: Event) => {
+    const item = current.value;
+
+    if (item?.type === 'video' && item.start) {
+        (event.target as HTMLVideoElement).currentTime = item.start;
+    }
+};
+
 // Zoom keeping the point under (clientX, clientY) fixed; the stage centre by default
 const zoomTo = (scale: number, clientX?: number, clientY?: number) => {
     const next = Math.min(maxScale.value, Math.max(MIN_SCALE, scale));
@@ -135,6 +147,10 @@ const zoomTo = (scale: number, clientX?: number, clientY?: number) => {
 };
 
 const onWheel = (event: WheelEvent) => {
+    if (playing.value) {
+        return;
+    }
+
     zoomTo(
         view.scale * Math.exp(-event.deltaY * 0.0015),
         event.clientX,
@@ -147,7 +163,8 @@ let drag: { x: number; y: number; startX: number; startY: number } | null =
     null;
 
 const onPointerDown = (event: PointerEvent) => {
-    if (event.button !== 0) {
+    // Capturing the pointer would take it away from the video's own controls
+    if (event.button !== 0 || playing.value) {
         return;
     }
 
@@ -196,6 +213,10 @@ const onPointerUp = (event: PointerEvent) => {
 
 // Fitted → actual pixels (or 2x when the item already shows at full size) → fitted
 const onDoubleClick = (event: MouseEvent) => {
+    if (playing.value) {
+        return;
+    }
+
     if (view.scale === 1) {
         zoomTo(Math.max(2, 1 / fit.value), event.clientX, event.clientY);
     } else {
@@ -211,15 +232,22 @@ useEventListener(
             return;
         }
 
+        // A lone video keeps the arrow keys, which seek it
+        const stepping = !playing.value || items.value.length > 1;
         const actions: Record<string, () => void> = {
             Escape: close,
-            ArrowLeft: () => step(-1),
-            ArrowRight: () => step(1),
-            '+': () => zoomTo(view.scale * 1.25),
-            '=': () => zoomTo(view.scale * 1.25),
-            '-': () => zoomTo(view.scale / 1.25),
-            '0': reset,
-            '1': () => zoomTo(1 / fit.value),
+            ...(stepping
+                ? { ArrowLeft: () => step(-1), ArrowRight: () => step(1) }
+                : {}),
+            ...(playing.value
+                ? {}
+                : {
+                      '+': () => zoomTo(view.scale * 1.25),
+                      '=': () => zoomTo(view.scale * 1.25),
+                      '-': () => zoomTo(view.scale / 1.25),
+                      '0': reset,
+                      '1': () => zoomTo(1 / fit.value),
+                  }),
         };
 
         const action = actions[event.key];
@@ -252,40 +280,42 @@ useEventListener(
                     </span>
                 </p>
 
-                <button
-                    type="button"
-                    class="viewer-btn"
-                    title="Zoom out (−)"
-                    @click="zoomTo(view.scale / 1.25)"
-                >
-                    <Minus class="size-4" />
-                </button>
-                <button
-                    type="button"
-                    class="viewer-btn w-16 tabular-nums"
-                    title="Actual size (1)"
-                    @click="zoomTo(1 / fit)"
-                >
-                    {{ Math.round(actual * 100) }}%
-                </button>
-                <button
-                    type="button"
-                    class="viewer-btn"
-                    title="Zoom in (+)"
-                    @click="zoomTo(view.scale * 1.25)"
-                >
-                    <Plus class="size-4" />
-                </button>
-                <button
-                    type="button"
-                    class="viewer-btn"
-                    title="Fit to screen (0)"
-                    @click="reset"
-                >
-                    <Maximize class="size-4" />
-                </button>
+                <template v-if="!playing">
+                    <button
+                        type="button"
+                        class="viewer-btn"
+                        title="Zoom out (−)"
+                        @click="zoomTo(view.scale / 1.25)"
+                    >
+                        <Minus class="size-4" />
+                    </button>
+                    <button
+                        type="button"
+                        class="viewer-btn w-16 tabular-nums"
+                        title="Actual size (1)"
+                        @click="zoomTo(1 / fit)"
+                    >
+                        {{ Math.round(actual * 100) }}%
+                    </button>
+                    <button
+                        type="button"
+                        class="viewer-btn"
+                        title="Zoom in (+)"
+                        @click="zoomTo(view.scale * 1.25)"
+                    >
+                        <Plus class="size-4" />
+                    </button>
+                    <button
+                        type="button"
+                        class="viewer-btn"
+                        title="Fit to screen (0)"
+                        @click="reset"
+                    >
+                        <Maximize class="size-4" />
+                    </button>
+                </template>
                 <a
-                    v-if="current.type === 'image'"
+                    v-if="current.type !== 'svg'"
                     :href="current.src"
                     target="_blank"
                     rel="noopener"
@@ -307,7 +337,12 @@ useEventListener(
             <!-- Stage: wheel to zoom, drag to pan, double-click to toggle 2× -->
             <div
                 ref="stage"
-                class="relative flex min-h-0 flex-1 cursor-grab touch-none items-center justify-center overflow-hidden select-none active:cursor-grabbing"
+                class="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden select-none"
+                :class="
+                    playing
+                        ? ''
+                        : 'cursor-grab touch-none active:cursor-grabbing'
+                "
                 @wheel.prevent="onWheel"
                 @pointerdown="onPointerDown"
                 @pointermove="onPointerMove"
@@ -317,13 +352,26 @@ useEventListener(
                 <!-- Pan only moves (translate never resamples); zoom sets the real size -->
                 <div
                     ref="content"
-                    class="pointer-events-none shrink-0"
+                    class="shrink-0"
+                    :class="{ 'pointer-events-none': !playing }"
                     :style="{
                         transform: `translate(${view.x}px, ${view.y}px)`,
                     }"
                 >
+                    <video
+                        v-if="current.type === 'video'"
+                        :key="current.src"
+                        :src="current.src"
+                        :title="current.title"
+                        class="block max-h-[calc(100vh-7rem)] max-w-[92vw] bg-black shadow-2xl"
+                        data-test="viewer-video"
+                        controls
+                        autoplay
+                        playsinline
+                        @loadedmetadata="onVideoReady"
+                    />
                     <img
-                        v-if="current.type === 'image'"
+                        v-else-if="current.type === 'image'"
                         :key="current.src"
                         :src="current.src"
                         :alt="current.alt ?? ''"
@@ -373,7 +421,7 @@ useEventListener(
                 </template>
             </div>
 
-            <p class="pb-3 text-center text-xs text-white/40">
+            <p v-if="!playing" class="pb-3 text-center text-xs text-white/40">
                 Scroll to zoom · drag to move · double-click for actual size
             </p>
         </div>
