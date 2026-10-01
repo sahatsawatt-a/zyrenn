@@ -7,6 +7,7 @@ import {
     HardDrive,
     LayoutDashboard,
     LayoutGrid,
+    MessageSquare,
     NotebookPen,
     FileSpreadsheet,
     ChartNoAxesCombined,
@@ -37,6 +38,7 @@ import {
 } from '@/routes';
 import { owned } from '@/lib/projects';
 import { index as boardsIndex } from '@/routes/boards';
+import { index as chatsIndex } from '@/routes/chats';
 import { index as driveIndex } from '@/routes/drive';
 import { index as notesIndex } from '@/routes/notes';
 import { edit as projectSettings } from '@/routes/projects';
@@ -78,6 +80,12 @@ const mainNavItems = computed<NavItem[]>(() => {
             title: 'Drive',
             href: owned(driveIndex, projectDriveIndex)(),
             icon: HardDrive,
+        },
+        // Your own, even inside a project: a chat answers through your own key
+        {
+            title: 'Chat',
+            href: chatsIndex(),
+            icon: MessageSquare,
         },
         ...(project
             ? [

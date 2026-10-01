@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Settings\AiConnectionController;
 use App\Http\Controllers\Settings\McpController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
@@ -29,6 +30,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('settings/mcp', [McpController::class, 'edit'])->name('mcp.edit');
     Route::post('settings/mcp/tokens', [McpController::class, 'store'])->name('mcp.tokens.store');
     Route::delete('settings/mcp/tokens/{token}', [McpController::class, 'destroy'])->name('mcp.tokens.destroy');
+
+    // Where the chat rooms reach their models: the user's own hosts and keys
+    Route::resource('settings/ai-connections', AiConnectionController::class)
+        ->only(['index', 'store', 'update', 'destroy'])
+        ->parameters(['ai-connections' => 'connection']);
+    // Tries what the form holds before it is saved; it reaches out for the user, so not without limit
+    Route::post('settings/ai-connections/check', [AiConnectionController::class, 'check'])
+        ->middleware('throttle:30,1')->name('ai-connections.check');
+    Route::get('settings/ai-connections/{connection}/models', [AiConnectionController::class, 'models'])
+        ->name('ai-connections.models');
 });
 
 Route::get('.well-known/passkey-endpoints', function () {

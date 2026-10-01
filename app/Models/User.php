@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Chat\AiConnection;
+use App\Models\Chat\ChatRoom;
 use App\Models\Concerns\OwnsContent;
 use App\Models\Drive\DriveFile;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
@@ -12,6 +14,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
@@ -121,5 +124,25 @@ class User extends Authenticatable implements Owner, PasskeyUser
                 ->where('project_user.role', Project::OWNER))
             ->orderBy('name')
             ->get();
+    }
+
+    /**
+     * Where the user reaches models: their hosts and keys.
+     *
+     * @return HasMany<AiConnection, $this>
+     */
+    public function aiConnections(): HasMany
+    {
+        return $this->hasMany(AiConnection::class);
+    }
+
+    /**
+     * The user's chat rooms.
+     *
+     * @return HasMany<ChatRoom, $this>
+     */
+    public function chatRooms(): HasMany
+    {
+        return $this->hasMany(ChatRoom::class);
     }
 }

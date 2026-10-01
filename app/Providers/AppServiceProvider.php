@@ -3,11 +3,14 @@
 namespace App\Providers;
 
 use App\Models\Board\Board;
+use App\Models\Chat\AiConnection;
+use App\Models\Chat\ChatRoom;
 use App\Models\Drive\DriveFile;
 use App\Models\Folder;
 use App\Models\Note\Note;
 use App\Models\Project;
 use App\Models\Table\Table;
+use App\Policies\ChatPolicy;
 use App\Policies\ContentPolicy;
 use Carbon\CarbonImmutable;
 use Closure;
@@ -44,6 +47,9 @@ class AppServiceProvider extends ServiceProvider
         foreach ([Note::class, Board::class, Table::class, DriveFile::class, Folder::class] as $model) {
             Gate::policy($model, ContentPolicy::class);
         }
+
+        Gate::policy(ChatRoom::class, ChatPolicy::class);
+        Gate::policy(AiConnection::class, ChatPolicy::class);
 
         $this->configureOwnedRoutes();
     }

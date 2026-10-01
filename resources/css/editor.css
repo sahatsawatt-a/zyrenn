@@ -23,6 +23,18 @@
     max-width: none;
 }
 
+/* A chat answer is the note's reading surface, but as tall as its words: no page of its own */
+.editor-surface.chat-answer {
+    padding: 0;
+    margin: 0;
+    min-height: 0;
+    justify-content: flex-start;
+}
+
+.editor-surface.chat-answer .tiptap {
+    min-height: 0;
+}
+
 /* 💡 THE CORE CANVAS FIX: Force Tiptap's editable content box to match your system theme vars */
 .tiptap {
     min-height: 500px;
