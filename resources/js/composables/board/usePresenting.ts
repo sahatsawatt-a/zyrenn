@@ -1,3 +1,4 @@
+import { useEventListener } from '@vueuse/core';
 import type { ComputedRef, Ref } from 'vue';
 import { computed, ref, watch } from 'vue';
 import { boundsOf, boundsOfAll } from './geometry';
@@ -18,6 +19,8 @@ type Show = {
     /** The size of the canvas, which changes as the panels come and go. */
     width: Ref<number>;
     height: Ref<number>;
+    /** What fills the screen while presenting: the board, without the app round it. */
+    screen?: () => HTMLElement | null;
 };
 
 /**
@@ -28,7 +31,7 @@ type Show = {
  * lands, which also keeps the frame filling the screen if the window is
  * resized midway through.
  */
-export function usePresenting({ board, camera, width, height }: Show) {
+export function usePresenting({ board, camera, width, height, screen }: Show) {
     const presenting = ref(false);
     const frameIndex = ref(0);
 
@@ -77,13 +80,30 @@ export function usePresenting({ board, camera, width, height }: Show) {
         board.select([]);
         presenting.value = true;
         showFrame(0);
+
+        // The whole screen, as a slideshow should be. A browser that won't
+        // (or a frame embedded somewhere) presents inside the page instead.
+        void screen?.()
+            ?.requestFullscreen?.()
+            .catch(() => undefined);
     };
 
     const stopPresenting = () => {
         presenting.value = false;
         refitOnResize = 'all';
         camera.focus(boundsOfAll(board.items.value), { animate: true });
+
+        if (document.fullscreenElement) {
+            void document.exitFullscreen().catch(() => undefined);
+        }
     };
+
+    // Esc leaves full screen before the page hears it: leaving it ends the show
+    useEventListener(document, 'fullscreenchange', () => {
+        if (!document.fullscreenElement && presenting.value) {
+            stopPresenting();
+        }
+    });
 
     return {
         presenting,

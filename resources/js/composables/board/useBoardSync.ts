@@ -184,13 +184,18 @@ export function useBoardSync(
 
     watch(board.items, pushSoon, { deep: true });
 
-    // The board shows what the page was given until the shared one arrives
+    // The board shows what the page was given until the shared one arrives,
+    // and then is the shared one: what the page was given can be older than
+    // what everyone has drawn since, so it is never written over it. (Pulled
+    // before writing is allowed: the board is taken as it is, and nothing of
+    // the page's own goes out with it -- which mattered when this started up
+    // against a document already open, as a remounted canvas does.)
     watch(
         synced,
         (isSynced) => {
             if (isSynced && !ready) {
-                ready = true;
                 pull();
+                ready = true;
             }
         },
         { immediate: true },

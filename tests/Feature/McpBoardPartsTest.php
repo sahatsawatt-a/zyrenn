@@ -186,4 +186,221 @@ class McpBoardPartsTest extends TestCase
 
         $this->assertSame($before, $board->fresh()->content);
     }
+
+    public function test_a_whole_list_never_lands_a_new_item_on_an_old_one()
+    {
+        $board = $this->board();
+
+        // Sent without ids: once these were "i1", "i2"... and took over
+        // whatever the board had under those, labels and all
+        $board->update(['content' => ['items' => BoardItems::fromSpec([
+            ['id' => 'i1', 'kind' => 'text', 'text' => 'Old title', 'align' => 'right', 'x' => 0, 'y' => 0],
+            ['id' => 'i2', 'kind' => 'rect', 'text' => 'Old box', 'x' => 0, 'y' => 100],
+        ])]]);
+
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'items' => [
+                ['kind' => 'image', 'src' => '/drive/files/abc'],
+                ['kind' => 'text', 'text' => 'New title'],
+                ['id' => 'i2', 'kind' => 'rect'],
+            ]])
+            ->assertOk();
+
+        $items = array_column($board->refresh()->content['items'], null, 'id');
+
+        $this->assertSame(['i3', 'i4', 'i2'], array_column($board->content['items'], 'id'));
+        $this->assertSame('', $items['i3']['text']);
+        // The default for a text item, not the old one's "right"
+        $this->assertSame(['New title', 'left'], [$items['i4']['text'], $items['i4']['align']]);
+        // Named, and the same kind: it keeps what it had
+        $this->assertSame('Old box', $items['i2']['text']);
+
+        // Named, but now another kind of thing: a new one, not the old one changed
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'items' => [['id' => 'i2', 'kind' => 'sticky']]])
+            ->assertOk();
+
+        $this->assertSame('', $board->refresh()->content['items'][0]['text']);
+    }
+
+    public function test_a_text_item_is_as_tall_as_its_words_and_a_label_that_wont_fit_is_said()
+    {
+        $board = $this->board();
+        $long = "Why it matters\n• First point\n• Second point\n• Third point";
+
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'add_items' => [
+                ['id' => 'notes', 'kind' => 'text', 'text' => $long, 'width' => 400, 'fontSize' => 20],
+                ['id' => 'cramped', 'kind' => 'rect', 'text' => $long, 'width' => 200, 'height' => 60],
+            ]])
+            ->assertOk()
+            ->assertStructuredContent(fn (AssertableJson $json) => $json
+                // Four lines at 20 x 1.3: the text item grew; the box can't
+                ->where('overflowing', [['id' => 'cramped', 'kind' => 'rect', 'height' => 60, 'needs_height' => 108]])
+                ->has('note')
+                ->etc());
+
+        $items = array_column($board->refresh()->content['items'], null, 'id');
+        $this->assertEquals(104, $items['notes']['height']);
+
+        // More words later: it grows again, unless a height is given
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'update_items' => [
+                ['id' => 'notes', 'text' => $long."\n• Fourth point"],
+            ]])
+            ->assertOk();
+
+        $this->assertEquals(130, array_column($board->refresh()->content['items'], null, 'id')['notes']['height']);
+    }
+
+    public function test_the_check_lists_labels_that_run_over_and_things_lying_on_each_other()
+    {
+        $board = $this->board();
+
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'add_items' => [
+                ['id' => 'under', 'kind' => 'image', 'src' => '/drive/files/abc', 'x' => 420, 'y' => 120, 'width' => 100, 'height' => 100],
+                ['id' => 'long', 'kind' => 'rect', 'text' => str_repeat('word ', 40), 'x' => 600, 'y' => 300, 'width' => 120, 'height' => 50],
+            ]])
+            ->assertOk();
+
+        UserServer::actingAs($this->user)
+            ->tool(GetBoard::class, ['ref_id' => $board->ref_id, 'check' => true])
+            ->assertStructuredContent(fn (AssertableJson $json) => $json
+                ->where('overflowing.0.id', 'long')
+                ->where('overlapping', [['frame' => 'plan', 'items' => ['b', 'under'], 'overlap' => 0.8]])
+                ->etc());
+
+        // Not asked: not there
+        UserServer::actingAs($this->user)
+            ->tool(GetBoard::class, ['ref_id' => $board->ref_id])
+            ->assertStructuredContent(fn (AssertableJson $json) => $json->missing('overflowing')->missing('overlapping')->etc());
+    }
+
+    public function test_a_frame_is_deleted_with_everything_on_it_and_frames_can_be_reordered()
+    {
+        $board = $this->board();
+
+        // A line from the loose note into the first frame goes with it
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'add_items' => [
+                ['id' => 'across', 'kind' => 'arrow', 'from' => ['item' => 'loose'], 'to' => ['item' => 'a']],
+                ['id' => 'third', 'kind' => 'frame', 'text' => 'Third', 'x' => 2000, 'y' => 0, 'width' => 800, 'height' => 450],
+            ]])
+            ->assertOk();
+
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'delete_frames' => ['Plan']])
+            ->assertOk()
+            ->assertStructuredContent(fn (AssertableJson $json) => $json
+                ->where('deleted', fn ($ids) => collect($ids)->sort()->values()->all() === ['a', 'across', 'b', 'line', 'plan'])
+                ->etc());
+
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'frame_order' => ['third', 'done']])
+            ->assertOk();
+
+        $this->assertSame(['third', 'c', 'loose', 'done'], array_column($board->refresh()->content['items'], 'id'));
+
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'frame_order' => ['done']])
+            ->assertHasErrors(['frame_order needs every frame\'s id, once each. The frames are: "third", "done".']);
+    }
+
+    public function test_a_picture_says_how_it_fills_its_box()
+    {
+        $board = $this->board();
+
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'add_items' => [
+                ['id' => 'photo', 'kind' => 'image', 'src' => '/drive/files/abc', 'fit' => 'cover', 'stroke' => '#0f172a'],
+                ['id' => 'plain', 'kind' => 'image', 'src' => '/drive/files/def'],
+            ]])
+            ->assertOk();
+
+        UserServer::actingAs($this->user)
+            ->tool(GetBoard::class, ['ref_id' => $board->ref_id, 'outline' => false])
+            ->assertStructuredContent(fn (AssertableJson $json) => $json
+                ->where('items', fn ($items) => collect($items)->firstWhere('id', 'photo')['fit'] === 'cover'
+                    && ! isset(collect($items)->firstWhere('id', 'plain')['fit']))
+                ->etc());
+    }
+
+    public function test_a_label_can_be_rich_with_its_own_face_and_room()
+    {
+        $board = $this->board();
+
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'add_items' => [
+                // A heading at 1.6 x 20 and two bullets at 20, each line 1.3 apart
+                ['id' => 'card', 'kind' => 'text', 'rich' => true, 'width' => 400, 'fontSize' => 20,
+                    'text' => "# Why\n- one\n- two"],
+                ['id' => 'box', 'kind' => 'rect', 'text' => 'Roomy', 'padding' => 30, 'fontFamily' => 'serif'],
+            ]])
+            ->assertOk()
+            ->assertStructuredContent(fn (AssertableJson $json) => $json->missing('overflowing')->etc());
+
+        $items = array_column($board->refresh()->content['items'], null, 'id');
+        $this->assertEquals(ceil((32 + 20 + 20) * 1.3), $items['card']['height']);
+
+        UserServer::actingAs($this->user)
+            ->tool(GetBoard::class, ['ref_id' => $board->ref_id, 'outline' => false])
+            ->assertStructuredContent(fn (AssertableJson $json) => $json
+                ->where('items', function ($items) {
+                    $byId = collect($items)->keyBy('id');
+
+                    return $byId['card']['rich'] === true
+                        && $byId['box']['padding'] == 30
+                        && $byId['box']['fontFamily'] === 'serif'
+                        // Defaults are left unsaid
+                        && ! isset($byId['a']['padding'], $byId['a']['fontFamily'], $byId['a']['rich']);
+                })
+                ->etc());
+
+        // Less room inside: the same words no longer fit
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'update_items' => [
+                ['id' => 'box', 'padding' => 70],
+            ]])
+            ->assertStructuredContent(fn (AssertableJson $json) => $json->where('overflowing.0.id', 'box')->etc());
+    }
+
+    public function test_a_big_board_in_frames_comes_as_its_frames_to_be_read_one_at_a_time()
+    {
+        $board = $this->board();
+        $words = str_repeat('word ', 30);
+
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'add_items' => array_map(
+                fn ($n) => ['id' => "s{$n}", 'kind' => 'sticky', 'text' => $words, 'x' => 1100 + $n, 'y' => 100],
+                range(1, 60),
+            )])
+            ->assertOk();
+
+        UserServer::actingAs($this->user)
+            ->tool(GetBoard::class, ['ref_id' => $board->ref_id])
+            ->assertStructuredContent(fn (AssertableJson $json) => $json
+                ->missing('items')
+                ->where('frames.1', ['id' => 'done', 'title' => 'Done', 'items' => 61])
+                ->where('loose_items', 1)
+                ->has('more')
+                ->etc());
+
+        // What is on no frame, on its own
+        UserServer::actingAs($this->user)
+            ->tool(GetBoard::class, ['ref_id' => $board->ref_id, 'frame' => 'board'])
+            ->assertStructuredContent(fn (AssertableJson $json) => $json
+                ->where('items', fn ($items) => collect($items)->pluck('id')->all() === ['loose'])
+                ->etc());
+
+        // Only the check: no items at all, even on a small board
+        UserServer::actingAs($this->user)
+            ->tool(GetBoard::class, ['ref_id' => $this->board()->ref_id, 'items' => false, 'check' => true])
+            ->assertStructuredContent(fn (AssertableJson $json) => $json
+                ->missing('items')
+                ->missing('more')
+                ->has('overflowing')
+                ->has('overlapping')
+                ->etc());
+    }
 }

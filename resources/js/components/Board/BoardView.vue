@@ -10,6 +10,7 @@ import { hydrate, isConnector } from '../../composables/board/items';
 import { groupKeys } from '../../composables/board/layers';
 import { useImageCache } from '../../composables/board/useImageCache';
 import { useVideos } from '../../composables/board/useVideos';
+import BoardFormulae from './BoardFormulae.vue';
 import BoardItem from './BoardItem.vue';
 
 /** How much room a frame's title needs above it, in board units. */
@@ -25,8 +26,10 @@ const props = withDefaults(
         /** A frame's id to show on its own; everything, when left out. */
         frame?: string | null;
         padding?: number;
+        /** The frame alone, edge to edge, with no room for its title: a slide. */
+        bare?: boolean;
     }>(),
-    { frame: null, padding: 16 },
+    { frame: null, padding: 16, bare: false },
 );
 
 const wrapper = useTemplateRef<HTMLDivElement>('wrapper');
@@ -64,11 +67,22 @@ const extent = computed(() => {
     if (!frame) {
         // A connector sits at the origin until its ends are read, and a board
         // fitted around that would be squeezed into a corner
-        return boundsOfAll(shown.value.filter((item) => !isConnector(item)));
+        const box = boundsOfAll(
+            shown.value.filter((item) => !isConnector(item)),
+        );
+
+        // Frames have their titles written above them: leave room for those
+        return box && shown.value.some((item) => item.kind === 'frame')
+            ? { ...box, y: box.y - TITLE_ROOM, height: box.height + TITLE_ROOM }
+            : box;
     }
 
     // A frame's title is written above it, so leave room for it
     const box = boundsOf(frame);
+
+    if (props.bare) {
+        return box;
+    }
 
     return { ...box, y: box.y - TITLE_ROOM, height: box.height + TITLE_ROOM };
 });
@@ -94,6 +108,12 @@ const view = computed(() => {
 });
 
 const { imageFor } = useImageCache();
+
+// The view as a camera, for the formulae laid over it
+const camera = {
+    scale: computed(() => view.value.scale),
+    position: computed(() => ({ x: view.value.x, y: view.value.y })),
+};
 
 const layer = useTemplateRef<{ getNode: () => Konva.Layer }>('layer');
 const hovering = ref(false);
@@ -166,6 +186,8 @@ const path = (item: Item) => connectorPoints(item, byId.value);
                 </Group>
             </Layer>
         </Stage>
+
+        <BoardFormulae v-if="!empty" :items="shown" :camera="camera" />
     </div>
 </template>
 

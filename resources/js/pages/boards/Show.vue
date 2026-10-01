@@ -24,7 +24,16 @@ import { useSharedItems } from '@/composables/board/useBoardSync';
 import { usePresence } from '@/composables/usePresence';
 import { sharingIsOn, useShared } from '@/composables/useShared';
 import { canChange, owned } from '@/lib/projects';
-import { destroy, index as ownIndex, show, update } from '@/routes/boards';
+import {
+    destroy,
+    index as ownIndex,
+    pdf,
+    png,
+    show,
+    update,
+} from '@/routes/boards';
+import BoardExportMenu from '@/components/Board/BoardExportMenu.vue';
+import { deliver, fetchExport } from '@/lib/exporting';
 import { index as projectIndex } from '@/routes/projects/boards';
 
 type Board = {
@@ -195,6 +204,50 @@ function onTitleInput(): void {
     markDirty('title');
 }
 
+// The server draws the saved board, so anything still unsaved goes first --
+// shared, whatever anyone has drawn that the app has not been handed yet
+const exporting = ref(false);
+
+async function exportBoard(
+    type: 'pdf' | 'png',
+    to: 'download' | 'drive',
+): Promise<void> {
+    if (exporting.value) {
+        return;
+    }
+
+    exporting.value = true;
+    const loading = toast.loading('Drawing the board…');
+
+    try {
+        if (shared) {
+            await shared.flush({ everyone: true });
+        } else if (editable) {
+            await save();
+        }
+
+        if (status.value === 'error') {
+            throw new Error(
+                'Couldn’t save the latest changes, so the export would be out of date.',
+            );
+        }
+
+        const file = await fetchExport(
+            (type === 'pdf' ? pdf : png).url(props.board.ref_id),
+            `${title.value.trim() || 'Untitled board'}.${type}`,
+            type === 'pdf' ? 'application/pdf' : 'image/png',
+            `Couldn’t draw this board as a ${type.toUpperCase()}.`,
+        );
+
+        await deliver(file, to);
+    } catch (error) {
+        toast.error((error as Error).message);
+    } finally {
+        toast.dismiss(loading);
+        exporting.value = false;
+    }
+}
+
 const refCopied = ref(false);
 
 // The ref_id is how this board is referenced elsewhere
@@ -261,10 +314,12 @@ const statusLabel = computed(() => {
                 >View only</span
             >
             <PresenceAvatars :others="others" />
+            <div class="ml-auto">
+                <BoardExportMenu :busy="exporting" @export="exportBoard" />
+            </div>
             <Button
                 variant="ghost"
                 size="sm"
-                class="ml-auto"
                 :title="`Copy this board's reference (${props.board.ref_id})`"
                 @click="copyRefId"
             >
@@ -305,6 +360,8 @@ const statusLabel = computed(() => {
                 <Check v-if="refCopied" class="text-emerald-600" />
                 <Copy v-else />
             </Button>
+
+            <BoardExportMenu :busy="exporting" @export="exportBoard" />
 
             <Dialog>
                 <DialogTrigger as-child>

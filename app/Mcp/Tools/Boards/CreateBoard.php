@@ -62,6 +62,6 @@ class CreateBoard extends BoardTool
         $board->folder_id = $this->ensureFolderAt($owner, $validated['folder'] ?? '', $user)?->id;
         $board->save();
 
-        return Response::structured($this->answer($board->refresh()));
+        return Response::structured($this->answer($board->refresh(), $this->overflow($board->content['items'] ?? [])));
     }
 }

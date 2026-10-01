@@ -18,9 +18,11 @@ import type { Component } from 'vue';
 import { computed } from 'vue';
 import { HEAD_TYPES } from '../../composables/board/connectors';
 import { SIDES } from '../../composables/board/geometry';
-import { hasText } from '../../composables/board/items';
+import { FONT_FAMILIES, hasText } from '../../composables/board/items';
 import type {
     Align,
+    Fit,
+    FontFamily,
     Item,
     LineStyle,
     Routing,
@@ -70,6 +72,39 @@ const routings: Routing[] = ['elbow', 'straight', 'curved'];
 const styles: LineStyle[] = ['solid', 'dashed', 'dotted'];
 
 // Everything but ink and connectors carries a label that can be lined up
+// A picture chosen on its own, for how it fills its box
+const picture = computed(() =>
+    props.selection.length === 1 && props.selection[0].kind === 'image'
+        ? props.selection[0]
+        : null,
+);
+
+const fits: { value: Fit; label: string; title: string }[] = [
+    { value: 'fill', label: 'Stretch', title: 'Stretched to the box' },
+    { value: 'contain', label: 'Fit', title: 'Whole, inside the box' },
+    { value: 'cover', label: 'Fill', title: 'Covering the box, edges cut off' },
+];
+
+const families: { value: FontFamily; label: string; title: string }[] = [
+    { value: 'sans', label: 'Sans', title: 'Arial' },
+    { value: 'serif', label: 'Serif', title: 'Times New Roman' },
+    { value: 'mono', label: 'Mono', title: 'Courier New' },
+];
+
+/** A number typed for every selected label, held to what makes sense. */
+const onLabelNumber = (
+    field: 'fontSize' | 'padding',
+    least: number,
+    most: number,
+    event: Event,
+) => {
+    const value = Number((event.target as HTMLInputElement).value);
+
+    if (Number.isFinite(value)) {
+        emit('update', { [field]: Math.min(most, Math.max(least, value)) });
+    }
+};
+
 const labelled = computed(() => props.selection.filter(hasText));
 const label = computed(() => labelled.value[0] ?? null);
 
@@ -284,6 +319,81 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                         <component :is="option.icon" class="size-4" />
                     </button>
                 </div>
+
+                <!-- Its type: size, face, room round it, and light Markdown -->
+                <div class="inspector-segments" data-test="font-config">
+                    <button
+                        v-for="option in families"
+                        :key="option.value"
+                        type="button"
+                        :title="option.title"
+                        :class="{ 'is-on': label.fontFamily === option.value }"
+                        :style="{ fontFamily: FONT_FAMILIES[option.value] }"
+                        :data-test="`font-${option.value}`"
+                        @click="emit('update', { fontFamily: option.value })"
+                    >
+                        {{ option.label }}
+                    </button>
+                </div>
+                <div class="inspector-grid">
+                    <label>
+                        Size
+                        <input
+                            type="number"
+                            min="6"
+                            max="400"
+                            :value="round(label.fontSize)"
+                            data-test="prop-font-size"
+                            @change="onLabelNumber('fontSize', 6, 400, $event)"
+                        />
+                    </label>
+                    <label title="Room between the edge and the words">
+                        Pad
+                        <input
+                            type="number"
+                            min="0"
+                            max="200"
+                            :value="round(label.padding)"
+                            data-test="prop-padding"
+                            @change="onLabelNumber('padding', 0, 200, $event)"
+                        />
+                    </label>
+                </div>
+                <label
+                    class="inspector-check"
+                    title="# heading, - bullet, **bold**, *italic*"
+                >
+                    <input
+                        type="checkbox"
+                        :checked="label.rich"
+                        data-test="prop-rich"
+                        @change="
+                            emit('update', {
+                                rich: ($event.target as HTMLInputElement)
+                                    .checked,
+                            })
+                        "
+                    />
+                    Markdown: # heading, - bullet, **bold**
+                </label>
+            </div>
+
+            <!-- How a picture fills its box -->
+            <div v-if="picture" class="inspector-align" data-test="fit-config">
+                <p class="inspector-label">Picture</p>
+                <div class="inspector-segments">
+                    <button
+                        v-for="option in fits"
+                        :key="option.value"
+                        type="button"
+                        :title="option.title"
+                        :class="{ 'is-on': picture.fit === option.value }"
+                        :data-test="`fit-${option.value}`"
+                        @click="emit('update', { fit: option.value })"
+                    >
+                        {{ option.label }}
+                    </button>
+                </div>
             </div>
 
             <!-- Connector-only controls, when a line is what is selected -->
@@ -419,6 +529,21 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     background-color: var(--background);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
+}
+
+.inspector-align {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.inspector-check {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.6875rem;
+    color: var(--muted-foreground);
+    cursor: pointer;
 }
 
 .inspector-connector {

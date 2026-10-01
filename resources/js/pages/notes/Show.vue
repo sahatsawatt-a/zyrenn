@@ -44,7 +44,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { uploadToDrive } from '@/lib/drive';
+import { deliver, fetchExport } from '@/lib/exporting';
 import { copyToClipboard, formatRelativeTime, xsrfToken } from '@/lib/utils';
 import PresenceAvatars from '@/components/PresenceAvatars.vue';
 import { usePresence } from '@/composables/usePresence';
@@ -327,42 +327,11 @@ async function printPdf(): Promise<File> {
         );
     }
 
-    const url = pdf.url(props.note.ref_id, {
-        query: { style: pdfStyle.value },
-    });
-    const response = await fetch(url, {
-        headers: {
-            Accept: 'application/pdf, application/json',
-            'X-Requested-With': 'XMLHttpRequest',
-        },
-    });
-
-    if (!response.ok) {
-        const body = response.headers
-            .get('Content-Type')
-            ?.includes('application/json')
-            ? await response.json()
-            : null;
-
-        throw new Error(
-            body?.message ??
-                (response.status === 429
-                    ? 'Too many exports at once. Try again in a minute.'
-                    : 'Couldn’t print this note to PDF.'),
-        );
-    }
-
-    const warning = response.headers.get('X-Pdf-Warning');
-
-    if (warning) {
-        toast.warning(warning);
-    }
-
-    // A slash would make the Drive keep only what follows it as the file's name
-    return new File(
-        [await response.blob()],
-        `${(title.value.trim() || 'Untitled').replace(/[/\\]/g, '-')}.pdf`,
-        { type: 'application/pdf' },
+    return fetchExport(
+        pdf.url(props.note.ref_id, { query: { style: pdfStyle.value } }),
+        `${title.value.trim() || 'Untitled'}.pdf`,
+        'application/pdf',
+        'Couldn’t print this note to PDF.',
     );
 }
 
@@ -377,24 +346,7 @@ async function exportPdf(to: 'download' | 'drive'): Promise<void> {
     const loading = toast.loading('Printing to PDF…');
 
     try {
-        const file = await printPdf();
-
-        if (to === 'download') {
-            const url = URL.createObjectURL(file);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = file.name;
-            link.click();
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
-        } else {
-            const stored = await uploadToDrive(file);
-            toast.success(`Saved “${stored.name}” to your Drive`, {
-                action: {
-                    label: 'Open',
-                    onClick: () => window.open(stored.url, '_blank'),
-                },
-            });
-        }
+        await deliver(await printPdf(), to);
     } catch (error) {
         toast.error((error as Error).message);
     } finally {

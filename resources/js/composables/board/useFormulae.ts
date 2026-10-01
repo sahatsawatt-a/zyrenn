@@ -6,11 +6,11 @@ type Placing = {
     items: Ref<Item[]> | ComputedRef<Item[]>;
     /** Where the board is being looked at from. */
     camera: {
-        scale: Ref<number>;
-        position: Ref<{ x: number; y: number }>;
+        scale: Readonly<Ref<number>>;
+        position: Readonly<Ref<{ x: number; y: number }>>;
     };
     /** Whatever is being typed into, which hides its own formula meanwhile. */
-    editingId: Ref<string | null>;
+    editingId: Readonly<Ref<string | null>>;
 };
 
 /**

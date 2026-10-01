@@ -97,6 +97,10 @@ abstract class BoardTool extends FiledTool
             "{$key}.*.hidden" => ['nullable', 'boolean'],
             "{$key}.*.locked" => ['nullable', 'boolean'],
             "{$key}.*.src" => ['nullable', 'string', 'max:200', 'regex:#^(https?://|/drive/files/)#'],
+            "{$key}.*.fit" => ['nullable', 'string', 'in:'.implode(',', BoardItems::FITS)],
+            "{$key}.*.fontFamily" => ['nullable', 'string', 'in:'.implode(',', BoardItems::FONTS)],
+            "{$key}.*.padding" => ['nullable', 'numeric', 'between:0,200'],
+            "{$key}.*.rich" => ['nullable', 'boolean'],
             "{$key}.*.from" => ['nullable'],
             "{$key}.*.to" => ['nullable'],
             "{$key}.*.from.item" => ['nullable', 'string', 'max:64'],
@@ -137,6 +141,23 @@ abstract class BoardTool extends FiledTool
     }
 
     /**
+     * Labels with more words than room, said in the answer, so a client can
+     * give the item the height it needs before anyone sees it run over.
+     *
+     * @param  list<array<string, mixed>>  $items  canvas items
+     * @return array<string, mixed>
+     */
+    protected function overflow(array $items): array
+    {
+        $over = BoardItems::overflowing($items);
+
+        return $over === [] ? [] : [
+            'overflowing' => $over,
+            'note' => 'These labels have more words than room, and run out past the edge of their item. Give each the height in "needs_height", widen it, or say less.',
+        ];
+    }
+
+    /**
      * The trouble with a client's list that the field rules cannot see: two
      * items sharing an id, or a connector pinned to something that isn't there.
      *
@@ -165,7 +186,7 @@ abstract class BoardTool extends FiledTool
      */
     private function itemArgument(JsonSchema $schema, bool $kindRequired = true): Type
     {
-        $kind = $schema->string()->enum(BoardItems::KINDS)->description('What to draw. Shapes: rect, pill, ellipse, triangle, diamond, hexagon, star. Flowchart: cylinder (a database), parallelogram (data), document, process, cloud. Also sticky, text, frame (a 16:9 slide for present mode), image, video (plays on the board), math (a formula, with LaTeX in "text"), arrow (a connector) and draw (freehand ink).');
+        $kind = $schema->string()->enum(BoardItems::KINDS)->description('What to draw. Shapes: rect, pill, ellipse, triangle, diamond, hexagon, star. Flowchart: cylinder (a database), parallelogram (data), document, process (a predefined process: a box with a rail down each side -- an ordinary step is a rect), cloud. Also sticky, text (grows to fit its words unless given a height), frame (a 16:9 slide for present mode), image, video (plays on the board), math (a formula, with LaTeX in "text"), arrow (a connector) and draw (freehand ink).');
 
         return $schema->object([
             'id' => $schema->string()->max(64)->description('Your name for this item, so a connector can point at it (letters, digits, "-" and "_"). Made up for you if you leave it out.'),
@@ -178,10 +199,14 @@ abstract class BoardTool extends FiledTool
             'fill' => $schema->string()->max(32)->description('Fill colour as hex, e.g. "#fde68a", or "transparent".'),
             'stroke' => $schema->string()->max(32)->description('Outline (or, for a connector, line) colour as hex.'),
             'fontSize' => $schema->number()->description('Label size in board units (16 on shapes, 28 on text).'),
+            'fontFamily' => $schema->string()->enum(BoardItems::FONTS)->description('The label\'s typeface: "sans" (Arial, the default), "serif" (Times New Roman) or "mono" (Courier New).'),
+            'padding' => $schema->number()->description('Room between the item\'s edge and its label, in board units: 12 on shapes, 0 on text.'),
+            'rich' => $schema->boolean()->description('true: the label is light Markdown, a line at a time -- "# " / "## " / "### " headings, "- " bullets, "1. " numbered items, **bold** and *italic* -- so one card can hold a heading and its points. A text item\'s words are then regular weight, not bold.'),
             'align' => $schema->string()->enum(BoardItems::ALIGNS)->description('Where the label sits across the item: left, center or right. Shapes centre it, a text item starts at the left.'),
             'verticalAlign' => $schema->string()->enum(BoardItems::VERTICAL_ALIGNS)->description('Where the label sits down the item: top, middle or bottom.'),
             'rotation' => $schema->number()->description('Degrees clockwise.'),
             'src' => $schema->string()->max(200)->description('For kind "image": the URL of the picture; for kind "video", of the video (MP4 or WebM). Upload it first -- request-upload for a file on your disk, or upload-file -- and pass the "url" from the response.'),
+            'fit' => $schema->string()->enum(BoardItems::FITS)->description('For kind "image": "fill" stretches the picture to the box (the default), "contain" fits it whole inside, "cover" fills the box and cuts off what spills over. Its "stroke" and "lineWidth" draw a border round it.'),
             'hidden' => $schema->boolean()->description('Keep it off the board without deleting it.'),
             'locked' => $schema->boolean()->description('Stop it being picked up on the canvas.'),
             'from' => $schema->object([

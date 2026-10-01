@@ -1,6 +1,7 @@
 import { computed, ref, shallowRef } from 'vue';
 import type { Ref } from 'vue';
 import { STICKY_COLOURS, bumpIdsTo, hydrate, makeItem, newId } from './items';
+import { labelHeight } from './labels';
 import { groupKeys } from './layers';
 import type { Item, ItemKind } from './items';
 
@@ -299,6 +300,11 @@ export function useBoard(initial: Item[] | null = null) {
 
         commit();
         item.text = text;
+
+        // A text item is only its words: it grows to hold them all
+        if (item.kind === 'text') {
+            item.height = Math.max(item.height, Math.ceil(labelHeight(item)));
+        }
     };
 
     /** Apply a partial change to everything selected, as one undo step. */

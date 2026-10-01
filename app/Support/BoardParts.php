@@ -113,6 +113,71 @@ final class BoardParts
     }
 
     /**
+     * What sits on no frame, connectors joining it included.
+     *
+     * @param  list<array<string, mixed>>  $items
+     * @return list<array<string, mixed>>
+     */
+    public static function loose(array $items): array
+    {
+        $homes = self::homes($items);
+
+        return array_values(array_filter(
+            $items,
+            fn (array $item) => ($item['kind'] ?? '') !== 'frame' && ($homes[(string) $item['id']] ?? self::LOOSE) === self::LOOSE,
+        ));
+    }
+
+    /**
+     * Things in the same frame that lie over one another -- a label hidden
+     * under a picture, two cards dealt onto one spot. Frames, connectors and
+     * ink are left out, as are hidden items. Some overlaps are meant (a box
+     * drawn round a picture), so this says where to look rather than what
+     * is wrong.
+     *
+     * @param  list<array<string, mixed>>  $items  as the canvas keeps them
+     * @return list<array{frame: string, items: array{string, string}, overlap: float}>
+     */
+    public static function overlapping(array $items, int $most = 50): array
+    {
+        $homes = self::homes($items);
+        $boxes = array_values(array_filter(
+            $items,
+            fn (array $item) => ! in_array($item['kind'] ?? '', ['frame', BoardItems::CONNECTOR, 'draw'], true)
+                && ($item['hidden'] ?? false) !== true,
+        ));
+        $found = [];
+
+        foreach ($boxes as $index => $a) {
+            foreach (array_slice($boxes, $index + 1) as $b) {
+                $home = $homes[(string) $a['id']] ?? self::LOOSE;
+
+                if ($home !== ($homes[(string) $b['id']] ?? self::LOOSE)) {
+                    continue;
+                }
+
+                $across = min($a['x'] + $a['width'], $b['x'] + $b['width']) - max($a['x'], $b['x']);
+                $down = min($a['y'] + $a['height'], $b['y'] + $b['height']) - max($a['y'], $b['y']);
+
+                if ($across > 0 && $down > 0) {
+                    $found[] = [
+                        'frame' => $home,
+                        'items' => [(string) $a['id'], (string) $b['id']],
+                        // How much of the smaller of the two is covered, 0 to 1
+                        'overlap' => round($across * $down / max(1, min($a['width'] * $a['height'], $b['width'] * $b['height'])), 2),
+                    ];
+
+                    if (count($found) >= $most) {
+                        return $found;
+                    }
+                }
+            }
+        }
+
+        return $found;
+    }
+
+    /**
      * Items in outline: what each is, what it says, where, and what a
      * connector joins -- without colours, line styles or the points of ink.
      *

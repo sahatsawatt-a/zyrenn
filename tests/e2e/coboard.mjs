@@ -150,6 +150,28 @@ await runBoard(
             `${title} | ${count} items`,
         );
 
+        // ------------------------- Opening it never undoes what was just done
+        // The board's saved copy trails the live one by a moment, so a page
+        // opened meanwhile starts out older than the board. Joining must take
+        // the live board as it is, not write that older copy over it.
+        await page.mouse.click(owner.at(0.25, 0.36).x, owner.at(0.25, 0.36).y);
+        await page.waitForTimeout(300);
+        const moved = (await owner.fields()).x + 300;
+        await page.locator('[data-test="prop-x"]').fill(String(moved));
+        await page.locator('[data-test="prop-x"]').press('Enter');
+        // A second tab: leaving a page saves the board, so opening one
+        // alongside is what finds the saved copy a step behind
+        const late = await context.newPage();
+        await late.goto(boardUrl, { waitUntil: 'networkidle' });
+        await boardOn(late).ready();
+        await page.waitForTimeout(3000);
+        await late.close();
+        check(
+            'someone opening the board just after a change doesn’t undo it',
+            (await owner.fields()).x === moved,
+            `x ${(await owner.fields()).x}, moved to ${moved}`,
+        );
+
         // ---------------------------------------- A change from elsewhere, open
         tinker(
             `$b = App\\Models\\Board\\Board::where('ref_id', '${ref}')->first(); $b->update(['content' => ['items' => [['id' => 'mcp1', 'kind' => 'sticky', 'text' => 'From MCP ${RUN}', 'x' => 0, 'y' => 0, 'width' => 200, 'height' => 200]]]]);`,

@@ -117,3 +117,20 @@ void test('a change by item touches only the items it names', () => {
         ['b', 'c'],
     );
 });
+
+void test('a new order redraws the board in it, and keeps what it misses on top', () => {
+    const document = new Y.Doc();
+    boards.seed(document, {
+        items: [sticky('a', 'A'), sticky('b', 'B'), sticky('c', 'C')],
+        title: '',
+    });
+
+    // Drawn by someone else while the order was on its way
+    boards.edit(document, [{ do: 'set', items: [sticky('d', 'D')] }]);
+    boards.edit(document, [{ do: 'order', ids: ['c', 'a', 'b', 'gone'] }]);
+
+    assert.deepEqual(
+        orderedItems(document).map((item) => item.id),
+        ['c', 'a', 'b', 'd'],
+    );
+});

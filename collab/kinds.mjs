@@ -109,7 +109,9 @@ const boards = {
     /**
      * Changes by item (BoardItems::change): {do: 'set', items} puts each item
      * under its id -- a new one on top -- and {do: 'delete', ids} takes them
-     * off. Nothing else on the board is touched. Answers the ids not found.
+     * off. {do: 'order', ids} draws the board in that order; anything drawn
+     * meanwhile that it doesn't name stays on top. Nothing else on the board
+     * is touched. Answers the ids not found.
      */
     edit(document, edits) {
         const items = document.getMap('items');
@@ -126,6 +128,16 @@ const boards = {
                         order.push([item.id]);
                     }
                 }
+            }
+
+            if (edit.do === 'order') {
+                const named = (edit.ids ?? []).filter((id) => items.has(id));
+                const rest = order
+                    .toArray()
+                    .filter((id) => !named.includes(id));
+
+                order.delete(0, order.length);
+                order.insert(0, [...named, ...rest]);
             }
 
             if (edit.do === 'delete') {

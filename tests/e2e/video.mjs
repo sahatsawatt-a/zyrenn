@@ -2,7 +2,7 @@
 // only ever uploaded once. Needs ffmpeg, to make that file.
 import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { SHOTS, runBoard } from './harness.mjs';
+import { SHOTS, removeAt, runBoard } from './harness.mjs';
 
 const APP = process.env.APP_URL ?? 'http://127.0.0.1:8001';
 const CLIP = `${SHOTS}/clip.mp4`;
@@ -23,19 +23,7 @@ await runBoard(
     async (b) => {
         const { page, check, ready, itemCount, inspectorTitle, afterwards } = b;
 
-        /** Sends a DELETE the way the app's own forms would. */
-        const remove = (path) =>
-            page.evaluate(async (path) => {
-                const token = decodeURIComponent(
-                    document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1] ?? '',
-                );
-                // The app answers with a redirect, which is not for a script
-                await fetch(path, {
-                    method: 'DELETE',
-                    headers: { 'X-XSRF-TOKEN': token },
-                    redirect: 'manual',
-                });
-            }, path);
+        const remove = (path) => removeAt(page, path);
 
         // ------------------------------------------------------------ Drive
         const chooser = page.waitForEvent('filechooser');

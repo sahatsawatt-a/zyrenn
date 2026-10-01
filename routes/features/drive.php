@@ -25,6 +25,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 });
 
+// One file, for the renderer drawing a board (App\Support\BoardRender): no
+// session, only a signed link that runs out in minutes
+Route::get('drive/files/{file}/signed', [DriveFileController::class, 'signed'])
+    ->middleware('signed:relative')
+    ->name('drive.files.signed');
+
 // One file, from an agent's own disk through a link from the request-upload MCP
 // tool; the controller checks the signature itself, to answer in JSON
 Route::post('drive/upload', DriveUploadLinkController::class)

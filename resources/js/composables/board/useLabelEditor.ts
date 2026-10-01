@@ -4,6 +4,7 @@ import { computed, nextTick, ref, useTemplateRef } from 'vue';
 import { midpointOf } from './connectors';
 import type { Item } from './items';
 import { hasText, isConnector } from './items';
+import { fontOf, labelBox, labelHeight, labelStyle } from './labels';
 
 /** The name the frame's own title carries, so a double-click can tell them apart. */
 export const FRAME_TITLE = 'frame-title';
@@ -80,13 +81,18 @@ export function useLabelEditor({
             };
         }
 
+        // Typing wraps and lines up the way the finished label will: in the
+        // same box, at the same size and weight
+        const box = labelBox(item);
+
         return {
-            left: `${item.x * scale + x}px`,
-            top: `${item.y * scale + y}px`,
-            width: `${item.width * scale}px`,
-            height: `${item.height * scale}px`,
+            left: `${(item.x + box.x) * scale + x}px`,
+            top: `${(item.y + box.y) * scale + y}px`,
+            width: `${box.width * scale}px`,
+            height: `${Math.max(box.height, labelHeight({ ...item, text: editorText.value })) * scale}px`,
             fontSize: `${item.fontSize * scale}px`,
-            // Typing lines up the way the finished label will
+            fontWeight: labelStyle(item),
+            fontFamily: fontOf(item),
             textAlign: item.align,
         };
     });

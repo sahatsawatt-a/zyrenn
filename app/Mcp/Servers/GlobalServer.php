@@ -55,12 +55,16 @@ Boards: endless whiteboard canvases of shapes, sticky notes, connectors, picture
 (list-boards, get-board, create-board, update-board, delete-board). A board is a list of items, each
 with a "kind" -- rect, pill, ellipse, triangle, diamond, hexagon, star, sticky, text, frame, image,
 video, "math" for a formula written as LaTeX, the flowchart set (cylinder for a database, parallelogram,
-document, process, cloud), "arrow" for a connector and "draw" for freehand ink. Leave an item's x and y out and it is laid out for you. A
+document, process for a predefined process -- an ordinary step is a rect -- cloud), "arrow" for a connector and "draw" for freehand ink. Leave an item's x and y out and it is laid out for you. A
 connector's "from" and "to" name other items by id and stay pinned to their edges as those shapes are
 moved or resized, so a diagram survives being rearranged by hand afterwards. Boards have their own
 folder tree, listed by list-board-folders. get-board lists a board's frames, reads one frame with
 "frame", and gives a big board in outline; update-board's add_items, update_items and delete_items
 change items by id, sending only what changes -- prefer them to rewriting "items" whole.
+A label can be light Markdown ("rich": "# " headings, "- " bullets, **bold**), in "sans", "serif" or
+"mono", with its own "padding". To see a board or one frame as the app draws it, get-board with
+"image": true sends a PNG; "check": true lists labels that run out of their box and items lying over
+each other.
 
 Tables: rows and columns, each column of one kind -- varchar, text, integer, numeric, boolean,
 select, multi_select, date, email, url, phone, currency, percent, rating, user (list-tables,

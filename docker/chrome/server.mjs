@@ -12,9 +12,13 @@
  *
  *   GET  /healthz -> 200 "ok" while a browser is connected, 503 + why otherwise
  *   POST /pdf     -> {url, cookies:[{name,value,domain,path}], format, margin,
- *                    width} -> application/pdf, plus X-Pdf-* headers describing
- *                    the page at the moment it printed. Any failure is a JSON
- *                    {"error"} with a 4xx/5xx -- never an empty 200.
+ *                    width, pageSize:{width,height}} -> application/pdf, plus
+ *                    X-Pdf-* headers describing the page at the moment it
+ *                    printed. A pageSize prints edge to edge on pages that
+ *                    size (a board's frames, App\Support\BoardRender).
+ *   POST /png     -> {url, cookies, width, height} -> image/png of what the
+ *                    page drew at that size: a board, or one of its frames.
+ *   Any failure is a JSON {"error"} with a 4xx/5xx -- never an empty 200.
  */
 import http from 'node:http';
 import { chromium } from 'playwright';
@@ -204,19 +208,23 @@ async function waitForPaint(page) {
     }
 }
 
-async function renderPdf(opts) {
+/**
+ * Opens the page in a fresh context and waits until it has drawn; `use` then
+ * makes what is wanted of it. The context is always closed.
+ */
+async function rendered(opts, media, use) {
     const b = await browser();
     const ctx = await b.newContext({
-        viewport: { width: opts.width, height: 1100 },
+        viewport: { width: opts.width, height: opts.height ?? 1100 },
     });
     try {
         const cookies = cleanCookies(opts.cookies);
         if (cookies.length) await ctx.addCookies(cookies);
 
         const page = await ctx.newPage();
-        // Print styles from the first paint, so everything that measures itself
-        // measures the printed page and not the screen one
-        await page.emulateMedia({ media: 'print' });
+        // The medium from the first paint, so everything that measures itself
+        // measures the page it ends up on (print for a PDF, screen for a PNG)
+        await page.emulateMedia({ media });
 
         let status = null;
         try {
@@ -240,18 +248,39 @@ async function renderPdf(opts) {
         const paint = await waitForPaint(page);
         paint.ready = ready;
 
-        const buffer = await page.pdf({
-            format: opts.format,
-            margin: opts.margin,
-            printBackground: true,
-            timeout: PDF_TIMEOUT,
-        });
+        const buffer = await use(page);
 
         return { buffer, finalUrl: page.url(), status, paint };
     } finally {
         await ctx.close().catch(() => {});
     }
 }
+
+const renderPdf = (opts) =>
+    rendered(opts, 'print', (page) =>
+        page.pdf({
+            ...(opts.pageSize
+                ? {
+                      width: opts.pageSize.width,
+                      height: opts.pageSize.height,
+                      margin: { top: 0, right: 0, bottom: 0, left: 0 },
+                  }
+                : { format: opts.format, margin: opts.margin }),
+            printBackground: true,
+            timeout: PDF_TIMEOUT,
+        }),
+    );
+
+const renderPng = (opts) =>
+    rendered(opts, 'screen', (page) =>
+        page.screenshot({ type: 'png', timeout: PDF_TIMEOUT }),
+    );
+
+/** A size the page may be drawn at: a whole number of pixels, within reason. */
+const pixels = (value, fallback, most) =>
+    Number.isFinite(+value) && +value > 0
+        ? Math.min(most, Math.round(+value))
+        : fallback;
 
 const server = http.createServer(async (req, res) => {
     const path = (req.url || '').split('?')[0];
@@ -273,7 +302,7 @@ const server = http.createServer(async (req, res) => {
         return res.end('ok');
     }
 
-    if (req.method !== 'POST' || path !== '/pdf') {
+    if (req.method !== 'POST' || (path !== '/pdf' && path !== '/png')) {
         return fail(res, 404, `no route for ${req.method} ${path}`);
     }
 
@@ -290,11 +319,38 @@ const server = http.createServer(async (req, res) => {
             return fail(res, 400, 'url is required and must be http(s)');
         }
 
+        if (path === '/png') {
+            const out = await renderPng({
+                url: body.url,
+                cookies: body.cookies,
+                width: pixels(body.width, 1600, 4000),
+                height: pixels(body.height, 900, 4000),
+            });
+
+            res.writeHead(200, {
+                'Content-Type': 'image/png',
+                'Content-Length': out.buffer.length,
+                'X-Pdf-Final-Url': out.finalUrl,
+                'X-Pdf-Painted': out.paint.settled ? '1' : '0',
+            });
+
+            return res.end(out.buffer);
+        }
+
         const width =
             Number.isFinite(+body.width) && +body.width > 0
                 ? Math.min(2000, +body.width)
                 : DEFAULT_WIDTH;
+        const pageSize =
+            body.pageSize &&
+            typeof body.pageSize.width === 'string' &&
+            typeof body.pageSize.height === 'string'
+                ? { width: body.pageSize.width, height: body.pageSize.height }
+                : null;
         const out = await renderPdf({
+            pageSize,
+            // Laid out at the size of the paper, so a page fills its sheet
+            height: pageSize ? pixels(body.height, 1100, 4000) : 1100,
             url: body.url,
             cookies: body.cookies,
             format: typeof body.format === 'string' ? body.format : 'A4',

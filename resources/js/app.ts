@@ -31,7 +31,8 @@ void createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),
     layout: (name) => {
         switch (true) {
-            case name === 'Welcome':
+            // Drawn for the renderer, with nothing round the board
+            case name === 'Welcome' || name === 'boards/Render':
                 return null;
             case name.startsWith('auth/'):
                 return AuthLayout;

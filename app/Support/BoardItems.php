@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Support\Board\BoardLayout;
 use App\Support\Board\BoardPins;
+use App\Support\Board\LabelFit;
 
 /**
  * Translates between the board canvas's items and the short form MCP clients
@@ -47,16 +48,24 @@ class BoardItems
 
     public const VERTICAL_ALIGNS = ['top', 'middle', 'bottom'];
 
+    /** How a picture fills its box: stretched, whole inside it, or covering it. */
+    public const FITS = ['fill', 'contain', 'cover'];
+
+    /** A label's typeface: Arial, Times New Roman or Courier New. */
+    public const FONTS = ['sans', 'serif', 'mono'];
+
     /** Sticky notes are dealt out of this pack, as they are on the canvas. */
     private const STICKY_COLOURS = ['#fde68a', '#bbf7d0', '#bfdbfe', '#fbcfe8', '#ddd6fe'];
 
     /**
      * The canvas items for a client's list.
      *
-     * An item whose id is already on the board keeps every field the client
-     * does not mention -- its ink, its colours, the picture it holds -- so a
-     * client can read a board, change one label and send the list back without
-     * flattening the rest of it. Items left out of the list are gone.
+     * An item whose id is already on the board, as the same kind of thing,
+     * keeps every field the client does not mention -- its ink, its colours,
+     * the picture it holds -- so a client can read a board, change one label
+     * and send the list back without flattening the rest of it. Items left out
+     * of the list are gone. An item sent without an id is new: the id it is
+     * given is one nothing on the board, or in the list, already has.
      *
      * @param  list<array<string, mixed>>  $specs
      * @param  list<mixed>  $current  the board's items as they came out of the database
@@ -72,36 +81,44 @@ class BoardItems
             }
         }
 
+        $specs = self::withIds($specs, array_keys($existing));
         $items = [];
         $index = 0;
 
         foreach ($specs as $spec) {
             $kind = is_string($spec['kind'] ?? null) ? $spec['kind'] : 'sticky';
-            $id = is_string($spec['id'] ?? null) && $spec['id'] !== '' ? $spec['id'] : 'i'.($index + 1);
+            $id = $spec['id'];
 
-            $item = isset($existing[$id])
+            // Another kind under an old id is a new thing, not the old one changed
+            $item = ($existing[$id]['kind'] ?? null) === $kind
                 ? [...self::blank($kind, $index), ...$existing[$id]]
                 : self::blank($kind, $index);
 
             $item['id'] = $id;
             $item['kind'] = $kind;
 
-            foreach (['x', 'y', 'width', 'height', 'rotation', 'fontSize', 'lineWidth', 'headSize'] as $number) {
+            foreach (['x', 'y', 'width', 'height', 'rotation', 'fontSize', 'padding', 'lineWidth', 'headSize'] as $number) {
                 if (is_numeric($spec[$number] ?? null)) {
                     $item[$number] = (float) $spec[$number];
                 }
             }
 
-            foreach (['text', 'fill', 'stroke', 'src', 'align', 'verticalAlign', 'routing', 'lineStyle', 'startHead', 'endHead'] as $string) {
+            foreach (['text', 'fill', 'stroke', 'src', 'fit', 'fontFamily', 'align', 'verticalAlign', 'routing', 'lineStyle', 'startHead', 'endHead'] as $string) {
                 if (is_string($spec[$string] ?? null)) {
                     $item[$string] = $spec[$string];
                 }
             }
 
-            foreach (['hidden', 'locked'] as $flag) {
+            foreach (['hidden', 'locked', 'rich'] as $flag) {
                 if (is_bool($spec[$flag] ?? null)) {
                     $item[$flag] = $spec[$flag];
                 }
+            }
+
+            // A text item is only its words: unless told how tall it is, it is as
+            // tall as they need, the way it grows on the canvas
+            if ($kind === 'text' && ! is_numeric($spec['height'] ?? null)) {
+                $item['height'] = max((float) $item['height'], ceil(LabelFit::needed($item)));
             }
 
             // Coordinates are missing far more often than not: a client says
@@ -195,7 +212,7 @@ class BoardItems
                 }
             }
 
-            foreach (['hidden', 'locked'] as $flag) {
+            foreach (['hidden', 'locked', 'rich'] as $flag) {
                 if (($item[$flag] ?? false) === true) {
                     $spec[$flag] = true;
                 }
@@ -203,10 +220,14 @@ class BoardItems
 
             $default = self::blank($kind, 0);
 
-            foreach (['align', 'verticalAlign'] as $placing) {
+            foreach (['align', 'verticalAlign', 'fit', 'fontFamily'] as $placing) {
                 if (isset($item[$placing]) && $item[$placing] !== $default[$placing]) {
                     $spec[$placing] = (string) $item[$placing];
                 }
+            }
+
+            if (isset($item['padding']) && self::round($item['padding']) !== $default['padding']) {
+                $spec['padding'] = self::round($item['padding']);
             }
 
             // A picture is a data URL of its own bytes, far too big to report.
@@ -276,7 +297,14 @@ class BoardItems
                 throw $missing($id);
             }
 
-            $specs[$id] = [...$specs[$id], ...$spec];
+            $merged = [...$specs[$id], ...$spec];
+
+            // New words in a text item: let it grow to them, unless a height is given
+            if (($merged['kind'] ?? null) === 'text' && array_key_exists('text', $spec) && ! array_key_exists('height', $spec)) {
+                unset($merged['height']);
+            }
+
+            $specs[$id] = $merged;
         }
 
         $added = [];
@@ -317,6 +345,28 @@ class BoardItems
     }
 
     /**
+     * The client's items, each with an id: its own, or one made up that
+     * nothing in the list -- and nothing in $taken, the ids already on the
+     * board -- has. A made-up id never lands on an old item and picks up
+     * what it had.
+     *
+     * @param  list<array<string, mixed>>  $specs
+     * @param  list<string>  $taken
+     * @return list<array<string, mixed>> each with a string "id"
+     */
+    public static function withIds(array $specs, array $taken = []): array
+    {
+        $given = fn (array $spec) => is_string($spec['id'] ?? null) && $spec['id'] !== '' ? $spec['id'] : null;
+        $next = self::nextNumber([...$taken, ...array_filter(array_map($given, $specs))]);
+
+        foreach ($specs as $position => $spec) {
+            $specs[$position]['id'] = $given($spec) ?? 'i'.$next++;
+        }
+
+        return $specs;
+    }
+
+    /**
      * The number after the highest "i<n>" id in use, so a made-up id is new.
      *
      * @param  list<string>  $ids
@@ -332,6 +382,94 @@ class BoardItems
         }
 
         return $highest + 1;
+    }
+
+    /**
+     * What deleting these items takes with it: the items, and every
+     * connector with an end on one of them -- it would be left pointing at
+     * nothing.
+     *
+     * @param  list<array<string, mixed>>  $items  canvas items
+     * @param  list<string>  $ids
+     * @return list<string>
+     */
+    public static function withConnectors(array $items, array $ids): array
+    {
+        $gone = array_flip($ids);
+
+        foreach ($items as $item) {
+            if (($item['kind'] ?? '') === self::CONNECTOR
+                && (isset($gone[(string) ($item['from']['item'] ?? '')]) || isset($gone[(string) ($item['to']['item'] ?? '')]))) {
+                $gone[(string) $item['id']] = true;
+            }
+        }
+
+        return array_keys($gone);
+    }
+
+    /**
+     * The board with its frames -- the slides, presented in the order they
+     * are drawn -- in a new order. Each frame takes the place in the drawing
+     * order that one of them had, so nothing else moves up or down.
+     *
+     * @param  list<array<string, mixed>>  $items  canvas items
+     * @param  list<string>  $order  every frame's id, once each
+     * @return list<array<string, mixed>>
+     *
+     * @throws BoardItemProblem when the order doesn't name every frame once
+     */
+    public static function orderFrames(array $items, array $order): array
+    {
+        $frames = [];
+
+        foreach ($items as $position => $item) {
+            if (($item['kind'] ?? '') === 'frame') {
+                $frames[$position] = $item;
+            }
+        }
+
+        $ids = array_map(fn (array $frame) => (string) $frame['id'], $frames);
+        $missing = array_diff($ids, $order);
+        $unknown = array_diff($order, $ids);
+
+        if ($missing !== [] || $unknown !== [] || count($order) !== count(array_unique($order))) {
+            throw new BoardItemProblem('frame_order needs every frame\'s id, once each. The frames are: "'.implode('", "', $ids).'".');
+        }
+
+        $byId = array_column($frames, null, 'id');
+
+        foreach (array_keys($frames) as $slot => $position) {
+            $items[$position] = $byId[$order[$slot]];
+        }
+
+        return $items;
+    }
+
+    /**
+     * The items whose label has more words than room, and how tall each would
+     * have to be to hold them. The canvas draws such a label running out past
+     * the item's edge.
+     *
+     * @param  list<array<string, mixed>>  $items  canvas items
+     * @return list<array{id: string, kind: string, height: float, needs_height: float}>
+     */
+    public static function overflowing(array $items): array
+    {
+        $found = [];
+
+        foreach ($items as $item) {
+            if (LabelFit::overflows($item)) {
+                $box = LabelFit::box($item);
+                $found[] = [
+                    'id' => (string) $item['id'],
+                    'kind' => (string) $item['kind'],
+                    'height' => self::round($item['height'] ?? 0),
+                    'needs_height' => (float) ceil(LabelFit::needed($item) + $box['y'] * 2),
+                ];
+            }
+        }
+
+        return $found;
     }
 
     /**
@@ -361,9 +499,8 @@ class BoardItems
     {
         $kinds = [];
 
-        foreach ($specs as $position => $spec) {
-            $id = is_string($spec['id'] ?? null) && $spec['id'] !== '' ? $spec['id'] : 'i'.($position + 1);
-            $kinds[$id] = is_string($spec['kind'] ?? null) ? $spec['kind'] : 'sticky';
+        foreach (self::withIds($specs) as $spec) {
+            $kinds[$spec['id']] = is_string($spec['kind'] ?? null) ? $spec['kind'] : 'sticky';
         }
 
         $problems = [];
@@ -410,12 +547,16 @@ class BoardItems
             'stroke' => '#cbd5e1',
             'text' => '',
             'fontSize' => 16.0,
+            'fontFamily' => 'sans',
+            'padding' => 12.0,
+            'rich' => false,
             'align' => 'center',
             'verticalAlign' => 'middle',
             'points' => [],
             'hidden' => false,
             'locked' => false,
             'src' => '',
+            'fit' => 'fill',
             'from' => null,
             'to' => null,
             'routing' => 'elbow',
@@ -432,7 +573,7 @@ class BoardItems
             'sticky' => [...$base, 'width' => 180.0, 'height' => 180.0, 'stroke' => 'transparent',
                 'fill' => self::STICKY_COLOURS[$index % count(self::STICKY_COLOURS)]],
             'text' => [...$base, 'width' => 260.0, 'height' => 40.0, 'fill' => 'transparent',
-                'stroke' => 'transparent', 'fontSize' => 28.0, 'align' => 'left', 'verticalAlign' => 'top'],
+                'stroke' => 'transparent', 'fontSize' => 28.0, 'padding' => 0.0, 'align' => 'left', 'verticalAlign' => 'top'],
             'ellipse' => [...$base, 'width' => 200.0, 'height' => 200.0],
             'star' => [...$base, 'width' => 180.0, 'height' => 180.0, 'fill' => '#fde68a'],
             'image' => [...$base, 'width' => 200.0, 'height' => 200.0, 'fill' => 'transparent', 'stroke' => 'transparent'],

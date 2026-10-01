@@ -377,3 +377,21 @@ export async function deleteProject(page, base, project) {
         .click();
     await page.waitForURL((url) => new URL(url).pathname === '/notes');
 }
+
+/**
+ * Deletes something by its path (a board, a note, a Drive file), the way the
+ * app's own forms would -- for tidying up what a suite made.
+ */
+export async function removeAt(page, path) {
+    await page.evaluate(async (path) => {
+        const token = decodeURIComponent(
+            document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1] ?? '',
+        );
+        // The app answers with a redirect, which is not for a script
+        await fetch(path, {
+            method: 'DELETE',
+            headers: { 'X-XSRF-TOKEN': token },
+            redirect: 'manual',
+        });
+    }, path);
+}

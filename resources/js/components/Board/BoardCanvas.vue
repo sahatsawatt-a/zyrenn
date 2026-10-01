@@ -45,6 +45,7 @@ import MediaViewer from '@/components/MediaViewer.vue';
 import { useMediaViewer } from '@/composables/useMediaViewer';
 import BoardItem from './BoardItem.vue';
 import BoardOverlay from './BoardOverlay.vue';
+import BoardFormulae from './BoardFormulae.vue';
 import BoardVideoControls from './BoardVideoControls.vue';
 import ShapeLibrary from './ShapeLibrary.vue';
 import { connectorPoints } from '../../composables/board/connectors.js';
@@ -73,7 +74,6 @@ import { usePresenting } from '../../composables/board/usePresenting.js';
 import { useConnectorEnds } from '../../composables/board/useConnectorEnds.js';
 import { useDrawing } from '../../composables/board/useDrawing.js';
 import { useShortcuts } from '../../composables/board/useShortcuts.js';
-import { useFormulae } from '../../composables/board/useFormulae.js';
 import { usePictures } from '../../composables/board/usePictures.js';
 import { VIDEO_PLAY, useVideos } from '../../composables/board/useVideos.js';
 import { useBoard } from '../../composables/board/useBoard.js';
@@ -190,7 +190,7 @@ const {
     showFrame,
     startPresenting,
     stopPresenting,
-} = usePresenting({ board, camera, width, height });
+} = usePresenting({ board, camera, width, height, screen: () => page.value });
 
 const spaceHeld = ref(false);
 
@@ -338,13 +338,6 @@ const {
         hoveredAnchor.value = null;
     },
     startEditing: (id) => startEditing(id),
-});
-
-// ------------------------------------------------------------------ Formulae
-const { formulae, mathHtml, mathStyle } = useFormulae({
-    items: board.items,
-    camera,
-    editingId,
 });
 
 // ------------------------------------------------------------------ Pictures
@@ -575,7 +568,8 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
     <div
         ref="page"
         :style="pageStyle"
-        class="flex min-h-0 flex-none flex-col gap-3 overflow-hidden p-4 md:p-6"
+        class="flex min-h-0 flex-none flex-col gap-3 overflow-hidden"
+        :class="presenting ? 'bg-background p-0' : 'p-4 md:p-6'"
     >
         <div
             v-show="!presenting"
@@ -779,15 +773,10 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
                     >
                 </div>
 
-                <!-- Formulae, set by KaTeX over the canvas. They take no
-                     clicks: the shape underneath is what gets selected. -->
-                <div
-                    v-for="item in formulae"
-                    :key="item.id"
-                    class="math-item"
-                    :style="mathStyle(item)"
-                    :data-test="`math-${item.id}`"
-                    v-html="mathHtml(item)"
+                <BoardFormulae
+                    :items="board.items.value"
+                    :camera="camera"
+                    :editing-id="editingId"
                 />
 
                 <BoardVideoControls
@@ -894,28 +883,14 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
 </template>
 
 <style scoped>
-/* A formula sits over the canvas, but never in the way of it */
-.math-item {
-    position: absolute;
-    display: flex;
-    overflow: hidden;
-    color: #0f172a;
-    pointer-events: none;
-}
-/* KaTeX sets its own size; the wrapper's font-size is what scales it */
-.math-item :deep(.katex-display) {
-    margin: 0;
-}
-.math-item :deep(.katex) {
-    font-size: 1em;
-}
-
 .board-editor {
     position: absolute;
     z-index: 20;
     padding: 0;
     margin: 0;
-    font-family: var(--font-sans);
+    /* The canvas's own font (Konva's default) and spacing, so a label
+       doesn't rewrap the moment typing stops */
+    font-family: Arial, sans-serif;
     font-weight: 600;
     line-height: 1.3;
     color: #0f172a;

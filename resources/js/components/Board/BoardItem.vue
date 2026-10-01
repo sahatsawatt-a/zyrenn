@@ -27,6 +27,15 @@ import {
     isConnector,
     isPath,
 } from '../../composables/board/items';
+import {
+    INK,
+    LINE_HEIGHT,
+    drawRich,
+    fontOf,
+    labelBox,
+    labelHeight,
+    labelStyle,
+} from '../../composables/board/labels';
 import { FRAME_TITLE } from '../../composables/board/useLabelEditor';
 import { VIDEO_PLAY } from '../../composables/board/useVideos';
 
@@ -58,6 +67,47 @@ const fitted = (item: Item, video: HTMLVideoElement) => {
         width: width * scale,
         height: height * scale,
     };
+};
+
+/**
+ * Where a picture is drawn in its box, by its fit: stretched to the box,
+ * whole inside it with room either side, or covering it with the picture's
+ * overflow cut away. The box is always what is picked up and resized.
+ */
+const pictured = (item: Item, image: HTMLImageElement) => {
+    const width = image.naturalWidth || item.width;
+    const height = image.naturalHeight || item.height;
+
+    if (item.fit === 'contain') {
+        const scale = Math.min(item.width / width, item.height / height);
+
+        return {
+            x: (item.width - width * scale) / 2,
+            y: (item.height - height * scale) / 2,
+            width: width * scale,
+            height: height * scale,
+        };
+    }
+
+    if (item.fit === 'cover') {
+        // The part of the picture, in its own pixels, that fills the box
+        const scale = Math.max(item.width / width, item.height / height);
+        const across = item.width / scale;
+        const down = item.height / scale;
+
+        return {
+            width: item.width,
+            height: item.height,
+            crop: {
+                x: (width - across) / 2,
+                y: (height - down) / 2,
+                width: across,
+                height: down,
+            },
+        };
+    }
+
+    return { width: item.width, height: item.height };
 };
 
 /**
@@ -94,20 +144,23 @@ const playTriangle = (item: Item) => {
     return [-radius * 0.7, -radius, -radius * 0.7, radius, radius * 1.05, 0];
 };
 
+/** A rich label takes clicks anywhere in its box, not only on its letters. */
+const labelHit = (context: Konva.Context, shape: Konva.Shape) => {
+    context.beginPath();
+    context.rect(0, 0, shape.width(), shape.height());
+    context.closePath();
+    context.fillStrokeShape(shape);
+};
+
 /**
- * How far a label sits from the top of its shape. A cylinder's lid and a
- * triangle's point leave no room at the edges, so their text starts lower.
+ * The label's box, and how tall to draw it. A label with more words than
+ * room is drawn at the height its words need, running out past the edge
+ * where it can be seen, rather than losing its last lines without a sign.
  */
-const labelInset = (item: Item): number => {
-    if (item.kind === 'cylinder') {
-        return item.height * 0.2;
-    }
+const label = (item: Item) => {
+    const box = labelBox(item);
 
-    if (item.kind === 'triangle') {
-        return item.height * 0.35;
-    }
-
-    return 12;
+    return { ...box, height: Math.max(box.height, labelHeight(item)) };
 };
 
 // Close enough for a backing chip: Konva would have to measure the text to do
@@ -174,14 +227,28 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
         }"
     />
 
-    <KonvaImage
-        v-else-if="item.kind === 'image' && image"
-        :config="{
-            image: image,
-            width: item.width,
-            height: item.height,
-        }"
-    />
+    <template v-else-if="item.kind === 'image' && image">
+        <!-- The whole box takes the pointer, room either side included -->
+        <Rect
+            :config="{
+                width: item.width,
+                height: item.height,
+                fill: 'rgba(0,0,0,0)',
+            }"
+        />
+        <KonvaImage :config="{ image: image, ...pictured(item, image) }" />
+        <!-- A border, in the item's line colour -->
+        <Rect
+            v-if="item.stroke && item.stroke !== 'transparent'"
+            :config="{
+                width: item.width,
+                height: item.height,
+                stroke: item.stroke,
+                strokeWidth: item.lineWidth,
+                listening: false,
+            }"
+        />
+    </template>
     <Rect
         v-else-if="item.kind === 'image'"
         :config="{
@@ -428,28 +495,41 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
 
     <!-- A label sits inside every shape except plain text,
      which is the label. Double-click any of them. -->
-    <Text
+    <template
         v-if="hasText(item) && item.kind !== 'frame' && item.kind !== 'math'"
-        :config="{
-            text: item.text,
-            x: item.kind === 'text' ? 0 : 12,
-            y: item.kind === 'text' ? 0 : labelInset(item),
-            width: item.kind === 'text' ? item.width : item.width - 24,
-            height:
-                item.kind === 'text'
-                    ? item.height
-                    : item.height - labelInset(item) * 2,
-            fontSize: item.fontSize,
-            fontStyle: item.kind === 'text' ? '600' : 'normal',
-            fill: '#0f172a',
-            align: item.align,
-            verticalAlign: item.verticalAlign,
-            // A text item has no shape behind it, so
-            // its label is the only thing that can be
-            // clicked; on other shapes the box is the
-            // hit area and the label stays out of it.
-            listening: item.kind === 'text',
-            opacity: editing ? 0 : 1,
-        }"
-    />
+    >
+        <!-- Rich: headings, bullets and bold words, laid out line by line -->
+        <Shape
+            v-if="item.rich"
+            :config="{
+                name: 'rich-label',
+                ...label(item),
+                sceneFunc: drawRich(item),
+                hitFunc: labelHit,
+                fill: INK,
+                listening: item.kind === 'text',
+                opacity: editing ? 0 : 1,
+            }"
+        />
+        <Text
+            v-else
+            :config="{
+                text: item.text,
+                ...label(item),
+                fontSize: item.fontSize,
+                fontFamily: fontOf(item),
+                fontStyle: labelStyle(item),
+                lineHeight: LINE_HEIGHT,
+                fill: INK,
+                align: item.align,
+                verticalAlign: item.verticalAlign,
+                // A text item has no shape behind it, so
+                // its label is the only thing that can be
+                // clicked; on other shapes the box is the
+                // hit area and the label stays out of it.
+                listening: item.kind === 'text',
+                opacity: editing ? 0 : 1,
+            }"
+        />
+    </template>
 </template>

@@ -71,6 +71,20 @@ class DriveFileController extends Controller
     {
         Gate::authorize('view', $file);
 
+        return $this->send($request, $file);
+    }
+
+    /**
+     * Send a file to whoever holds a signed link to it: the renderer drawing
+     * a board (App\Support\BoardRender), which is signed in as nobody.
+     */
+    public function signed(Request $request, DriveFile $file): BinaryFileResponse
+    {
+        return $this->send($request, $file);
+    }
+
+    private function send(Request $request, DriveFile $file): BinaryFileResponse
+    {
         $disk = Storage::disk(DriveFile::DISK);
 
         abort_unless($disk->exists($file->path), 404);

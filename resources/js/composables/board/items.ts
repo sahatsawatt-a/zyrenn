@@ -74,6 +74,25 @@ export type Align = 'left' | 'center' | 'right';
 
 export type VerticalAlign = 'top' | 'middle' | 'bottom';
 
+/**
+ * How a picture fills its box: stretched to it, fitted inside it whole, or
+ * covering it with the overflow cut off.
+ */
+export type Fit = 'fill' | 'contain' | 'cover';
+
+/**
+ * The typeface a label is set in. Each is a font every system has, or one
+ * drawn to the same widths (Liberation, on Linux), so a label wraps the same
+ * everywhere -- and where the server works out whether it fits.
+ */
+export type FontFamily = 'sans' | 'serif' | 'mono';
+
+export const FONT_FAMILIES: Record<FontFamily, string> = {
+    sans: 'Arial',
+    serif: 'Times New Roman',
+    mono: 'Courier New',
+};
+
 export const ALIGNS: Align[] = ['left', 'center', 'right'];
 
 export const VERTICAL_ALIGNS: VerticalAlign[] = ['top', 'middle', 'bottom'];
@@ -90,6 +109,11 @@ export type Item = {
     stroke: string;
     text: string;
     fontSize: number;
+    fontFamily: FontFamily;
+    // Room between a shape's edge and its label, in board units
+    padding: number;
+    // The label read as light Markdown: # headings, - bullets, **bold**
+    rich: boolean;
     align: Align;
     verticalAlign: VerticalAlign;
     // Freehand keeps its shape as points relative to x/y
@@ -100,6 +124,8 @@ export type Item = {
     // A picture -- SVG, PNG, JPEG -- as a data URL drawn through an <img>;
     // or, on a video, where the video is
     src: string;
+    // A picture's way of filling its box
+    fit: Fit;
     // Connectors only: where each end is pinned and how the line is drawn
     from: Endpoint | null;
     to: Endpoint | null;
@@ -188,12 +214,16 @@ export const makeItem = (
         stroke: '#cbd5e1',
         text: '',
         fontSize: 16,
+        fontFamily: 'sans',
+        padding: 12,
+        rich: false,
         align: 'center',
         verticalAlign: 'middle',
         points: [],
         hidden: false,
         locked: false,
         src: '',
+        fit: 'fill',
         from: null,
         to: null,
         routing: 'elbow',
@@ -232,6 +262,8 @@ export const makeItem = (
                 stroke: 'transparent',
                 text: 'Text',
                 fontSize: 28,
+                // A text item is only its words: they start at its edge
+                padding: 0,
                 align: 'left',
                 verticalAlign: 'top',
             };
