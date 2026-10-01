@@ -27,6 +27,51 @@
             </select>
 
             <div class="mermaid-actions">
+                <DropdownMenu v-if="isEr" @update:open="onSqlMenu">
+                    <DropdownMenuTrigger as-child>
+                        <button
+                            type="button"
+                            class="mermaid-btn"
+                            title="Turn this diagram into SQL"
+                            data-test="mermaid-sql"
+                        >
+                            SQL
+                        </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" class="w-48">
+                        <DropdownMenuLabel>Dialect</DropdownMenuLabel>
+                        <DropdownMenuRadioGroup
+                            :model-value="dialect"
+                            @update:model-value="setDialect"
+                        >
+                            <DropdownMenuRadioItem
+                                v-for="item in sqlDialects"
+                                :key="item.id"
+                                :value="item.id"
+                                @select.prevent
+                            >
+                                {{ item.label }}
+                            </DropdownMenuRadioItem>
+                        </DropdownMenuRadioGroup>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                            data-test="mermaid-sql-insert"
+                            @select="writeSql"
+                        >
+                            {{
+                                hasSqlBelow
+                                    ? 'Update SQL below'
+                                    : 'Insert SQL below'
+                            }}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            data-test="mermaid-sql-copy"
+                            @select="copySql"
+                        >
+                            Copy SQL
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
                 <button
                     v-if="svg && !error"
                     type="button"
@@ -85,6 +130,24 @@ import { renderMermaid } from '../../lib/mermaid';
 import { holdPrint } from '../../lib/printReady';
 import { useMediaViewer } from '../../composables/useMediaViewer';
 import { copyToClipboard } from '../../lib/utils';
+import {
+    SQL_HEADER,
+    erDiagramToSql,
+    isErDiagram,
+    sqlDialects,
+} from '../../lib/erToSql';
+import type { SqlDialect } from '../../lib/erToSql';
+import { toast } from 'vue-sonner';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuRadioGroup,
+    DropdownMenuRadioItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 import {
     detectMermaidTemplate,
     mermaidTemplates,
@@ -267,6 +330,103 @@ const copySource = async () => {
         setTimeout(() => (copied.value = false), 2000);
     } catch (err) {
         console.error('Failed to copy diagram source: ', err);
+    }
+};
+
+// ------------------------------------------------------------------------ SQL
+// An erDiagram can be turned into CREATE TABLE statements. The diagram stays
+// the source: running it again rewrites the SQL block it made last time
+// (found by its header line) rather than stacking up another.
+const isEr = computed(() => isErDiagram(source.value));
+
+const DIALECT_KEY = 'zyrenn.mermaid.sqlDialect';
+const readDialect = (): SqlDialect => {
+    try {
+        const saved = localStorage.getItem(DIALECT_KEY);
+        if (sqlDialects.some((item) => item.id === saved)) {
+            return saved as SqlDialect;
+        }
+    } catch {
+        // Storage can be blocked; the default is fine
+    }
+    return 'postgres';
+};
+
+const dialect = ref<SqlDialect>(readDialect());
+const setDialect = (value: unknown) => {
+    dialect.value = value as SqlDialect;
+    try {
+        localStorage.setItem(DIALECT_KEY, dialect.value);
+    } catch {
+        // Remembered for this block only
+    }
+};
+
+const sqlBelow = () => {
+    const pos = props.getPos();
+    if (typeof pos !== 'number') return null;
+
+    const after = pos + props.node.nodeSize;
+    const next = props.editor.state.doc.nodeAt(after);
+
+    // By name: props.node comes through Vue's reactivity, so its type is a
+    // proxy that ProseMirror's identity checks would not recognise
+    return next?.type.name === props.node.type.name &&
+        next.attrs.language === 'sql' &&
+        next.textContent.startsWith(SQL_HEADER)
+        ? { pos: after, node: next }
+        : null;
+};
+
+const hasSqlBelow = ref(false);
+const onSqlMenu = (open: boolean) => {
+    if (open) hasSqlBelow.value = sqlBelow() !== null;
+};
+
+const generateSql = (): string | null => {
+    try {
+        return erDiagramToSql(source.value, dialect.value);
+    } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err));
+        return null;
+    }
+};
+
+const writeSql = () => {
+    const pos = props.getPos();
+    const sql = generateSql();
+    if (typeof pos !== 'number' || sql === null) return;
+
+    const { tr, schema } = props.editor.state;
+    const existing = sqlBelow();
+
+    if (existing) {
+        tr.replaceWith(
+            existing.pos + 1,
+            existing.pos + 1 + existing.node.content.size,
+            schema.text(sql),
+        );
+    } else {
+        tr.insert(
+            pos + props.node.nodeSize,
+            schema.nodes[props.node.type.name].create(
+                { language: 'sql' },
+                schema.text(sql),
+            ),
+        );
+    }
+    props.editor.view.dispatch(tr);
+};
+
+const copySql = async () => {
+    const sql = generateSql();
+    if (sql === null) return;
+
+    try {
+        await copyToClipboard(sql);
+        toast.success('SQL copied');
+    } catch (err) {
+        console.error('Failed to copy SQL: ', err);
     }
 };
 </script>
