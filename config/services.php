@@ -40,6 +40,12 @@ return [
         'global_token' => env('MCP_GLOBAL_TOKEN'),
     ],
 
+    'chat' => [
+        // What "localhost" means in a connection when the app runs in a container: empty finds
+        // the machine the container runs on by itself; a name or an address says where; "off" is literal
+        'localhost_as' => env('CHAT_LOCALHOST_AS'),
+    ],
+
     'collab' => [
         // The collaboration server (collab/server.mjs), as the app reaches it; empty turns live editing off
         'url' => env('COLLAB_URL'),

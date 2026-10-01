@@ -41,6 +41,9 @@ services:
         volumes:
             - .:/var/www/html
             - ./docker/php/uploads.ini:/usr/local/etc/php/conf.d/zz-uploads.ini:ro
+        # So a chat can reach an Ollama on this machine as host.docker.internal
+        extra_hosts:
+            - 'host.docker.internal:host-gateway'
         # Deliberately unpublished: `web` is the single origin. See docker/nginx.
         expose:
             - '8000'

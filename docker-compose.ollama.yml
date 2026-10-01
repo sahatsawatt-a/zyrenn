@@ -1,0 +1,22 @@
+# Optional overlay for a machine that runs Ollama as a container of its own on
+# a shared network (here one named `ai`), so a chat can reach it by name:
+#
+#   http://ollama:11434
+#
+# NOT loaded by default -- opt in per machine by adding it to COMPOSE_FILE in
+# .env (gitignored), after any other overlays:
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.ollama.yml
+#   OLLAMA_NETWORK=ai          # the network Ollama's container is on; `ai` if unset
+#
+# Without it, "localhost" in a connection already finds an Ollama on the
+# machine itself (see App\Support\Chat\HostAddress), as long as it publishes
+# its port, which is how a container of Ollama's is usually run.
+networks:
+    ollama:
+        external: true
+        name: ${OLLAMA_NETWORK:-ai}
+
+services:
+    app:
+        networks: [default, ollama]

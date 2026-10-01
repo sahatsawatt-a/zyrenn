@@ -105,6 +105,23 @@ tar -xzf $B/files.tar.gz -C storage/app      # restores storage/app/private
 docker compose start app reverb
 ```
 
+### Chat and your own models
+
+Settings → AI connections says where a chat reaches a model: Ollama, LM Studio,
+OpenRouter, OpenAI, Groq, Gemini, or any host that speaks the OpenAI chat API.
+Each is tried before it is saved. A key is kept encrypted and used only for
+your own chats.
+
+Reaching a model that runs on your machine, from the app's container:
+
+- **`http://localhost:11434`** works as it reads: `localhost` means the machine
+  the app runs on, not the container (`App\Support\Chat\HostAddress`). Set
+  `CHAT_LOCALHOST_AS` to a name or address to say where that is, or `off` to take
+  the word literally.
+- **`http://ollama:11434`**, an Ollama in a container of its own, works once the
+  app shares its Docker network: add `docker-compose.ollama.yml` to `COMPOSE_FILE`
+  in `.env` (and `OLLAMA_NETWORK` if the network is not called `ai`).
+
 ## Tests
 
 ```sh
