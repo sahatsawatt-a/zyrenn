@@ -12,6 +12,11 @@ services:
     # The first run takes a few minutes: `docker compose logs -f init`.
     init:
         image: zyrenn-app:local
+        # Built by `app`, never pulled: otherwise compose first asks Docker Hub
+        # for zyrenn-app:local on a machine that has not built it yet, and some
+        # versions stop at the refusal before anything is built. The same goes
+        # for `app` and every service below that shares the image.
+        pull_policy: never
         working_dir: /var/www/html
         volumes:
             - .:/var/www/html
@@ -30,6 +35,8 @@ services:
                 UID: '${UID:-1000}'
                 GID: '${GID:-1000}'
         image: zyrenn-app:local
+        # Built here, never pulled (see init)
+        pull_policy: never
         restart: unless-stopped
         volumes:
             - .:/var/www/html
@@ -77,6 +84,7 @@ services:
     # origin, so wss rides the same :443 as the page. See docker/nginx.
     reverb:
         image: zyrenn-app:local
+        pull_policy: never
         restart: unless-stopped
         working_dir: /var/www/html
         volumes:
@@ -96,6 +104,7 @@ services:
     # Unpublished like reverb: the browser reaches it through `web` at /collab.
     collab:
         image: zyrenn-app:local
+        pull_policy: never
         restart: unless-stopped
         working_dir: /var/www/html
         init: true
@@ -121,6 +130,7 @@ services:
     vite:
         profiles: ['dev']
         image: zyrenn-app:local
+        pull_policy: never
         restart: unless-stopped
         working_dir: /var/www/html
         # Real PID 1 for correct signal forwarding and zombie reaping -- helps,
