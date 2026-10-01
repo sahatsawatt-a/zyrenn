@@ -100,37 +100,216 @@ const stdioArgs = [
     'zyrenn',
 ];
 
-const claudeCommand = computed(() =>
-    transport.value === 'http'
-        ? `claude mcp add --transport http zyrenn ${props.endpoint} --header "Authorization: Bearer ${tokenValue.value}"`
-        : `claude mcp add zyrenn -e MCP_TOKEN=${tokenValue.value} -- docker ${stdioArgs.join(' ')}`,
-);
+type ClientId =
+    | 'claude-code'
+    | 'claude-desktop'
+    | 'cursor'
+    | 'vscode'
+    | 'windsurf'
+    | 'antigravity'
+    | 'gemini'
+    | 'codex'
+    | 'zed'
+    | 'cline'
+    | 'other';
 
-const jsonConfig = computed(() =>
-    JSON.stringify(
-        {
-            mcpServers: {
-                zyrenn:
-                    transport.value === 'http'
-                        ? {
-                              type: 'http',
-                              url: props.endpoint,
-                              headers: {
-                                  Authorization: `Bearer ${tokenValue.value}`,
-                              },
-                          }
-                        : {
-                              type: 'stdio',
-                              command: 'docker',
-                              args: stdioArgs,
-                              env: { MCP_TOKEN: tokenValue.value },
-                          },
-            },
-        },
-        null,
-        2,
-    ),
-);
+// What to paste for a client: a shell command, or the contents of a file
+type Snippet = { where: string; text: string; note?: string };
+
+const clients: { value: ClientId; label: string }[] = [
+    { value: 'claude-code', label: 'Claude Code' },
+    { value: 'claude-desktop', label: 'Claude Desktop' },
+    { value: 'cursor', label: 'Cursor' },
+    { value: 'vscode', label: 'VS Code' },
+    { value: 'windsurf', label: 'Windsurf' },
+    { value: 'antigravity', label: 'Antigravity' },
+    { value: 'gemini', label: 'Gemini CLI' },
+    { value: 'codex', label: 'Codex' },
+    { value: 'zed', label: 'Zed' },
+    { value: 'cline', label: 'Cline' },
+    { value: 'other', label: 'Other' },
+];
+
+const clientKey = 'mcp-connect-client';
+
+function readClient(): ClientId {
+    try {
+        const saved = localStorage.getItem(clientKey);
+
+        return clients.some((item) => item.value === saved)
+            ? (saved as ClientId)
+            : 'claude-code';
+    } catch {
+        return 'claude-code';
+    }
+}
+
+const client = ref<ClientId>(readClient());
+
+watch(client, (value) => {
+    try {
+        localStorage.setItem(clientKey, value);
+    } catch {
+        // Storage unavailable (private mode): the choice just isn't remembered
+    }
+});
+
+const json = (value: unknown): string => JSON.stringify(value, null, 2);
+
+const bearer = computed(() => `Bearer ${tokenValue.value}`);
+
+// The same server in the shape most clients take under "mcpServers"
+const stdioServer = computed(() => ({
+    command: 'docker',
+    args: stdioArgs,
+    env: { MCP_TOKEN: tokenValue.value },
+}));
+
+const snippet = computed<Snippet>(() => {
+    const http = transport.value === 'http';
+    const url = props.endpoint;
+    const headers = { Authorization: bearer.value };
+
+    switch (client.value) {
+        case 'claude-code':
+            return {
+                where: 'Run in a terminal',
+                text: http
+                    ? `claude mcp add --transport http zyrenn ${url} --header "Authorization: ${bearer.value}"`
+                    : `claude mcp add zyrenn -e MCP_TOKEN=${tokenValue.value} -- docker ${stdioArgs.join(' ')}`,
+            };
+        case 'claude-desktop':
+            return {
+                where: 'Settings → Developer → Edit Config (claude_desktop_config.json)',
+                text: json({
+                    mcpServers: {
+                        zyrenn: http
+                            ? {
+                                  command: 'npx',
+                                  args: [
+                                      '-y',
+                                      'mcp-remote',
+                                      url,
+                                      '--header',
+                                      'Authorization:${ZYRENN_AUTH}',
+                                  ],
+                                  env: { ZYRENN_AUTH: bearer.value },
+                              }
+                            : stdioServer.value,
+                    },
+                }),
+                note: http
+                    ? 'Claude Desktop runs local commands, so this reaches the app through the mcp-remote bridge (needs Node.js). Restart Claude Desktop afterwards.'
+                    : 'Restart Claude Desktop afterwards.',
+            };
+        case 'cursor':
+            return {
+                where: '~/.cursor/mcp.json, or Settings → MCP',
+                text: json({
+                    mcpServers: {
+                        zyrenn: http ? { url, headers } : stdioServer.value,
+                    },
+                }),
+            };
+        case 'vscode':
+            return {
+                where: '.vscode/mcp.json, or “MCP: Open User Configuration”',
+                text: json({
+                    servers: {
+                        zyrenn: http
+                            ? { type: 'http', url, headers }
+                            : { type: 'stdio', ...stdioServer.value },
+                    },
+                }),
+                note: 'The top-level key is “servers”, not “mcpServers”.',
+            };
+        case 'windsurf':
+            return {
+                where: '~/.codeium/windsurf/mcp_config.json',
+                text: json({
+                    mcpServers: {
+                        zyrenn: http
+                            ? { serverUrl: url, headers }
+                            : stdioServer.value,
+                    },
+                }),
+                note: 'Press Refresh in the MCP panel afterwards.',
+            };
+        case 'antigravity':
+            return {
+                where: 'Agent panel → ⋯ → MCP Servers → Manage MCP Servers → View raw config',
+                text: json({
+                    mcpServers: {
+                        zyrenn: http
+                            ? { serverUrl: url, headers }
+                            : stdioServer.value,
+                    },
+                }),
+                note: 'Remote servers need “serverUrl”; Refresh after saving.',
+            };
+        case 'gemini':
+            return {
+                where: '~/.gemini/settings.json',
+                text: json({
+                    mcpServers: {
+                        zyrenn: http
+                            ? { httpUrl: url, headers }
+                            : stdioServer.value,
+                    },
+                }),
+            };
+        case 'codex':
+            return {
+                where: '~/.codex/config.toml',
+                text: http
+                    ? `[mcp_servers.zyrenn]\nurl = "${url}"\nbearer_token_env_var = "ZYRENN_TOKEN"\n\n# and in your shell profile:\n# export ZYRENN_TOKEN=${tokenValue.value}`
+                    : `[mcp_servers.zyrenn]\ncommand = "docker"\nargs = ${JSON.stringify(stdioArgs)}\nenv = { MCP_TOKEN = "${tokenValue.value}" }`,
+            };
+        case 'zed':
+            return {
+                where: 'Zed settings (zed: open settings)',
+                text: json({
+                    context_servers: {
+                        zyrenn: http ? { url, headers } : stdioServer.value,
+                    },
+                }),
+            };
+        case 'cline':
+            return {
+                where: 'MCP Servers → Configure (cline_mcp_settings.json)',
+                text: json({
+                    mcpServers: {
+                        zyrenn: http
+                            ? { type: 'streamableHttp', url, headers }
+                            : { type: 'stdio', ...stdioServer.value },
+                    },
+                }),
+            };
+        default:
+            return {
+                where: 'Any client that takes an MCP server',
+                text: http
+                    ? `URL:     ${url}\nHeader:  Authorization: ${bearer.value}`
+                    : `Command: docker ${stdioArgs.join(' ')}\nEnv:     MCP_TOKEN=${tokenValue.value}`,
+                note: 'Use a remote or streamable-HTTP server with a custom header. For a client that only runs local commands, bridge it: npx -y mcp-remote <url> --header "Authorization:Bearer <token>".',
+            };
+    }
+});
+
+// A bearer token over plain HTTP is readable on the network; fine on this machine only
+const insecureRemote = computed(() => {
+    try {
+        const url = new URL(props.endpoint);
+
+        return (
+            transport.value === 'http' &&
+            url.protocol === 'http:' &&
+            !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+        );
+    } catch {
+        return false;
+    }
+});
 
 const copied = ref<string | null>(null);
 
@@ -159,7 +338,7 @@ async function copy(key: string, text: string): Promise<void> {
             <Heading
                 variant="small"
                 title="MCP access"
-                description="Connect an AI client (Claude Code, Claude Desktop, …) to your notes, boards and Drive. A token only ever sees your own content."
+                description="Connect an AI client (Claude, Cursor, VS Code, Gemini, Codex, …) to your notes, boards and Drive. A token only ever sees your own content."
             />
 
             <Form
@@ -251,39 +430,63 @@ async function copy(key: string, text: string): Promise<void> {
             </div>
 
             <div class="space-y-2">
-                <div class="flex items-center justify-between">
-                    <Label>Claude Code</Label>
+                <Label>Client</Label>
+                <div
+                    class="flex flex-wrap gap-1.5"
+                    role="group"
+                    aria-label="Client"
+                >
+                    <button
+                        v-for="item in clients"
+                        :key="item.value"
+                        type="button"
+                        class="rounded-md border px-2.5 py-1 text-sm transition-colors"
+                        :class="
+                            client === item.value
+                                ? 'bg-foreground text-background border-foreground'
+                                : 'text-muted-foreground hover:text-foreground'
+                        "
+                        :aria-pressed="client === item.value"
+                        :data-test="`client-${item.value}`"
+                        @click="client = item.value"
+                    >
+                        {{ item.label }}
+                    </button>
+                </div>
+            </div>
+
+            <div class="space-y-2">
+                <div class="flex items-center justify-between gap-2">
+                    <p class="text-muted-foreground min-w-0 text-xs">
+                        {{ snippet.where }}
+                    </p>
                     <Button
                         variant="ghost"
                         size="sm"
-                        @click="copy('command', claudeCommand)"
+                        data-test="copy-snippet"
+                        @click="copy('snippet', snippet.text)"
                     >
-                        <Check v-if="copied === 'command'" />
+                        <Check v-if="copied === 'snippet'" />
                         <Copy v-else />
-                        {{ copied === 'command' ? 'Copied' : 'Copy' }}
+                        {{ copied === 'snippet' ? 'Copied' : 'Copy' }}
                     </Button>
                 </div>
                 <pre
                     class="bg-muted overflow-x-auto rounded-md p-3 font-mono text-xs break-all whitespace-pre-wrap"
-                    >{{ claudeCommand }}</pre>
-            </div>
-
-            <div class="space-y-2">
-                <div class="flex items-center justify-between">
-                    <Label>JSON config (other clients)</Label>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        @click="copy('json', jsonConfig)"
-                    >
-                        <Check v-if="copied === 'json'" />
-                        <Copy v-else />
-                        {{ copied === 'json' ? 'Copied' : 'Copy' }}
-                    </Button>
-                </div>
-                <pre
-                    class="bg-muted overflow-x-auto rounded-md p-3 font-mono text-xs"
-                    >{{ jsonConfig }}</pre>
+                    data-test="mcp-snippet"
+                    >{{ snippet.text }}</pre>
+                <p v-if="snippet.note" class="text-muted-foreground text-xs">
+                    {{ snippet.note }}
+                </p>
+                <p
+                    v-if="insecureRemote"
+                    class="text-xs text-amber-700 dark:text-amber-400"
+                    data-test="mcp-insecure"
+                >
+                    This address is plain http, so the token can be read on the
+                    network. Serve the app over https before connecting from
+                    another machine.
+                </p>
             </div>
         </div>
 

@@ -15,7 +15,10 @@ A personal workspace: notes, boards, tables, and a private Drive behind them.
 
 ## Running ZyrenN locally
 
-Everything runs in Docker; nothing but Docker is needed on the host.
+Everything runs in Docker; nothing but Docker is needed on the host. On a fresh
+clone, run `./scripts/setup.sh` first; [docs/SETUP.md](docs/SETUP.md) has the
+steps, HTTPS behind Traefik (`./scripts/setup.sh --traefik <host>`), and one for
+each way of connecting an AI client.
 
 ```sh
 docker compose up -d                     # postgres, app, nginx, reverb, vite
@@ -144,6 +147,11 @@ can show it — the tools say so, and hand back the line or URL to use.
 ```sh
 docker compose exec app php artisan mcp:start zyrenn   # stdio, reads MCP_TOKEN
 ```
+
+Step-by-step setup for each method (personal or admin, HTTP or stdio) is in
+[docs/SETUP.md](docs/SETUP.md), and for each client (Claude, Cursor, VS Code,
+Windsurf, Antigravity, Gemini CLI, Codex and others) in
+[docs/MCP-CLIENTS.md](docs/MCP-CLIENTS.md).
 
 ## How the code is laid out
 
