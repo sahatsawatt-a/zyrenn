@@ -4,7 +4,7 @@
 //
 // Needs an Ollama the app can reach, with the model below pulled:
 //   E2E_OLLAMA=http://172.16.8.1:11434 E2E_OLLAMA_MODEL=qwen2.5:7b node tests/e2e/chat.mjs
-import { runBoard, tinker } from './harness.mjs';
+import { deleteProject, runBoard, shareProject, tinker } from './harness.mjs';
 
 const HOST = process.env.E2E_OLLAMA ?? 'http://172.16.8.1:11434';
 const MODEL = process.env.E2E_OLLAMA_MODEL ?? 'qwen2.5:7b';
@@ -379,6 +379,30 @@ await runBoard(
         );
         await page.screenshot({ path: '/tmp/zyrenn-e2e/chat-models.png' });
         await page.keyboard.press('Escape');
+
+        // A personal chat belongs to its owner, not to a group: a project's sidebar has none
+        const chatLink = page.getByRole('link', { name: 'Chat', exact: true });
+        await page.goto(new URL('/notes', page.url()).href, {
+            waitUntil: 'networkidle',
+        });
+        check('your own sidebar has Chat', (await chatLink.count()) === 1);
+
+        const { project, base } = await shareProject(
+            page,
+            `Chat check ${Date.now().toString().slice(-6)}`,
+            'e2e-member@example.com',
+            'viewer',
+        );
+        await page.goto(`${base}/p/${project}/notes`, {
+            waitUntil: 'networkidle',
+        });
+        check(
+            "a project's sidebar does not",
+            (await chatLink.count()) === 0 &&
+                (await page.getByRole('link', { name: /^notes$/i }).count()) >=
+                    1,
+        );
+        await deleteProject(page, base, project);
     },
     { canvas: false },
 );

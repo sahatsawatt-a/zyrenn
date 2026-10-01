@@ -81,12 +81,17 @@ const mainNavItems = computed<NavItem[]>(() => {
             href: owned(driveIndex, projectDriveIndex)(),
             icon: HardDrive,
         },
-        // Your own, even inside a project: a chat answers through your own key
-        {
-            title: 'Chat',
-            href: chatsIndex(),
-            icon: MessageSquare,
-        },
+        // Only in your own space: a chat answers through your own key, so it is
+        // not something a project shares
+        ...(project
+            ? []
+            : [
+                  {
+                      title: 'Chat',
+                      href: chatsIndex(),
+                      icon: MessageSquare,
+                  },
+              ]),
         ...(project
             ? [
                   {
