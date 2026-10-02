@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Board\Board;
+use App\Models\Chat\ChatRoom;
 use App\Models\Note\Note;
 use App\Models\Table\Table;
 use App\Models\User;
@@ -17,3 +18,6 @@ $here = fn (User $user) => ['id' => $user->id, 'name' => $user->name];
 Broadcast::channel('notes.{note}', fn (User $user, Note $note) => $user->can('view', $note) ? $here($user) : false);
 Broadcast::channel('boards.{board}', fn (User $user, Board $board) => $user->can('view', $board) ? $here($user) : false);
 Broadcast::channel('tables.{table}', fn (User $user, Table $table) => $user->can('view', $table) ? $here($user) : false);
+
+// Who has a chat room open, and what is said in it: anyone in the room
+Broadcast::channel('chats.{room}', fn (User $user, ChatRoom $room) => $room->includes($user) ? $here($user) : false);

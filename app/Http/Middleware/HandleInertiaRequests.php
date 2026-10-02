@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Chat\ChatRoom;
 use App\Models\Project;
 use App\Support\Live\Collab;
 use Illuminate\Database\Eloquent\Model;
@@ -46,6 +47,8 @@ class HandleInertiaRequests extends Middleware
             ],
             // Resolved as the page renders, after route binding
             'project' => fn () => $this->currentProject($request),
+            // Messages from others not yet read, in every room the user shares
+            'unreadChats' => fn () => $request->user() ? ChatRoom::unreadTotal($request->user()) : 0,
             'projects' => fn () => $request->user()?->projects()->orderBy('name')->get()
                 ->map(fn (Project $project) => $project->only(['ref_id', 'name'])),
             // Whether notes and boards are edited live, through the collaboration server

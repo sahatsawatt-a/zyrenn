@@ -7,7 +7,8 @@ import {
     HardDrive,
     LayoutDashboard,
     LayoutGrid,
-    MessageSquare,
+    Bot,
+    MessagesSquare,
     NotebookPen,
     FileSpreadsheet,
     ChartNoAxesCombined,
@@ -36,12 +37,17 @@ import {
     konva_demo,
     table_demo,
 } from '@/routes';
+import { useUnreadChats } from '@/composables/useUnreadChats';
 import { owned } from '@/lib/projects';
 import { index as boardsIndex } from '@/routes/boards';
 import { index as chatsIndex } from '@/routes/chats';
 import { index as driveIndex } from '@/routes/drive';
 import { index as notesIndex } from '@/routes/notes';
-import { edit as projectSettings } from '@/routes/projects';
+import { index as messagesIndex } from '@/routes/messages';
+import {
+    chat as projectChat,
+    edit as projectSettings,
+} from '@/routes/projects';
 import { index as projectBoardsIndex } from '@/routes/projects/boards';
 import { index as projectDriveIndex } from '@/routes/projects/drive';
 import { index as projectNotesIndex } from '@/routes/projects/notes';
@@ -50,6 +56,7 @@ import { index as tablesIndex } from '@/routes/tables';
 import type { NavItem } from '@/types';
 
 const page = usePage();
+const unread = useUnreadChats();
 
 // Notes, boards, tables and Drive of the project the page is in, or your own
 const mainNavItems = computed<NavItem[]>(() => {
@@ -81,15 +88,28 @@ const mainNavItems = computed<NavItem[]>(() => {
             href: owned(driveIndex, projectDriveIndex)(),
             icon: HardDrive,
         },
-        // Only in your own space: a chat answers through your own key, so it is
-        // not something a project shares
+        // A project's groups; in your own space, your AI chats and your
+        // messages, kept apart: an AI chat answers through your own key
         ...(project
-            ? []
-            : [
+            ? [
                   {
                       title: 'Chat',
+                      href: projectChat(project.ref_id),
+                      icon: MessagesSquare,
+                      badge: unread.value,
+                  },
+              ]
+            : [
+                  {
+                      title: 'AI chat',
                       href: chatsIndex(),
-                      icon: MessageSquare,
+                      icon: Bot,
+                  },
+                  {
+                      title: 'Messages',
+                      href: messagesIndex(),
+                      icon: MessagesSquare,
+                      badge: unread.value,
                   },
               ]),
         ...(project

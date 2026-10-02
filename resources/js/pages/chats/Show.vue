@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, Link, router, setLayoutProps, usePage } from '@inertiajs/vue3';
 import type { JSONContent } from '@tiptap/vue-3';
-import { Send, Settings2, Square, Trash2 } from '@lucide/vue';
+import { LogOut, Send, Settings2, Square, Trash2 } from '@lucide/vue';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import ModelPicker from '@/components/chat/ModelPicker.vue';
+import PresenceAvatars from '@/components/PresenceAvatars.vue';
 import TiptapEditor from '@/components/Editor/TiptapEditor.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,10 +23,26 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { getInitials } from '@/composables/useInitials';
+import { setUnreadChats } from '@/composables/useUnreadChats';
+import { usePresence } from '@/composables/usePresence';
+import { colourFor, socketHeaders } from '@/lib/live';
+import type { Member } from '@/lib/live';
 import { xsrfToken } from '@/lib/utils';
 import { index as connectionsIndex, models } from '@/routes/ai-connections';
-import { destroy, index, show, update } from '@/routes/chats';
-import { store as sendMessage } from '@/routes/chats/messages';
+import {
+    destroy,
+    index,
+    leave as leaveRoom,
+    read as markRead,
+    update,
+} from '@/routes/chats';
+import {
+    index as earlierMessages,
+    store as sendMessage,
+} from '@/routes/chats/messages';
+import { index as messagesIndex } from '@/routes/messages';
+import { chat as projectChat } from '@/routes/projects';
 
 type Message = {
     id: number;
@@ -35,11 +52,22 @@ type Message = {
     doc: JSONContent | null;
     // Why an answer stopped short, when it did
     error: string | null;
+    // Who said it, when a person did; id is null for someone since gone
+    author: { id: number | null; name: string } | null;
 };
 
 type Room = {
     ref_id: string;
+    // personal: one's own, maybe with an agent; direct: two people; group: a project's
+    kind: 'personal' | 'direct' | 'group';
     title: string;
+    // One's own room, whose agent can be set up
+    mine: boolean;
+    // May rename and delete it
+    manage: boolean;
+    // May leave it: a group one is in
+    leave: boolean;
+    project: { ref_id: string; name: string } | null;
     model: string | null;
     system_prompt: string | null;
     connection: string | null;
@@ -57,12 +85,126 @@ type Connection = {
 const props = defineProps<{
     room: Room;
     messages: Message[];
+    // There is more before the first shown
+    hasEarlier: boolean;
+    // Who is in a room shared with others
+    people: { id: number; name: string }[];
     connections: Connection[];
 }>();
 
-defineOptions({ layout: { breadcrumbs: [{ title: 'Chat', href: index() }] } });
+const page = usePage();
+const me = page.props.auth.user.id;
+const shared = props.room.kind !== 'personal';
+
+// Back to where the room is listed: one's AI chats, one's messages, or the project's groups
+setLayoutProps({
+    breadcrumbs: [
+        props.room.kind === 'personal'
+            ? { title: 'AI chat', href: index() }
+            : props.room.kind === 'group' && props.room.project
+              ? {
+                    title: 'Groups',
+                    href: projectChat(props.room.project.ref_id),
+                }
+              : { title: 'Messages', href: messagesIndex() },
+        { title: props.room.title || 'New chat', href: '' },
+    ],
+});
 
 const list = ref<Message[]>([...props.messages]);
+const hasEarlier = ref(props.hasEarlier);
+
+// One's own words sit on the right; in one's own room, every person's words are
+const isMine = (message: Message) =>
+    message.role === 'user' && (!shared || message.author?.id === me);
+
+// A name over the others' words where it is not obvious who they are: in a group
+const showName = (message: Message, at: number) =>
+    props.room.kind === 'group' &&
+    !isMine(message) &&
+    list.value[at - 1]?.author?.id !== message.author?.id;
+
+const add = (message: Message) => {
+    if (!list.value.some((item) => item.id === message.id)) {
+        list.value.push(message);
+    }
+};
+
+// --- what others say, as they say it, in a room shared with them ---
+// Read as it arrives, while the page is open. Sent at once and kept alive past
+// the page, so leaving the room straight after does not leave it unread.
+async function readUpTo(id: number) {
+    try {
+        const response = await fetch(markRead(props.room.ref_id).url, {
+            method: 'POST',
+            keepalive: true,
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-XSRF-TOKEN': xsrfToken(),
+            },
+            body: JSON.stringify({ message: id }),
+        });
+
+        if (response.ok) {
+            setUnreadChats((await response.json()).unread);
+        }
+    } catch {
+        // Read again on the next visit
+    }
+}
+
+const { others } = shared
+    ? usePresence(() => `chats.${props.room.ref_id}`, {
+          'chat.message': (event: { message: Message }) => {
+              add(event.message);
+              void readUpTo(event.message.id);
+          },
+      })
+    : { others: ref<Member[]>([]) };
+
+// --- scrolling back ---
+const loadingEarlier = ref(false);
+
+async function loadEarlier() {
+    const first = list.value[0];
+
+    if (!first || loadingEarlier.value) {
+        return;
+    }
+
+    loadingEarlier.value = true;
+    const before = scroller.value?.scrollHeight ?? 0;
+
+    try {
+        const response = await fetch(
+            earlierMessages(props.room.ref_id, {
+                query: { before: first.id },
+            }).url,
+            { headers: { Accept: 'application/json' } },
+        );
+        const body = await response.json();
+
+        list.value = [...body.messages, ...list.value];
+        hasEarlier.value = body.hasEarlier;
+
+        // Stay on what was being read, not jump to the top of what came in
+        await nextTick();
+
+        if (scroller.value) {
+            scroller.value.scrollTop += scroller.value.scrollHeight - before;
+        }
+    } finally {
+        loadingEarlier.value = false;
+    }
+}
+
+function leave() {
+    if (confirm('Leave this group? You can join it again from the project.')) {
+        router.post(leaveRoom(props.room.ref_id).url);
+    }
+}
 const title = ref(props.room.title);
 const draft = ref('');
 // What the agent has said so far in the answer being written
@@ -82,7 +224,8 @@ const toBottom = () =>
     });
 
 onMounted(toBottom);
-watch(() => [list.value.length, streaming.value], toBottom);
+// Down to what is new as it comes, but not when earlier messages come in at the top
+watch(() => [list.value[list.value.length - 1]?.id, streaming.value], toBottom);
 
 // The room's own title is saved as it is left
 function saveTitle() {
@@ -116,6 +259,8 @@ async function send() {
                 Accept: 'text/event-stream',
                 'X-Requested-With': 'XMLHttpRequest',
                 'X-XSRF-TOKEN': xsrfToken(),
+                // So the others hear it, and this page does not hear it twice
+                ...socketHeaders(),
             },
             body: JSON.stringify({ content }),
         });
@@ -190,14 +335,14 @@ function handle(
     data: { message?: Message | null; text?: string; title?: string },
 ) {
     if (name === 'user' && data.message) {
-        list.value.push(data.message);
+        add(data.message);
         title.value = data.title ?? title.value;
         streaming.value = props.room.ready ? '' : null;
     } else if (name === 'delta') {
         streaming.value = (streaming.value ?? '') + (data.text ?? '');
     } else if (name === 'done') {
         if (data.message) {
-            list.value.push(data.message);
+            add(data.message);
         }
 
         streaming.value = null;
@@ -303,23 +448,59 @@ function saveSettings() {
     <div class="mx-auto flex h-[calc(100svh-4rem)] w-full max-w-3xl flex-col">
         <header class="flex items-center gap-2 px-4 py-3">
             <Input
+                v-if="room.manage"
                 v-model="title"
                 class="h-9 flex-1 border-transparent bg-transparent text-base font-medium shadow-none"
-                placeholder="New chat"
-                maxlength="255"
+                :placeholder="room.kind === 'group' ? 'Group name' : 'New chat'"
+                :maxlength="room.kind === 'group' ? 80 : 255"
                 aria-label="Chat title"
                 @blur="saveTitle"
                 @keydown.enter.prevent="
                     ($event.target as HTMLInputElement).blur()
                 "
             />
-            <Button variant="ghost" size="sm" @click="settingsOpen = true">
+            <div v-else class="min-w-0 flex-1 px-3">
+                <h1 class="truncate text-base font-medium" data-chat-title>
+                    {{ title }}
+                </h1>
+                <p
+                    v-if="room.kind === 'group'"
+                    class="text-muted-foreground truncate text-xs"
+                >
+                    {{ room.project?.name }} ·
+                    {{ people.map((person) => person.name).join(', ') }}
+                </p>
+            </div>
+            <p
+                v-if="room.manage && room.kind === 'group'"
+                class="text-muted-foreground hidden max-w-48 truncate text-xs sm:block"
+            >
+                {{ people.length }} people
+            </p>
+            <PresenceAvatars :others="others" />
+            <Button
+                v-if="room.mine"
+                variant="ghost"
+                size="sm"
+                @click="settingsOpen = true"
+            >
                 <Settings2 />
                 <span class="hidden sm:inline">
                     {{ room.ready ? 'Agent' : 'Set up agent' }}
                 </span>
             </Button>
             <Button
+                v-if="room.leave"
+                variant="ghost"
+                size="sm"
+                data-leave
+                @click="leave"
+            >
+                <LogOut />
+                <span class="hidden sm:inline">Leave</span>
+            </Button>
+            <Button
+                v-if="room.manage"
                 variant="ghost"
                 size="icon-sm"
                 aria-label="Delete chat"
@@ -334,8 +515,20 @@ function saveSettings() {
             class="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4"
             data-chat-messages
         >
+            <div v-if="hasEarlier" class="flex justify-center">
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    :disabled="loadingEarlier"
+                    data-chat-earlier
+                    @click="loadEarlier"
+                >
+                    {{ loadingEarlier ? 'Loading…' : 'Show earlier messages' }}
+                </Button>
+            </div>
+
             <p
-                v-if="!room.ready"
+                v-if="room.mine && !room.ready"
                 class="bg-muted/40 rounded-lg border px-4 py-3 text-sm"
                 data-chat-no-agent
             >
@@ -356,17 +549,55 @@ function saveSettings() {
                 Say something to begin.
             </p>
 
-            <template v-for="message in list" :key="message.id">
+            <template v-for="(message, at) in list" :key="message.id">
                 <div
-                    v-if="message.role === 'user'"
+                    v-if="isMine(message)"
                     class="flex justify-end"
                     data-chat-user
+                    data-chat-mine
                 >
                     <p
                         class="bg-primary text-primary-foreground max-w-[85%] rounded-2xl rounded-br-md px-4 py-2 text-sm whitespace-pre-wrap"
                     >
                         {{ message.content }}
                     </p>
+                </div>
+                <div
+                    v-else-if="message.role === 'user'"
+                    class="flex items-end gap-2"
+                    data-chat-user
+                    data-chat-theirs
+                >
+                    <span
+                        class="flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
+                        :class="{
+                            invisible:
+                                list[at + 1]?.author?.id === message.author?.id,
+                        }"
+                        :style="{
+                            backgroundColor:
+                                message.author?.id != null
+                                    ? colourFor(message.author.id)
+                                    : '#9ca3af',
+                        }"
+                        :title="message.author?.name"
+                    >
+                        {{ getInitials(message.author?.name ?? '?') }}
+                    </span>
+                    <div class="max-w-[85%] min-w-0">
+                        <p
+                            v-if="showName(message, at)"
+                            class="text-muted-foreground mb-0.5 px-1 text-xs"
+                            data-chat-author
+                        >
+                            {{ message.author?.name }}
+                        </p>
+                        <p
+                            class="bg-muted rounded-2xl rounded-bl-md px-4 py-2 text-sm whitespace-pre-wrap"
+                        >
+                            {{ message.content }}
+                        </p>
+                    </div>
                 </div>
                 <div v-else class="max-w-full" data-chat-assistant>
                     <!-- The same editor and Markdown as a note, only for reading -->

@@ -381,11 +381,13 @@ await runBoard(
         await page.keyboard.press('Escape');
 
         // A personal chat belongs to its owner, not to a group: a project's sidebar has none
-        const chatLink = page.getByRole('link', { name: 'Chat', exact: true });
+        const chatLink = page
+            .locator('[data-sidebar="menu"]')
+            .getByRole('link', { name: 'AI chat', exact: true });
         await page.goto(new URL('/notes', page.url()).href, {
             waitUntil: 'networkidle',
         });
-        check('your own sidebar has Chat', (await chatLink.count()) === 1);
+        check('your own sidebar has AI chat', (await chatLink.count()) === 1);
 
         const { project, base } = await shareProject(
             page,

@@ -76,6 +76,11 @@ class ChatMessage extends Model
         return [
             'id' => $this->id,
             'role' => $this->role,
+            // Who said it, when a person did -- someone since gone, too: the page shows the others' names
+            'author' => $this->role !== self::USER ? null : [
+                'id' => $this->user_id,
+                'name' => $this->author->name ?? 'Deleted user',
+            ],
             'content' => $this->content,
             'doc' => $this->role === self::ASSISTANT ? ChatMarkdown::toDoc($this->content) : null,
             'error' => $this->meta['error'] ?? null,

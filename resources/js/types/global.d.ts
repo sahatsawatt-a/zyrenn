@@ -24,6 +24,8 @@ declare module '@inertiajs/core' {
             // Every project the user is in, by name
             projects: ProjectSummary[];
             sidebarOpen: boolean;
+            // Messages from others not yet read, in rooms shared with people
+            unreadChats: number;
             [key: string]: unknown;
         };
     }

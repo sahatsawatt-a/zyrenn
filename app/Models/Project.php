@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Chat\ChatRoom;
 use App\Models\Concerns\HasRefId;
 use App\Models\Concerns\OwnsContent;
 use App\Models\Drive\DriveFile;
@@ -84,6 +85,16 @@ class Project extends Model implements Owner
     public function memberships(): HasMany
     {
         return $this->hasMany(Membership::class);
+    }
+
+    /**
+     * The project's chat groups.
+     *
+     * @return HasMany<ChatRoom, $this>
+     */
+    public function chatRooms(): HasMany
+    {
+        return $this->hasMany(ChatRoom::class);
     }
 
     /**

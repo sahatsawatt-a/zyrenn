@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { MessageSquare, Plus } from '@lucide/vue';
+import { Bot, Plus } from '@lucide/vue';
+import RoomList from '@/components/chat/RoomList.vue';
 import EmptyState from '@/components/folders/EmptyState.vue';
 import PageHeader from '@/components/folders/PageHeader.vue';
 import { Button } from '@/components/ui/button';
-import { formatRelativeTime } from '@/lib/utils';
-import { index, show, store } from '@/routes/chats';
+import { index, store } from '@/routes/chats';
 import { index as connectionsIndex } from '@/routes/ai-connections';
 
 type Room = {
@@ -20,20 +20,20 @@ type Room = {
 defineProps<{ rooms: Room[]; hasConnections: boolean }>();
 
 defineOptions({
-    layout: { breadcrumbs: [{ title: 'Chat', href: index() }] },
+    layout: { breadcrumbs: [{ title: 'AI chat', href: index() }] },
 });
 
 const start = () => router.post(store().url);
 </script>
 
 <template>
-    <Head title="Chat" />
+    <Head title="AI chat" />
 
     <div class="mx-auto w-full max-w-4xl space-y-6 p-4 md:p-6">
         <PageHeader
-            :icon="MessageSquare"
-            title="Chat"
-            description="Rooms where you talk with a model of your own, or just keep notes to yourself."
+            :icon="Bot"
+            title="AI chat"
+            description="Rooms where you talk with a model of your own, or just keep notes to yourself. Talking with people is under Messages."
         >
             <Button @click="start"><Plus /> New chat</Button>
         </PageHeader>
@@ -52,39 +52,21 @@ const start = () => router.post(store().url);
             to your Ollama or an OpenRouter key first.
         </p>
 
-        <EmptyState
-            v-if="!rooms.length"
-            :icon="MessageSquare"
-            title="No chats yet"
-        >
+        <EmptyState v-if="!rooms.length" :icon="Bot" title="No chats yet">
             <p class="text-muted-foreground text-sm">
                 Start one to ask your model something.
             </p>
         </EmptyState>
 
-        <ul v-else class="divide-y rounded-xl border">
-            <li v-for="room in rooms" :key="room.ref_id">
-                <Link
-                    :href="show(room.ref_id)"
-                    class="hover:bg-accent/50 flex items-center gap-3 px-4 py-3 transition-colors"
-                >
-                    <MessageSquare
-                        class="text-muted-foreground size-4 shrink-0"
-                    />
-                    <div class="min-w-0 flex-1">
-                        <p class="truncate font-medium">
-                            {{ room.title || 'New chat' }}
-                        </p>
-                        <p class="text-muted-foreground truncate text-xs">
-                            {{ room.agent ?? 'No agent' }} · {{ room.messages }}
-                            {{ room.messages === 1 ? 'message' : 'messages' }}
-                        </p>
-                    </div>
-                    <span class="text-muted-foreground shrink-0 text-xs">
-                        {{ formatRelativeTime(room.updated_at) }}
-                    </span>
-                </Link>
-            </li>
-        </ul>
+        <RoomList
+            v-else
+            :icon="Bot"
+            :rooms="
+                rooms.map((room) => ({
+                    ...room,
+                    detail: `${room.agent ?? 'No agent'} · ${room.messages} ${room.messages === 1 ? 'message' : 'messages'}`,
+                }))
+            "
+        />
     </div>
 </template>

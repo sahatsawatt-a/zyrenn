@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Chat;
 
+use App\Events\ChatMessagePosted;
 use App\Http\Controllers\Controller;
 use App\Models\Chat\ChatMessage;
 use App\Models\Chat\ChatRoom;
 use App\Support\Chat\AiFailed;
 use App\Support\Chat\ChatEngine;
+use App\Support\Live\Live;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -22,7 +24,7 @@ class ChatMessageController extends Controller
      */
     public function store(Request $request, ChatRoom $room, ChatEngine $engine): StreamedResponse
     {
-        Gate::authorize('update', $room);
+        Gate::authorize('post', $room);
 
         $validated = $request->validate([
             'content' => ['required', 'string', 'max:20000'],
@@ -34,8 +36,14 @@ class ChatMessageController extends Controller
             'content' => $validated['content'],
         ]);
 
-        // A room is named after what it was first about, until it is named
-        if ($room->title === '') {
+        // Everyone else in a shared room sees it at once, wherever they are
+        if ($room->kind !== ChatRoom::PERSONAL) {
+            $said->load('author:id,name');
+            Live::tell(new ChatMessagePosted($room, $said));
+        }
+
+        // One's own room is named after what it was first about, until it is named
+        if ($room->kind === ChatRoom::PERSONAL && $room->title === '') {
             $room->update(['title' => mb_strimwidth(preg_replace('/\s+/', ' ', trim($said->content)), 0, 60, '…')]);
         }
 
@@ -53,7 +61,7 @@ class ChatMessageController extends Controller
                 flush();
             };
 
-            $send('user', ['message' => $said->toChat(), 'title' => $room->title]);
+            $send('user', ['message' => $said->toChat(), 'title' => $room->titleFor($said->author)]);
 
             if (! $room->hasAgent()) {
                 $send('done', ['message' => null]);
