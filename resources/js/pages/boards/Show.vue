@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, router, setLayoutProps } from '@inertiajs/vue3';
-import { Check, Copy, Trash2 } from '@lucide/vue';
+import { Check, Copy, FileDown, Trash2 } from '@lucide/vue';
 import { useDebounceFn, useEventListener } from '@vueuse/core';
 import { computed, onBeforeUnmount, ref, watchEffect } from 'vue';
 import { toast } from 'vue-sonner';
@@ -32,8 +32,8 @@ import {
     show,
     update,
 } from '@/routes/boards';
-import BoardExportMenu from '@/components/Board/BoardExportMenu.vue';
-import { deliver, fetchExport } from '@/lib/exporting';
+import PdfPreview from '@/components/PdfPreview.vue';
+import { fetchExport } from '@/lib/exporting';
 import { index as projectIndex } from '@/routes/projects/boards';
 
 type Board = {
@@ -205,47 +205,127 @@ function onTitleInput(): void {
 }
 
 // The server draws the saved board, so anything still unsaved goes first --
-// shared, whatever anyone has drawn that the app has not been handed yet
-const exporting = ref(false);
+// shared, whatever anyone has drawn that the app has not been handed yet.
+// Shown before it is handed over, the way a note's PDF is (PdfPreview).
+type Format = 'pdf' | 'png';
 
-async function exportBoard(
-    type: 'pdf' | 'png',
-    to: 'download' | 'drive',
-): Promise<void> {
-    if (exporting.value) {
-        return;
+/** What the server is about to draw: the board as everyone has it now. */
+const currentFrames = () =>
+    (shared ? viewed.value : items).filter((item) => item.kind === 'frame');
+
+// Counted as the dialog opens, so the choice says what it will make
+const frameCount = ref(0);
+
+const formats = computed<{ id: Format; label: string; hint: string }[]>(() => [
+    {
+        id: 'pdf',
+        label: 'PDF',
+        hint: frameCount.value
+            ? `One file, a page for each of the ${frameCount.value} frame${frameCount.value === 1 ? '' : 's'}`
+            : 'One file, the whole board on a page',
+    },
+    {
+        id: 'png',
+        label: 'Pictures',
+        hint: frameCount.value
+            ? `A PNG of each of the ${frameCount.value} frame${frameCount.value === 1 ? '' : 's'}`
+            : 'A PNG of the whole board',
+    },
+]);
+
+const format = ref<Format>('pdf');
+const previewing = ref(false);
+const drawing = ref('Drawing the board…');
+
+function openExport(): void {
+    frameCount.value = currentFrames().length;
+    previewing.value = true;
+}
+
+const boardName = () => title.value.trim() || 'Untitled board';
+
+/**
+ * Anything still unsaved goes to the app first -- shared, whatever anyone
+ * has drawn that it has not been handed yet -- since the server draws what
+ * it has.
+ */
+async function freshen(): Promise<void> {
+    if (shared) {
+        await shared.flush({ everyone: true });
+    } else if (editable) {
+        await save();
     }
 
-    exporting.value = true;
-    const loading = toast.loading('Drawing the board…');
-
-    try {
-        if (shared) {
-            await shared.flush({ everyone: true });
-        } else if (editable) {
-            await save();
-        }
-
-        if (status.value === 'error') {
-            throw new Error(
-                'Couldn’t save the latest changes, so the export would be out of date.',
-            );
-        }
-
-        const file = await fetchExport(
-            (type === 'pdf' ? pdf : png).url(props.board.ref_id),
-            `${title.value.trim() || 'Untitled board'}.${type}`,
-            type === 'pdf' ? 'application/pdf' : 'image/png',
-            `Couldn’t draw this board as a ${type.toUpperCase()}.`,
+    if (status.value === 'error') {
+        throw new Error(
+            'Couldn’t save the latest changes, so the export would be out of date.',
         );
-
-        await deliver(file, to);
-    } catch (error) {
-        toast.error((error as Error).message);
-    } finally {
-        toast.dismiss(loading);
-        exporting.value = false;
     }
+}
+
+/**
+ * One frame as a picture. Numbered when it is one of a set, so they list in
+ * the order they are presented and two frames of one name stay two files.
+ */
+function drawFrame(frame: Item, number?: number): Promise<File> {
+    const named = frame.text?.trim() || 'Frame';
+
+    return fetchExport(
+        png.url(props.board.ref_id, { query: { frame: frame.id } }),
+        `${boardName()} - ${number ? `${number}. ` : ''}${named}.png`,
+        'image/png',
+        `Couldn’t draw “${named}” as a picture.`,
+    );
+}
+
+/** Every frame's picture, a couple at a time, in the order they are presented. */
+async function drawFrames(frames: Item[]): Promise<File[]> {
+    const pictures: File[] = [];
+    let next = 0;
+    let done = 0;
+
+    drawing.value = `Drawing frame 1 of ${frames.length}…`;
+
+    const worker = async () => {
+        while (next < frames.length) {
+            const index = next++;
+
+            pictures[index] = await drawFrame(frames[index], index + 1);
+            done++;
+            drawing.value = `Drawing frame ${Math.min(done + 1, frames.length)} of ${frames.length}…`;
+        }
+    };
+
+    // Each holds a browser on the server for a moment, so not all at once
+    await Promise.all([worker(), worker()]);
+
+    return pictures;
+}
+
+async function printBoard(): Promise<File | File[]> {
+    drawing.value = 'Drawing the board…';
+    await freshen();
+
+    const type = format.value;
+    const frames = currentFrames();
+
+    if (type === 'png' && frames.length) {
+        return drawFrames(frames);
+    }
+
+    return fetchExport(
+        (type === 'pdf' ? pdf : png).url(props.board.ref_id),
+        `${boardName()}.${type}`,
+        type === 'pdf' ? 'application/pdf' : 'image/png',
+        `Couldn’t draw this board as a ${type.toUpperCase()}.`,
+    );
+}
+
+/** A frame right-clicked on the canvas, as a picture of its own. */
+async function pictureOfFrame(frame: Item): Promise<File> {
+    await freshen();
+
+    return drawFrame(frame);
 }
 
 const refCopied = ref(false);
@@ -315,7 +395,15 @@ const statusLabel = computed(() => {
             >
             <PresenceAvatars :others="others" />
             <div class="ml-auto">
-                <BoardExportMenu :busy="exporting" @export="exportBoard" />
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    data-test="board-export"
+                    @click="openExport"
+                >
+                    <FileDown />
+                    Export
+                </Button>
             </div>
             <Button
                 variant="ghost"
@@ -338,10 +426,10 @@ const statusLabel = computed(() => {
         :title="title || 'Untitled board'"
         :status="statusLabel"
         :shared="shared"
+        :picture-of-frame="pictureOfFrame"
         @change="onBoardChange"
     >
-        <template #actions>
-            <PresenceAvatars :others="others" class="mr-1" />
+        <template #title>
             <input
                 v-model="title"
                 class="board-title"
@@ -350,6 +438,10 @@ const statusLabel = computed(() => {
                 :readonly="shared !== null && !shared.synced.value"
                 @input="onTitleInput"
             />
+        </template>
+
+        <template #actions>
+            <PresenceAvatars :others="others" class="mr-1" />
 
             <Button
                 variant="ghost"
@@ -361,11 +453,25 @@ const statusLabel = computed(() => {
                 <Copy v-else />
             </Button>
 
-            <BoardExportMenu :busy="exporting" @export="exportBoard" />
+            <Button
+                variant="ghost"
+                size="sm"
+                title="Export as a PDF or a picture"
+                data-test="board-export"
+                @click="openExport"
+            >
+                <FileDown />
+                Export
+            </Button>
 
             <Dialog>
                 <DialogTrigger as-child>
-                    <Button variant="ghost" size="sm" data-test="delete-board">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Delete this board"
+                        data-test="delete-board"
+                    >
                         <Trash2 />
                     </Button>
                 </DialogTrigger>
@@ -394,6 +500,17 @@ const statusLabel = computed(() => {
             </Dialog>
         </template>
     </BoardCanvas>
+
+    <PdfPreview
+        v-model:open="previewing"
+        v-model:chosen="format"
+        :styles="formats"
+        :print="printBoard"
+        title="Export preview"
+        styles-label="Export as"
+        :working="drawing"
+        wait-for-choice
+    />
 </template>
 
 <style scoped>

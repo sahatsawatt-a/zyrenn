@@ -38,7 +38,7 @@ await runBoard(
 
         // a second shape, joined to the first: a line has no box of its own and
         // is the thing most easily lost when a board is drawn somewhere else
-        await page.locator('[data-test="tool-rect"]').click();
+        await b.pick('rect');
         await page.mouse.move(at(0.32, 0.26).x, at(0.32, 0.26).y);
         await page.mouse.down();
         await page.mouse.move(at(0.42, 0.42).x, at(0.42, 0.42).y, { steps: 6 });

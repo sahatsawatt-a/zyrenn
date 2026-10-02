@@ -21,6 +21,8 @@ type Show = {
     height: Ref<number>;
     /** What fills the screen while presenting: the board, without the app round it. */
     screen?: () => HTMLElement | null;
+    /** Back to everything on the board, once the show is over. */
+    overview?: (options: { animate: boolean }) => void;
 };
 
 /**
@@ -31,7 +33,15 @@ type Show = {
  * lands, which also keeps the frame filling the screen if the window is
  * resized midway through.
  */
-export function usePresenting({ board, camera, width, height, screen }: Show) {
+export function usePresenting({
+    board,
+    camera,
+    width,
+    height,
+    screen,
+    overview = ({ animate }) =>
+        camera.focus(boundsOfAll(board.items.value), { animate }),
+}: Show) {
     const presenting = ref(false);
     const frameIndex = ref(0);
 
@@ -68,7 +78,7 @@ export function usePresenting({ board, camera, width, height, screen }: Show) {
 
         if (refitOnResize === 'all') {
             refitOnResize = null;
-            camera.focus(boundsOfAll(board.items.value));
+            overview({ animate: false });
         }
     });
 
@@ -91,7 +101,7 @@ export function usePresenting({ board, camera, width, height, screen }: Show) {
     const stopPresenting = () => {
         presenting.value = false;
         refitOnResize = 'all';
-        camera.focus(boundsOfAll(board.items.value), { animate: true });
+        overview({ animate: true });
 
         if (document.fullscreenElement) {
             void document.exitFullscreen().catch(() => undefined);

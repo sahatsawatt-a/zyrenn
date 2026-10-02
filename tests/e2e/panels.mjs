@@ -56,7 +56,8 @@ await runBoard('/demo/konva', async (b) => {
     const onFrame = async () =>
         Number((await groups.first().innerText()).match(/(\d+)\s*$/)?.[1]);
     const before = await onFrame();
-    const shape = await draw('rect', 0.3, 0.3, 0.08, 0.1);
+    // In the first frame's empty right-hand corner, clear of its stickies
+    const shape = await b.drawAt('rect', 730, 120, 150, 110);
     check(
         'a new shape is filed under the frame it was drawn on',
         (await onFrame()) === before + 1,
@@ -69,7 +70,7 @@ await runBoard('/demo/konva', async (b) => {
     );
 
     // --- a connector goes with the shapes it joins, having no box of its own
-    const second = await draw('rect', 0.46, 0.3, 0.08, 0.1);
+    const second = await b.drawAt('rect', 730, 360, 150, 110);
     const joined = await onFrame();
     await join(shape, second);
     check(

@@ -110,6 +110,30 @@ class BoardRenderTest extends TestCase
             ->assertHeader('Content-Type', 'image/png');
     }
 
+    public function test_a_picture_can_be_had_a_frame_at_a_time()
+    {
+        $this->fakeRenderer();
+        $user = User::factory()->create();
+        $board = $this->board($user);
+
+        $response = $this->actingAs($user)->get(route('boards.png', [$board, 'frame' => 'two']));
+
+        $response->assertOk()->assertHeader('Content-Type', 'image/png');
+        $this->assertStringContainsString("filename*=utf-8''Q3-Q4%20deck%20-%20Two.png", $response->headers->get('Content-Disposition'));
+        Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/png')
+            && str_contains($request['url'], 'frame=two')
+            && $request['height'] === 900);
+
+        // Named by its title as well as its id, as get-board takes it
+        $byTitle = $this->actingAs($user)->get(route('boards.png', [$board, 'frame' => 'ONE']));
+        $byTitle->assertOk();
+        $this->assertStringContainsString('%20-%20One.png', $byTitle->headers->get('Content-Disposition'));
+
+        $this->actingAs($user)
+            ->get(route('boards.png', [$board, 'frame' => 'three']))
+            ->assertNotFound();
+    }
+
     public function test_the_render_page_opens_only_by_its_signed_link_and_signs_its_pictures_too()
     {
         $this->fakeRenderer();

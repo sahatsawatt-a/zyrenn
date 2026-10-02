@@ -23,6 +23,9 @@ const emit = defineEmits<{
     toggle: [{ id: string; field: 'hidden' | 'locked' }];
 }>();
 
+// The whole list, folded away when the settings above want the room
+const folded = ref(false);
+
 const collapsed = ref(new Set<string>());
 
 const toggleGroup = (key: string) => {
@@ -61,9 +64,20 @@ const onDrop = (target: Item) => {
 
 <template>
     <section class="layers" data-test="layers">
-        <p class="layers-heading">Layers</p>
+        <button
+            type="button"
+            class="layers-heading"
+            :aria-expanded="!folded"
+            data-test="layers-fold"
+            @click="folded = !folded"
+        >
+            <ChevronRight v-if="folded" class="size-3.5" />
+            <ChevronDown v-else class="size-3.5" />
+            Layers
+            <span class="layers-total">{{ items.length }}</span>
+        </button>
 
-        <div class="layers-list">
+        <div v-show="!folded" class="layers-list">
             <template v-for="group in groups" :key="group.key">
                 <!-- A frame is the heading for whatever sits on it -->
                 <div
@@ -210,13 +224,16 @@ const onDrop = (target: Item) => {
 <style scoped>
 .layers {
     display: flex;
-    min-height: 0;
-    flex: 1;
     flex-direction: column;
     gap: 0.375rem;
 }
 
 .layers-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-left: -0.25rem;
+    cursor: pointer;
     font-size: 0.6875rem;
     font-weight: 600;
     letter-spacing: 0.04em;
@@ -224,13 +241,16 @@ const onDrop = (target: Item) => {
     color: var(--muted-foreground);
 }
 
+.layers-total {
+    margin-left: auto;
+    font-weight: 400;
+    letter-spacing: 0;
+}
+
 .layers-list {
     display: flex;
-    min-height: 4rem;
-    flex: 1;
     flex-direction: column;
     gap: 1px;
-    overflow-y: auto;
 }
 
 /* The frame a group belongs to, and how many things are on it */

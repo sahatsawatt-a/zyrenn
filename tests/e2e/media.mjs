@@ -200,7 +200,7 @@ await runBoard('/demo/konva', async (b) => {
     );
 
     const wide = (await page.locator('.math-item').first().boundingBox()).width;
-    await page.locator('[data-test="zoom"]').click();
+    await page.locator('[data-test="zoom-in"]').click();
     await page.waitForTimeout(900);
     check(
         'the formula follows the camera',

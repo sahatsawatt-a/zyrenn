@@ -132,28 +132,192 @@ await runBoard(
             (await page.locator('[data-test="exit-present"]').count()) === 0,
         );
 
-        // --- a PDF, a frame to a page, and a PNG of it all
-        for (const [test, ending] of [
-            ['board-export-pdf', '.pdf'],
-            ['board-export-png', '.png'],
-        ]) {
-            await page.locator('[data-test="board-export"]').click();
-            const download = page.waitForEvent('download', { timeout: 60000 });
-            await page.locator(`[data-test="${test}"]`).click();
-            const file = await download;
-            const path = `${SHOTS}/labels-export${ending}`;
-            await file.saveAs(path);
-            const head = (await import('node:fs'))
-                .readFileSync(path)
-                .subarray(0, 4)
-                .toString('latin1');
-            check(
-                `the board downloads as a ${ending.slice(1).toUpperCase()}`,
-                file.suggestedFilename().endsWith(ending) &&
-                    (ending === '.pdf' ? head === '%PDF' : head === '\x89PNG'),
-                file.suggestedFilename(),
-            );
-        }
+        // --- a second frame, so there are pictures to be had one by one
+        await page.locator('[data-test="panel-toggle"]').click();
+        await draw('frame', 0.68, 0.1, 0.25, 0.3);
+        await page.locator('[data-test="panel-toggle"]').click();
+
+        // --- a PDF, a frame to a page, and a picture of each frame -- each
+        // shown first, and the very file shown is the one handed over
+        const fs = await import('node:fs');
+        const headOf = async (download, path) => {
+            await download.saveAs(path);
+
+            return fs.readFileSync(path).subarray(0, 4).toString('latin1');
+        };
+
+        // Nothing is drawn until it is chosen, and nothing twice
+        const drawn = [];
+        page.on('request', (request) => {
+            const at = new URL(request.url()).pathname;
+
+            if (/\/boards\/\w+\/(pdf|png)$/.test(at)) {
+                drawn.push(at.split('/').pop());
+            }
+        });
+
+        await page.locator('[data-test="board-export"]').click();
+        await page.locator('[data-test="pdf-preview-choice"]').waitFor();
+        await page.waitForTimeout(800);
+        check(
+            'export asks what to make before making anything',
+            drawn.length === 0,
+            drawn.join(', ') || 'nothing drawn',
+        );
+        await page.locator('[data-test="pdf-preview-choose-pdf"]').click();
+        await page
+            .locator('[data-test="pdf-preview-frame"]')
+            .waitFor({ timeout: 60000 });
+        check('the PDF is previewed before it is had', true);
+        let download = page.waitForEvent('download', { timeout: 60000 });
+        await page.locator('[data-test="pdf-preview-download"]').click();
+        let file = await download;
+        check(
+            'the board downloads as a PDF',
+            file.suggestedFilename().endsWith('.pdf') &&
+                (await headOf(file, `${SHOTS}/labels-export.pdf`)) === '%PDF',
+            file.suggestedFilename(),
+        );
+
+        await page.locator('[data-test="pdf-preview-style-png"]').click();
+        await page
+            .locator('[data-test="pdf-preview-gallery"]')
+            .waitFor({ timeout: 90000 });
+        const pictures = page.locator('[data-test="pdf-preview-image"]');
+        check(
+            'pictures come a frame at a time',
+            (await pictures.count()) === 2,
+            `${await pictures.count()} pictures`,
+        );
+        const sizes = await pictures.evaluateAll((images) =>
+            images.map(
+                (image) => `${image.naturalWidth}x${image.naturalHeight}`,
+            ),
+        );
+        check(
+            'each the shape of its own frame',
+            sizes.every((size) => size.startsWith('1600x')) &&
+                sizes[0] !== sizes[1],
+            sizes.join(', '),
+        );
+        await page.screenshot({ path: `${SHOTS}/board-export-preview.png` });
+
+        const before = drawn.length;
+        await page.locator('[data-test="pdf-preview-style-pdf"]').click();
+        await page.locator('[data-test="pdf-preview-frame"]').waitFor();
+        await page.locator('[data-test="pdf-preview-style-png"]').click();
+        await page.locator('[data-test="pdf-preview-gallery"]').waitFor();
+        check(
+            'going back to a format shows it as it was drawn',
+            drawn.length === before,
+            `${drawn.length - before} drawn again`,
+        );
+
+        download = page.waitForEvent('download', { timeout: 60000 });
+        await page
+            .locator('[data-test="pdf-preview-download-one"]')
+            .nth(1)
+            .click();
+        file = await download;
+        check(
+            'one frame downloads on its own, numbered',
+            file.suggestedFilename().endsWith(' - 2. Frame.png') &&
+                (await headOf(file, `${SHOTS}/labels-export.png`)) ===
+                    '\x89PNG',
+            file.suggestedFilename(),
+        );
+
+        const all = [];
+        page.on('download', (each) => all.push(each.suggestedFilename()));
+        await page.locator('[data-test="pdf-preview-download"]').click();
+        await page.waitForTimeout(2500);
+        check(
+            'and Download all hands over every one',
+            all.length === 2,
+            all.join(', '),
+        );
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(400);
+
+        // --- a frame, right-clicked, saved as a picture of its own
+        const box = await page.locator('[data-zoom]').boundingBox();
+        const onFrame = {
+            x: box.x + box.width * 0.3,
+            y: box.y + box.height * 0.6,
+        };
+        await page.mouse.click(onFrame.x, onFrame.y, { button: 'right' });
+        const menu = page.locator('[data-test="frame-menu"]');
+        await menu.waitFor({ timeout: 5000 });
+        check(
+            'right-clicking a frame offers its picture',
+            await menu.isVisible(),
+        );
+
+        download = page.waitForEvent('download', { timeout: 60000 });
+        await page.locator('[data-test="frame-download"]').click();
+        file = await download;
+        check(
+            'and Download picture saves just that frame',
+            file.suggestedFilename().endsWith(' - Frame.png') &&
+                (await headOf(file, `${SHOTS}/labels-frame.png`)) === '\x89PNG',
+            file.suggestedFilename(),
+        );
+
+        await page
+            .context()
+            .grantPermissions(['clipboard-read', 'clipboard-write']);
+        await page.mouse.click(onFrame.x, onFrame.y, { button: 'right' });
+        await menu.waitFor();
+        await page.locator('[data-test="frame-copy"]').click();
+        await page
+            .getByText(/Copied “Frame” as a picture/)
+            .waitFor({ timeout: 60000 });
+        const copied = await page.evaluate(async () => {
+            const [entry] = await navigator.clipboard.read();
+
+            return entry.types.join(',');
+        });
+        check(
+            'Copy picture puts a PNG on the clipboard',
+            copied.includes('image/png'),
+            copied,
+        );
+
+        // Off the frames it is the browser's own menu, not this one: just
+        // left of the leftmost frame, clear of the tool rail
+        const frameLeft = await page.evaluate(() =>
+            Math.min(
+                ...window.Konva.stages[0]
+                    .find('Group')
+                    .filter((group) => group.findOne('.frame-title'))
+                    .map((group) => group.getClientRect().x),
+            ),
+        );
+        await page.locator('[data-test="zoom-out"]').click();
+        await page.locator('[data-test="zoom-out"]').click();
+        await page.waitForTimeout(300);
+        const leftmost = await page.evaluate(() =>
+            Math.min(
+                ...window.Konva.stages[0]
+                    .find('Group')
+                    .filter((group) => group.findOne('.frame-title'))
+                    .map((group) => group.getClientRect().x),
+            ),
+        );
+        await page.mouse.click(
+            box.x + leftmost - 30,
+            box.y + box.height * 0.5,
+            {
+                button: 'right',
+            },
+        );
+        await page.waitForTimeout(400);
+        check(
+            'off the frames, there is no frame menu',
+            !(await menu.isVisible()),
+            `clicked ${Math.round(leftmost - 30)}px in, frames from ${Math.round(frameLeft)} → ${Math.round(leftmost)}`,
+        );
+        await page.keyboard.press('Escape');
     },
     { canvas: false },
 );

@@ -2,14 +2,23 @@
 import {
     ChevronLeft,
     ChevronRight,
+    ClipboardCopy,
+    Download,
+    HardDrive,
+    Maximize,
     Minus,
+    PanelRight,
+    Play,
     Plus,
-    Redo2,
-    Undo2,
     X,
 } from '@lucide/vue';
 import type { HocuspocusProvider } from '@hocuspocus/provider';
-import { useElementSize, useEventListener } from '@vueuse/core';
+import {
+    useDebounceFn,
+    useElementSize,
+    useEventListener,
+    useLocalStorage,
+} from '@vueuse/core';
 import Konva from 'konva';
 import type { Ref } from 'vue';
 import type * as Y from 'yjs';
@@ -41,11 +50,22 @@ import {
 import InspectorPanel from './InspectorPanel.vue';
 import { isImageFile, uploadToDrive } from '@/lib/drive';
 import MediaPickerDialog from '@/components/media/MediaPickerDialog.vue';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { deliver } from '@/lib/exporting';
+import { toast } from 'vue-sonner';
 import MediaViewer from '@/components/MediaViewer.vue';
 import { useMediaViewer } from '@/composables/useMediaViewer';
 import BoardItem from './BoardItem.vue';
 import BoardOverlay from './BoardOverlay.vue';
 import BoardFormulae from './BoardFormulae.vue';
+import BoardShortcuts from './BoardShortcuts.vue';
 import BoardVideoControls from './BoardVideoControls.vue';
 import ShapeLibrary from './ShapeLibrary.vue';
 import { connectorPoints } from '../../composables/board/connectors.js';
@@ -97,8 +117,18 @@ const props = withDefaults(
             me: { name: string; color: string };
             synced: Ref<boolean>;
         } | null;
+        // Draws one frame as a picture, on the server: given, a right-click
+        // on a frame offers to save it. The demo board is saved nowhere, so
+        // there is nothing for the server to draw and no menu.
+        pictureOfFrame?: ((frame: Item) => Promise<File>) | null;
     }>(),
-    { items: null, title: '', status: '', shared: null },
+    {
+        items: null,
+        title: '',
+        status: '',
+        shared: null,
+        pictureOfFrame: null,
+    },
 );
 
 const emit = defineEmits<{ change: [Item[]] }>();
@@ -190,7 +220,14 @@ const {
     showFrame,
     startPresenting,
     stopPresenting,
-} = usePresenting({ board, camera, width, height, screen: () => page.value });
+} = usePresenting({
+    board,
+    camera,
+    width,
+    height,
+    screen: () => page.value,
+    overview: (options) => fitAll(options),
+});
 
 const spaceHeld = ref(false);
 
@@ -340,6 +377,100 @@ const {
     startEditing: (id) => startEditing(id),
 });
 
+// A drag that wanders over a panel laid on the canvas still belongs to the
+// canvas: without this, letting go over one is never heard, and a marquee or a
+// half-drawn shape is left hanging from the pointer
+const onStagePointerDown = (event: Konva.KonvaEventObject<PointerEvent>) => {
+    onPointerDown(event);
+
+    try {
+        stage()?.content.setPointerCapture(event.evt.pointerId);
+    } catch {
+        // a pointer already gone: nothing to hold on to
+    }
+};
+
+// --------------------------------------------------- A frame, right-clicked
+const frameMenu = ref<{ frame: Item; x: number; y: number } | null>(null);
+const frameMenuOpen = computed({
+    get: () => frameMenu.value !== null,
+    set: (open) => {
+        if (!open) frameMenu.value = null;
+    },
+});
+
+// Copying a picture is a newer thing than downloading one
+const canCopyPicture =
+    typeof window !== 'undefined' &&
+    'ClipboardItem' in window &&
+    !!navigator.clipboard?.write;
+
+/** The frame a board point is on -- the topmost, where frames overlap. */
+const frameAt = (point: { x: number; y: number }): Item | null => {
+    for (let index = board.items.value.length - 1; index >= 0; index--) {
+        const item = board.items.value[index];
+
+        if (
+            item.kind === 'frame' &&
+            !item.hidden &&
+            overlaps(boundsOf(item), { ...point, width: 1, height: 1 })
+        ) {
+            return item;
+        }
+    }
+
+    return null;
+};
+
+// Anywhere on a frame -- its title, its empty middle, or something sitting
+// on it -- is the frame, for this menu; anywhere else, the browser's own
+const onContextMenu = (event: Konva.KonvaEventObject<PointerEvent>) => {
+    const point = stage()?.getPointerPosition();
+
+    if (!props.pictureOfFrame || presenting.value || !point) {
+        return;
+    }
+
+    const frame = frameAt(camera.toBoard(point));
+
+    if (!frame) {
+        return;
+    }
+
+    event.evt.preventDefault();
+    frameMenu.value = { frame, x: point.x, y: point.y };
+};
+
+const frameName = (frame: Item) => frame.text?.trim() || 'Frame';
+
+async function saveFrame(to: 'download' | 'drive' | 'copy'): Promise<void> {
+    const frame = frameMenu.value?.frame;
+    const draw = props.pictureOfFrame;
+
+    if (!frame || !draw) {
+        return;
+    }
+
+    const loading = toast.loading(`Drawing “${frameName(frame)}”…`);
+
+    try {
+        if (to === 'copy') {
+            // Handed the drawing still to come, so the copy keeps the click
+            // that asked for it while the server draws
+            await navigator.clipboard.write([
+                new ClipboardItem({ 'image/png': draw(frame) }),
+            ]);
+            toast.success(`Copied “${frameName(frame)}” as a picture`);
+        } else {
+            await deliver(await draw(frame), to);
+        }
+    } catch (error) {
+        toast.error((error as Error).message);
+    } finally {
+        toast.dismiss(loading);
+    }
+}
+
 // ------------------------------------------------------------------ Pictures
 const {
     importing,
@@ -358,7 +489,17 @@ const {
 });
 
 // ------------------------------------------------------------------ Actions
-const fitAll = () => camera.focus(boundsOfAll(board.items.value));
+// The panel on the right, open or put away; remembered across boards, since
+// it is how a person likes to work rather than something about this board
+const panelOpen = useLocalStorage('board.panel', true);
+
+// Fitted into the part of the canvas the floating tools leave uncovered
+const fitAll = ({ animate = false } = {}) =>
+    camera.focus(boundsOfAll(board.items.value), {
+        animate,
+        padding: 48,
+        inset: { left: 60, right: panelOpen.value ? 280 : 0 },
+    });
 
 const removeSelection = () => board.remove([...board.selection.value]);
 
@@ -542,7 +683,36 @@ onMounted(() => {
     transformer?.on('transform', applyTransform);
     transformer?.on('transformend', applyTransform);
 
-    nextTick(fitAll);
+    // Opened on everything there is: as soon as the canvas has a size, and
+    // again once the page has finished laying itself out -- its size settles
+    // over a few frames, and can even read nothing for one of them -- unless
+    // the camera has been moved in between
+    let fittedTo = '';
+    const cameraNow = () =>
+        `${camera.position.value.x},${camera.position.value.y},${camera.scale.value}`;
+    const fitAgain = useDebounceFn(() => {
+        stopWaiting();
+
+        if (width.value && cameraNow() === fittedTo) {
+            fitAll();
+        }
+    }, 150);
+    const stopWaiting = watch(
+        [width, height],
+        ([across, down]) => {
+            if (!across || !down) {
+                return;
+            }
+
+            if (!fittedTo) {
+                fitAll();
+                fittedTo = cameraNow();
+            }
+
+            void fitAgain();
+        },
+        { immediate: true },
+    );
 });
 
 // What the item list looks like to the template, in paint order
@@ -568,317 +738,396 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
     <div
         ref="page"
         :style="pageStyle"
-        class="flex min-h-0 flex-none flex-col gap-3 overflow-hidden"
-        :class="presenting ? 'bg-background p-0' : 'p-4 md:p-6'"
+        class="flex min-h-0 flex-none flex-col overflow-hidden"
+        :class="{ 'bg-background': presenting }"
     >
-        <div
-            v-show="!presenting"
-            class="flex flex-wrap items-center justify-between gap-3"
-        >
-            <div class="min-w-0">
-                <h1 class="truncate text-lg font-semibold">
-                    {{ title || 'Board' }}
-                </h1>
-                <p class="text-muted-foreground text-xs">
-                    <template v-if="status">{{ status }} · </template>Pick a
-                    shape on the left and drag it out. Space drags the canvas,
-                    scroll zooms, double-click any shape to label it.
-                </p>
+        <!-- One slim bar: what this is, where it stands, and what to do with it -->
+        <div v-show="!presenting" class="board-bar">
+            <div class="flex min-w-0 items-center gap-2">
+                <slot name="title">
+                    <h1 class="truncate px-2 text-sm font-semibold">
+                        {{ title || 'Board' }}
+                    </h1>
+                </slot>
+                <span
+                    v-if="status"
+                    class="text-muted-foreground truncate text-xs"
+                    data-test="board-status"
+                    >{{ status }}</span
+                >
             </div>
 
-            <div class="flex items-center gap-2">
+            <div class="ml-auto flex shrink-0 items-center gap-1">
                 <slot name="actions" />
 
-                <div class="flex items-center gap-1 rounded-lg border p-1">
-                    <button
-                        type="button"
-                        class="board-zoom"
-                        title="Undo (Ctrl+Z)"
-                        data-test="undo"
-                        :disabled="!board.canUndo.value"
-                        @click="board.undo"
-                    >
-                        <Undo2 class="size-4" />
-                    </button>
-                    <button
-                        type="button"
-                        class="board-zoom"
-                        title="Redo (Ctrl+Shift+Z)"
-                        :disabled="!board.canRedo.value"
-                        @click="board.redo"
-                    >
-                        <Redo2 class="size-4" />
-                    </button>
-                    <span class="bg-border mx-1 h-5 w-px" />
-                    <button
-                        type="button"
-                        class="board-zoom"
-                        title="Zoom out"
-                        @click="camera.zoomBy(0.8)"
-                    >
-                        <Minus class="size-3.5" />
-                    </button>
-                    <button
-                        type="button"
-                        class="board-zoom w-14"
-                        data-test="zoom"
-                        title="Fit everything"
-                        @click="fitAll"
-                    >
-                        {{ Math.round(camera.scale.value * 100) }}%
-                    </button>
-                    <button
-                        type="button"
-                        class="board-zoom"
-                        title="Zoom in"
-                        @click="camera.zoomBy(1.25)"
-                    >
-                        <Plus class="size-3.5" />
-                    </button>
-                </div>
+                <BoardShortcuts />
+
+                <button
+                    type="button"
+                    class="board-zoom"
+                    :class="{ 'is-on': panelOpen }"
+                    :title="panelOpen ? 'Hide the panel' : 'Show the panel'"
+                    data-test="panel-toggle"
+                    @click="panelOpen = !panelOpen"
+                >
+                    <PanelRight class="size-4" />
+                </button>
+
+                <button
+                    type="button"
+                    class="board-present"
+                    :disabled="!board.frames.value.length"
+                    :title="
+                        board.frames.value.length
+                            ? `Present ${board.frames.value.length} frame${board.frames.value.length === 1 ? '' : 's'} as slides`
+                            : 'Draw a frame (F) to present it as a slide'
+                    "
+                    data-test="present"
+                    @click="startPresenting"
+                >
+                    <Play class="size-3.5" />
+                    Present
+                </button>
             </div>
         </div>
 
-        <div class="flex min-h-0 flex-1 gap-3">
-            <ShapeLibrary
-                v-show="!presenting"
-                :tool="tool"
-                @update:tool="tool = $event"
-                @add-picture="startImport('image')"
-                @add-video="startImport('video')"
+        <div
+            ref="canvas"
+            :data-zoom="Math.round(camera.scale.value * 100)"
+            @dragover.prevent
+            @drop="onDropFiles"
+            @pointermove="onCanvasPointer"
+            @pointerleave="pointers?.point(null)"
+            :data-camera="`${camera.position.value.x},${camera.position.value.y},${camera.scale.value}`"
+            class="relative min-h-[420px] flex-1 overflow-hidden bg-white"
+            :class="{ 'cursor-grab': panning }"
+        >
+            <div
+                class="pointer-events-none absolute inset-0"
+                :style="gridStyle"
             />
+
+            <Stage
+                ref="stageRef"
+                :config="stageConfig"
+                @wheel="onWheel"
+                @dragend="onStageDragEnd"
+                @pointerdown="onStagePointerDown"
+                @pointermove="onPointerMove"
+                @pointerup="onPointerUp"
+                @click="onClick"
+                @dblclick="onDoubleClick"
+                @contextmenu="onContextMenu"
+            >
+                <Layer ref="contentLayer">
+                    <Group
+                        v-for="item in drawn"
+                        :key="item.id"
+                        :config="{
+                            id: item.id,
+                            x: item.x,
+                            y: item.y,
+                            rotation: item.rotation,
+                            width: item.width,
+                            height: item.height,
+                            // Locked: still drawn, but the pointer goes
+                            // straight through it
+                            listening: !item.locked,
+                            draggable:
+                                !presenting &&
+                                tool === 'select' &&
+                                !spaceHeld &&
+                                // A connector is wherever its ends are:
+                                // dragging its body would slide the line
+                                // off the shapes it is pinned to
+                                !isConnector(item),
+                            dragBoundFunc: snapWhileDragging(item),
+                        }"
+                    >
+                        <BoardItem
+                            :item="item"
+                            :selected="isSelected(item)"
+                            :editing="editingId === item.id"
+                            :image="imageFor(item)"
+                            :video="videos.videoFor(item)"
+                            :playing="videos.isPlaying(item.id)"
+                            :path="connectorPath(item)"
+                        />
+                    </Group>
+                </Layer>
+
+                <Layer ref="overlayLayer">
+                    <BoardOverlay
+                        :connectable="connectable"
+                        :aiming="
+                            (tool === 'arrow' || draggingEnd) && !presenting
+                        "
+                        :hovered-target="hoveredTarget"
+                        :hovered-anchor="hoveredAnchor"
+                        :handles="endpointHandles"
+                        :endpoint-name="ENDPOINT"
+                        :guides="guides"
+                        :marquee="marquee"
+                        :scale="camera.scale.value"
+                    />
+
+                    <!-- The handles for resizing and turning, bound to
+                         whatever is selected -->
+                    <Transformer
+                        ref="transformerRef"
+                        :config="{
+                            rotateEnabled: true,
+                            keepRatio: false,
+                            borderStroke: '#6366f1',
+                            anchorStroke: '#6366f1',
+                            anchorSize: 8,
+                        }"
+                    />
+                </Layer>
+            </Stage>
+
+            <!-- Where the others' pointers are, in their colours -->
+            <div
+                v-for="pointer in pointers?.pointers.value ?? []"
+                :key="pointer.id"
+                class="pointer-events-none absolute top-0 left-0 z-10 flex items-start transition-transform duration-75"
+                :style="{
+                    transform: `translate(${pointer.x * camera.scale.value + camera.position.value.x}px, ${pointer.y * camera.scale.value + camera.position.value.y}px)`,
+                }"
+                data-test="board-pointer"
+            >
+                <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 16 16"
+                    aria-hidden="true"
+                >
+                    <path
+                        d="M1 1l5.5 13 2-5.5L14 6.5z"
+                        :fill="pointer.color"
+                        stroke="white"
+                        stroke-width="1.2"
+                        stroke-linejoin="round"
+                    />
+                </svg>
+                <span
+                    class="mt-3 rounded px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap text-white"
+                    :style="{ backgroundColor: pointer.color }"
+                    >{{ pointer.name }}</span
+                >
+            </div>
+
+            <BoardFormulae
+                :items="board.items.value"
+                :camera="camera"
+                :editing-id="editingId"
+            />
+
+            <BoardVideoControls
+                v-if="videoBar"
+                :video="videoBar.element"
+                :playing="videos.isPlaying(videoBar.item.id)"
+                :style="videoBar.style"
+                @toggle="videos.toggle(videoBar.item.id)"
+                @expand="expandVideo(videoBar.item)"
+            />
+
+            <!-- Typing happens in a real textarea laid over the canvas -->
+            <textarea
+                v-if="editingItem"
+                ref="editor"
+                v-model="editorText"
+                class="board-editor"
+                :style="editorStyle"
+                data-test="text-editor"
+                @blur="stopEditing()"
+                @keydown.enter.exact.prevent="stopEditing()"
+            />
+
+            <!-- What a right-click on a frame offers, where it was clicked -->
+            <DropdownMenu v-model:open="frameMenuOpen" :modal="false">
+                <DropdownMenuTrigger as-child>
+                    <span
+                        class="pointer-events-none absolute size-0"
+                        :style="{
+                            left: `${frameMenu?.x ?? 0}px`,
+                            top: `${frameMenu?.y ?? 0}px`,
+                        }"
+                    />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                    align="start"
+                    class="w-56"
+                    data-test="frame-menu"
+                >
+                    <DropdownMenuLabel class="truncate">
+                        {{ frameMenu ? frameName(frameMenu.frame) : '' }}
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                        data-test="frame-download"
+                        @select="saveFrame('download')"
+                    >
+                        <Download />
+                        Download picture
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                        v-if="canCopyPicture"
+                        data-test="frame-copy"
+                        @select="saveFrame('copy')"
+                    >
+                        <ClipboardCopy />
+                        Copy picture
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                        data-test="frame-drive"
+                        @select="saveFrame('drive')"
+                    >
+                        <HardDrive />
+                        Save picture to Drive
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
+
+            <!-- The tools, floating over the canvas so it keeps the width -->
+            <div v-show="!presenting" class="board-float top-3 left-3">
+                <ShapeLibrary
+                    :tool="tool"
+                    :can-undo="board.canUndo.value"
+                    :can-redo="board.canRedo.value"
+                    @update:tool="tool = $event"
+                    @add-picture="startImport('image')"
+                    @add-video="startImport('video')"
+                    @undo="board.undo"
+                    @redo="board.redo"
+                />
+            </div>
 
             <div
-                ref="canvas"
-                :data-zoom="Math.round(camera.scale.value * 100)"
-                @dragover.prevent
-                @drop="onDropFiles"
-                @pointermove="onCanvasPointer"
-                @pointerleave="pointers?.point(null)"
-                :data-camera="`${camera.position.value.x},${camera.position.value.y},${camera.scale.value}`"
-                class="border-sidebar-border/70 dark:border-sidebar-border relative min-h-[480px] flex-1 overflow-hidden rounded-xl border bg-white"
-                :class="{ 'cursor-grab': panning }"
+                v-show="!presenting && panelOpen"
+                class="board-float top-3 right-3 bottom-16"
             >
-                <div
-                    class="pointer-events-none absolute inset-0"
-                    :style="gridStyle"
-                />
-
-                <Stage
-                    ref="stageRef"
-                    :config="stageConfig"
-                    @wheel="onWheel"
-                    @dragend="onStageDragEnd"
-                    @pointerdown="onPointerDown"
-                    @pointermove="onPointerMove"
-                    @pointerup="onPointerUp"
-                    @click="onClick"
-                    @dblclick="onDoubleClick"
-                >
-                    <Layer ref="contentLayer">
-                        <Group
-                            v-for="item in drawn"
-                            :key="item.id"
-                            :config="{
-                                id: item.id,
-                                x: item.x,
-                                y: item.y,
-                                rotation: item.rotation,
-                                width: item.width,
-                                height: item.height,
-                                // Locked: still drawn, but the pointer goes
-                                // straight through it
-                                listening: !item.locked,
-                                draggable:
-                                    !presenting &&
-                                    tool === 'select' &&
-                                    !spaceHeld &&
-                                    // A connector is wherever its ends are:
-                                    // dragging its body would slide the line
-                                    // off the shapes it is pinned to
-                                    !isConnector(item),
-                                dragBoundFunc: snapWhileDragging(item),
-                            }"
-                        >
-                            <BoardItem
-                                :item="item"
-                                :selected="isSelected(item)"
-                                :editing="editingId === item.id"
-                                :image="imageFor(item)"
-                                :video="videos.videoFor(item)"
-                                :playing="videos.isPlaying(item.id)"
-                                :path="connectorPath(item)"
-                            />
-                        </Group>
-                    </Layer>
-
-                    <Layer ref="overlayLayer">
-                        <BoardOverlay
-                            :connectable="connectable"
-                            :aiming="
-                                (tool === 'arrow' || draggingEnd) && !presenting
-                            "
-                            :hovered-target="hoveredTarget"
-                            :hovered-anchor="hoveredAnchor"
-                            :handles="endpointHandles"
-                            :endpoint-name="ENDPOINT"
-                            :guides="guides"
-                            :marquee="marquee"
-                            :scale="camera.scale.value"
-                        />
-
-                        <!-- The handles for resizing and turning, bound to
-                             whatever is selected -->
-                        <Transformer
-                            ref="transformerRef"
-                            :config="{
-                                rotateEnabled: true,
-                                keepRatio: false,
-                                borderStroke: '#6366f1',
-                                anchorStroke: '#6366f1',
-                                anchorSize: 8,
-                            }"
-                        />
-                    </Layer>
-                </Stage>
-
-                <!-- Where the others' pointers are, in their colours -->
-                <div
-                    v-for="pointer in pointers?.pointers.value ?? []"
-                    :key="pointer.id"
-                    class="pointer-events-none absolute top-0 left-0 z-10 flex items-start transition-transform duration-75"
-                    :style="{
-                        transform: `translate(${pointer.x * camera.scale.value + camera.position.value.x}px, ${pointer.y * camera.scale.value + camera.position.value.y}px)`,
-                    }"
-                    data-test="board-pointer"
-                >
-                    <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 16 16"
-                        aria-hidden="true"
-                    >
-                        <path
-                            d="M1 1l5.5 13 2-5.5L14 6.5z"
-                            :fill="pointer.color"
-                            stroke="white"
-                            stroke-width="1.2"
-                            stroke-linejoin="round"
-                        />
-                    </svg>
-                    <span
-                        class="mt-3 rounded px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap text-white"
-                        :style="{ backgroundColor: pointer.color }"
-                        >{{ pointer.name }}</span
-                    >
-                </div>
-
-                <BoardFormulae
+                <InspectorPanel
+                    :selection="board.selected.value"
+                    :fill="fillColour"
+                    :stroke="strokeColour"
                     :items="board.items.value"
-                    :camera="camera"
-                    :editing-id="editingId"
+                    :item-count="board.items.value.length"
+                    :frame-count="board.frames.value.length"
+                    :link="connectorLink"
+                    @paint="paintFill"
+                    @paint-stroke="paintStroke"
+                    @resize="resizeSelection"
+                    @duplicate="board.duplicate"
+                    @remove="removeSelection"
+                    @reorder="board.reorder"
+                    @select="
+                        $event.add
+                            ? board.toggleInSelection($event.id)
+                            : board.select([$event.id])
+                    "
+                    @move="board.moveTo($event.id, $event.index)"
+                    @toggle-layer="board.toggle($event.id, $event.field)"
+                    @update="board.updateSelected"
+                    @close="panelOpen = false"
                 />
-
-                <BoardVideoControls
-                    v-if="videoBar"
-                    :video="videoBar.element"
-                    :playing="videos.isPlaying(videoBar.item.id)"
-                    :style="videoBar.style"
-                    @toggle="videos.toggle(videoBar.item.id)"
-                    @expand="expandVideo(videoBar.item)"
-                />
-
-                <!-- Typing happens in a real textarea laid over the canvas -->
-                <textarea
-                    v-if="editingItem"
-                    ref="editor"
-                    v-model="editorText"
-                    class="board-editor"
-                    :style="editorStyle"
-                    data-test="text-editor"
-                    @blur="stopEditing()"
-                    @keydown.enter.exact.prevent="stopEditing()"
-                />
-
-                <!-- Presenting: frame position, arrows, and a way out -->
-                <div
-                    v-if="presenting"
-                    class="bg-background/95 absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border px-2 py-1.5 shadow-lg"
-                >
-                    <button
-                        type="button"
-                        class="board-zoom"
-                        data-test="prev-frame"
-                        :disabled="frameIndex === 0"
-                        @click="showFrame(frameIndex - 1)"
-                    >
-                        <ChevronLeft class="size-4" />
-                    </button>
-                    <span class="px-1 text-sm" data-test="frame-position">
-                        {{ frameIndex + 1 }} / {{ board.frames.value.length }}
-                        <span class="text-muted-foreground">
-                            · {{ currentFrame?.text }}
-                        </span>
-                    </span>
-                    <button
-                        type="button"
-                        class="board-zoom"
-                        data-test="next-frame"
-                        :disabled="frameIndex >= board.frames.value.length - 1"
-                        @click="showFrame(frameIndex + 1)"
-                    >
-                        <ChevronRight class="size-4" />
-                    </button>
-                    <button
-                        type="button"
-                        class="board-zoom"
-                        title="Leave (Esc)"
-                        data-test="exit-present"
-                        @click="stopPresenting"
-                    >
-                        <X class="size-4" />
-                    </button>
-                </div>
             </div>
 
-            <MediaPickerDialog
-                v-model:open="importing"
-                :kind="importKind"
-                destination="the board"
-                allow-markup
-                @insert="onMediaPicked"
-                @markup="addSvg"
-                @mermaid="addMermaid"
-            />
+            <!-- How close in, and the way back to everything -->
+            <div v-show="!presenting" class="board-pill right-3 bottom-3">
+                <button
+                    type="button"
+                    class="board-zoom"
+                    title="Zoom out"
+                    data-test="zoom-out"
+                    @click="camera.zoomBy(0.8, { x: width / 2, y: height / 2 })"
+                >
+                    <Minus class="size-3.5" />
+                </button>
+                <button
+                    type="button"
+                    class="board-zoom w-12 text-xs tabular-nums"
+                    data-test="zoom"
+                    title="Fit everything"
+                    @click="fitAll()"
+                >
+                    {{ Math.round(camera.scale.value * 100) }}%
+                </button>
+                <button
+                    type="button"
+                    class="board-zoom"
+                    title="Zoom in"
+                    data-test="zoom-in"
+                    @click="
+                        camera.zoomBy(1.25, { x: width / 2, y: height / 2 })
+                    "
+                >
+                    <Plus class="size-3.5" />
+                </button>
+                <span class="bg-border mx-0.5 h-4 w-px" />
+                <button
+                    type="button"
+                    class="board-zoom"
+                    title="Fit everything"
+                    data-test="fit"
+                    @click="fitAll()"
+                >
+                    <Maximize class="size-3.5" />
+                </button>
+            </div>
 
-            <MediaViewer />
-
-            <InspectorPanel
-                v-show="!presenting"
-                :selection="board.selected.value"
-                :fill="fillColour"
-                :stroke="strokeColour"
-                :items="board.items.value"
-                :item-count="board.items.value.length"
-                :frame-count="board.frames.value.length"
-                :link="connectorLink"
-                @paint="paintFill"
-                @paint-stroke="paintStroke"
-                @resize="resizeSelection"
-                @duplicate="board.duplicate"
-                @remove="removeSelection"
-                @reorder="board.reorder"
-                @select="
-                    $event.add
-                        ? board.toggleInSelection($event.id)
-                        : board.select([$event.id])
-                "
-                @move="board.moveTo($event.id, $event.index)"
-                @toggle-layer="board.toggle($event.id, $event.field)"
-                @update="board.updateSelected"
-                @present="startPresenting"
-            />
+            <!-- Presenting: frame position, arrows, and a way out -->
+            <div
+                v-if="presenting"
+                class="bg-background/95 absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border px-2 py-1.5 shadow-lg"
+            >
+                <button
+                    type="button"
+                    class="board-zoom"
+                    data-test="prev-frame"
+                    :disabled="frameIndex === 0"
+                    @click="showFrame(frameIndex - 1)"
+                >
+                    <ChevronLeft class="size-4" />
+                </button>
+                <span class="px-1 text-sm" data-test="frame-position">
+                    {{ frameIndex + 1 }} / {{ board.frames.value.length }}
+                    <span class="text-muted-foreground">
+                        · {{ currentFrame?.text }}
+                    </span>
+                </span>
+                <button
+                    type="button"
+                    class="board-zoom"
+                    data-test="next-frame"
+                    :disabled="frameIndex >= board.frames.value.length - 1"
+                    @click="showFrame(frameIndex + 1)"
+                >
+                    <ChevronRight class="size-4" />
+                </button>
+                <button
+                    type="button"
+                    class="board-zoom"
+                    title="Leave (Esc)"
+                    data-test="exit-present"
+                    @click="stopPresenting"
+                >
+                    <X class="size-4" />
+                </button>
+            </div>
         </div>
+
+        <MediaPickerDialog
+            v-model:open="importing"
+            :kind="importKind"
+            destination="the board"
+            allow-markup
+            @insert="onMediaPicked"
+            @markup="addSvg"
+            @mermaid="addMermaid"
+        />
+
+        <MediaViewer />
     </div>
 </template>
 
@@ -902,6 +1151,62 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
     overflow: hidden;
 }
 
+.board-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    height: 3rem;
+    flex-shrink: 0;
+    padding: 0 0.75rem 0 0.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+/* Anything laid over the canvas: above the stage and the editors on it */
+.board-float {
+    position: absolute;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: calc(100% - 1.5rem);
+}
+.board-float > :deep(*) {
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.board-pill {
+    position: absolute;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0.25rem;
+    background-color: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 4px 16px -4px rgb(15 23 42 / 0.14);
+}
+
+.board-present {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 2rem;
+    margin-left: 0.25rem;
+    padding: 0 0.75rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--primary-foreground);
+    background-color: var(--primary);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+.board-present:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .board-zoom {
     display: inline-flex;
     align-items: center;
@@ -914,6 +1219,9 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
 }
 .board-zoom:hover:not(:disabled) {
     background-color: var(--muted);
+}
+.board-zoom.is-on {
+    color: var(--primary);
 }
 .board-zoom:disabled {
     opacity: 0.4;

@@ -2,6 +2,7 @@
 import {
     ArrowUpRight,
     Circle,
+    Clapperboard,
     Cloud,
     Columns3,
     Database,
@@ -9,11 +10,11 @@ import {
     FileText,
     Frame,
     Hexagon,
+    ImagePlus,
     MousePointer2,
     Pencil,
     RectangleHorizontal,
-    Clapperboard,
-    ImagePlus,
+    Redo2,
     Search,
     Shapes,
     Sigma,
@@ -22,39 +23,50 @@ import {
     StickyNote,
     Triangle,
     Type,
+    Undo2,
 } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import type { Component } from 'vue';
+import { computed, ref, watch } from 'vue';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
 import type { Tool } from '../../composables/board/items';
 
-// The shape library Lucidchart puts down the left: grouped, searchable, and
-// the thing you reach for before every other control.
-defineProps<{ tool: Tool }>();
+// The tools down the left of the canvas: the everyday ones a click away, and
+// the many shapes in a flyout of their own, so the rail stays one icon wide
+// and the canvas keeps the room.
+const props = defineProps<{
+    tool: Tool;
+    canUndo: boolean;
+    canRedo: boolean;
+}>();
+
 const emit = defineEmits<{
     'update:tool': [Tool];
     'add-picture': [];
     'add-video': [];
+    undo: [];
+    redo: [];
 }>();
 
-type Entry = { tool: Tool; icon: unknown; label: string; key: string };
+type Entry = { tool: Tool; icon: Component; label: string; key: string };
+
+const before: Entry[] = [
+    { tool: 'select', icon: MousePointer2, label: 'Select', key: 'V' },
+    { tool: 'sticky', icon: StickyNote, label: 'Sticky note', key: 'S' },
+    { tool: 'text', icon: Type, label: 'Text', key: 'T' },
+];
+
+const after: Entry[] = [
+    { tool: 'arrow', icon: ArrowUpRight, label: 'Connector', key: 'A' },
+    { tool: 'draw', icon: Pencil, label: 'Pen', key: 'D' },
+    { tool: 'frame', icon: Frame, label: 'Frame', key: 'F' },
+    { tool: 'math', icon: Sigma, label: 'Formula', key: 'E' },
+];
 
 const groups: { name: string; entries: Entry[] }[] = [
-    {
-        name: 'Tools',
-        entries: [
-            { tool: 'select', icon: MousePointer2, label: 'Select', key: 'V' },
-            { tool: 'draw', icon: Pencil, label: 'Pen', key: 'D' },
-            { tool: 'arrow', icon: ArrowUpRight, label: 'Arrow', key: 'A' },
-            { tool: 'frame', icon: Frame, label: 'Frame', key: 'F' },
-        ],
-    },
-    {
-        name: 'Notes',
-        entries: [
-            { tool: 'sticky', icon: StickyNote, label: 'Sticky', key: 'S' },
-            { tool: 'text', icon: Type, label: 'Text', key: 'T' },
-            { tool: 'math', icon: Sigma, label: 'Formula', key: 'E' },
-        ],
-    },
     {
         name: 'Shapes',
         entries: [
@@ -84,6 +96,28 @@ const groups: { name: string; entries: Entry[] }[] = [
     },
 ];
 
+const shapes = groups.flatMap((group) => group.entries);
+
+// The shapes button wears the last shape picked, by click or by key, so the
+// one being drawn over and over is where the eye already is
+const lastShape = ref<Entry>(shapes[0]);
+
+watch(
+    () => props.tool,
+    (tool) => {
+        const shape = shapes.find((entry) => entry.tool === tool);
+
+        if (shape) {
+            lastShape.value = shape;
+        }
+    },
+);
+
+const shapeActive = computed(() =>
+    shapes.some((entry) => entry.tool === props.tool),
+);
+
+const open = ref(false);
 const search = ref('');
 
 const shown = computed(() => {
@@ -102,85 +136,206 @@ const shown = computed(() => {
         }))
         .filter((group) => group.entries.length);
 });
+
+const pickShape = (entry: Entry) => {
+    emit('update:tool', entry.tool);
+    open.value = false;
+    search.value = '';
+};
 </script>
 
 <template>
-    <aside class="library" data-test="shape-library">
-        <label class="library-search">
-            <Search class="text-muted-foreground size-3.5 shrink-0" />
-            <input
-                v-model="search"
-                type="search"
-                placeholder="Search shapes"
-                data-test="shape-search"
-            />
-        </label>
+    <aside class="rail" data-test="shape-library">
+        <button
+            v-for="entry in before"
+            :key="entry.tool"
+            type="button"
+            class="rail-button"
+            :class="{ 'is-active': tool === entry.tool }"
+            :title="`${entry.label} (${entry.key})`"
+            :aria-label="entry.label"
+            :data-test="`tool-${entry.tool}`"
+            @click="emit('update:tool', entry.tool)"
+        >
+            <component :is="entry.icon" class="size-[18px]" />
+        </button>
 
-        <div class="library-scroll">
-            <section v-for="group in shown" :key="group.name">
-                <p class="library-heading">{{ group.name }}</p>
-                <div class="library-grid">
-                    <button
-                        v-for="entry in group.entries"
-                        :key="entry.tool"
-                        type="button"
-                        class="library-item"
-                        :class="{ 'is-active': tool === entry.tool }"
-                        :title="`${entry.label} (${entry.key})`"
-                        :data-test="`tool-${entry.tool}`"
-                        @click="emit('update:tool', entry.tool)"
-                    >
-                        <component :is="entry.icon" class="size-5" />
-                        <span>{{ entry.label }}</span>
-                    </button>
-                </div>
-            </section>
-
-            <section>
-                <p class="library-heading">Your own</p>
+        <Popover v-model:open="open">
+            <PopoverTrigger as-child>
                 <button
                     type="button"
-                    class="library-item is-wide"
-                    title="From this computer, your Drive, a link, or SVG markup"
-                    data-test="open-image-picker"
-                    @click="emit('add-picture')"
+                    class="rail-button has-more"
+                    :class="{ 'is-active': shapeActive || open }"
+                    title="Shapes and flowchart"
+                    aria-label="Shapes"
+                    data-test="tool-shapes"
                 >
-                    <ImagePlus class="size-5" />
-                    <span>Add picture</span>
+                    <component :is="lastShape.icon" class="size-[18px]" />
                 </button>
-                <button
-                    type="button"
-                    class="library-item is-wide"
-                    title="From this computer, your Drive, or a link. It plays on the board."
-                    data-test="open-video-picker"
-                    @click="emit('add-video')"
-                >
-                    <Clapperboard class="size-5" />
-                    <span>Add video</span>
-                </button>
-            </section>
+            </PopoverTrigger>
+            <PopoverContent
+                side="right"
+                align="start"
+                :side-offset="12"
+                class="w-64 p-2.5 data-[state=closed]:animate-none"
+                data-test="shape-flyout"
+            >
+                <label class="library-search">
+                    <Search class="text-muted-foreground size-3.5 shrink-0" />
+                    <input
+                        v-model="search"
+                        type="search"
+                        placeholder="Search shapes"
+                        data-test="shape-search"
+                    />
+                </label>
 
-            <p v-if="!shown.length" class="library-empty">
-                Nothing matches “{{ search }}”.
-            </p>
-        </div>
+                <section
+                    v-for="group in shown"
+                    :key="group.name"
+                    class="mt-2.5"
+                >
+                    <p class="library-heading">{{ group.name }}</p>
+                    <div class="library-grid">
+                        <button
+                            v-for="entry in group.entries"
+                            :key="entry.tool"
+                            type="button"
+                            class="library-item"
+                            :class="{ 'is-active': tool === entry.tool }"
+                            :title="`${entry.label} (${entry.key})`"
+                            :data-test="`tool-${entry.tool}`"
+                            @click="pickShape(entry)"
+                        >
+                            <component :is="entry.icon" class="size-5" />
+                            <span>{{ entry.label }}</span>
+                        </button>
+                    </div>
+                </section>
+
+                <p v-if="!shown.length" class="library-empty">
+                    Nothing matches “{{ search }}”.
+                </p>
+            </PopoverContent>
+        </Popover>
+
+        <button
+            v-for="entry in after"
+            :key="entry.tool"
+            type="button"
+            class="rail-button"
+            :class="{ 'is-active': tool === entry.tool }"
+            :title="`${entry.label} (${entry.key})`"
+            :aria-label="entry.label"
+            :data-test="`tool-${entry.tool}`"
+            @click="emit('update:tool', entry.tool)"
+        >
+            <component :is="entry.icon" class="size-[18px]" />
+        </button>
+
+        <span class="rail-divider" />
+
+        <button
+            type="button"
+            class="rail-button"
+            title="Add a picture: from this computer, your Drive, a link, or SVG markup"
+            aria-label="Add picture"
+            data-test="open-image-picker"
+            @click="emit('add-picture')"
+        >
+            <ImagePlus class="size-[18px]" />
+        </button>
+        <button
+            type="button"
+            class="rail-button"
+            title="Add a video: from this computer, your Drive, or a link. It plays on the board."
+            aria-label="Add video"
+            data-test="open-video-picker"
+            @click="emit('add-video')"
+        >
+            <Clapperboard class="size-[18px]" />
+        </button>
+
+        <span class="rail-divider" />
+
+        <button
+            type="button"
+            class="rail-button"
+            title="Undo (Ctrl+Z)"
+            aria-label="Undo"
+            data-test="undo"
+            :disabled="!canUndo"
+            @click="emit('undo')"
+        >
+            <Undo2 class="size-[18px]" />
+        </button>
+        <button
+            type="button"
+            class="rail-button"
+            title="Redo (Ctrl+Shift+Z)"
+            aria-label="Redo"
+            data-test="redo"
+            :disabled="!canRedo"
+            @click="emit('redo')"
+        >
+            <Redo2 class="size-[18px]" />
+        </button>
     </aside>
 </template>
 
 <style scoped>
-.library {
+.rail {
     display: flex;
     flex-direction: column;
-    width: 13rem;
-    flex-shrink: 0;
-    /* Its own scroll, so a long list cannot stretch the row and push the
-       canvas off the bottom of the window */
-    min-height: 0;
-    gap: 0.5rem;
-    padding: 0.625rem;
+    align-items: center;
+    gap: 2px;
+    padding: 0.3125rem;
     background-color: var(--background);
     border: 1px solid var(--border);
     border-radius: var(--radius-xl);
+    box-shadow: 0 4px 16px -4px rgb(15 23 42 / 0.14);
+}
+
+.rail-button {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    color: var(--foreground);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+.rail-button:hover:not(:disabled) {
+    background-color: var(--muted);
+}
+.rail-button.is-active {
+    color: var(--primary);
+    background-color: color-mix(in oklab, var(--primary) 14%, transparent);
+}
+.rail-button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+/* A little corner mark: this one opens more */
+.rail-button.has-more::after {
+    content: '';
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    border: 3px solid transparent;
+    border-right-color: currentColor;
+    border-bottom-color: currentColor;
+    opacity: 0.55;
+}
+
+.rail-divider {
+    width: 1.25rem;
+    height: 1px;
+    margin: 0.25rem 0;
+    background-color: var(--border);
 }
 
 .library-search {
@@ -201,17 +356,8 @@ const shown = computed(() => {
     outline: none;
 }
 
-.library-scroll {
-    display: flex;
-    flex: 1;
-    min-height: 0;
-    flex-direction: column;
-    gap: 0.75rem;
-    overflow-y: auto;
-}
-
 .library-heading {
-    margin-bottom: 0.375rem;
+    margin-bottom: 0.25rem;
     font-size: 0.6875rem;
     font-weight: 600;
     letter-spacing: 0.04em;
@@ -221,8 +367,8 @@ const shown = computed(() => {
 
 .library-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 2px;
 }
 
 .library-item {
@@ -230,8 +376,8 @@ const shown = computed(() => {
     flex-direction: column;
     align-items: center;
     gap: 0.25rem;
-    padding: 0.5rem 0.25rem;
-    font-size: 0.6875rem;
+    padding: 0.5rem 0.125rem 0.375rem;
+    font-size: 0.625rem;
     color: var(--foreground);
     border: 1px solid transparent;
     border-radius: var(--radius-md);
@@ -252,16 +398,8 @@ const shown = computed(() => {
     border-color: var(--primary);
 }
 
-.library-item.is-wide {
-    width: 100%;
-    flex-direction: row;
-    justify-content: flex-start;
-    gap: 0.5rem;
-    padding: 0.5rem 0.625rem;
-    border-color: var(--border);
-}
-
 .library-empty {
+    margin-top: 0.5rem;
     font-size: 0.75rem;
     color: var(--muted-foreground);
 }

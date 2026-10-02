@@ -228,9 +228,39 @@ export function boardOn(page) {
         });
     };
 
+    /**
+     * Picks a tool off the rail -- or, for one of the many shapes, out of the
+     * flyout the rail's shapes button opens.
+     */
+    const pick = async (tool) => {
+        const onRail = page.locator(
+            `[data-test="shape-library"] > [data-test="tool-${tool}"]`,
+        );
+
+        if (await onRail.count()) {
+            await onRail.click();
+
+            return;
+        }
+
+        // A flyout still closing from the last pick is not one to click in
+        const flyout = page.locator(
+            '[data-test="shape-flyout"][data-state="open"]',
+        );
+
+        if (!(await flyout.count())) {
+            await page.locator('[data-test="tool-shapes"]').click();
+        }
+
+        await flyout.locator(`[data-test="tool-${tool}"]`).click();
+        await page
+            .locator('[data-test="shape-flyout"]')
+            .waitFor({ state: 'detached' });
+    };
+
     /** Draws something with a tool, and reports the box it ended up with. */
     const draw = async (tool, fromX, fromY, across = 0.1, down = 0.12) => {
-        await page.locator(`[data-test="tool-${tool}"]`).click();
+        await pick(tool);
         await page.mouse.move(at(fromX, fromY).x, at(fromX, fromY).y);
         await page.mouse.down();
         await page.mouse.move(
@@ -245,6 +275,23 @@ export function boardOn(page) {
         await page.keyboard.press('Escape');
 
         return drawn;
+    };
+
+    /**
+     * Draws something over a box given in board units, wherever the camera
+     * has put it -- for a suite that needs to land on a particular frame.
+     */
+    const drawAt = async (tool, x, y, w, h) => {
+        const at = await camera();
+        const corner = await screenOf(x, y);
+
+        return draw(
+            tool,
+            (corner.x - view.box.x) / view.box.width,
+            (corner.y - view.box.y) / view.box.height,
+            (w * at.scale) / view.box.width,
+            (h * at.scale) / view.box.height,
+        );
     };
 
     /** Draws a connector between the middles of two boxes. */
@@ -287,6 +334,7 @@ export function boardOn(page) {
         at,
         camera,
         screenOf,
+        pick,
         rows,
         layerNames,
         inspectorTitle,
@@ -296,6 +344,7 @@ export function boardOn(page) {
         painted,
         shot,
         draw,
+        drawAt,
         join,
         label,
         pinnedSide,

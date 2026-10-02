@@ -18,6 +18,7 @@ use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\HeaderUtils;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 class BoardRenderController extends Controller
 {
@@ -52,15 +53,31 @@ class BoardRenderController extends Controller
     }
 
     /**
-     * The whole board as a PNG download.
+     * A PNG download of one frame, named by id or title -- or, with none
+     * asked for, of the whole board.
      */
-    public function png(Board $board): Response|JsonResponse
+    public function png(Request $request, Board $board): Response|JsonResponse
     {
-        return $this->send($board, 'png', fn () => BoardRender::png($board));
+        $named = $request->validate([
+            'frame' => ['nullable', 'string', 'max:255'],
+        ])['frame'] ?? null;
+
+        return $this->send($board, 'png', function () use ($board, $named) {
+            if ($named === null) {
+                return [BoardRender::png($board), null];
+            }
+
+            $frame = BoardParts::frame($board->content['items'] ?? [], $named);
+
+            abort_if($frame === null, 404, __('This board has no frame “:frame”.', ['frame' => $named]));
+
+            return [BoardRender::png($board, $frame), trim((string) ($frame['text'] ?? '')) ?: null];
+        });
     }
 
     /**
-     * @param  callable(): string  $render
+     * @param  callable(): (string|array{string, string|null})  $render  the bytes, or
+     *                                                                   the bytes and what to add to the name
      */
     private function send(Board $board, string $type, callable $render): Response|JsonResponse
     {
@@ -71,7 +88,10 @@ class BoardRenderController extends Controller
         $board->refresh();
 
         try {
-            $bytes = $render();
+            [$bytes, $part] = (array) $render() + [1 => null];
+        } catch (HttpExceptionInterface $e) {
+            // Asked for something that isn't there: not the renderer's fault
+            throw $e;
         } catch (ConnectionException|RuntimeException $e) {
             report($e);
 
@@ -81,14 +101,15 @@ class BoardRenderController extends Controller
         }
 
         // A title like "Q3/Q4 plan" is fine as a title and not as a filename
-        $name = str_replace(['/', '\\'], '-', trim($board->title) ?: 'Untitled board').".{$type}";
+        $title = (trim($board->title) ?: 'Untitled board').($part !== null ? " - {$part}" : '');
+        $name = str_replace(['/', '\\'], '-', $title).".{$type}";
 
         return response($bytes, 200, [
             'Content-Type' => $type === 'pdf' ? 'application/pdf' : 'image/png',
             'Content-Disposition' => HeaderUtils::makeDisposition(
                 HeaderUtils::DISPOSITION_ATTACHMENT,
                 $name,
-                (Str::slug($board->title) ?: 'board').".{$type}",
+                (Str::slug($title) ?: 'board').".{$type}",
             ),
             'Cache-Control' => 'private, no-store',
         ]);

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Pipette } from '@lucide/vue';
+import { Palette, Pipette } from '@lucide/vue';
 import { useEventListener } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
 import { PALETTE } from '../../composables/board/items';
@@ -65,6 +65,7 @@ const toHex = ({ h, s, v }: Hsv): string => {
 
 const hsv = ref<Hsv>(toHsv(props.modelValue));
 const hex = ref(props.modelValue);
+const custom = ref(false);
 
 // Follow the outside value unless it is the one we just emitted, so dragging
 // does not fight the parent.
@@ -155,36 +156,19 @@ const pickFromScreen = async () => {
     <div class="picker" data-test="colour-picker">
         <p class="picker-label">{{ label }}</p>
 
-        <div
-            ref="area"
-            class="picker-area"
-            :style="{ backgroundColor: hueColour }"
-            data-test="picker-area"
-            @pointerdown="start('area', $event)"
-        >
-            <span
-                class="picker-knob"
-                :style="{
-                    left: `${hsv.s * 100}%`,
-                    top: `${(1 - hsv.v) * 100}%`,
-                    backgroundColor: hex,
-                }"
-            />
-        </div>
-
-        <div
-            ref="hue"
-            class="picker-hue"
-            data-test="picker-hue"
-            @pointerdown="start('hue', $event)"
-        >
-            <span
-                class="picker-knob"
-                :style="{
-                    left: `${(hsv.h / 360) * 100}%`,
-                    top: '50%',
-                    backgroundColor: hueColour,
-                }"
+        <div class="picker-presets">
+            <button
+                v-for="colour in PALETTE"
+                :key="colour"
+                type="button"
+                class="picker-preset"
+                :class="{ 'is-on': colour.toLowerCase() === hex.toLowerCase() }"
+                :style="{ backgroundColor: colour }"
+                :title="colour"
+                @click="
+                    hsv = toHsv(colour);
+                    push();
+                "
             />
         </div>
 
@@ -206,28 +190,60 @@ const pickFromScreen = async () => {
             >
                 <Pipette class="size-4" />
             </button>
+            <button
+                type="button"
+                class="picker-drop"
+                :class="{ 'is-on': custom }"
+                :title="custom ? 'Hide the colour square' : 'Any colour'"
+                data-test="picker-custom"
+                @click="custom = !custom"
+            >
+                <Palette class="size-4" />
+            </button>
         </div>
 
-        <div class="picker-presets">
-            <button
-                v-for="colour in PALETTE"
-                :key="colour"
-                type="button"
-                class="picker-preset"
-                :style="{ backgroundColor: colour }"
-                :title="colour"
-                @click="
-                    hsv = toHsv(colour);
-                    push();
-                "
-            />
-        </div>
+        <!-- Any colour at all, folded away until it is wanted: the swatches
+             cover most of what a board is painted with -->
+        <template v-if="custom">
+            <div
+                ref="area"
+                class="picker-area"
+                :style="{ backgroundColor: hueColour }"
+                data-test="picker-area"
+                @pointerdown="start('area', $event)"
+            >
+                <span
+                    class="picker-knob"
+                    :style="{
+                        left: `${hsv.s * 100}%`,
+                        top: `${(1 - hsv.v) * 100}%`,
+                        backgroundColor: hex,
+                    }"
+                />
+            </div>
+
+            <div
+                ref="hue"
+                class="picker-hue"
+                data-test="picker-hue"
+                @pointerdown="start('hue', $event)"
+            >
+                <span
+                    class="picker-knob"
+                    :style="{
+                        left: `${(hsv.h / 360) * 100}%`,
+                        top: '50%',
+                        backgroundColor: hueColour,
+                    }"
+                />
+            </div>
+        </template>
     </div>
 </template>
 
 <style scoped>
 .picker {
-    width: 232px;
+    width: 100%;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -321,6 +337,10 @@ const pickFromScreen = async () => {
 .picker-drop:hover {
     background-color: var(--muted);
 }
+.picker-drop.is-on {
+    color: var(--primary);
+    border-color: var(--primary);
+}
 
 .picker-presets {
     display: grid;
@@ -336,5 +356,9 @@ const pickFromScreen = async () => {
 }
 .picker-preset:hover {
     transform: scale(1.1);
+}
+.picker-preset.is-on {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
 }
 </style>

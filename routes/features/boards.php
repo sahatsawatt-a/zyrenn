@@ -19,11 +19,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::resource('boards', BoardController::class)->only(['show', 'update', 'destroy']);
 
-    // Each one holds a browser on the server for a few seconds
-    Route::middleware('throttle:10,1')->group(function () {
-        Route::get('boards/{board}/pdf', [BoardRenderController::class, 'pdf'])->name('boards.pdf');
-        Route::get('boards/{board}/png', [BoardRenderController::class, 'png'])->name('boards.png');
-    });
+    // Each one holds a browser on the server for a few seconds. A board's
+    // pictures come a frame at a time, so they are allowed more of them
+    Route::get('boards/{board}/pdf', [BoardRenderController::class, 'pdf'])
+        ->middleware('throttle:10,1')
+        ->name('boards.pdf');
+    Route::get('boards/{board}/png', [BoardRenderController::class, 'png'])
+        ->middleware('throttle:40,1')
+        ->name('boards.png');
     Route::resource('board-folders', BoardFolderController::class)
         ->only(['update', 'destroy'])
         ->parameters(['board-folders' => 'folder']);

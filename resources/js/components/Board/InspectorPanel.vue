@@ -10,7 +10,7 @@ import {
     ChevronDown,
     ChevronUp,
     Copy,
-    Play,
+    PanelRightClose,
     SendToBack,
     Trash2,
 } from '@lucide/vue';
@@ -33,8 +33,9 @@ import ColourPicker from './ColourPicker.vue';
 import LayersPanel from './LayersPanel.vue';
 import ConnectorSettings from './ConnectorSettings.vue';
 
-// Lucidchart's right-hand panel: what is selected, and every property of it in
-// one place instead of hidden behind a toolbar popover.
+// The panel over the right of the canvas: what is selected, and every property
+// of it in one place instead of hidden behind a toolbar popover -- colour
+// first, as the thing most often changed -- with the layers underneath.
 const props = defineProps<{
     selection: Item[];
     fill: string;
@@ -57,7 +58,7 @@ const emit = defineEmits<{
     move: [{ id: string; index: number }];
     'toggle-layer': [{ id: string; field: 'hidden' | 'locked' }];
     update: [Partial<Item>];
-    present: [];
+    close: [];
 }>();
 
 const connectors = computed(() =>
@@ -190,15 +191,26 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
 <template>
     <aside class="inspector" data-test="inspector">
         <div class="inspector-head">
-            <p class="inspector-title" data-test="inspector-title">
-                {{ summary }}
-            </p>
-            <p class="inspector-sub">
-                {{ itemCount }} items · {{ frameCount }} frames
-            </p>
-            <p v-if="link" class="inspector-sub" data-test="connector-link">
-                {{ link }}
-            </p>
+            <div class="min-w-0 flex-1">
+                <p class="inspector-title" data-test="inspector-title">
+                    {{ summary }}
+                </p>
+                <p class="inspector-sub">
+                    {{ itemCount }} items · {{ frameCount }} frames
+                </p>
+                <p v-if="link" class="inspector-sub" data-test="connector-link">
+                    {{ link }}
+                </p>
+            </div>
+            <button
+                type="button"
+                class="inspector-close"
+                title="Hide this panel"
+                data-test="inspector-close"
+                @click="emit('close')"
+            >
+                <PanelRightClose class="size-4" />
+            </button>
         </div>
 
         <div v-if="selection.length" class="inspector-body">
@@ -252,6 +264,20 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                 </button>
             </div>
 
+            <ColourPicker
+                v-if="!line"
+                :model-value="fill"
+                label="Fill"
+                @update:model-value="emit('paint', $event)"
+            />
+            <ColourPicker
+                :model-value="stroke"
+                label="Line"
+                data-test="stroke-picker"
+                @update:model-value="emit('paint-stroke', $event)"
+            />
+
+            <p v-if="one" class="inspector-label">Position and size</p>
             <div v-if="one" class="inspector-grid">
                 <label>
                     X
@@ -402,38 +428,14 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                 :line="line"
                 @update="emit('update', $event)"
             />
-
-            <ColourPicker
-                v-if="!line"
-                :model-value="fill"
-                label="Fill"
-                @update:model-value="emit('paint', $event)"
-            />
-
-            <div class="inspector-line">
-                <span class="inspector-line-label">Line</span>
-                <span
-                    class="inspector-chip"
-                    :style="{ backgroundColor: stroke }"
-                />
-                <input
-                    type="color"
-                    :value="stroke"
-                    data-test="stroke-input"
-                    @input="
-                        emit(
-                            'paint-stroke',
-                            ($event.target as HTMLInputElement).value,
-                        )
-                    "
-                />
-            </div>
         </div>
 
         <p v-else class="inspector-hint">
-            Pick a shape from the left and drag it out on the canvas. Select
+            Pick a tool on the left and drag it out on the canvas, or click
             something to change its colour, size and stacking.
         </p>
+
+        <span class="inspector-rule" />
 
         <LayersPanel
             :items="items"
@@ -442,17 +444,6 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
             @move="emit('move', $event)"
             @toggle="emit('toggle-layer', $event)"
         />
-
-        <button
-            type="button"
-            class="inspector-present"
-            :disabled="!frameCount"
-            data-test="present"
-            @click="emit('present')"
-        >
-            <Play class="size-4" />
-            Present {{ frameCount }} frame{{ frameCount === 1 ? '' : 's' }}
-        </button>
     </aside>
 </template>
 
@@ -463,12 +454,47 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     width: 16rem;
     flex-shrink: 0;
     min-height: 0;
+    max-height: 100%;
     gap: 0.75rem;
     padding: 0.75rem;
     background-color: var(--background);
     border: 1px solid var(--border);
     border-radius: var(--radius-xl);
+    box-shadow: 0 4px 16px -4px rgb(15 23 42 / 0.14);
+    /* One scroll for the whole panel: the layers sit under the settings
+       rather than being squeezed in beside them */
     overflow-y: auto;
+    overscroll-behavior: contain;
+}
+.inspector > * {
+    flex-shrink: 0;
+}
+
+.inspector-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+.inspector-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    margin: -0.25rem -0.25rem 0 0;
+    color: var(--muted-foreground);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+.inspector-close:hover {
+    color: var(--foreground);
+    background-color: var(--muted);
+}
+
+.inspector-rule {
+    height: 1px;
+    background-color: var(--border);
 }
 
 .inspector-title {
@@ -716,49 +742,5 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     width: 1.25rem;
     text-align: right;
     color: var(--foreground);
-}
-
-.inspector-line {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.75rem;
-}
-.inspector-line-label {
-    color: var(--muted-foreground);
-}
-.inspector-chip {
-    width: 1.25rem;
-    height: 1.25rem;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-}
-.inspector-line input {
-    width: 2rem;
-    height: 1.75rem;
-    padding: 0;
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-}
-
-.inspector-present {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.375rem;
-    height: 2.25rem;
-    margin-top: auto;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--primary-foreground);
-    background-color: var(--primary);
-    border-radius: var(--radius-lg);
-    cursor: pointer;
-}
-.inspector-present:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
 }
 </style>

@@ -4,6 +4,9 @@ import { ref } from 'vue';
 
 type Box = { x: number; y: number; width: number; height: number };
 
+/** Screen kept clear on either side -- by a panel laid over the canvas. */
+type Inset = { left?: number; right?: number };
+
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 4;
 
@@ -74,31 +77,48 @@ export function useCamera(
         };
     };
 
-    const cameraFor = (box: Box, padding = 80) => {
+    const cameraFor = (box: Box, padding = 80, inset: Inset = {}) => {
         const width = Math.max(box.width, 1);
         const height = Math.max(box.height, 1);
 
+        // On a narrow canvas the panels would leave nothing, so they are
+        // fitted under rather than around
+        const left = inset.left ?? 0;
+        const room = viewport.width.value - left - (inset.right ?? 0);
+        const across = room >= viewport.width.value / 2 ? room : null;
+
         const next = clamp(
             Math.min(
-                (viewport.width.value - padding * 2) / width,
+                ((across ?? viewport.width.value) - padding * 2) / width,
                 (viewport.height.value - padding * 2) / height,
             ),
         );
 
         return {
             scale: next,
-            x: (viewport.width.value - width * next) / 2 - box.x * next,
+            x:
+                (across === null
+                    ? (viewport.width.value - width * next) / 2
+                    : left + (across - width * next) / 2) -
+                box.x * next,
             y: (viewport.height.value - height * next) / 2 - box.y * next,
         };
     };
 
     /** Move the camera so `box` fills the viewport, optionally gliding there. */
-    const focus = (box: Box | null, { animate = false, padding = 80 } = {}) => {
+    const focus = (
+        box: Box | null,
+        {
+            animate = false,
+            padding = 80,
+            inset = {},
+        }: { animate?: boolean; padding?: number; inset?: Inset } = {},
+    ) => {
         if (!box || !viewport.width.value) {
             return;
         }
 
-        const next = cameraFor(box, padding);
+        const next = cameraFor(box, padding, inset);
         const target = stage();
 
         stopFlight();

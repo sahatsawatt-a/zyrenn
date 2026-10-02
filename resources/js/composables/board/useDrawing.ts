@@ -452,9 +452,32 @@ export function useDrawing({
         });
     };
 
+    // A mouse wheel zooms, as it always has. A pinch arrives as a wheel with
+    // Ctrl held and small steps, so it zooms by as much as the fingers moved;
+    // a trackpad's two-finger scroll, which moves sideways as well, pans.
     const onWheel = (event: Konva.KonvaEventObject<WheelEvent>) => {
-        event.evt.preventDefault();
-        camera.zoomBy(event.evt.deltaY > 0 ? 0.92 : 1.08);
+        const wheel = event.evt;
+
+        wheel.preventDefault();
+
+        if (wheel.ctrlKey || wheel.metaKey) {
+            camera.zoomBy(Math.exp(-wheel.deltaY * 0.01));
+
+            return;
+        }
+
+        if (wheel.deltaX !== 0 || wheel.shiftKey) {
+            const across = wheel.shiftKey && !wheel.deltaX ? wheel.deltaY : 0;
+
+            camera.position.value = {
+                x: camera.position.value.x - wheel.deltaX - across,
+                y: camera.position.value.y - (across ? 0 : wheel.deltaY),
+            };
+
+            return;
+        }
+
+        camera.zoomBy(wheel.deltaY > 0 ? 0.92 : 1.08);
     };
 
     const onStageDragEnd = (event: Konva.KonvaEventObject<DragEvent>) => {
