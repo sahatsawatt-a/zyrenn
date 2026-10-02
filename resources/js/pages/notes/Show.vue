@@ -1,17 +1,7 @@
 <script setup lang="ts">
-import { Form, Head, router, setLayoutProps } from '@inertiajs/vue3';
+import { Head, router, setLayoutProps } from '@inertiajs/vue3';
 import type { JSONContent } from '@tiptap/vue-3';
 import { useDebounceFn, useEventListener } from '@vueuse/core';
-import {
-    Check,
-    ChevronsLeftRight,
-    ChevronsRightLeft,
-    Copy,
-    Download,
-    FileDown,
-    HardDrive,
-    Trash2,
-} from '@lucide/vue';
 import { toast } from 'vue-sonner';
 import {
     computed,
@@ -21,37 +11,18 @@ import {
     useTemplateRef,
     watchEffect,
 } from 'vue';
-import NoteVersions from '@/components/Editor/NoteVersions.vue';
+import NoteToolbar from '@/components/Editor/NoteToolbar.vue';
 import TiptapEditor from '@/components/Editor/TiptapEditor.vue';
-import { Button } from '@/components/ui/button';
-import {
-    Dialog,
-    DialogClose,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from '@/components/ui/dialog';
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuRadioGroup,
-    DropdownMenuRadioItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { deliver, fetchExport } from '@/lib/exporting';
-import { copyToClipboard, formatRelativeTime, xsrfToken } from '@/lib/utils';
+import { fetchExport } from '@/lib/exporting';
+import { formatRelativeTime, xsrfToken } from '@/lib/utils';
+import PdfPreview from '@/components/PdfPreview.vue';
 import PresenceAvatars from '@/components/PresenceAvatars.vue';
 import { usePresence } from '@/composables/usePresence';
 import { sharingIsOn, useShared } from '@/composables/useShared';
 import { canChange, owned } from '@/lib/projects';
-import { destroy, index as ownIndex, pdf, show, update } from '@/routes/notes';
+import { index as ownIndex, pdf, show, update } from '@/routes/notes';
 import { index as projectIndex } from '@/routes/projects/notes';
+import type { FolderPath } from '@/components/folders/MoveDialog.vue';
 
 type Note = {
     ref_id: string;
@@ -59,21 +30,36 @@ type Note = {
     content: JSONContent | null;
     is_wide: boolean;
     updated_at: string;
+    created_at: string;
+    // The folder it is in (null = the top level), and who changed it last
+    folder: string | null;
+    edited_by: string | null;
 };
 
 const props = defineProps<{
     note: Note;
     // The folders the note sits in, top level first
     breadcrumbs: { ref_id: string; name: string }[];
+    // Where it can be moved: only sent when the toolbar asks, to move it
+    allFolders?: FolderPath[];
 }>();
 
 // A project's viewers read the note; nothing they do is saved
 const editable = canChange();
 
+// Set as this page deletes the note, which then hears of it like everyone else
+let deletingHere = false;
+
 // Who else has the note open
 const { others } = usePresence(() => `notes.${props.note.ref_id}`, {
-    // Deleted by someone else: close it rather than edit into nothing
+    // Deleted by someone else: close it rather than edit into nothing. One's
+    // own delete is heard here too -- the request doesn't say which socket
+    // sent it -- and goes where the server sends it, back to its folder
     deleted: () => {
+        if (deletingHere) {
+            return;
+        }
+
         toast.info('Someone deleted this note.');
         router.visit(index());
     },
@@ -247,19 +233,6 @@ function onContentUpdate(json: JSONContent): void {
     markDirty('content');
 }
 
-const refCopied = ref(false);
-
-// The ref_id is how this note is referenced elsewhere, e.g. in MCP requests
-async function copyRefId(): Promise<void> {
-    try {
-        await copyToClipboard(props.note.ref_id);
-        refCopied.value = true;
-        setTimeout(() => (refCopied.value = false), 2000);
-    } catch (error) {
-        console.error('Failed to copy note reference: ', error);
-    }
-}
-
 // How the note looks on paper (NotePdf::STYLES, styled in print.css)
 type PdfStyle = 'simple' | 'report';
 
@@ -335,25 +308,8 @@ async function printPdf(): Promise<File> {
     );
 }
 
-const exporting = ref(false);
-
-async function exportPdf(to: 'download' | 'drive'): Promise<void> {
-    if (exporting.value) {
-        return;
-    }
-
-    exporting.value = true;
-    const loading = toast.loading('Printing to PDF…');
-
-    try {
-        await deliver(await printPdf(), to);
-    } catch (error) {
-        toast.error((error as Error).message);
-    } finally {
-        toast.dismiss(loading);
-        exporting.value = false;
-    }
-}
+// The PDF, printed and shown before it is downloaded or saved (PdfPreview)
+const previewing = ref(false);
 
 // Flush edits before a pin or restore; false when they could not be saved
 async function saveBeforeVersionChange(): Promise<boolean> {
@@ -391,6 +347,7 @@ useEventListener(window, 'pagehide', () => {
 const removeBeforeListener = router.on('before', (event) => {
     if (event.detail.visit.method === 'delete') {
         // The note is about to be deleted; saving it would 404
+        deletingHere = true;
         dirty.clear();
     } else {
         void save();
@@ -406,6 +363,19 @@ onMounted(() => {
 onBeforeUnmount(() => {
     removeBeforeListener();
     void save();
+});
+
+// The colour of the dot beside it
+const statusTone = computed<'ok' | 'busy' | 'offline' | 'error'>(() => {
+    if (shared) {
+        return shared.tone.value;
+    }
+
+    if (status.value === 'error') {
+        return 'error';
+    }
+
+    return status.value === 'saved' ? 'ok' : 'busy';
 });
 
 const statusLabel = computed(() => {
@@ -434,159 +404,37 @@ const statusLabel = computed(() => {
     <Head :title="title || 'Untitled'" />
 
     <div class="mx-8 flex flex-1 flex-col print:mx-0">
+        <NoteToolbar
+            :ref-id="note.ref_id"
+            :title="title"
+            :editable="editable"
+            :status="{ label: statusLabel, tone: statusTone }"
+            :others="others"
+            :is-wide="isWide"
+            :created-at="note.created_at"
+            :saved-at="savedAt"
+            :edited-by="note.edited_by"
+            :folder="note.folder"
+            :all-folders="allFolders"
+            :stats="() => editorRef?.stats() ?? { words: 0, characters: 0 }"
+            :before-version-change="saveBeforeVersionChange"
+            @toggle-wide="toggleWide"
+            @export="previewing = true"
+            @restored="onRestored"
+        />
+
+        <PdfPreview
+            v-model:open="previewing"
+            :chosen="pdfStyle"
+            :styles="pdfStyles"
+            :print="printPdf"
+            @update:chosen="choosePdfStyle($event as PdfStyle)"
+        />
+
         <div
-            class="mx-auto w-full px-10 pt-8 print:max-w-none print:px-0 print:pt-0"
+            class="mx-auto w-full px-10 pt-6 print:max-w-none print:px-0 print:pt-0"
             :class="isWide ? 'max-w-none' : 'max-w-[800px]'"
         >
-            <div
-                class="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 print:hidden"
-            >
-                <div class="flex min-w-0 items-center gap-3">
-                    <button
-                        type="button"
-                        class="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-xs transition-colors"
-                        :title="refCopied ? 'Copied' : 'Copy note reference'"
-                        aria-label="Copy note reference"
-                        data-test="note-ref-id"
-                        @click="copyRefId"
-                    >
-                        {{ note.ref_id }}
-                        <Check
-                            v-if="refCopied"
-                            class="size-3.5 text-green-600"
-                        />
-                        <Copy v-else class="size-3.5" />
-                    </button>
-                    <span
-                        class="text-xs whitespace-nowrap"
-                        :class="
-                            status === 'error'
-                                ? 'text-destructive'
-                                : 'text-muted-foreground'
-                        "
-                        aria-live="polite"
-                    >
-                        {{ statusLabel }}
-                    </span>
-                    <PresenceAvatars :others="others" />
-                </div>
-
-                <div v-if="editable" class="flex items-center gap-1">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        :aria-pressed="isWide"
-                        :title="
-                            isWide
-                                ? 'Switch to narrow width'
-                                : 'Switch to full width'
-                        "
-                        @click="toggleWide"
-                    >
-                        <ChevronsRightLeft v-if="isWide" />
-                        <ChevronsLeftRight v-else />
-                        {{ isWide ? 'Narrow' : 'Wide' }}
-                    </Button>
-
-                    <NoteVersions
-                        :note-ref="note.ref_id"
-                        :before-change="saveBeforeVersionChange"
-                        @restored="onRestored"
-                    />
-
-                    <DropdownMenu>
-                        <DropdownMenuTrigger as-child>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                :disabled="exporting"
-                                data-test="note-export"
-                            >
-                                <FileDown />
-                                Export
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" class="w-60">
-                            <DropdownMenuLabel>PDF style</DropdownMenuLabel>
-                            <DropdownMenuRadioGroup
-                                :model-value="pdfStyle"
-                                @update:model-value="
-                                    choosePdfStyle($event as PdfStyle)
-                                "
-                            >
-                                <!-- Picking a style keeps the menu open for the export -->
-                                <DropdownMenuRadioItem
-                                    v-for="style in pdfStyles"
-                                    :key="style.id"
-                                    :value="style.id"
-                                    :data-test="`note-export-style-${style.id}`"
-                                    @select.prevent
-                                >
-                                    <span class="flex flex-col">
-                                        <span>{{ style.label }}</span>
-                                        <span
-                                            class="text-muted-foreground text-xs"
-                                        >
-                                            {{ style.hint }}
-                                        </span>
-                                    </span>
-                                </DropdownMenuRadioItem>
-                            </DropdownMenuRadioGroup>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                                data-test="note-export-download"
-                                @select="exportPdf('download')"
-                            >
-                                <Download />
-                                Download PDF
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                                data-test="note-export-drive"
-                                @select="exportPdf('drive')"
-                            >
-                                <HardDrive />
-                                Save PDF to Drive
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-
-                    <Dialog>
-                        <DialogTrigger as-child>
-                            <Button variant="ghost" size="sm">
-                                <Trash2 />
-                                Delete
-                            </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                            <DialogHeader>
-                                <DialogTitle>Delete this note?</DialogTitle>
-                                <DialogDescription>
-                                    “{{ title || 'Untitled' }}” will be
-                                    permanently deleted. This cannot be undone.
-                                </DialogDescription>
-                            </DialogHeader>
-                            <DialogFooter class="gap-2">
-                                <DialogClose as-child>
-                                    <Button variant="secondary">Cancel</Button>
-                                </DialogClose>
-                                <Form
-                                    v-bind="destroy.form(note.ref_id)"
-                                    v-slot="{ processing }"
-                                >
-                                    <Button
-                                        type="submit"
-                                        variant="destructive"
-                                        :disabled="processing"
-                                    >
-                                        Delete note
-                                    </Button>
-                                </Form>
-                            </DialogFooter>
-                        </DialogContent>
-                    </Dialog>
-                </div>
-            </div>
-
             <input
                 ref="titleInput"
                 v-model="title"

@@ -64,6 +64,14 @@ export function useShared(name: string) {
         return unsynced.value > 0 ? 'Saving…' : 'Saved';
     });
 
+    /** The same, as a colour for its dot: kept, on its way, offline, or refused. */
+    const tone = computed<'ok' | 'busy' | 'offline' | 'error'>(() => {
+        if (refused.value) return 'error';
+        if (status.value === 'disconnected') return 'offline';
+
+        return !synced.value || unsynced.value > 0 ? 'busy' : 'ok';
+    });
+
     // Changed here and not yet known to be kept by the app
     let pending = false;
 
@@ -123,5 +131,5 @@ export function useShared(name: string) {
         document.destroy();
     });
 
-    return { document, provider, me, synced, label, flush };
+    return { document, provider, me, synced, label, tone, flush };
 }

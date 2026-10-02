@@ -164,11 +164,16 @@ await runBoard(
         await other.keyboard.type(` Last words ${RUN}.`);
         await page.waitForTimeout(400);
 
+        // Export prints into the preview; the file shown is what downloads
         await page.locator('[data-test="note-export"]').click();
+        await page
+            .locator('[data-test="pdf-preview-frame"]')
+            .waitFor({ timeout: 60000 });
         const [download] = await Promise.all([
             page.waitForEvent('download', { timeout: 30000 }),
-            page.locator('[data-test="note-export-download"]').click(),
+            page.locator('[data-test="pdf-preview-download"]').click(),
         ]);
+        await page.keyboard.press('Escape');
         const pdfPath = `${SHOTS}/coedit-${RUN}.pdf`;
         await download.saveAs(pdfPath);
         const printed = execFileSync('pdftotext', [pdfPath, '-'], {

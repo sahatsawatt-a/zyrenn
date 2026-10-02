@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\BrowsesFolders;
 use App\Http\Controllers\Controller;
 use App\Models\Note\Note;
 use App\Models\Note\NoteFolder;
+use App\Support\Folders;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -61,8 +62,14 @@ class NoteController extends Controller
         Gate::authorize('view', $note);
 
         return Inertia::render('notes/Show', [
-            'note' => $note->only(['ref_id', 'title', 'content', 'is_wide', 'updated_at']),
+            'note' => [
+                ...$note->only(['ref_id', 'title', 'content', 'is_wide', 'updated_at', 'created_at']),
+                'folder' => $note->folder?->ref_id,
+                'edited_by' => $note->editor?->name,
+            ],
             'breadcrumbs' => self::crumbs($note->folder),
+            // Where it can be moved, for its menu: only asked for when moving
+            'allFolders' => Inertia::optional(fn () => NoteFolder::paths(Folders::all(NoteFolder::class, $note->owner()))),
         ]);
     }
 

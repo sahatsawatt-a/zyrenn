@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Note\Note;
+use App\Models\Note\NoteFolder;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -82,6 +83,24 @@ class NoteTest extends TestCase
 
         $this->actingAs($user)->get('/notes/'.$note->id)->assertNotFound();
         $this->actingAs($user)->get('/notes/'.$note->ref_id)->assertOk();
+    }
+
+    public function test_the_note_page_says_where_it_is_and_lists_folders_only_when_moving()
+    {
+        $user = User::factory()->create(['name' => 'Ada']);
+        $folder = NoteFolder::factory()->for($user)->create(['name' => 'Plans']);
+        $note = Note::factory()->for($user)->create(['folder_id' => $folder->id, 'updated_by' => $user->id]);
+
+        $this->actingAs($user)
+            ->get(route('notes.show', $note))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('note.folder', $folder->ref_id)
+                ->where('note.edited_by', 'Ada')
+                ->has('note.created_at')
+                ->missing('allFolders')
+                // Asked for by the toolbar's "Move to…"
+                ->reloadOnly('allFolders', fn (Assert $reload) => $reload
+                    ->where('allFolders.0', ['ref_id' => $folder->ref_id, 'path' => 'Plans'])));
     }
 
     public function test_autosave_keeps_spaces_at_the_edges_of_text_nodes()
