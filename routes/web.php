@@ -1,13 +1,17 @@
 <?php
 
 use App\Http\Controllers\CollabController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Middleware\VerifyCollabSecret;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'Welcome')->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::inertia('dashboard', 'Dashboard')->name('dashboard');
+    // Your own at /dashboard, a project's at /p/{project}/dashboard
+    Route::owned(function () {
+        Route::get('dashboard', DashboardController::class)->name('dashboard');
+    });
 
     // The collaboration server asks, with the browser's own cookie, who may open a shared note or board
     Route::get('collab/auth', [CollabController::class, 'auth'])->name('collab.auth');

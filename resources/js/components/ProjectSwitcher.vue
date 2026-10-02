@@ -28,7 +28,8 @@ import { useFolderDialogs } from '@/composables/useFolderDialogs';
 import { index as boardsIndex } from '@/routes/boards';
 import { index as driveIndex } from '@/routes/drive';
 import { index as notesIndex } from '@/routes/notes';
-import { edit, store } from '@/routes/projects';
+import { dashboard } from '@/routes';
+import { dashboard as projectDashboard, edit, store } from '@/routes/projects';
 import { index as projectBoardsIndex } from '@/routes/projects/boards';
 import { index as projectDriveIndex } from '@/routes/projects/drive';
 import { index as projectNotesIndex } from '@/routes/projects/notes';
@@ -42,6 +43,7 @@ const { isMobile, state } = useSidebar();
 
 // Switching keeps to the same kind of thing: from a project's boards to your own
 const sections = {
+    dashboard: [dashboard, projectDashboard],
     notes: [notesIndex, projectNotesIndex],
     boards: [boardsIndex, projectBoardsIndex],
     tables: [tablesIndex, projectTablesIndex],

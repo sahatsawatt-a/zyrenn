@@ -40,13 +40,13 @@ class ProjectController extends Controller
     }
 
     /**
-     * A project opens on its notes.
+     * A project opens on its dashboard.
      */
     public function show(Project $project): RedirectResponse
     {
         Gate::authorize('view', $project);
 
-        return to_route('projects.notes.index', $project);
+        return to_route('projects.dashboard', $project);
     }
 
     /**

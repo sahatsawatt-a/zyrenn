@@ -46,6 +46,7 @@ import { index as notesIndex } from '@/routes/notes';
 import { index as messagesIndex } from '@/routes/messages';
 import {
     chat as projectChat,
+    dashboard as projectDashboard,
     edit as projectSettings,
 } from '@/routes/projects';
 import { index as projectBoardsIndex } from '@/routes/projects/boards';
@@ -65,7 +66,7 @@ const mainNavItems = computed<NavItem[]>(() => {
     return [
         {
             title: 'Dashboard',
-            href: dashboard(),
+            href: owned(dashboard, projectDashboard)(),
             icon: ChartNoAxesCombined,
         },
         {
