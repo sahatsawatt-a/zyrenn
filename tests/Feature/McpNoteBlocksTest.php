@@ -128,6 +128,43 @@ class McpNoteBlocksTest extends TestCase
         $this->assertSame([$heading, $old, $list], array_slice($this->ids($note), 0, 3));
     }
 
+    public function test_a_block_left_out_of_the_pdf_says_so_and_stays_out_when_rewritten()
+    {
+        $note = $this->note("# Plan\n\nDraft only.\n\nShown.");
+        [, $draft] = $this->ids($note);
+        $content = $note->content;
+        $content['content'][1]['attrs'][NoteBlocks::PDF_HIDDEN] = true;
+        $note->update(['content' => $content]);
+
+        $outline = NoteBlocks::outline($note->fresh()->content);
+        $this->assertTrue($outline[1]['hidden_in_pdf']);
+        $this->assertArrayNotHasKey('hidden_in_pdf', $outline[2]);
+        $this->assertTrue(NoteBlocks::present(NoteBlocks::find($note->fresh()->content, [$draft]))[0]['hidden_in_pdf']);
+
+        UserServer::actingAs($this->user)
+            ->tool(EditNote::class, ['ref_id' => $note->ref_id, 'changes' => [
+                ['op' => 'replace', 'block' => $draft, 'markdown' => "Still a draft.\n\nTwo lines of it."],
+            ]])
+            ->assertOk();
+
+        $blocks = $note->fresh()->content['content'];
+        $this->assertSame([false, true, true, false], array_map(
+            fn (array $block) => ($block['attrs'][NoteBlocks::PDF_HIDDEN] ?? false) === true,
+            $blocks,
+        ));
+        $this->assertSame($draft, $blocks[1]['attrs']['id']);
+    }
+
+    public function test_a_page_break_is_a_block_of_its_own_in_the_outline()
+    {
+        $note = $this->note("Cover\n\n<!-- pagebreak -->\n\nChapter one");
+
+        $outline = NoteBlocks::outline($note->fresh()->content);
+
+        $this->assertSame('page break', $outline[1]['type']);
+        $this->assertNotEmpty($outline[1]['id']);
+    }
+
     public function test_a_change_that_cant_be_made_leaves_the_note_as_it_was()
     {
         $note = $this->note('Keep.');

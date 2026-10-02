@@ -142,6 +142,24 @@ MD;
         $this->assertSame('paragraph', TiptapMarkdown::toDoc('<div>hi</div>')['content'][0]['type']);
     }
 
+    public function test_a_page_break_round_trips_as_its_own_block()
+    {
+        $markdown = "Cover\n\n<!-- pagebreak -->\n\n# Chapter one";
+
+        $doc = TiptapMarkdown::toDoc($markdown);
+
+        $this->assertSame(['paragraph', 'pageBreak', 'heading'], array_column($doc['content'], 'type'));
+        $this->assertSame($markdown."\n", TiptapMarkdown::toMarkdown($doc));
+
+        // However it is spelled, it is read as a break and written back the one way
+        $doc = TiptapMarkdown::toDoc("A\n\n<!--Page-Break-->\n\nB");
+        $this->assertSame('pageBreak', $doc['content'][1]['type']);
+        $this->assertSame("A\n\n<!-- pagebreak -->\n\nB\n", TiptapMarkdown::toMarkdown($doc));
+
+        // Any other comment is not one
+        $this->assertSame('paragraph', TiptapMarkdown::toDoc('<!-- note to self -->')['content'][0]['type']);
+    }
+
     public function test_it_follows_commonmark_for_escapes_and_nested_emphasis()
     {
         $this->assertSame(

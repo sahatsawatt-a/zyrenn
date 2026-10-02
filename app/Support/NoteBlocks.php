@@ -19,6 +19,9 @@ final class NoteBlocks
     /** Kinds of list, and the kind of item each holds. */
     private const LISTS = ['bulletList' => 'listItem', 'orderedList' => 'listItem', 'taskList' => 'taskItem'];
 
+    /** The block attribute that leaves a block out of the PDF (editor-nodes/PdfHidden.ts). */
+    public const PDF_HIDDEN = 'pdfHidden';
+
     /**
      * @return array{attribute: string, idLength: int, types: list<string>}
      */
@@ -66,6 +69,7 @@ final class NoteBlocks
                 'type' => self::kindOf($block),
                 'text' => Str::limit(self::text($block), 80),
                 'items' => isset(self::LISTS[$block['type'] ?? '']) ? count($block['content'] ?? []) : null,
+                'hidden_in_pdf' => self::hiddenInPdf($block) ?: null,
             ], fn ($value) => $value !== null && $value !== ''),
             self::blocks($doc),
         );
@@ -82,6 +86,10 @@ final class NoteBlocks
     {
         return array_map(function (array $block) {
             $shown = ['id' => self::idOf($block), 'type' => self::kindOf($block), 'markdown' => self::markdown($block)];
+
+            if (self::hiddenInPdf($block)) {
+                $shown['hidden_in_pdf'] = true;
+            }
 
             if (isset(self::LISTS[$block['type'] ?? ''])) {
                 $shown['items'] = array_map(
@@ -180,6 +188,10 @@ final class NoteBlocks
                     $path = self::pathOf($doc, $block, $problem);
                     $old = self::nodeAt($doc, $path);
                     $nodes = self::newBlocks($doc, (string) ($operation['markdown'] ?? ''), $old['type'] ?? null, keep: self::idOf($old));
+                    // What was left out of the PDF stays out, rewritten or not
+                    if (self::hiddenInPdf($old)) {
+                        $nodes = array_map(fn (array $node) => [...$node, 'attrs' => [...($node['attrs'] ?? []), self::PDF_HIDDEN => true]], $nodes);
+                    }
                     self::splice($doc, $path, 1, $nodes);
                     $edits[] = ['do' => 'replace', 'id' => $block, 'nodes' => $nodes];
                     array_push($changed, ...array_map(self::idOf(...), $nodes));
@@ -266,6 +278,16 @@ final class NoteBlocks
     }
 
     /**
+     * Whether the block is left out when the note is printed.
+     *
+     * @param  array<string, mixed>  $node
+     */
+    private static function hiddenInPdf(array $node): bool
+    {
+        return ($node['attrs'][self::PDF_HIDDEN] ?? false) === true;
+    }
+
+    /**
      * @param  array<string, mixed>  $node
      */
     private static function idOf(array $node): ?string
@@ -288,6 +310,7 @@ final class NoteBlocks
             $type === 'heading' => 'heading '.($block['attrs']['level'] ?? 1),
             // A diagram or a board shown in the note is a code block underneath
             $type === 'codeBlock' && in_array($block['attrs']['language'] ?? '', ['mermaid', 'board'], true) => $block['attrs']['language'],
+            $type === 'pageBreak' => 'page break',
             default => $type,
         };
     }

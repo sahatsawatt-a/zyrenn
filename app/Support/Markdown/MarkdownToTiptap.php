@@ -44,6 +44,9 @@ use League\CommonMark\Parser\MarkdownParser;
  */
 final class MarkdownToTiptap
 {
+    /** How a page break is written (TiptapToMarkdown writes it, pageBreak() reads it). */
+    public const PAGE_BREAK = '<!-- pagebreak -->';
+
     private MarkdownParser $parser;
 
     public function __construct()
@@ -106,7 +109,7 @@ final class MarkdownToTiptap
             $node instanceof Table => [$this->table($node)],
             $node instanceof Callout => [$this->node('callout', ['icon' => $node->icon], $this->blocks($node) ?: [['type' => 'paragraph']])],
             $node instanceof MathBlock => $node->latex === '' ? [] : [$this->node('blockMath', ['latex' => $node->latex])],
-            $node instanceof HtmlBlock => [$this->video($node->getLiteral()) ?? $this->textParagraph($node->getLiteral())],
+            $node instanceof HtmlBlock => [$this->pageBreak($node->getLiteral()) ?? $this->video($node->getLiteral()) ?? $this->textParagraph($node->getLiteral())],
             default => [],
         };
     }
@@ -185,6 +188,17 @@ final class MarkdownToTiptap
         }
 
         return $html !== '' ? $this->video($html) : null;
+    }
+
+    /**
+     * A page break, on a line of its own: "<!-- pagebreak -->" (also
+     * "page-break", any case or spacing).
+     *
+     * @return array<string, mixed>|null
+     */
+    private function pageBreak(string $html): ?array
+    {
+        return preg_match('~^\s*<!--\s*page[\s-]?break\s*-->\s*$~i', $html) ? ['type' => 'pageBreak'] : null;
     }
 
     /**

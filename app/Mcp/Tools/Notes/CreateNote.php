@@ -11,7 +11,7 @@ use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Attributes\Description;
 
-#[Description('Create a note. Content is Markdown: headings, lists, "- [ ]" to-dos, > quotes, ``` code (```mermaid for diagrams), GFM tables, ":::callout 💡 … :::" callouts, $…$ inline math and $$ … $$ math blocks (LaTeX). Images go in as ![alt](url) on their own line -- upload the picture with upload-file first and use the "markdown" line it returns.')]
+#[Description('Create a note. Content is Markdown: headings, lists, "- [ ]" to-dos, > quotes, ``` code (```mermaid for diagrams), GFM tables, ":::callout 💡 … :::" callouts, $…$ inline math and $$ … $$ math blocks (LaTeX), and "<!-- pagebreak -->" on a line of its own to start a new page in the PDF. Images go in as ![alt](url) on their own line -- upload the picture with upload-file first and use the "markdown" line it returns.')]
 class CreateNote extends NoteTool
 {
     protected function arguments(JsonSchema $schema): array

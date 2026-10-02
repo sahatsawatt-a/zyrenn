@@ -94,6 +94,28 @@
 
     /* --- blocks on paper -------------------------------------------------- */
 
+    /* A page break: the next block starts a new page, and the line is not
+       printed. One with nothing to print after it is skipped (PageBreak.ts),
+       or it would only print a blank page. */
+    .tiptap .page-break {
+        height: 0 !important;
+        margin: 0 !important;
+        break-after: page;
+    }
+    .tiptap .page-break::before,
+    .tiptap .page-break::after {
+        content: none !important;
+    }
+    .tiptap .page-break.is-idle {
+        display: none !important;
+    }
+
+    /* Blocks the writer left out of the PDF (block menu → Hide in PDF) */
+    .tiptap .is-pdf-hidden,
+    .tiptap [data-pdf-hidden='true'] {
+        display: none !important;
+    }
+
     /* A code line too long for the page wraps instead of being cut off */
     .code-block-wrapper {
         box-shadow: none !important;

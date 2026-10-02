@@ -1,5 +1,5 @@
 <template>
-    <!-- Block options: turn into / duplicate / delete -->
+    <!-- Block options: turn into / duplicate / page break / leave out of the PDF / delete -->
     <Teleport to="body">
         <div ref="menuRef" class="block-menu" :style="menuStyle" role="menu">
             <template v-if="canTurnInto">
@@ -31,6 +31,29 @@
                 <span>Duplicate</span>
             </button>
             <button
+                v-if="block.node.type.name !== 'pageBreak'"
+                type="button"
+                role="menuitem"
+                class="block-menu-item"
+                data-test="block-page-break"
+                @click="pageBreakBelow"
+            >
+                <SeparatorHorizontal class="block-menu-lucide" />
+                <span>Page break below</span>
+            </button>
+            <button
+                v-if="canHide"
+                type="button"
+                role="menuitem"
+                class="block-menu-item"
+                data-test="block-pdf-toggle"
+                @click="togglePdf"
+            >
+                <Eye v-if="hiddenInPdf" class="block-menu-lucide" />
+                <EyeOff v-else class="block-menu-lucide" />
+                <span>{{ hiddenInPdf ? 'Show in PDF' : 'Hide in PDF' }}</span>
+            </button>
+            <button
                 type="button"
                 role="menuitem"
                 class="block-menu-item is-danger"
@@ -51,7 +74,15 @@ import type { ChainedCommands } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { Selection, TextSelection } from '@tiptap/pm/state';
 import { onClickOutside, useEventListener } from '@vueuse/core';
-import { Check, Copy, Trash2 } from '@lucide/vue';
+import {
+    Check,
+    Copy,
+    Eye,
+    EyeOff,
+    SeparatorHorizontal,
+    Trash2,
+} from '@lucide/vue';
+import { PDF_HIDDEN, canHideInPdf } from '@/editor-nodes/PdfHidden';
 import { freshBlock } from '@/lib/editorBlocks';
 import type { Block } from '@/lib/editorBlocks';
 
@@ -233,6 +264,44 @@ const duplicate = () => {
         tr
             .setSelection(TextSelection.near(tr.doc.resolve(after + 1)))
             .scrollIntoView(),
+    );
+    view.focus();
+};
+
+// The printed note carries on on a new page after this block (see PageBreak)
+const pageBreakBelow = () => {
+    const target = current();
+    emit('close');
+    if (!target) return;
+
+    const { view } = props.editor;
+    view.dispatch(
+        view.state.tr
+            .insert(
+                target.pos + target.node.nodeSize,
+                view.state.schema.nodes.pageBreak.create(),
+            )
+            .scrollIntoView(),
+    );
+    view.focus();
+};
+
+// Kept in the note, left out when it is printed (see PdfHidden)
+const canHide = computed(() => canHideInPdf(props.block.node));
+const hiddenInPdf = computed(() => Boolean(props.block.node.attrs[PDF_HIDDEN]));
+
+const togglePdf = () => {
+    const target = current();
+    emit('close');
+    if (!target) return;
+
+    const { view } = props.editor;
+    view.dispatch(
+        view.state.tr.setNodeAttribute(
+            target.pos,
+            PDF_HIDDEN,
+            !target.node.attrs[PDF_HIDDEN],
+        ),
     );
     view.focus();
 };

@@ -194,6 +194,14 @@ export const commandItems: SlashCommandItem[] = [
                 .run(),
     },
     {
+        title: 'Page Break',
+        description: 'Start a new page here in the PDF.',
+        icon: '⤓',
+        keywords: ['break', 'new page', 'pdf', 'print', 'pagebreak'],
+        command: ({ editor, range }) =>
+            editor.chain().focus().deleteRange(range).setPageBreak().run(),
+    },
+    {
         title: 'Board',
         description: 'Show a board, or one of its frames, in this note.',
         icon: '▦',

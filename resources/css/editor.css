@@ -151,3 +151,77 @@
 .collaboration-carets__selection {
     opacity: 0.25;
 }
+
+/* ---------------------------------------------------------------------------
+   A block left out of the PDF (block menu → Hide in PDF): still in the note,
+   faded and fenced off on screen, gone on paper (print.css)
+--------------------------------------------------------------------------- */
+.tiptap .is-pdf-hidden {
+    position: relative;
+    opacity: 0.55;
+    outline: 1.5px dashed var(--border);
+    outline-offset: 4px;
+    border-radius: 2px;
+}
+
+.tiptap .is-pdf-hidden::after {
+    content: 'Hidden in PDF';
+    position: absolute;
+    top: -12px;
+    right: 6px;
+    padding: 0 4px;
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: 500;
+    font-style: normal;
+    line-height: 14px;
+    letter-spacing: 0.02em;
+    color: var(--muted-foreground);
+    background-color: var(--background);
+    pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------------
+   A page break (/page break): a labelled dashed line here, a new page in the
+   PDF (print.css). Listed after the hidden-in-PDF rules so its label wins.
+--------------------------------------------------------------------------- */
+.tiptap .page-break {
+    position: relative;
+    height: 24px;
+    margin: 12px 0;
+    cursor: grab;
+}
+
+.tiptap .page-break::before {
+    content: '';
+    position: absolute;
+    inset: 50% 0 auto;
+    border-top: 1.5px dashed var(--border);
+}
+
+.tiptap .page-break::after {
+    content: 'Page break';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 0 8px;
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--muted-foreground);
+    background-color: var(--background);
+}
+
+.tiptap .page-break.is-pdf-hidden::after {
+    content: 'Page break · hidden in PDF';
+    top: 50%;
+    right: auto;
+}
+
+.tiptap .page-break.ProseMirror-selectednode::before {
+    border-top-color: var(--primary);
+}

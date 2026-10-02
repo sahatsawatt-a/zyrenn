@@ -60,6 +60,8 @@ import { BlockMath, InlineMath } from '@tiptap/extension-mathematics';
 import { CalloutNode } from '../../editor-nodes/CalloutNode';
 import { CodeBlockNode } from '../../editor-nodes/CodeBlockNode';
 import { CurrentLinePlaceholder } from '../../editor-nodes/CurrentLinePlaceholder';
+import { PageBreak } from '../../editor-nodes/PageBreak';
+import { PdfHidden } from '../../editor-nodes/PdfHidden';
 import { ImageNode } from '../../editor-nodes/ImageNode';
 import { VideoNode } from '../../editor-nodes/VideoNode';
 import MediaViewer from '../MediaViewer.vue';
@@ -239,6 +241,11 @@ const editor = useEditor({
             filterTransaction: (transaction) => !isChangeOrigin(transaction),
         }),
 
+        // Blocks kept in the note but left out of its PDF (BlockMenu turns it on)
+        PdfHidden,
+        // Where the printed note starts a new page (/page break)
+        PageBreak,
+
         // Shared: one document for everyone, and where each of the others is typing
         ...(props.shared
             ? [
@@ -352,7 +359,21 @@ useEventListener(
     },
 );
 
+// Words by the language's own rules, so Thai -- written without spaces -- counts too
+const words = new Intl.Segmenter(undefined, { granularity: 'word' });
+
 defineExpose({
+    /** How long the note is, for its menu. */
+    stats: () => {
+        const text = editor.value?.getText({ blockSeparator: '\n' }) ?? '';
+        let count = 0;
+
+        for (const segment of words.segment(text)) {
+            if (segment.isWordLike) count++;
+        }
+
+        return { words: count, characters: text.replace(/\s/g, '').length };
+    },
     focus: () => {
         // commands.focus() defers DOM focus to the next frame, so keystrokes typed right away would be lost
         editor.value?.view.focus();

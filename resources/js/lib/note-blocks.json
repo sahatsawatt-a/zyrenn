@@ -15,6 +15,7 @@
         "callout",
         "table",
         "horizontalRule",
+        "pageBreak",
         "blockMath",
         "image",
         "video"

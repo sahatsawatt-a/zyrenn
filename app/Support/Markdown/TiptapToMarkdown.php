@@ -65,6 +65,8 @@ final class TiptapToMarkdown
             'callout' => ':::callout '.($attrs['icon'] ?? '💡')."\n".$this->blocksToMarkdown($content)."\n:::",
             'table' => $this->tableToMarkdown($content),
             'horizontalRule' => '---',
+            // Invisible in any other Markdown viewer, and not mistaken for words
+            'pageBreak' => MarkdownToTiptap::PAGE_BREAK,
             'blockMath' => "$$\n".($attrs['latex'] ?? '')."\n$$",
             'image' => '!['.($attrs['alt'] ?? '').']('.($attrs['src'] ?? '').')',
             'video' => self::video((string) ($attrs['src'] ?? ''), $attrs['title'] ?? null),
