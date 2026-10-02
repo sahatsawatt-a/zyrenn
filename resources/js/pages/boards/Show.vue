@@ -52,10 +52,18 @@ const props = defineProps<{
 // A project's viewers see the whole board, drawn as it is, and change nothing
 const editable = canChange();
 
+// Set as this page deletes the board, which then hears of it like everyone else
+let deletingHere = false;
+
 // Who else has the board open
 const { others } = usePresence(() => `boards.${props.board.ref_id}`, {
-    // Deleted by someone else: close it rather than edit into nothing
+    // Deleted by someone else: close it rather than edit into nothing. One's
+    // own delete is heard here too, and goes where the server sends it
     deleted: () => {
+        if (deletingHere) {
+            return;
+        }
+
         toast.info('Someone deleted this board.');
         router.visit(index());
     },
@@ -349,6 +357,7 @@ useEventListener(window, 'pagehide', () => {
 const removeBeforeListener = router.on('before', (event) => {
     if (event.detail.visit.method === 'delete') {
         // The board is about to be deleted; saving it would 404
+        deletingHere = true;
         dirty.clear();
     } else {
         void save();

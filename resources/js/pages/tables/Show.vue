@@ -98,6 +98,17 @@ const saveTitle = useDebounceFn(async () => {
 // Back to the list the page came from: the project's, or the user's own
 const index = owned(ownIndex, projectIndex);
 
+// Set as this page deletes the table, which then hears of it like everyone else
+let deletingHere = false;
+
+const deleteTable = () => {
+    deletingHere = true;
+    router.delete(destroy.url(props.table.ref_id), {
+        onCancel: () => (deletingHere = false),
+        onError: () => (deletingHere = false),
+    });
+};
+
 // Everyone with the table open sees each other's changes as they are saved
 const { others } = usePresence(() => `tables.${props.table.ref_id}`, {
     changed: (change: TableChange) => {
@@ -128,6 +139,11 @@ const { others } = usePresence(() => `tables.${props.table.ref_id}`, {
                 });
                 break;
             case 'deleted':
+                // One's own delete is heard here too: the server says where to go
+                if (deletingHere) {
+                    break;
+                }
+
                 toast.info('Someone deleted this table.');
                 router.visit(index());
                 break;
@@ -256,11 +272,7 @@ onBeforeUnmount(() => {
                             </DialogClose>
                             <Button
                                 variant="destructive"
-                                @click="
-                                    router.delete(
-                                        destroy.url(props.table.ref_id),
-                                    )
-                                "
+                                @click="deleteTable"
                             >
                                 Delete table
                             </Button>
