@@ -70,6 +70,62 @@ export const groupKeys = (items: Item[]): Map<string, string> => {
 };
 
 /**
+ * The stack with nothing painted under the frame it sits on: a frame is an
+ * opaque card, and whatever falls beneath one is simply gone.
+ *
+ * Anything buried -- a frame drawn or dragged over it, sent to the back -- comes
+ * up to just above its frame, at the bottom of what is on it. Whatever was
+ * `dropped` onto a frame from somewhere else goes on top of what is there, the
+ * way a thing put down on a slide lands on it. Either way the moved ones keep
+ * their order among themselves, and the same list comes back if nothing moved.
+ */
+export const keepOnFrames = (items: Item[], dropped: string[] = []): Item[] => {
+    const keys = groupKeys(items);
+    const next = [...items];
+    const at = (id: string) => next.findIndex((item) => item.id === id);
+    // What was last put back above each frame, so the next one goes over it
+    const lastLifted = new Map<string, string>();
+    let moved = false;
+
+    // Bottom of the stack first, so each lands over the one before it
+    for (const item of items) {
+        const home = keys.get(item.id);
+
+        if (!home || home === 'board') {
+            continue;
+        }
+
+        const onTop = dropped.includes(item.id);
+
+        if (!onTop && at(item.id) > at(home)) {
+            continue;
+        }
+
+        next.splice(at(item.id), 1);
+
+        const to = onTop
+            ? Math.max(
+                  ...next.map((other, index) =>
+                      other.id === home || keys.get(other.id) === home
+                          ? index
+                          : -1,
+                  ),
+              ) + 1
+            : at(lastLifted.get(home) ?? home) + 1;
+
+        next.splice(to, 0, item);
+
+        if (!onTop) {
+            lastLifted.set(home, item.id);
+        }
+
+        moved ||= next.indexOf(item) !== items.indexOf(item);
+    }
+
+    return moved ? next : items;
+};
+
+/**
  * The stack, under the frame each thing sits on, with whatever no frame holds
  * gathered at the end.
  */

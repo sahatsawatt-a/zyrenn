@@ -34,9 +34,9 @@ import {
 } from '@/components/ui/popover';
 import type { Tool } from '../../composables/board/items';
 
-// The tools down the left of the canvas: the everyday ones a click away, and
-// the many shapes in a flyout of their own, so the rail stays one icon wide
-// and the canvas keeps the room.
+// The tools along the bottom middle of the canvas: the everyday ones a click
+// away, and the many shapes in a flyout of their own, so the bar stays one
+// icon high and the canvas keeps the room.
 const props = defineProps<{
     tool: Tool;
     canUndo: boolean;
@@ -174,8 +174,8 @@ const pickShape = (entry: Entry) => {
                 </button>
             </PopoverTrigger>
             <PopoverContent
-                side="right"
-                align="start"
+                side="top"
+                align="center"
                 :side-offset="12"
                 class="w-64 p-2.5 data-[state=closed]:animate-none"
                 data-test="shape-flyout"
@@ -286,7 +286,7 @@ const pickShape = (entry: Entry) => {
 <style scoped>
 .rail {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
     gap: 2px;
     padding: 0.3125rem;
@@ -332,9 +332,9 @@ const pickShape = (entry: Entry) => {
 }
 
 .rail-divider {
-    width: 1.25rem;
-    height: 1px;
-    margin: 0.25rem 0;
+    width: 1px;
+    height: 1.25rem;
+    margin: 0 0.25rem;
     background-color: var(--border);
 }
 

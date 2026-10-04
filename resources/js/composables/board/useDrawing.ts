@@ -4,6 +4,7 @@ import { nextTick, ref } from 'vue';
 import { boundsOf, overlaps } from './geometry';
 import type { Guide } from './guides';
 import { alignmentFor } from './guides';
+import { groupKeys } from './layers';
 import type { Endpoint, Item, ItemKind, Tool } from './items';
 import { hasText, isConnectable, isConnector, isStroke } from './items';
 
@@ -17,6 +18,7 @@ type Drawing = {
         toggleInSelection: (id: string) => void;
         add: (item: Item) => void;
         commit: () => void;
+        settle: (dropped?: string[]) => void;
         makeItem: (
             kind: ItemKind,
             x: number,
@@ -76,6 +78,8 @@ export function useDrawing({
 
     let marqueeStart: { x: number; y: number } | null = null;
     let dragOrigin: Map<string, { x: number; y: number }> | null = null;
+    // The frame (or "board") each thing being dragged started on
+    let dragHomes: Map<string, string> | null = null;
     let floatingOrigin: Map<
         string,
         { from: { x: number; y: number }; to: { x: number; y: number } }
@@ -302,6 +306,7 @@ export function useDrawing({
                 { x: item.x, y: item.y },
             ]),
         );
+        dragHomes = groupKeys(board.items.value);
 
         // A connector pinned to a shape follows it on its own. One floating free is
         // carried along with whatever else is being dragged.
@@ -413,6 +418,21 @@ export function useDrawing({
         };
 
     const onItemDragEnd = () => {
+        // Put down on another frame, it comes up on top of that frame rather
+        // than staying wherever it was in the stack -- under it, as often as not
+        const homes = dragHomes;
+        const now = groupKeys(board.items.value);
+        const dropped = homes
+            ? [...(dragOrigin?.keys() ?? [])].filter(
+                  (id) => now.get(id) !== homes.get(id),
+              )
+            : [];
+
+        if (dragOrigin) {
+            board.settle(dropped);
+        }
+
+        dragHomes = null;
         dragOrigin = null;
         floatingOrigin = null;
         guides.value = [];

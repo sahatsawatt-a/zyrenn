@@ -296,6 +296,9 @@ export function boardOn(page) {
 
     /** Draws a connector between the middles of two boxes. */
     const join = async (from, to, ends) => {
+        // Nothing left selected: a selection's rotate handle can sit right
+        // where the line is meant to start, zoomed out
+        await page.keyboard.press('Escape');
         await page.locator('[data-test="tool-arrow"]').click();
 
         const start =

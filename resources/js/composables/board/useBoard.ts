@@ -2,7 +2,7 @@ import { computed, ref, shallowRef } from 'vue';
 import type { Ref } from 'vue';
 import { STICKY_COLOURS, bumpIdsTo, hydrate, makeItem, newId } from './items';
 import { labelHeight } from './labels';
-import { groupKeys } from './layers';
+import { groupKeys, keepOnFrames } from './layers';
 import type { Item, ItemKind } from './items';
 
 /**
@@ -134,24 +134,27 @@ export function useBoard(initial: Item[] | null = null) {
     };
 
     // ------------------------------------------------------------ mutation
+    /**
+     * Brings back up anything a frame has come to cover, and puts whatever was
+     * just `dropped` onto a different frame on top of it (see keepOnFrames).
+     * Part of the change that called for it, so no undo step of its own.
+     */
+    const settle = (dropped: string[] = []) => {
+        const next = keepOnFrames(items.value, dropped);
+
+        if (next !== items.value) {
+            items.value = next;
+        }
+    };
+
     const add = (item: Item, { keepSelection = false } = {}) => {
         commit();
         items.value.push(item);
+        settle();
 
         if (!keepSelection) {
             selection.value = [item.id];
         }
-    };
-
-    /** Several at once -- an imported diagram is one thing to undo, not twenty. */
-    const insert = (added: Item[]) => {
-        if (!added.length) {
-            return;
-        }
-
-        commit();
-        items.value.push(...added);
-        selection.value = added.map((item) => item.id);
     };
 
     const remove = (ids: string[]) => {
@@ -188,6 +191,7 @@ export function useBoard(initial: Item[] | null = null) {
         }));
 
         items.value.push(...copies);
+        settle();
         selection.value = copies.map((copy) => copy.id);
     };
 
@@ -213,6 +217,8 @@ export function useBoard(initial: Item[] | null = null) {
                 direction === 'front'
                     ? [...rest, ...moving]
                     : [...moving, ...rest];
+            // The back of a frame is the bottom of what is on it, not under it
+            settle();
 
             return;
         }
@@ -257,6 +263,7 @@ export function useBoard(initial: Item[] | null = null) {
         });
 
         items.value = next;
+        settle();
     };
 
     /** Drop an item straight into a place in the list. */
@@ -273,6 +280,7 @@ export function useBoard(initial: Item[] | null = null) {
         const [item] = next.splice(from, 1);
         next.splice(Math.max(0, Math.min(next.length, index)), 0, item);
         items.value = next;
+        settle();
     };
 
     const toggle = (id: string, field: 'hidden' | 'locked') => {
@@ -451,10 +459,10 @@ export function useBoard(initial: Item[] | null = null) {
         select,
         toggleInSelection,
         add,
-        insert,
         remove,
         duplicate,
         reorder,
+        settle,
         moveTo,
         toggle,
         setText,

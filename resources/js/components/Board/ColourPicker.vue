@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { Palette, Pipette } from '@lucide/vue';
+import { Palette, Pipette, Plus, X } from '@lucide/vue';
 import { useEventListener } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
-import { PALETTE } from '../../composables/board/items';
+import { MOST_COLOURS, usePalette } from '../../composables/board/usePalette';
 
 // A saturation/value square over a hue slider: the picker Figma, Miro and
 // friends use. Hand-built rather than pulled from a package -- the well-known
@@ -63,6 +63,10 @@ const toHex = ({ h, s, v }: Hsv): string => {
     return `#${r}${g}${b}`;
 };
 
+const palette = usePalette();
+// Taking colours off the swatches, rather than painting with them
+const editing = ref(false);
+
 const hsv = ref<Hsv>(toHsv(props.modelValue));
 const hex = ref(props.modelValue);
 const custom = ref(false);
@@ -82,6 +86,17 @@ watch(
 const push = () => {
     hex.value = toHex(hsv.value);
     emit('update:modelValue', hex.value);
+};
+
+const onSwatch = (colour: string) => {
+    if (editing.value) {
+        palette.drop(colour);
+
+        return;
+    }
+
+    hsv.value = toHsv(colour);
+    push();
 };
 
 const onHexInput = (event: Event) => {
@@ -154,22 +169,67 @@ const pickFromScreen = async () => {
 
 <template>
     <div class="picker" data-test="colour-picker">
-        <p class="picker-label">{{ label }}</p>
-
-        <div class="picker-presets">
+        <div class="picker-head">
+            <p class="picker-label">{{ label }}</p>
             <button
-                v-for="colour in PALETTE"
+                v-if="editing"
+                type="button"
+                class="picker-text"
+                title="Put the board's own colours back"
+                data-test="palette-reset"
+                @click="palette.reset()"
+            >
+                Reset
+            </button>
+            <button
+                type="button"
+                class="picker-text"
+                :class="{ 'is-on': editing }"
+                :title="
+                    editing
+                        ? 'Done changing the swatches'
+                        : 'Take colours off the swatches'
+                "
+                data-test="palette-edit"
+                @click="editing = !editing"
+            >
+                {{ editing ? 'Done' : 'Edit' }}
+            </button>
+        </div>
+
+        <!-- Your own colours: the board's to begin with, then whatever is
+             kept here with the plus and taken off again under Edit -->
+        <div class="picker-presets" data-test="palette">
+            <button
+                v-for="colour in palette.colours.value"
                 :key="colour"
                 type="button"
                 class="picker-preset"
-                :class="{ 'is-on': colour.toLowerCase() === hex.toLowerCase() }"
+                :class="{
+                    'is-on':
+                        !editing && colour.toLowerCase() === hex.toLowerCase(),
+                    'is-editing': editing,
+                }"
                 :style="{ backgroundColor: colour }"
-                :title="colour"
-                @click="
-                    hsv = toHsv(colour);
-                    push();
+                :title="editing ? `Take ${colour} off` : colour"
+                data-test="palette-swatch"
+                @click="onSwatch(colour)"
+            >
+                <X v-if="editing" class="picker-preset-x" />
+            </button>
+            <button
+                v-if="
+                    !palette.has(hex) &&
+                    palette.colours.value.length < MOST_COLOURS
                 "
-            />
+                type="button"
+                class="picker-preset picker-keep"
+                :title="`Keep ${hex} with your colours`"
+                data-test="palette-keep"
+                @click="palette.keep(hex)"
+            >
+                <Plus class="size-3" />
+            </button>
         </div>
 
         <div class="picker-row">
@@ -247,6 +307,29 @@ const pickFromScreen = async () => {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+}
+
+.picker-head {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.picker-text {
+    padding: 0 0.25rem;
+    font-size: 0.6875rem;
+    color: var(--muted-foreground);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+.picker-text:first-of-type {
+    margin-left: auto;
+}
+.picker-text:hover {
+    color: var(--foreground);
+}
+.picker-text.is-on {
+    color: var(--primary);
 }
 
 .picker-label {
@@ -349,6 +432,9 @@ const pickFromScreen = async () => {
 }
 
 .picker-preset {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     height: 1.1rem;
     border: 1px solid rgb(0 0 0 / 0.15);
     border-radius: var(--radius-sm);
@@ -360,5 +446,24 @@ const pickFromScreen = async () => {
 .picker-preset.is-on {
     outline: 2px solid var(--primary);
     outline-offset: 1px;
+}
+
+/* Under Edit, each one says it comes off when clicked */
+.picker-preset-x {
+    width: 0.7rem;
+    height: 0.7rem;
+    padding: 1px;
+    color: #fff;
+    background-color: rgb(15 23 42 / 0.7);
+    border-radius: 999px;
+}
+
+.picker-keep {
+    color: var(--muted-foreground);
+    background-color: var(--background);
+    border-style: dashed;
+}
+.picker-keep:hover {
+    color: var(--foreground);
 }
 </style>

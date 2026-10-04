@@ -14,6 +14,7 @@ await runBoard('/demo/konva', async (b) => {
         painted,
         inspectorTitle,
         itemCount,
+        fields,
     } = b;
 
     // --- grouped by frame
@@ -164,5 +165,126 @@ await runBoard('/demo/konva', async (b) => {
         (await itemCount()) > 0,
         `${await itemCount()} items`,
     );
+
+    // --- where things are: tools along the bottom middle, layers down the
+    // left, settings down the right
+    const canvas = b.view.box;
+    const boxOf = (test) => page.locator(`[data-test="${test}"]`).boundingBox();
+    const tools = await boxOf('shape-library');
+    check(
+        'the tools sit along the bottom middle',
+        Math.abs(tools.x + tools.width / 2 - (canvas.x + canvas.width / 2)) <
+            4 && canvas.y + canvas.height - (tools.y + tools.height) < 24,
+        `${Math.round(tools.x)},${Math.round(tools.y)} ${Math.round(tools.width)}×${Math.round(tools.height)}`,
+    );
+    const layersBox = await boxOf('layers');
+    const inspectorBox = await boxOf('inspector');
+    check(
+        'the layers float down the left, the settings down the right',
+        layersBox.x - canvas.x < 24 &&
+            canvas.x + canvas.width - (inspectorBox.x + inspectorBox.width) <
+                24,
+        `${Math.round(layersBox.x)} | ${Math.round(inspectorBox.x)}`,
+    );
     await page.screenshot({ path: `${SHOTS}/panels.png` });
+
+    // --- each panel goes away from its own corner, and comes back from it
+    for (const [panel, close, open] of [
+        ['layers', 'layers-close', 'layers-open'],
+        ['inspector', 'inspector-close', 'panel-open'],
+    ]) {
+        await page.locator(`[data-test="${close}"]`).click();
+        await page.waitForTimeout(200);
+        const icon = await boxOf(open);
+        check(
+            `${panel}: hidden, it leaves an icon in its top corner`,
+            !(await page.locator(`[data-test="${panel}"]`).isVisible()) &&
+                icon &&
+                icon.y - canvas.y < 24,
+        );
+        await page.locator(`[data-test="${open}"]`).click();
+        await page.waitForTimeout(200);
+        check(
+            `${panel}: and the icon brings it back`,
+            await page.locator(`[data-test="${panel}"]`).isVisible(),
+        );
+    }
+
+    // --- picking a layer brings it into view
+    const aside = await b.camera();
+    await page.locator('[data-test="layer-group-board"]').click();
+    await page.locator('[data-test^="layer-group-"]').nth(1).click();
+    await page.waitForTimeout(700);
+    const picked = await fields();
+    const middle = await b.screenOf(
+        picked.x + picked.w / 2,
+        picked.y + picked.h / 2,
+    );
+    const room = {
+        x: canvas.x + layersBox.width + 12,
+        width: canvas.width - layersBox.width - inspectorBox.width - 24,
+    };
+    check(
+        'a frame picked from the list is moved to the middle of the view',
+        Math.abs(middle.x - (room.x + room.width / 2)) < 40,
+        `${Math.round(middle.x)} vs ${Math.round(room.x + room.width / 2)}, camera ${aside.x} → ${(await b.camera()).x}`,
+    );
+    await page.screenshot({ path: `${SHOTS}/panels-picked.png` });
+
+    // --- the swatches are your own: keep a colour, take one off, reset
+    await loose().nth(0).click();
+    await page.waitForTimeout(250);
+    const swatches = () =>
+        page
+            .locator('[data-test="colour-picker"]')
+            .first()
+            .locator('[data-test="palette-swatch"]')
+            .count();
+    const start = await swatches();
+    await page.locator('[data-test="picker-hex"]').first().fill('#123456');
+    await page.locator('[data-test="palette-keep"]').first().click();
+    await page.waitForTimeout(200);
+    check(
+        'the plus keeps the colour being used with the swatches',
+        (await swatches()) === start + 1,
+        `${start} → ${await swatches()}`,
+    );
+    check(
+        'and the line picker has it too',
+        (await page
+            .locator('[data-test="stroke-picker"]')
+            .locator('[data-test="palette-swatch"][title="#123456"]')
+            .count()) === 1,
+    );
+    check(
+        'it is remembered',
+        (
+            await page.evaluate(() => localStorage.getItem('board.palette'))
+        ).includes('#123456'),
+    );
+    await page.locator('[data-test="palette-edit"]').first().click();
+    await page
+        .locator('[data-test="colour-picker"]')
+        .first()
+        .locator('[data-test="palette-swatch"]')
+        .first()
+        .click();
+    await page.waitForTimeout(200);
+    check(
+        'under Edit, a swatch clicked comes off',
+        (await swatches()) === start,
+        `${start + 1} → ${await swatches()}`,
+    );
+    await page.screenshot({ path: `${SHOTS}/panels-palette.png` });
+    await page.locator('[data-test="palette-reset"]').first().click();
+    await page.locator('[data-test="palette-edit"]').first().click();
+    await page.waitForTimeout(200);
+    check(
+        'and Reset puts the board colours back',
+        (await swatches()) === start &&
+            (await page
+                .locator('[data-test="palette-swatch"][title="#ffffff"]')
+                .count()) > 0,
+        `${await swatches()} swatches`,
+    );
 });

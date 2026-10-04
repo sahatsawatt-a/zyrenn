@@ -45,7 +45,9 @@ await runBoard(
             }, ref);
         };
 
-        // A slide to hold it all, and a card on it
+        // A slide to hold it all, and a card on it -- the layers put away,
+        // since it starts where they float
+        await page.locator('[data-test="layers-close"]').click();
         await draw('frame', 0.05, 0.05, 0.6, 0.8);
         const card = await draw('rect', 0.1, 0.15, 0.25, 0.3);
         const middle = await screenOf(card.x + card.w / 2, card.y + card.h / 2);
@@ -133,9 +135,9 @@ await runBoard(
         );
 
         // --- a second frame, so there are pictures to be had one by one
-        await page.locator('[data-test="panel-toggle"]').click();
+        await page.locator('[data-test="inspector-close"]').click();
         await draw('frame', 0.68, 0.1, 0.25, 0.3);
-        await page.locator('[data-test="panel-toggle"]').click();
+        await page.locator('[data-test="panel-open"]').click();
 
         // --- a PDF, a frame to a page, and a picture of each frame -- each
         // shown first, and the very file shown is the one handed over

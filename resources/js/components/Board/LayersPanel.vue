@@ -8,22 +8,25 @@ import {
     GripVertical,
     Lock,
     LockOpen,
+    PanelLeftClose,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import { nameOf } from '../../composables/board/items';
 import type { Item } from '../../composables/board/items';
 import { groupItems } from '../../composables/board/layers';
 
-// The stack, top first -- the order you see, not the order it is painted in.
+// The stack, top first -- the order you see, not the order it is painted in --
+// in a panel of its own over the left of the canvas.
 const props = defineProps<{ items: Item[]; selection: string[] }>();
 
 const emit = defineEmits<{
     select: [{ id: string; add: boolean }];
     move: [{ id: string; index: number }];
     toggle: [{ id: string; field: 'hidden' | 'locked' }];
+    close: [];
 }>();
 
-// The whole list, folded away when the settings above want the room
+// The whole list, folded down to its heading when the canvas wants the room
 const folded = ref(false);
 
 const collapsed = ref(new Set<string>());
@@ -64,18 +67,29 @@ const onDrop = (target: Item) => {
 
 <template>
     <section class="layers" data-test="layers">
-        <button
-            type="button"
-            class="layers-heading"
-            :aria-expanded="!folded"
-            data-test="layers-fold"
-            @click="folded = !folded"
-        >
-            <ChevronRight v-if="folded" class="size-3.5" />
-            <ChevronDown v-else class="size-3.5" />
-            Layers
-            <span class="layers-total">{{ items.length }}</span>
-        </button>
+        <div class="layers-head">
+            <button
+                type="button"
+                class="layers-heading"
+                :aria-expanded="!folded"
+                data-test="layers-fold"
+                @click="folded = !folded"
+            >
+                <ChevronRight v-if="folded" class="size-3.5" />
+                <ChevronDown v-else class="size-3.5" />
+                Layers
+                <span class="layers-total">{{ items.length }}</span>
+            </button>
+            <button
+                type="button"
+                class="layers-close"
+                title="Hide the layers"
+                data-test="layers-close"
+                @click="emit('close')"
+            >
+                <PanelLeftClose class="size-4" />
+            </button>
+        </div>
 
         <div v-show="!folded" class="layers-list">
             <template v-for="group in groups" :key="group.key">
@@ -225,11 +239,44 @@ const onDrop = (target: Item) => {
 .layers {
     display: flex;
     flex-direction: column;
+    width: 15rem;
+    min-height: 0;
+    max-height: 100%;
     gap: 0.375rem;
+    padding: 0.75rem;
+    background-color: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    box-shadow: 0 4px 16px -4px rgb(15 23 42 / 0.14);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.layers-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.layers-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    margin: -0.25rem -0.25rem -0.25rem 0;
+    color: var(--muted-foreground);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+.layers-close:hover {
+    color: var(--foreground);
+    background-color: var(--muted);
 }
 
 .layers-heading {
     display: flex;
+    flex: 1;
     align-items: center;
     gap: 0.25rem;
     margin-left: -0.25rem;

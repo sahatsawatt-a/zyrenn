@@ -7,7 +7,8 @@ import {
     HardDrive,
     Maximize,
     Minus,
-    PanelRight,
+    PanelLeftOpen,
+    PanelRightOpen,
     Play,
     Plus,
     X,
@@ -48,6 +49,7 @@ import {
     Transformer,
 } from 'vue-konva';
 import InspectorPanel from './InspectorPanel.vue';
+import LayersPanel from './LayersPanel.vue';
 import { isImageFile, uploadToDrive } from '@/lib/drive';
 import MediaPickerDialog from '@/components/media/MediaPickerDialog.vue';
 import {
@@ -489,17 +491,41 @@ const {
 });
 
 // ------------------------------------------------------------------ Actions
-// The panel on the right, open or put away; remembered across boards, since
-// it is how a person likes to work rather than something about this board
+// The panels on the right and on the left, open or put away; remembered across
+// boards, since it is how a person likes to work rather than something about
+// this board
 const panelOpen = useLocalStorage('board.panel', true);
+const layersOpen = useLocalStorage('board.layers', true);
 
-// Fitted into the part of the canvas the floating tools leave uncovered
+// The part of the canvas the floating panels and the tool bar leave uncovered
+const uncovered = () => ({
+    left: layersOpen.value ? 256 : 0,
+    right: panelOpen.value ? 280 : 0,
+    bottom: 56,
+});
+
 const fitAll = ({ animate = false } = {}) =>
     camera.focus(boundsOfAll(board.items.value), {
         animate,
         padding: 48,
-        inset: { left: 60, right: panelOpen.value ? 280 : 0 },
+        inset: uncovered(),
     });
+
+// Picked from the layers, it is brought into view: the list is often the only
+// way to find something on a big board
+const pickLayer = ({ id, add }: { id: string; add: boolean }) => {
+    if (add) {
+        board.toggleInSelection(id);
+    } else {
+        board.select([id]);
+    }
+
+    const item = board.byId.value.get(id);
+
+    if (item) {
+        camera.reveal(boundsOf(item), { inset: uncovered() });
+    }
+};
 
 const removeSelection = () => board.remove([...board.selection.value]);
 
@@ -681,7 +707,11 @@ onMounted(() => {
     // The undo step is taken before the first frame changes anything
     transformer?.on('transformstart', () => board.commit());
     transformer?.on('transform', applyTransform);
-    transformer?.on('transformend', applyTransform);
+    transformer?.on('transformend', () => {
+        applyTransform();
+        // A frame stretched over things already there would hide them
+        board.settle();
+    });
 
     // Opened on everything there is: as soon as the canvas has a size, and
     // again once the page has finished laying itself out -- its size settles
@@ -761,17 +791,6 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
                 <slot name="actions" />
 
                 <BoardShortcuts />
-
-                <button
-                    type="button"
-                    class="board-zoom"
-                    :class="{ 'is-on': panelOpen }"
-                    :title="panelOpen ? 'Hide the panel' : 'Show the panel'"
-                    data-test="panel-toggle"
-                    @click="panelOpen = !panelOpen"
-                >
-                    <PanelRight class="size-4" />
-                </button>
 
                 <button
                     type="button"
@@ -989,8 +1008,11 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
                 </DropdownMenuContent>
             </DropdownMenu>
 
-            <!-- The tools, floating over the canvas so it keeps the width -->
-            <div v-show="!presenting" class="board-float top-3 left-3">
+            <!-- The tools, along the bottom middle so the sides keep the panels -->
+            <div
+                v-show="!presenting"
+                class="board-float bottom-3 left-1/2 -translate-x-1/2"
+            >
                 <ShapeLibrary
                     :tool="tool"
                     :can-undo="board.canUndo.value"
@@ -1003,6 +1025,34 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
                 />
             </div>
 
+            <!-- The stack, grouped by frame, down the left; put away, it
+                 leaves an icon in the corner to bring it back -->
+            <div
+                v-show="!presenting && layersOpen"
+                class="board-float top-3 left-3"
+            >
+                <LayersPanel
+                    :items="board.items.value"
+                    :selection="board.selection.value"
+                    @select="pickLayer"
+                    @move="board.moveTo($event.id, $event.index)"
+                    @toggle="board.toggle($event.id, $event.field)"
+                    @close="layersOpen = false"
+                />
+            </div>
+
+            <button
+                v-show="!presenting && !layersOpen"
+                type="button"
+                class="board-pill board-corner top-3 left-3"
+                title="Show the layers"
+                data-test="layers-open"
+                @click="layersOpen = true"
+            >
+                <PanelLeftOpen class="size-4" />
+            </button>
+
+            <!-- What is selected, and everything about it, down the right -->
             <div
                 v-show="!presenting && panelOpen"
                 class="board-float top-3 right-3 bottom-16"
@@ -1011,7 +1061,6 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
                     :selection="board.selected.value"
                     :fill="fillColour"
                     :stroke="strokeColour"
-                    :items="board.items.value"
                     :item-count="board.items.value.length"
                     :frame-count="board.frames.value.length"
                     :link="connectorLink"
@@ -1021,17 +1070,21 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
                     @duplicate="board.duplicate"
                     @remove="removeSelection"
                     @reorder="board.reorder"
-                    @select="
-                        $event.add
-                            ? board.toggleInSelection($event.id)
-                            : board.select([$event.id])
-                    "
-                    @move="board.moveTo($event.id, $event.index)"
-                    @toggle-layer="board.toggle($event.id, $event.field)"
                     @update="board.updateSelected"
                     @close="panelOpen = false"
                 />
             </div>
+
+            <button
+                v-show="!presenting && !panelOpen"
+                type="button"
+                class="board-pill board-corner top-3 right-3"
+                title="Show the panel"
+                data-test="panel-open"
+                @click="panelOpen = true"
+            >
+                <PanelRightOpen class="size-4" />
+            </button>
 
             <!-- How close in, and the way back to everything -->
             <div v-show="!presenting" class="board-pill right-3 bottom-3">
@@ -1186,6 +1239,17 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     box-shadow: 0 4px 16px -4px rgb(15 23 42 / 0.14);
+}
+
+.board-corner {
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    color: var(--muted-foreground);
+    cursor: pointer;
+}
+.board-corner:hover {
+    color: var(--foreground);
 }
 
 .board-present {

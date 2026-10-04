@@ -1,11 +1,101 @@
-// Moving and resizing: the ruler that lines things up, and a connector that
-// keeps hold of a shape as it grows.
+// Moving and resizing: what lands on a frame staying on top of it, the ruler
+// that lines things up, and a connector that keeps hold of a shape as it grows.
 import { SHOTS, runBoard } from './harness.mjs';
 
 await runBoard('/demo/konva', async (b) => {
-    const { page, check, draw, join, screenOf, fields, link, painted } = b;
+    const { page, check, draw, join, screenOf, fields, link, painted, drawAt } =
+        b;
 
-    // --- two boxes, one deliberately out of line with the other
+    // --- nothing ends up underneath the frame it sits on. A frame is an
+    // opaque card, so the paint order is the only thing keeping it visible.
+    const idAt = (box) =>
+        page.evaluate(
+            ({ x, y }) =>
+                window.Konva.stages[0]
+                    .find('Group')
+                    .find(
+                        (group) =>
+                            group.id() &&
+                            Math.abs(group.x() - x) < 1 &&
+                            Math.abs(group.y() - y) < 1,
+                    )
+                    ?.id(),
+            box,
+        );
+    const z = (id) =>
+        page.evaluate(
+            (id) => window.Konva.stages[0].findOne(`#${id}`).zIndex(),
+            id,
+        );
+    const dragTo = async (box, boardX, boardY) => {
+        const from = await screenOf(box.x + box.w / 2, box.y + box.h / 2);
+        const to = await screenOf(boardX, boardY);
+        await page.mouse.move(from.x, from.y);
+        await page.mouse.down();
+        await page.mouse.move(to.x, to.y, { steps: 14 });
+        await page.mouse.up();
+        await page.waitForTimeout(350);
+        await page.keyboard.press('Escape');
+    };
+
+    // A shape made first, and a frame made after it, above the demo's
+    // frames, clear of the panel
+    const older = await drawAt('rect', 100, -750, 150, 110);
+    const olderId = await idAt(older);
+    const late = await drawAt('frame', 400, -650, 700, 400);
+    const lateId = await idAt(late);
+    const resident = await drawAt('rect', 450, -600, 150, 110);
+    const residentId = await idAt(resident);
+    check(
+        'the older shape starts under the newer frame',
+        (await z(olderId)) < (await z(lateId)),
+        `${await z(olderId)} vs ${await z(lateId)}`,
+    );
+
+    await dragTo(older, 900, -400);
+    await page.screenshot({ path: `${SHOTS}/dragging-onto-frame.png` });
+    check(
+        'dragged onto the frame, it comes up over it',
+        (await z(olderId)) > (await z(lateId)),
+        `${await z(olderId)} vs frame ${await z(lateId)}`,
+    );
+    check(
+        'and over what was already on it',
+        (await z(olderId)) > (await z(residentId)),
+        `${await z(olderId)} vs ${await z(residentId)}`,
+    );
+
+    // Sent to the back, it stays on its frame -- at the bottom of what is there
+    const residentAt = await screenOf(
+        resident.x + resident.w / 2,
+        resident.y + resident.h / 2,
+    );
+    await page.mouse.click(residentAt.x, residentAt.y);
+    await page.waitForTimeout(250);
+    await page.locator('[data-test="to-back"]').click();
+    await page.waitForTimeout(250);
+    check(
+        'a shape sent to the back stays over its frame',
+        (await z(residentId)) === (await z(lateId)) + 1,
+        `${await z(residentId)} vs frame ${await z(lateId)}`,
+    );
+    await page.keyboard.press('Escape');
+
+    // A frame drawn over a shape already there leaves it showing
+    const lonely = await drawAt('rect', 1400, -600, 150, 110);
+    const lonelyId = await idAt(lonely);
+    const cover = await drawAt('frame', 1300, -700, 700, 400);
+    const coverId = await idAt(cover);
+    await page.screenshot({ path: `${SHOTS}/dragging-frame-over.png` });
+    check(
+        'a frame drawn over a shape does not hide it',
+        (await z(lonelyId)) > (await z(coverId)),
+        `${await z(lonelyId)} vs frame ${await z(coverId)}`,
+    );
+
+    // --- two boxes, one deliberately out of line with the other, over on
+    // the left where the layers float -- so they are put away for this
+    await page.locator('[data-test="layers-close"]').click();
     const anchor = await draw('rect', 0.14, 0.62, 0.1, 0.12);
     const wanderer = await draw('rect', 0.44, 0.7, 0.1, 0.12);
     check(
@@ -84,6 +174,7 @@ await runBoard('/demo/konva', async (b) => {
     );
 
     // --- and the line still joins the two shapes afterwards
+    await page.locator('[data-test="layers-open"]').click();
     await page
         .locator('[data-test="layers"] .layers-row')
         .filter({ hasText: /Connector/i })

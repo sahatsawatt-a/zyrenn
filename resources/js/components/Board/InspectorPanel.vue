@@ -30,17 +30,16 @@ import type {
     VerticalAlign,
 } from '../../composables/board/items';
 import ColourPicker from './ColourPicker.vue';
-import LayersPanel from './LayersPanel.vue';
 import ConnectorSettings from './ConnectorSettings.vue';
 
 // The panel over the right of the canvas: what is selected, and every property
 // of it in one place instead of hidden behind a toolbar popover -- colour
-// first, as the thing most often changed -- with the layers underneath.
+// first, as the thing most often changed. The layers have a panel of their own
+// on the left.
 const props = defineProps<{
     selection: Item[];
     fill: string;
     stroke: string;
-    items: Item[];
     itemCount: number;
     frameCount: number;
     // What a selected connector joins, e.g. "rect → database"
@@ -54,9 +53,6 @@ const emit = defineEmits<{
     duplicate: [];
     remove: [];
     reorder: ['front' | 'back' | 'forward' | 'backward'];
-    select: [{ id: string; add: boolean }];
-    move: [{ id: string; index: number }];
-    'toggle-layer': [{ id: string; field: 'hidden' | 'locked' }];
     update: [Partial<Item>];
     close: [];
 }>();
@@ -431,19 +427,9 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
         </div>
 
         <p v-else class="inspector-hint">
-            Pick a tool on the left and drag it out on the canvas, or click
-            something to change its colour, size and stacking.
+            Pick a tool from the bar below and drag it out on the canvas, or
+            click something to change its colour, size and stacking.
         </p>
-
-        <span class="inspector-rule" />
-
-        <LayersPanel
-            :items="items"
-            :selection="selection.map((item) => item.id)"
-            @select="emit('select', $event)"
-            @move="emit('move', $event)"
-            @toggle="emit('toggle-layer', $event)"
-        />
     </aside>
 </template>
 
@@ -461,8 +447,6 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     border: 1px solid var(--border);
     border-radius: var(--radius-xl);
     box-shadow: 0 4px 16px -4px rgb(15 23 42 / 0.14);
-    /* One scroll for the whole panel: the layers sit under the settings
-       rather than being squeezed in beside them */
     overflow-y: auto;
     overscroll-behavior: contain;
 }
@@ -490,11 +474,6 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
 .inspector-close:hover {
     color: var(--foreground);
     background-color: var(--muted);
-}
-
-.inspector-rule {
-    height: 1px;
-    background-color: var(--border);
 }
 
 .inspector-title {

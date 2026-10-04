@@ -44,8 +44,8 @@ const props = withDefaults(
         kind?: MediaKind;
         // Where the picked image is going, said plainly in the dialog
         destination?: string;
-        // A board can take SVG markup as a drawing, and a Mermaid diagram as
-        // shapes it can then edit; a note writes Mermaid inline already
+        // A board can take SVG markup or a Mermaid diagram as a drawing; a
+        // note writes Mermaid inline already
         allowMarkup?: boolean;
     }>(),
     { kind: 'image', destination: 'the note', allowMarkup: false },
@@ -94,7 +94,7 @@ const tabs = computed(() =>
         ...(props.allowMarkup && !video.value
             ? [
                   { id: 'markup' as const, label: 'SVG', icon: Code },
-                  //   { id: 'mermaid' as const, label: 'Mermaid', icon: Workflow },
+                  { id: 'mermaid' as const, label: 'Mermaid', icon: Workflow },
               ]
             : []),
     ].filter(Boolean),
@@ -544,7 +544,7 @@ watch(tab, (current) => {
                 </div>
             </form>
 
-            <!-- A Mermaid diagram, which comes in as shapes and connectors -->
+            <!-- A Mermaid diagram, which comes in as a picture -->
             <form
                 v-else-if="tab === 'mermaid'"
                 class="flex flex-col gap-3"
@@ -559,8 +559,8 @@ watch(tab, (current) => {
                 />
 
                 <p class="text-muted-foreground text-xs">
-                    A flowchart arrives as shapes and connectors you can move
-                    and restyle. Any other diagram is added as a picture.
+                    The diagram is drawn and added as a picture you can move and
+                    resize.
                 </p>
 
                 <div class="flex justify-end">

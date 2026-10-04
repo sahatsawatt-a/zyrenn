@@ -4,8 +4,8 @@ import { ref } from 'vue';
 
 type Box = { x: number; y: number; width: number; height: number };
 
-/** Screen kept clear on either side -- by a panel laid over the canvas. */
-type Inset = { left?: number; right?: number };
+/** Screen kept clear on either side and below -- by what is laid over the canvas. */
+type Inset = { left?: number; right?: number; bottom?: number };
 
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 4;
@@ -86,11 +86,13 @@ export function useCamera(
         const left = inset.left ?? 0;
         const room = viewport.width.value - left - (inset.right ?? 0);
         const across = room >= viewport.width.value / 2 ? room : null;
+        // The tool bar along the bottom is kept clear the same way
+        const down = viewport.height.value - (inset.bottom ?? 0);
 
         const next = clamp(
             Math.min(
                 ((across ?? viewport.width.value) - padding * 2) / width,
-                (viewport.height.value - padding * 2) / height,
+                (down - padding * 2) / height,
             ),
         );
 
@@ -101,7 +103,7 @@ export function useCamera(
                     ? (viewport.width.value - width * next) / 2
                     : left + (across - width * next) / 2) -
                 box.x * next,
-            y: (viewport.height.value - height * next) / 2 - box.y * next,
+            y: (down - height * next) / 2 - box.y * next,
         };
     };
 
@@ -118,7 +120,57 @@ export function useCamera(
             return;
         }
 
-        const next = cameraFor(box, padding, inset);
+        flyTo(cameraFor(box, padding, inset), animate);
+    };
+
+    /**
+     * Bring `box` to the middle of the room the panels leave, at the zoom it is
+     * already looked at -- zooming out only when it would not fit there.
+     */
+    const reveal = (
+        box: Box | null,
+        {
+            animate = true,
+            padding = 48,
+            inset = {},
+        }: { animate?: boolean; padding?: number; inset?: Inset } = {},
+    ) => {
+        if (!box || !viewport.width.value) {
+            return;
+        }
+
+        // As cameraFor does: on a narrow canvas the panels are looked past
+        const room =
+            viewport.width.value - (inset.left ?? 0) - (inset.right ?? 0);
+        const roomy = room >= viewport.width.value / 2;
+        const left = roomy ? (inset.left ?? 0) : 0;
+        const across = roomy ? room : viewport.width.value;
+        const down = viewport.height.value - (inset.bottom ?? 0);
+
+        if (
+            box.width * scale.value + padding * 2 > across ||
+            box.height * scale.value + padding * 2 > down
+        ) {
+            focus(box, { animate, padding, inset });
+
+            return;
+        }
+
+        flyTo(
+            {
+                scale: scale.value,
+                x: left + across / 2 - (box.x + box.width / 2) * scale.value,
+                y: down / 2 - (box.y + box.height / 2) * scale.value,
+            },
+            animate,
+        );
+    };
+
+    /** Put the camera at `next`, gliding there or straight away. */
+    const flyTo = (
+        next: { scale: number; x: number; y: number },
+        animate: boolean,
+    ) => {
         const target = stage();
 
         stopFlight();
@@ -170,6 +222,7 @@ export function useCamera(
         visibleBox,
         zoomBy,
         focus,
+        reveal,
         reset,
     };
 }

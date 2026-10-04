@@ -3,10 +3,10 @@ import type { Ref } from 'vue';
 import { ref } from 'vue';
 import { toast } from 'vue-sonner';
 import { isImageFile, isVideoFile, uploadToDrive } from '@/lib/drive';
+import { mermaidImage } from '@/lib/mermaid';
 import type { PickedMedia } from '@/components/media/MediaPickerDialog.vue';
 import { fitOnBoard } from './geometry';
 import type { Item } from './items';
-import { itemsFromMermaid } from './mermaid';
 import { svgSource } from './pictures';
 import { useImageCache } from './useImageCache';
 
@@ -14,7 +14,6 @@ type Placer = {
     board: {
         makeItem: (kind: 'image' | 'video', x: number, y: number) => Item;
         add: (item: Item) => void;
-        insert: (items: Item[]) => void;
     };
     /** The middle of what is on screen, in board coordinates. */
     middleOfView: () => { x: number; y: number };
@@ -62,31 +61,19 @@ export function usePictures({ board, middleOfView, editingId }: Placer) {
     const addSvg = (markup: string) => placeImage(svgSource(markup));
 
     /**
-     * A Mermaid diagram. A flowchart comes in as shapes and connectors that
-     * behave like any others; anything else Mermaid can draw but the board
-     * cannot take apart is put on as a picture.
+     * A Mermaid diagram, put on as a picture: the same light-on-white drawing a
+     * note saves, its labels plain SVG text so the canvas can draw them.
      */
     const addMermaid = async (source: string) => {
-        const middle = middleOfView();
-        const drawn = await itemsFromMermaid(source, {
-            x: middle.x - 300,
-            y: middle.y - 200,
-        });
-
-        if (drawn.ok) {
-            board.insert(drawn.items);
-            importing.value = false;
-
-            return;
+        try {
+            addSvg(await (await mermaidImage(source, 'svg')).text());
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : 'Mermaid could not draw that.',
+            );
         }
-
-        if (drawn.reason === 'unsupported') {
-            addSvg(drawn.svg);
-
-            return;
-        }
-
-        toast.error(drawn.error);
     };
 
     /** How big a picture should land, from its own proportions. */
