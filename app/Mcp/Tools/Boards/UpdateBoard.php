@@ -25,6 +25,7 @@ To change what is on it, send only what changes, by item id (from get-board):
 - "delete_items": the ids to take off.
 - "delete_frames": frames (by id or title) to take off with everything on them.
 - "frame_order": every frame's id, in the order they should be presented.
+An id can't be both deleted and added in one call. Whatever sits on a frame is kept drawn above it.
 If someone has the board open, only those items change for them, live. If one change can't be made,
 none are.
 
@@ -43,7 +44,7 @@ class UpdateBoard extends BoardTool
             'update_items' => $this->itemsArgument($schema, 'Items to change: each with its "id" and the fields to change.', kindRequired: false),
             'delete_items' => $schema->array()->max(self::MAX_ITEMS)->items($schema->string()->max(64))->description('Ids of items to take off.'),
             'delete_frames' => $schema->array()->max(self::MAX_ITEMS)->items($schema->string()->max(255))->description('Frames, by id or title, to take off along with everything on them and any connector joined to it.'),
-            'frame_order' => $schema->array()->max(self::MAX_ITEMS)->items($schema->string()->max(64))->description('Every frame\'s id, once each, in the order they are presented. Nothing else changes place.'),
+            'frame_order' => $schema->array()->max(self::MAX_ITEMS)->items($schema->string()->max(64))->description('Every frame\'s id, once each, in the order they are presented. Whatever is on a frame stays drawn above it.'),
             'items' => $this->itemsArgument($schema, 'The whole board, drawn back to front; replaces what is on it. Pass [] to clear it.'),
             'folder' => $this->folderArgument($schema, 'Move the board to this folder; folders that don\'t exist yet are created.'),
         ];
@@ -122,11 +123,16 @@ class UpdateBoard extends BoardTool
                 return Response::error($problem->getMessage());
             }
 
+            // The order the live copy comes to by itself: new items on top. Frames
+            // reordered, or anything brought up off the frame it was under, it is told
+            $order = array_column($done['items'], 'id');
+            $stacked = [...array_values(array_diff(array_column($current, 'id'), $done['deleted'])), ...$done['added']];
+
             // Open somewhere: only these items change in the live copy, which the app is then handed
             $live = Collab::apply($board, [
                 ['do' => 'set', 'items' => $done['set']],
                 ['do' => 'delete', 'ids' => $done['deleted']],
-                ...(isset($validated['frame_order']) ? [['do' => 'order', 'ids' => array_column($done['items'], 'id')]] : []),
+                ...($order !== $stacked ? [['do' => 'order', 'ids' => $order]] : []),
             ], $user);
 
             if ($live === null) {

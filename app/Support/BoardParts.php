@@ -97,6 +97,43 @@ final class BoardParts
     }
 
     /**
+     * The stack with nothing painted under the frame it sits on, as the canvas
+     * keeps it (keepOnFrames in layers.ts): a frame is an opaque card, and
+     * whatever falls beneath one is gone. Anything buried comes up to just
+     * above its frame, at the bottom of what is on it, keeping its order among
+     * the others moved; the frames keep their places.
+     *
+     * @param  list<array<string, mixed>>  $items
+     * @return list<array<string, mixed>>
+     */
+    public static function keepOnFrames(array $items): array
+    {
+        $homes = self::homes($items);
+        $next = $items;
+        $at = function (string $id) use (&$next): int {
+            return (int) array_search($id, array_map(fn (array $item) => (string) $item['id'], $next), true);
+        };
+        // What was last put back above each frame, so the next one goes over it
+        $lastLifted = [];
+
+        // Bottom of the stack first, so each lands over the one before it
+        foreach ($items as $item) {
+            $id = (string) $item['id'];
+            $home = $homes[$id] ?? self::LOOSE;
+
+            if ($home === self::LOOSE || $at($id) > $at($home)) {
+                continue;
+            }
+
+            array_splice($next, $at($id), 1);
+            array_splice($next, $at($lastLifted[$home] ?? $home) + 1, 0, [$item]);
+            $lastLifted[$home] = $id;
+        }
+
+        return $next;
+    }
+
+    /**
      * A frame and everything on it.
      *
      * @param  list<array<string, mixed>>  $items

@@ -155,6 +155,11 @@ class McpBoardPartsTest extends TestCase
             ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'add_items' => [['kind' => 'sticky']], 'items' => []])
             ->assertHasErrors();
 
+        // Taken off and put back in one go would leave nothing of either
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'delete_items' => ['c'], 'add_items' => [['id' => 'c', 'kind' => 'sticky', 'text' => 'Again']]])
+            ->assertHasErrors(['"c" is both taken off and added. To change it, send it in update_items; to put something new in its place, give that a new id or leave "id" out.']);
+
         $this->assertSame($before, $board->fresh()->content);
     }
 
@@ -185,6 +190,41 @@ class McpBoardPartsTest extends TestCase
         });
 
         $this->assertSame($before, $board->fresh()->content);
+    }
+
+    public function test_nothing_is_left_drawn_under_the_frame_it_sits_on()
+    {
+        config(['services.collab.url' => 'http://collab.test', 'services.collab.secret' => 'secret']);
+        // Open nowhere, so the app keeps each change itself; what the live copy
+        // would have been sent is still asked
+        Http::fake(['collab.test/*' => Http::response(['live' => false])]);
+        $board = $this->board();
+
+        // A frame added over what is already there is drawn under it
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'add_items' => [
+                ['id' => 'notes', 'kind' => 'frame', 'text' => 'Notes', 'x' => -100, 'y' => 700, 'width' => 800, 'height' => 450],
+            ]])
+            ->assertOk();
+
+        // ...and the live copy is told the new order, as it would put the frame on top
+        Http::assertSent(fn (SentRequest $request) => $request->url() === 'http://collab.test/apply'
+            && collect($request['edits'])->last() === ['do' => 'order', 'ids' => ['plan', 'done', 'a', 'b', 'line', 'c', 'notes', 'loose']]);
+
+        // Frames reordered the way the slides go: each still under what is on it
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'frame_order' => ['plan', 'notes', 'done']])
+            ->assertOk();
+
+        Http::assertSent(fn (SentRequest $request) => $request->url() === 'http://collab.test/apply'
+            && collect($request['edits'])->last() === ['do' => 'order', 'ids' => ['plan', 'notes', 'a', 'b', 'line', 'done', 'c', 'loose']]);
+
+        // A plain change leaves the order to the live copy
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'update_items' => [['id' => 'c', 'text' => 'Out the door']]])
+            ->assertOk();
+
+        Http::assertSent(fn (SentRequest $request) => $request->url() === 'http://collab.test/apply' && count($request['edits']) === 2);
     }
 
     public function test_a_whole_list_never_lands_a_new_item_on_an_old_one()
@@ -300,7 +340,8 @@ class McpBoardPartsTest extends TestCase
             ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'frame_order' => ['third', 'done']])
             ->assertOk();
 
-        $this->assertSame(['third', 'c', 'loose', 'done'], array_column($board->refresh()->content['items'], 'id'));
+        // "done" takes a later place than what is on it, which comes up over it
+        $this->assertSame(['third', 'loose', 'done', 'c'], array_column($board->refresh()->content['items'], 'id'));
 
         UserServer::actingAs($this->user)
             ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'frame_order' => ['done']])

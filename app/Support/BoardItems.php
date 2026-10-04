@@ -153,11 +153,12 @@ class BoardItems
             }
         }
 
-        return array_map(function (array $item) {
+        // Nothing left painted under the frame it sits on, as the canvas keeps it
+        return BoardParts::keepOnFrames(array_map(function (array $item) {
             unset($item['placed']);
 
             return $item;
-        }, $items);
+        }, $items));
     }
 
     /**
@@ -313,6 +314,10 @@ class BoardItems
         foreach ($add as $spec) {
             $id = is_string($spec['id'] ?? null) && $spec['id'] !== '' ? $spec['id'] : 'i'.$next++;
 
+            if (in_array($id, $delete, true)) {
+                throw new BoardItemProblem("\"{$id}\" is both taken off and added. To change it, send it in update_items; to put something new in its place, give that a new id or leave \"id\" out.");
+            }
+
             if (isset($specs[$id])) {
                 throw new BoardItemProblem("An item \"{$id}\" is on the board already; leave \"id\" out and one is made up, or change it with update_items.");
             }
@@ -410,7 +415,8 @@ class BoardItems
     /**
      * The board with its frames -- the slides, presented in the order they
      * are drawn -- in a new order. Each frame takes the place in the drawing
-     * order that one of them had, so nothing else moves up or down.
+     * order that one of them had; whatever is on a frame that lands above it
+     * comes up with it, so no slide is drawn over its own contents.
      *
      * @param  list<array<string, mixed>>  $items  canvas items
      * @param  list<string>  $order  every frame's id, once each
@@ -442,7 +448,8 @@ class BoardItems
             $items[$position] = $byId[$order[$slot]];
         }
 
-        return $items;
+        // A frame moved into a later slot would be drawn over what is on it
+        return BoardParts::keepOnFrames($items);
     }
 
     /**
