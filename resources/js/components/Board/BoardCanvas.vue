@@ -37,7 +37,6 @@ import {
 import {
     Circle,
     Ellipse,
-    Group,
     Image as KonvaImage,
     Layer,
     Line,
@@ -48,6 +47,7 @@ import {
     Text,
     Transformer,
 } from 'vue-konva';
+import BoardNode from './BoardNode.vue';
 import InspectorPanel from './InspectorPanel.vue';
 import LayersPanel from './LayersPanel.vue';
 import { isImageFile, uploadToDrive } from '@/lib/drive';
@@ -64,13 +64,15 @@ import { deliver } from '@/lib/exporting';
 import { toast } from 'vue-sonner';
 import MediaViewer from '@/components/MediaViewer.vue';
 import { useMediaViewer } from '@/composables/useMediaViewer';
-import BoardItem from './BoardItem.vue';
 import BoardOverlay from './BoardOverlay.vue';
 import BoardFormulae from './BoardFormulae.vue';
 import BoardShortcuts from './BoardShortcuts.vue';
 import BoardVideoControls from './BoardVideoControls.vue';
 import ShapeLibrary from './ShapeLibrary.vue';
-import { connectorPoints } from '../../composables/board/connectors.js';
+import {
+    attachmentsOf,
+    connectorPoints,
+} from '../../composables/board/connectors.js';
 import type { Guide } from '../../composables/board/connectors.js';
 import {
     anchorsOf,
@@ -143,7 +145,7 @@ if (props.shared) {
 
 // Anything that changes an item changes the board: one watcher rather than a
 // call in every action, which is the same reason history takes snapshots.
-watch(board.items, (items) => emit('change', items), { deep: true });
+watch(board.revision, () => emit('change', board.items.value));
 
 // The app's pages grow with their content, which would let the board run off
 // the bottom of the window: the canvas is then partly unreachable, and the
@@ -313,8 +315,15 @@ const transformerRef = useTemplateRef<{ getNode: () => Konva.Transformer }>(
     'transformerRef',
 );
 
+// The handles follow their nodes as those move or resize by themselves; what
+// they are bound to only changes with the selection or what is on the board
 watch(
-    [board.selection, board.items, presenting, editingId],
+    [
+        board.selection,
+        () => board.items.value.map((item) => item.id).join(),
+        presenting,
+        editingId,
+    ],
     () => {
         const transformer = transformerRef.value?.getNode();
         const target = stage();
@@ -341,7 +350,7 @@ watch(
 
         transformer.nodes(nodes);
     },
-    { flush: 'post', deep: true },
+    { flush: 'post' },
 );
 
 // ------------------------------------------------------- Pointer behaviour
@@ -761,7 +770,11 @@ const isSelected = (item: Item) =>
 
 // Which dot the pointer is over, so it can light up under it
 
-const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
+// Which connectors hang off each shape: only connectors coming and going
+// change it, so moving shapes about leaves it be
+const attached = computed(() => attachmentsOf(board.items.value));
+const connectorPath = (item: Item) =>
+    connectorPoints(item, board.byId.value, attached.value);
 </script>
 
 <template>
@@ -839,40 +852,21 @@ const connectorPath = (item: Item) => connectorPoints(item, board.byId.value);
                 @contextmenu="onContextMenu"
             >
                 <Layer ref="contentLayer">
-                    <Group
+                    <BoardNode
                         v-for="item in drawn"
                         :key="item.id"
-                        :config="{
-                            id: item.id,
-                            x: item.x,
-                            y: item.y,
-                            rotation: item.rotation,
-                            width: item.width,
-                            height: item.height,
-                            // Locked: still drawn, but the pointer goes
-                            // straight through it
-                            listening: !item.locked,
-                            draggable:
-                                !presenting &&
-                                tool === 'select' &&
-                                !spaceHeld &&
-                                // A connector is wherever its ends are:
-                                // dragging its body would slide the line
-                                // off the shapes it is pinned to
-                                !isConnector(item),
-                            dragBoundFunc: snapWhileDragging(item),
-                        }"
-                    >
-                        <BoardItem
-                            :item="item"
-                            :selected="isSelected(item)"
-                            :editing="editingId === item.id"
-                            :image="imageFor(item)"
-                            :video="videos.videoFor(item)"
-                            :playing="videos.isPlaying(item.id)"
-                            :path="connectorPath(item)"
-                        />
-                    </Group>
+                        :item="item"
+                        :selected="isSelected(item)"
+                        :editing="editingId === item.id"
+                        :can-drag="
+                            !presenting && tool === 'select' && !spaceHeld
+                        "
+                        :image="imageFor(item)"
+                        :video="videos.videoFor(item)"
+                        :playing="videos.isPlaying(item.id)"
+                        :path-of="connectorPath"
+                        :snap="snapWhileDragging"
+                    />
                 </Layer>
 
                 <Layer ref="overlayLayer">

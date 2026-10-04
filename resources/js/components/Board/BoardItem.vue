@@ -15,6 +15,7 @@ import {
     dashFor,
     headPoints,
     headsOf,
+    isSwept,
     midpointOf,
     trimmedPoints,
 } from '../../composables/board/connectors';
@@ -41,6 +42,12 @@ import { VIDEO_PLAY } from '../../composables/board/useVideos';
 
 // How one thing on the board is drawn. The canvas decides where it sits and
 // what may be done to it; this decides what it looks like.
+
+// Konva's text is "inherit" by default, and then asks the canvas which way it
+// runs every time it draws -- which has the browser work out the canvas's
+// style again, for every label, on every frame of a zoom. The app runs left
+// to right throughout, so it is said once.
+const DIRECTION = 'ltr';
 const props = defineProps<{
     item: Item;
     selected: boolean;
@@ -169,7 +176,10 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
 </script>
 
 <template>
-    <!-- A frame is the slide: a plain board-coloured card -->
+    <!-- A frame is the slide: a plain board-coloured card. Its shadow falls
+         from the fill alone: one cast by the outline as well has Konva draw
+         the card off-screen first, a canvas the size of the card every time
+         the board is drawn -->
     <Rect
         v-if="item.kind === 'frame'"
         :config="{
@@ -181,6 +191,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             shadowColor: 'black',
             shadowOpacity: 0.06,
             shadowBlur: 18,
+            shadowForStrokeEnabled: false,
         }"
     />
     <!-- The frame's title sits above it and is edited
@@ -189,6 +200,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
         v-if="item.kind === 'frame'"
         :config="{
             name: FRAME_TITLE,
+            direction: DIRECTION,
             text: item.text || 'Untitled frame',
             y: -28,
             width: item.width,
@@ -210,6 +222,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             shadowOpacity: 0.12,
             shadowBlur: 8,
             shadowOffsetY: 3,
+            shadowForStrokeEnabled: false,
             stroke: selected ? '#6366f1' : undefined,
             strokeWidth: selected ? 2 : 0,
         }"
@@ -420,7 +433,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
                 stroke: selected ? '#6366f1' : item.stroke,
                 strokeWidth: item.lineWidth,
                 dash: dashFor(item.lineStyle),
-                tension: item.routing === 'curved' ? 0.5 : 0,
+                bezier: isSwept(item, path),
                 lineCap: 'round',
                 lineJoin: 'round',
                 hitStrokeWidth: 18,
@@ -467,8 +480,10 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
         <Rect
             v-if="item.text"
             :config="{
-                x: midpointOf(path).x - labelWidth(item) / 2,
-                y: midpointOf(path).y - 11,
+                x:
+                    midpointOf(path, isSwept(item, path)).x -
+                    labelWidth(item) / 2,
+                y: midpointOf(path, isSwept(item, path)).y - 11,
                 width: labelWidth(item),
                 height: 22,
                 fill: '#ffffff',
@@ -480,10 +495,15 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
         <Text
             v-if="item.text"
             :config="{
+                direction: DIRECTION,
                 text: item.text,
-                x: midpointOf(path).x - 70,
-                y: midpointOf(path).y - 9,
-                width: 140,
+                x:
+                    midpointOf(path, isSwept(item, path)).x -
+                    labelWidth(item) / 2,
+                y: midpointOf(path, isSwept(item, path)).y - 9,
+                // As wide as the chip under it: narrower, a long label
+                // wrapped onto a second line off the chip
+                width: labelWidth(item),
                 fontSize: 13,
                 fill: '#0f172a',
                 align: 'center',
@@ -514,6 +534,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
         <Text
             v-else
             :config="{
+                direction: DIRECTION,
                 text: item.text,
                 ...label(item),
                 fontSize: item.fontSize,

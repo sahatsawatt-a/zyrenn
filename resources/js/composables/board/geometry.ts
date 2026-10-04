@@ -1,6 +1,6 @@
 // The shapes of things on the board: the box each item occupies, the anchors
 // around it, and which of them faces a point.
-import type { Item, Side } from './items';
+import type { Item, ItemKind, Side } from './items';
 import { isStroke } from './items';
 
 /** The box an item occupies, including stroke items built from points. */
@@ -88,19 +88,65 @@ export const polygonPoints = (item: Item): number[] => {
 
 export const SIDES: Side[] = ['top', 'right', 'bottom', 'left'];
 
-/** Where a side's anchor sits on a shape, in board coordinates. */
-export const anchorAt = (item: Item, side: Side) => {
+/**
+ * How far inside its box a shape's outline lies at the middle of each side, as
+ * a share of the box. Most shapes are drawn out to the box, but a cloud's
+ * bumps, a document's wave and a slanted side stop short of it -- and a line
+ * ending on the box would stop short of the shape. Measured from the drawings
+ * (PATHS, polygonPoints).
+ */
+const INSETS: Partial<Record<ItemKind, Partial<Record<Side, number>>>> = {
+    cloud: { top: 0.22, bottom: 0.22, left: 0.11, right: 0.11 },
+    document: { bottom: 0.12 },
+    parallelogram: { left: 0.11, right: 0.11 },
+    triangle: { left: 0.25, right: 0.25 },
+};
+
+/**
+ * Where a side's anchor sits on a shape, in board coordinates: its middle, or
+ * `along` that side from its top or left end (0 to 1).
+ */
+export const anchorAt = (item: Item, side: Side, along = 0.5) => {
     const { x, y, width, height } = boundsOf(item);
+    const inset = INSETS[item.kind]?.[side] ?? 0;
 
     switch (side) {
         case 'top':
-            return { x: x + width / 2, y };
+            return { x: x + width * along, y: y + height * inset };
         case 'bottom':
-            return { x: x + width / 2, y: y + height };
+            return { x: x + width * along, y: y + height * (1 - inset) };
         case 'left':
-            return { x, y: y + height / 2 };
+            return { x: x + width * inset, y: y + height * along };
         default:
-            return { x: x + width, y: y + height / 2 };
+            return { x: x + width * (1 - inset), y: y + height * along };
+    }
+};
+
+/**
+ * Whether a side of a shape is a straight edge of its box, so points along it
+ * are on the outline. A diamond's side is a single tip and an ellipse's a
+ * curve: anywhere but the middle would be off the shape.
+ */
+export const isFlatSide = (item: Item, side: Side): boolean => {
+    switch (item.kind) {
+        case 'rect':
+        case 'sticky':
+        case 'frame':
+        case 'text':
+        case 'image':
+        case 'video':
+        case 'math':
+        case 'process':
+            return true;
+        case 'cylinder':
+            return side === 'left' || side === 'right';
+        case 'pill':
+        case 'parallelogram':
+            return side === 'top' || side === 'bottom';
+        case 'document':
+            return side !== 'bottom';
+        default:
+            return false;
     }
 };
 

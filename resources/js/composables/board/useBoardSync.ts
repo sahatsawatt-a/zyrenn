@@ -182,7 +182,7 @@ export function useBoardSync(
     items.observe(heard);
     order.observe(heard);
 
-    watch(board.items, pushSoon, { deep: true });
+    watch(board.revision, pushSoon);
 
     // The board shows what the page was given until the shared one arrives,
     // and then is the shared one: what the page was given can be older than

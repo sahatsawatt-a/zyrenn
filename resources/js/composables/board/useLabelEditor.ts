@@ -1,7 +1,7 @@
 import type Konva from 'konva';
 import type { Ref } from 'vue';
 import { computed, nextTick, ref, useTemplateRef } from 'vue';
-import { midpointOf } from './connectors';
+import { isSwept, midpointOf } from './connectors';
 import type { Item } from './items';
 import { hasText, isConnector } from './items';
 import { fontOf, labelBox, labelHeight, labelStyle } from './labels';
@@ -69,7 +69,8 @@ export function useLabelEditor({
 
         // A connector's label sits on the middle of the line
         if (isConnector(item)) {
-            const middle = midpointOf(connectorPath(item));
+            const path = connectorPath(item);
+            const middle = midpointOf(path, isSwept(item, path));
 
             return {
                 left: `${(middle.x - 70) * scale + x}px`,

@@ -1,4 +1,4 @@
-import { computed, ref, shallowRef } from 'vue';
+import { computed, ref, shallowRef, watch } from 'vue';
 import type { Ref } from 'vue';
 import { STICKY_COLOURS, bumpIdsTo, hydrate, makeItem, newId } from './items';
 import { labelHeight } from './labels';
@@ -27,6 +27,16 @@ export type BoardHistory = {
 export function useBoard(initial: Item[] | null = null) {
     const items = ref<Item[]>([]);
     const selection = ref<string[]>([]);
+
+    // Counts changes to the board, for whatever has to follow them -- saving,
+    // the shared copy -- to watch instead of each walking every item on every
+    // move of a drag. Two levels, the list and each item's fields, is all
+    // there is to see: nothing nested is changed in place (a connector's end,
+    // a stroke's points are replaced whole), and going further would walk
+    // every point of every stroke.
+    const revision = ref(0);
+
+    watch(items, () => revision.value++, { deep: 2 });
 
     const past: Item[][] = [];
     const future: Item[][] = [];
@@ -452,6 +462,7 @@ export function useBoard(initial: Item[] | null = null) {
     return {
         load,
         items,
+        revision,
         byId,
         frames,
         selection,

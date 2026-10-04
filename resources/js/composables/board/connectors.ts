@@ -1,7 +1,8 @@
 // A connector: which faces it leaves by, the path it takes between them, and
 // the caps drawn on each end.
 import type { Endpoint, HeadType, Item, LineStyle, Side } from './items';
-import { anchorAt, boundsOf, nearestSide } from './geometry';
+import { isConnector } from './items';
+import { anchorAt, boundsOf, isFlatSide, nearestSide } from './geometry';
 
 /** What either end of a connector can be capped with, for the inspector. */
 export const HEAD_TYPES: { value: HeadType; label: string }[] = [
@@ -30,15 +31,90 @@ export const sideOf = (
     return end?.side ?? nearestSide(host, facing);
 };
 
-export const endpointAt = (end: Endpoint | null, byId: Map<string, Item>) => {
-    if (!end) {
-        return null;
+/** The connectors with an end on each item, by the item's id. */
+export const attachmentsOf = (items: Item[]): Map<string, Item[]> => {
+    const attached = new Map<string, Item[]>();
+
+    for (const item of items) {
+        if (!isConnector(item)) {
+            continue;
+        }
+
+        for (const host of new Set([item.from?.item, item.to?.item])) {
+            if (host) {
+                attached.set(host, [...(attached.get(host) ?? []), item]);
+            }
+        }
     }
 
-    const host = end.item ? (byId.get(end.item) ?? null) : null;
-    const side = sideOf(end, host, { x: end.x, y: end.y });
+    return attached;
+};
 
-    return host && side ? anchorAt(host, side) : { x: end.x, y: end.y };
+const centreOf = (host: Item) => {
+    const box = boundsOf(host);
+
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+};
+
+/** Where the far end of a connector is, seen from `end`. */
+const otherEndOf = (
+    item: Item,
+    end: 'from' | 'to',
+    byId: Map<string, Item>,
+): { x: number; y: number } => {
+    const other = end === 'from' ? item.to : item.from;
+    const host = other?.item ? byId.get(other.item) : undefined;
+
+    return host ? centreOf(host) : { x: other?.x ?? 0, y: other?.y ?? 0 };
+};
+
+/**
+ * Where an end meets its shape. Alone on a side, the middle of it; sharing a
+ * flat side with other connectors, they are spread evenly along it, in the
+ * order their far ends lie, so their lines do not cross and their heads do
+ * not land on one another.
+ */
+const anchorFor = (
+    item: Item,
+    end: 'from' | 'to',
+    host: Item,
+    side: Side,
+    byId: Map<string, Item>,
+    attached?: Map<string, Item[]>,
+) => {
+    if (!attached || !isFlatSide(host, side)) {
+        return anchorAt(host, side);
+    }
+
+    const across = side === 'top' || side === 'bottom' ? 'x' : 'y';
+    const sharing = (attached.get(host.id) ?? []).flatMap((other) =>
+        (['from', 'to'] as const)
+            .filter((which) => other[which]?.item === host.id)
+            .filter(
+                (which) =>
+                    sideOf(
+                        other[which],
+                        host,
+                        otherEndOf(other, which, byId),
+                    ) === side,
+            )
+            .map((which) => ({
+                key: `${other.id}:${which}`,
+                at: otherEndOf(other, which, byId)[across],
+            })),
+    );
+
+    if (sharing.length < 2) {
+        return anchorAt(host, side);
+    }
+
+    sharing.sort((a, b) => a.at - b.at || a.key.localeCompare(b.key));
+
+    const place = sharing.findIndex(
+        (other) => other.key === `${item.id}:${end}`,
+    );
+
+    return anchorAt(host, side, (place + 1) / (sharing.length + 1));
 };
 
 const STUB = 24;
@@ -46,16 +122,17 @@ const STUB = 24;
 const stubbed = (
     point: { x: number; y: number },
     side: Side | null,
+    length = STUB,
 ): { x: number; y: number } => {
     switch (side) {
         case 'top':
-            return { x: point.x, y: point.y - STUB };
+            return { x: point.x, y: point.y - length };
         case 'bottom':
-            return { x: point.x, y: point.y + STUB };
+            return { x: point.x, y: point.y + length };
         case 'left':
-            return { x: point.x - STUB, y: point.y };
+            return { x: point.x - length, y: point.y };
         case 'right':
-            return { x: point.x + STUB, y: point.y };
+            return { x: point.x + length, y: point.y };
         default:
             return point;
     }
@@ -116,6 +193,9 @@ const turnBetween = (
 export const connectorPoints = (
     item: Item,
     byId: Map<string, Item>,
+    // Every connector's shapes (attachmentsOf), so ends sharing a side can be
+    // spread along it; without it each end takes its side's middle
+    attached?: Map<string, Item[]>,
 ): number[] => {
     if (!item.from || !item.to) {
         return [];
@@ -123,12 +203,6 @@ export const connectorPoints = (
 
     const fromHost = item.from.item ? (byId.get(item.from.item) ?? null) : null;
     const toHost = item.to.item ? (byId.get(item.to.item) ?? null) : null;
-
-    const centreOf = (host: Item) => {
-        const box = boundsOf(host);
-
-        return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-    };
 
     // An end with no side of its own turns to face wherever the other end is
     // now, rather than where it was when the line was drawn: drag a shape to
@@ -149,25 +223,38 @@ export const connectorPoints = (
     // leaves one face while turning as though it left another
     const start =
         fromHost && fromSide
-            ? anchorAt(fromHost, fromSide)
+            ? anchorFor(item, 'from', fromHost, fromSide, byId, attached)
             : { x: item.from.x, y: item.from.y };
     const end =
         toHost && toSide
-            ? anchorAt(toHost, toSide)
+            ? anchorFor(item, 'to', toHost, toSide, byId, attached)
             : { x: item.to.x, y: item.to.y };
 
     if (item.routing === 'straight' || (!fromSide && !toSide)) {
         return [start.x, start.y, end.x, end.y];
     }
 
+    // Curved: one cubic sweep -- start, two handles, end -- leaving and
+    // arriving along the anchors' normals, its handles reaching out further
+    // the further apart the ends are. A spline through the short stubs
+    // instead overshot them, looping where the line left and hooking where
+    // it arrived.
+    if (item.routing === 'curved') {
+        const reach = Math.max(
+            STUB,
+            Math.hypot(end.x - start.x, end.y - start.y) * 0.4,
+        );
+
+        return [
+            start,
+            stubbed(start, fromSide, reach),
+            stubbed(end, toSide, reach),
+            end,
+        ].flatMap((point) => [point.x, point.y]);
+    }
+
     const out = stubbed(start, fromSide);
     const back = stubbed(end, toSide);
-
-    // Curved: leave and arrive along the anchors' normals, and let Konva's
-    // tension round off the two corners into one sweep.
-    if (item.routing === 'curved') {
-        return [start, out, back, end].flatMap((point) => [point.x, point.y]);
-    }
 
     // Turn in the axis the first stub is already travelling along
     const midpoint =
@@ -211,10 +298,27 @@ export const dashFor = (style: LineStyle): number[] => {
     }
 };
 
+/**
+ * Whether a connector's points are a Bezier (start, two handles, end) rather
+ * than a polyline: a curved one, unless it fell back to a straight line.
+ */
+export const isSwept = (item: Item, points: number[]) =>
+    item.routing === 'curved' && points.length === 8;
+
 /** Halfway along a connector's path, where its label belongs. */
-export const midpointOf = (points: number[]) => {
+export const midpointOf = (points: number[], swept = false) => {
     if (points.length < 4) {
         return { x: 0, y: 0 };
+    }
+
+    // The middle of the curve itself; the handles are off it
+    if (swept) {
+        const [x0, y0, x1, y1, x2, y2, x3, y3] = points;
+
+        return {
+            x: (x0 + 3 * x1 + 3 * x2 + x3) / 8,
+            y: (y0 + 3 * y1 + 3 * y2 + y3) / 8,
+        };
     }
 
     const steps: { x: number; y: number }[] = [];

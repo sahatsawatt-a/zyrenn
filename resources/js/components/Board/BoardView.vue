@@ -3,7 +3,10 @@ import { useElementSize } from '@vueuse/core';
 import type Konva from 'konva';
 import { computed, ref, useTemplateRef, watch } from 'vue';
 import { Group, Layer, Stage } from 'vue-konva';
-import { connectorPoints } from '../../composables/board/connectors';
+import {
+    attachmentsOf,
+    connectorPoints,
+} from '../../composables/board/connectors';
 import { boundsOf, boundsOfAll } from '../../composables/board/geometry';
 import type { Item } from '../../composables/board/items';
 import { hydrate, isConnector } from '../../composables/board/items';
@@ -137,7 +140,8 @@ watch(
     },
 );
 const empty = computed(() => shown.value.length === 0);
-const path = (item: Item) => connectorPoints(item, byId.value);
+const attached = computed(() => attachmentsOf(drawn.value));
+const path = (item: Item) => connectorPoints(item, byId.value, attached.value);
 </script>
 
 <template>
