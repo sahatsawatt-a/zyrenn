@@ -11,11 +11,27 @@ const NAME = `clip-${Date.now().toString().slice(-6)}.mp4`;
 await mkdir(SHOTS, { recursive: true });
 // Six seconds of moving colour bars and a tone: enough to seek about in
 execFileSync('ffmpeg', [
-    ...['-loglevel', 'error', '-y'],
-    ...['-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=25:duration=6'],
-    ...['-f', 'lavfi', '-i', 'sine=frequency=440:duration=6'],
-    ...['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac'],
-    ...['-shortest', '-movflags', '+faststart', CLIP],
+    '-loglevel',
+    'error',
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    'testsrc2=size=640x360:rate=25:duration=6',
+    '-f',
+    'lavfi',
+    '-i',
+    'sine=frequency=440:duration=6',
+    '-c:v',
+    'libx264',
+    '-pix_fmt',
+    'yuv420p',
+    '-c:a',
+    'aac',
+    '-shortest',
+    '-movflags',
+    '+faststart',
+    CLIP,
 ]);
 
 await runBoard(

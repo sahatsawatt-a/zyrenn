@@ -6,7 +6,6 @@
 // service (docker/chrome), and pdftotext and pdfinfo on the machine running
 // the suite.
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
 import { SHOTS, makeNote, runBoard } from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);

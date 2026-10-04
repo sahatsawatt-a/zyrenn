@@ -6,14 +6,20 @@ import { execFileSync } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { SHOTS, removeAt, runBoard } from './harness.mjs';
 
-const APP = process.env.APP_URL ?? 'http://127.0.0.1:8001';
 const SAMPLE = `${SHOTS}/labels-sample.png`;
 
 await mkdir(SHOTS, { recursive: true });
 // Colour bars, so there is a picture to see fitted (needs ffmpeg)
 execFileSync('ffmpeg', [
-    ...['-loglevel', 'error', '-y'],
-    ...['-f', 'lavfi', '-i', 'testsrc2=size=320x160', '-frames:v', '1'],
+    '-loglevel',
+    'error',
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    'testsrc2=size=320x160',
+    '-frames:v',
+    '1',
     SAMPLE,
 ]);
 

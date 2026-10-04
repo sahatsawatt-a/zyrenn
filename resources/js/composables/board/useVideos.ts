@@ -151,7 +151,7 @@ export function useVideos(
         (ids) => {
             const present = new Set(ids);
 
-            for (const id of [...elements.keys()]) {
+            for (const id of elements.keys()) {
                 if (!present.has(id)) {
                     release(id);
                 }
@@ -162,7 +162,7 @@ export function useVideos(
     onBeforeUnmount(() => {
         animation?.stop();
 
-        for (const id of [...elements.keys()]) {
+        for (const id of elements.keys()) {
             release(id);
         }
     });
