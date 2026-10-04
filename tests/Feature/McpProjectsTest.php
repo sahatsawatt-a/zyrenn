@@ -11,6 +11,7 @@ use App\Mcp\Tools\Notes\DeleteNote;
 use App\Mcp\Tools\Notes\GetNote;
 use App\Mcp\Tools\Notes\ListNotes;
 use App\Mcp\Tools\Notes\UpdateNote;
+use App\Mcp\Tools\Projects\CreateProject;
 use App\Mcp\Tools\Projects\ListProjects;
 use App\Mcp\Tools\Tables\CreateTable;
 use App\Models\Drive\DriveFile;
@@ -62,6 +63,42 @@ class McpProjectsTest extends TestCase
                 ->where('projects.0.role', Project::EDITOR)
                 ->where('projects.0.members_count', 1)
                 ->etc());
+    }
+
+    public function test_a_project_is_started_with_its_maker_as_owner_and_can_be_worked_in()
+    {
+        $user = User::factory()->create();
+
+        UserServer::actingAs($user)
+            ->tool(CreateProject::class, ['name' => 'Shanghai trip'])
+            ->assertOk()
+            ->assertStructuredContent(fn (AssertableJson $json) => $json
+                ->where('name', 'Shanghai trip')
+                ->where('role', Project::OWNER)
+                ->etc());
+
+        $project = Project::query()->where('name', 'Shanghai trip')->sole();
+        $this->assertSame(Project::OWNER, $project->roleOf($user));
+        $this->assertSame($user->id, $project->created_by);
+
+        UserServer::actingAs($user)
+            ->tool(CreateNote::class, ['project' => 'Shanghai trip', 'title' => 'Plan', 'markdown' => 'Day 1'])
+            ->assertOk();
+
+        $this->assertSame(1, Note::query()->where('project_id', $project->id)->count());
+
+        // As someone else, over the server that acts for anyone
+        $other = User::factory()->create();
+
+        GlobalServer::actingAs($user)
+            ->tool(CreateProject::class, ['user_id' => $other->id, 'name' => 'Theirs'])
+            ->assertOk();
+
+        $this->assertSame(Project::OWNER, Project::query()->where('name', 'Theirs')->sole()->roleOf($other));
+
+        UserServer::actingAs($user)
+            ->tool(CreateProject::class, ['name' => ''])
+            ->assertHasErrors();
     }
 
     public function test_a_project_is_named_by_ref_id_or_name_and_keeps_to_its_own_things()

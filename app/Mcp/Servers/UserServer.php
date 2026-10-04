@@ -21,6 +21,7 @@ use App\Mcp\Tools\Notes\GetNote;
 use App\Mcp\Tools\Notes\ListFolders;
 use App\Mcp\Tools\Notes\ListNotes;
 use App\Mcp\Tools\Notes\UpdateNote;
+use App\Mcp\Tools\Projects\CreateProject;
 use App\Mcp\Tools\Projects\ListProjects;
 use App\Mcp\Tools\Tables\CreateTable;
 use App\Mcp\Tools\Tables\DeleteTable;
@@ -40,9 +41,10 @@ Zyrenn holds notes, whiteboard boards, tables and a file Drive. Every tool here 
 the access token, on their own content -- or, given a "project" argument, on a project they are in.
 
 Projects: shared spaces with notes, boards, tables and a Drive of their own, which belong to the project
-rather than to whoever made them. list-projects shows the user's, with their role in each. Pass a
-project's ref_id or name as "project" to any other tool to work in it; leave it out for the user's own.
-A viewer can only read a project; its owners and editors can change what is in it.
+rather than to whoever made them. list-projects shows the user's, with their role in each, and
+create-project starts one. Pass a project's ref_id or name as "project" to any other tool to work in
+it; leave it out for the user's own. A viewer can only read a project; its owners and editors can
+change what is in it.
 
 Notes: bodies are read and written as Markdown (get-note, create-note, update-note, edit-note). Notes
 live in folders addressed by path, e.g. "KT Plan/Lakeshore". Every block of a note -- a paragraph,
@@ -100,6 +102,7 @@ class UserServer extends Server
     {
         $this->tools = [
             new ListProjects,
+            new CreateProject,
             new ListNotes,
             new ListFolders,
             new GetNote,

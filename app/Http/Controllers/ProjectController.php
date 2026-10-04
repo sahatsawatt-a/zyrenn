@@ -6,7 +6,6 @@ use App\Models\Project;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -26,15 +25,7 @@ class ProjectController extends Controller
             'name' => ['required', 'string', 'max:255'],
         ]);
 
-        $project = DB::transaction(function () use ($request, $validated) {
-            $project = new Project(['name' => $validated['name']]);
-            $project->created_by = $request->user()->id;
-            $project->save();
-
-            $project->members()->attach($request->user(), ['role' => Project::OWNER]);
-
-            return $project;
-        });
+        $project = Project::start($request->user(), $validated['name']);
 
         return to_route('projects.notes.index', $project);
     }

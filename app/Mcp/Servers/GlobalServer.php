@@ -21,6 +21,7 @@ use App\Mcp\Tools\Notes\GetNote;
 use App\Mcp\Tools\Notes\ListFolders;
 use App\Mcp\Tools\Notes\ListNotes;
 use App\Mcp\Tools\Notes\UpdateNote;
+use App\Mcp\Tools\Projects\CreateProject;
 use App\Mcp\Tools\Projects\ListProjects;
 use App\Mcp\Tools\Tables\CreateTable;
 use App\Mcp\Tools\Tables\DeleteTable;
@@ -41,9 +42,10 @@ Zyrenn holds notes, whiteboard boards, tables and a file Drive. This server can 
 list-users first, then pass that user's id as "user_id" to every other tool.
 
 Projects: shared spaces with notes, boards, tables and a Drive of their own, which belong to the project
-rather than to whoever made them. list-projects shows the ones a user is in, with their role in each.
-Pass a project's ref_id or name as "project" to any other tool to work in it as that user; leave it out
-for the user's own content. A viewer can only read a project; its owners and editors can change it.
+rather than to whoever made them. list-projects shows the ones a user is in, with their role in each,
+and create-project starts one. Pass a project's ref_id or name as "project" to any other tool to work
+in it as that user; leave it out for the user's own content. A viewer can only read a project; its
+owners and editors can change it.
 
 Notes: bodies are read and written as Markdown (get-note, create-note, update-note, edit-note). Notes
 live in folders addressed by path, e.g. "KT Plan/Lakeshore". Every block of a note -- a paragraph,
@@ -102,6 +104,7 @@ class GlobalServer extends Server
         $this->tools = [
             new ListUsers,
             new ListProjects(global: true),
+            new CreateProject(global: true),
             new ListNotes(global: true),
             new ListFolders(global: true),
             new GetNote(global: true),

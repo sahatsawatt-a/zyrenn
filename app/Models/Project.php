@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -105,6 +106,22 @@ class Project extends Model implements Owner
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * A new project, with whoever started it as its owner.
+     */
+    public static function start(User $by, string $name): self
+    {
+        return DB::transaction(function () use ($by, $name) {
+            $project = new self(['name' => $name]);
+            $project->created_by = $by->id;
+            $project->save();
+
+            $project->members()->attach($by, ['role' => self::OWNER]);
+
+            return $project;
+        });
     }
 
     /**
