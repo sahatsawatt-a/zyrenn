@@ -71,8 +71,7 @@ export const PdfHidden = Extension.create({
                 key,
                 state: {
                     init: (_, { doc }) => marked(doc),
-                    apply: (tr, set) =>
-                        tr.docChanged ? marked(tr.doc) : set,
+                    apply: (tr, set) => (tr.docChanged ? marked(tr.doc) : set),
                 },
                 props: {
                     decorations: (state) => key.getState(state),

@@ -118,8 +118,10 @@ await runBoard(
             .catch(() => {});
         check(
             'Escape shuts the menu and leaves the view open',
-            (await page.locator('[data-test="viewer-save-download"]').count()) ===
-                0 && (await page.locator('[role="dialog"]').isVisible()),
+            (await page
+                .locator('[data-test="viewer-save-download"]')
+                .count()) === 0 &&
+                (await page.locator('[role="dialog"]').isVisible()),
         );
 
         const png = await download(flowchart, 'png');

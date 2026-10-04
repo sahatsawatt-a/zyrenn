@@ -270,10 +270,7 @@ onBeforeUnmount(() => {
                             <DialogClose as-child>
                                 <Button variant="outline">Keep it</Button>
                             </DialogClose>
-                            <Button
-                                variant="destructive"
-                                @click="deleteTable"
-                            >
+                            <Button variant="destructive" @click="deleteTable">
                                 Delete table
                             </Button>
                         </DialogFooter>

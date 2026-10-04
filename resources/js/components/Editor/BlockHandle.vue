@@ -80,15 +80,10 @@ onMounted(() => {
 
 const getEditor = () => props.editor;
 
-const { block, visible, top } = useHoveredBlock(
-    getEditor,
-    surface,
-    container,
-    {
-        paused: () => menuOpen.value || dragging.value,
-        pinned: () => menuOpen.value,
-    },
-);
+const { block, visible, top } = useHoveredBlock(getEditor, surface, container, {
+    paused: () => menuOpen.value || dragging.value,
+    pinned: () => menuOpen.value,
+});
 
 const { dragging, dropLine, onDragStart, onDragEnd } = useBlockDrag(
     getEditor,

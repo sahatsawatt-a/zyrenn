@@ -10,10 +10,12 @@ use App\Models\Owner;
 use App\Models\Project;
 use App\Models\Table\Table;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Date;
 use Inertia\Inertia;
@@ -23,6 +25,8 @@ use Inertia\Response;
  * Where things stand: the user's own at /dashboard, a project's at
  * /p/{project}/dashboard -- what is in it, what changed lately and by whom,
  * the to-dos still open in its notes, and the conversations waiting.
+ *
+ * @phpstan-type Recent array{kind: string, ref_id: mixed, title: mixed, updated_at: mixed, edited_by?: mixed, project?: mixed}
  */
 class DashboardController extends Controller
 {
@@ -64,7 +68,7 @@ class DashboardController extends Controller
      * The notes, boards and tables changed last, all kinds together.
      *
      * @param  list<HasMany<covariant Model, covariant Model>|Builder<covariant Model>>  $kinds
-     * @return Collection<int, array<string, mixed>>
+     * @return Collection<int, Recent>
      */
     private function recent(array $kinds, bool $withEditor, bool $withProject = false): Collection
     {
@@ -101,7 +105,7 @@ class DashboardController extends Controller
      * there are in all of those notes.
      *
      * @param  HasMany<Note, covariant Model&Owner>  $notes
-     * @return array{items: list<array<string, mixed>>, total: int}
+     * @return array{items: list<array{text: string, note: array{ref_id: string, title: string}}>, total: int}
      */
     private function todos(HasMany $notes): array
     {
@@ -118,7 +122,7 @@ class DashboardController extends Controller
                 ]));
 
         return [
-            'items' => $open->take(self::SHOWN * 2)->values()->all(),
+            'items' => array_values($open->take(self::SHOWN * 2)->all()),
             'total' => $open->count(),
         ];
     }
@@ -156,16 +160,22 @@ class DashboardController extends Controller
      */
     private static function text(array $node): string
     {
-        return ($node['text'] ?? '').collect($node['content'] ?? [])
-            ->map(fn ($child) => is_array($child) ? self::text($child) : '')
-            ->implode('');
+        $text = is_string($node['text'] ?? null) ? $node['text'] : '';
+
+        foreach (is_array($node['content'] ?? null) ? $node['content'] : [] as $child) {
+            if (is_array($child)) {
+                $text .= self::text($child);
+            }
+        }
+
+        return $text;
     }
 
     /**
      * Conversations with people, latest first: a project's groups the user is
      * in, or every direct room and group of theirs.
      *
-     * @return Collection<int, array<string, mixed>>
+     * @return Collection<int, array{ref_id: string, kind: string, title: string, project: string|null, unread: int, updated_at: Carbon|null}>
      */
     private function chats(User $user, ?Project $project): Collection
     {
@@ -192,7 +202,7 @@ class DashboardController extends Controller
     /**
      * Everyone in the project, owners first.
      *
-     * @return Collection<int, array<string, mixed>>
+     * @return Collection<int, array{name: string, role: mixed, is_me: bool}>
      */
     private function members(Project $project, User $user): Collection
     {
@@ -211,7 +221,7 @@ class DashboardController extends Controller
      * The user's projects, with their role, who is in each and when
      * something in it last changed.
      *
-     * @return Collection<int, array<string, mixed>>
+     * @return Collection<int, array{ref_id: string, name: string, role: mixed, members: int<0, max>, changed_at: CarbonImmutable|null}>
      */
     private function projects(User $user): Collection
     {
@@ -219,8 +229,8 @@ class DashboardController extends Controller
         $ids = $projects->modelKeys();
 
         // Each kind's latest change per project; the latest of those is the project's
-        $changed = collect([Note::class, Board::class, Table::class])
-            ->flatMap(fn (string $kind) => $kind::query()
+        $changed = collect([Note::query(), Board::query(), Table::query()])
+            ->flatMap(fn (Builder $kind) => $kind
                 ->whereIn('project_id', $ids)
                 ->groupBy('project_id')
                 ->selectRaw('project_id, max(updated_at) as changed_at')
@@ -245,7 +255,7 @@ class DashboardController extends Controller
     /**
      * What others changed lately in the user's projects.
      *
-     * @return Collection<int, array<string, mixed>>
+     * @return Collection<int, Recent>
      */
     private function fromProjects(User $user): Collection
     {

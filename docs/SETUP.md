@@ -83,25 +83,25 @@ reachable from the internet (Let's Encrypt checks over port 80).
    named `traefik`, with a `websecure` entrypoint and a certificate resolver as
    the default for it, skip to step 2. Otherwise start the one in this repo:
 
-   ```sh
-   cd docs/traefik
-   cp .env.example .env          # set ACME_EMAIL
-   docker network create traefik
-   docker compose up -d
-   cd ../..
-   ```
+    ```sh
+    cd docs/traefik
+    cp .env.example .env          # set ACME_EMAIL
+    docker network create traefik
+    docker compose up -d
+    cd ../..
+    ```
 
 2. **ZyrenN, behind it:**
 
-   ```sh
-   ./scripts/setup.sh --traefik zyrenn.example.com
-   ```
+    ```sh
+    ./scripts/setup.sh --traefik zyrenn.example.com
+    ```
 
-   This turns Vite and debug off, creates the `traefik` network if missing, and
-   sets `COMPOSE_FILE`, `APP_HOST`, `VITE_HOST` and
-   `APP_URL=https://zyrenn.example.com` in `.env`. (By hand: set those four,
-   keep `VITE_HOST` one label under the same parent domain, then
-   `docker compose up -d`.)
+    This turns Vite and debug off, creates the `traefik` network if missing, and
+    sets `COMPOSE_FILE`, `APP_HOST`, `VITE_HOST` and
+    `APP_URL=https://zyrenn.example.com` in `.env`. (By hand: set those four,
+    keep `VITE_HOST` one label under the same parent domain, then
+    `docker compose up -d`.)
 
 3. Open `https://zyrenn.example.com`. The first certificate takes a few seconds;
    if it never arrives, `docker compose -f docs/traefik/docker-compose.yml logs traefik`.
@@ -137,12 +137,12 @@ servers; that page covers how each client is told about them.
 
 There are two servers and two ways to reach each.
 
-|                | personal: `zyrenn`                | admin: `zyrenn-admin`                  |
-| -------------- | --------------------------------- | -------------------------------------- |
-| sees           | one user's content                | every user's (pass `user_id` per call) |
-| credential     | token from Settings → MCP         | `MCP_GLOBAL_TOKEN` in `.env`           |
-| HTTP endpoint  | `<app url>/mcp/user`              | `<app url>/mcp/global`                 |
-| stdio command  | `mcp:start zyrenn` (`MCP_TOKEN`)  | `mcp:start zyrenn-admin`               |
+|               | personal: `zyrenn`               | admin: `zyrenn-admin`                  |
+| ------------- | -------------------------------- | -------------------------------------- |
+| sees          | one user's content               | every user's (pass `user_id` per call) |
+| credential    | token from Settings → MCP        | `MCP_GLOBAL_TOKEN` in `.env`           |
+| HTTP endpoint | `<app url>/mcp/user`             | `<app url>/mcp/global`                 |
+| stdio command | `mcp:start zyrenn` (`MCP_TOKEN`) | `mcp:start zyrenn-admin`               |
 
 Use **HTTP** from any machine that can reach the app (another laptop, the LAN).
 Use **stdio** only on the machine running the Docker stack, from the project
@@ -155,24 +155,29 @@ Traefik, or the host/IP you serve it on. Check it with `docker compose port web 
    and create it. It is shown once; copy it.
 2. In the client:
 
-   ```sh
-   claude mcp add --transport http zyrenn http://<host>:8001/mcp/user \
-     --header "Authorization: Bearer <token>"
-   ```
+    ```sh
+    claude mcp add --transport http zyrenn http://<host>:8001/mcp/user \
+      --header "Authorization: Bearer <token>"
+    ```
 
-   Or in any client's JSON config (`.mcp.json`, Claude Desktop's
-   `claude_desktop_config.json`, Cursor's `mcp.json`):
+    Or in any client's JSON config (`.mcp.json`, Claude Desktop's
+    `claude_desktop_config.json`, Cursor's `mcp.json`):
 
-   ```json
-   { "mcpServers": { "zyrenn": {
-       "type": "http",
-       "url": "http://<host>:8001/mcp/user",
-       "headers": { "Authorization": "Bearer <token>" }
-   } } }
-   ```
+    ```json
+    {
+        "mcpServers": {
+            "zyrenn": {
+                "type": "http",
+                "url": "http://<host>:8001/mcp/user",
+                "headers": { "Authorization": "Bearer <token>" }
+            }
+        }
+    }
+    ```
 
-   A client that only speaks stdio (older Claude Desktop) can bridge with
-   `npx mcp-remote http://<host>:8001/mcp/user --header "Authorization: Bearer <token>"`.
+    A client that only speaks stdio (older Claude Desktop) can bridge with
+    `npx mcp-remote http://<host>:8001/mcp/user --header "Authorization: Bearer <token>"`.
+
 3. Check: ask the client to "list my notes", or run `claude mcp list`.
 
 Revoke a token in the same settings page; it stops working at once.
@@ -190,13 +195,29 @@ claude mcp add zyrenn -e MCP_TOKEN=<token> -- \
 Or as JSON:
 
 ```json
-{ "mcpServers": { "zyrenn": {
-    "type": "stdio",
-    "command": "docker",
-    "args": ["compose", "-f", "/absolute/path/to/zyrenn/docker-compose.yml",
-             "exec", "-T", "-e", "MCP_TOKEN", "app", "php", "artisan", "mcp:start", "zyrenn"],
-    "env": { "MCP_TOKEN": "<token>" }
-} } }
+{
+    "mcpServers": {
+        "zyrenn": {
+            "type": "stdio",
+            "command": "docker",
+            "args": [
+                "compose",
+                "-f",
+                "/absolute/path/to/zyrenn/docker-compose.yml",
+                "exec",
+                "-T",
+                "-e",
+                "MCP_TOKEN",
+                "app",
+                "php",
+                "artisan",
+                "mcp:start",
+                "zyrenn"
+            ],
+            "env": { "MCP_TOKEN": "<token>" }
+        }
+    }
+}
 ```
 
 The stack must be up (`docker compose up -d`).
@@ -206,16 +227,16 @@ The stack must be up (`docker compose up -d`).
 For operators who need every user's content. Treat the token like a root password.
 
 1. Generate one and put it in `.env`:
-   ```sh
-   echo "MCP_GLOBAL_TOKEN=$(openssl rand -hex 32)" # paste over the empty line
-   docker compose restart app
-   ```
-   While it is empty the endpoint answers 404, which is how it stays off.
+    ```sh
+    echo "MCP_GLOBAL_TOKEN=$(openssl rand -hex 32)" # paste over the empty line
+    docker compose restart app
+    ```
+    While it is empty the endpoint answers 404, which is how it stays off.
 2. Add it:
-   ```sh
-   claude mcp add --transport http zyrenn-admin http://<host>:8001/mcp/global \
-     --header "Authorization: Bearer <MCP_GLOBAL_TOKEN>"
-   ```
+    ```sh
+    claude mcp add --transport http zyrenn-admin http://<host>:8001/mcp/global \
+      --header "Authorization: Bearer <MCP_GLOBAL_TOKEN>"
+    ```
 3. Check: ask it to "list users", then pass one of the ids as `user_id`.
 
 Do not expose this endpoint on the internet; keep it to localhost or a trusted LAN/VPN.
@@ -227,11 +248,24 @@ Needs no token (it runs inside the container, as the operator). The repo's
 project folder:
 
 ```json
-{ "mcpServers": { "zyrenn-admin": {
-    "type": "stdio",
-    "command": "docker",
-    "args": ["compose", "exec", "-T", "app", "php", "artisan", "mcp:start", "zyrenn-admin"]
-} } }
+{
+    "mcpServers": {
+        "zyrenn-admin": {
+            "type": "stdio",
+            "command": "docker",
+            "args": [
+                "compose",
+                "exec",
+                "-T",
+                "app",
+                "php",
+                "artisan",
+                "mcp:start",
+                "zyrenn-admin"
+            ]
+        }
+    }
+}
 ```
 
 Claude Code picks it up when started in that folder. From elsewhere, add
@@ -239,17 +273,17 @@ Claude Code picks it up when started in that folder. From elsewhere, add
 
 ## 4. Troubleshooting
 
-| symptom                                   | cause                                                                 |
-| ----------------------------------------- | --------------------------------------------------------------------- |
-| 401 from `/mcp/user`                      | token mistyped or revoked; make a new one                             |
-| 404 from `/mcp/global`                    | `MCP_GLOBAL_TOKEN` is empty, or `app` was not restarted after setting |
-| 401 from `/mcp/global`                    | header is not exactly `Bearer <MCP_GLOBAL_TOKEN>`                     |
-| stdio: "Set MCP_TOKEN to a valid token"   | `MCP_TOKEN` not passed (`-e MCP_TOKEN` is needed in the docker args)  |
-| stdio: "no configuration file provided"   | not in the project folder, and no `-f` given                          |
-| connection refused over HTTP              | wrong host/port, or a firewall; `docker compose port web 8080`        |
-| "port is already allocated"               | another process has `APP_PORT`/`VITE_PORT`/`FORWARD_DB_PORT`; see Port conflicts |
-| permission errors writing `storage/`      | `UID`/`GID` in `.env` are not yours; fix, then `docker compose build app` |
-| Traefik: 404 or bad gateway               | `APP_HOST` does not match the URL you opened, or `web` is not on the `traefik` network (`docker network inspect traefik`) |
-| Traefik: browser shows a default/invalid cert | DNS not pointing here, or port 80 blocked, so Let's Encrypt failed; read the traefik logs |
-| mixed-content warnings                    | `APP_URL` still `http://`; set it to the `https://` URL and `docker compose up -d` |
-| live co-editing not working               | `COLLAB_SECRET` empty; set it and `docker compose up -d collab app`   |
+| symptom                                       | cause                                                                                                                     |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 401 from `/mcp/user`                          | token mistyped or revoked; make a new one                                                                                 |
+| 404 from `/mcp/global`                        | `MCP_GLOBAL_TOKEN` is empty, or `app` was not restarted after setting                                                     |
+| 401 from `/mcp/global`                        | header is not exactly `Bearer <MCP_GLOBAL_TOKEN>`                                                                         |
+| stdio: "Set MCP_TOKEN to a valid token"       | `MCP_TOKEN` not passed (`-e MCP_TOKEN` is needed in the docker args)                                                      |
+| stdio: "no configuration file provided"       | not in the project folder, and no `-f` given                                                                              |
+| connection refused over HTTP                  | wrong host/port, or a firewall; `docker compose port web 8080`                                                            |
+| "port is already allocated"                   | another process has `APP_PORT`/`VITE_PORT`/`FORWARD_DB_PORT`; see Port conflicts                                          |
+| permission errors writing `storage/`          | `UID`/`GID` in `.env` are not yours; fix, then `docker compose build app`                                                 |
+| Traefik: 404 or bad gateway                   | `APP_HOST` does not match the URL you opened, or `web` is not on the `traefik` network (`docker network inspect traefik`) |
+| Traefik: browser shows a default/invalid cert | DNS not pointing here, or port 80 blocked, so Let's Encrypt failed; read the traefik logs                                 |
+| mixed-content warnings                        | `APP_URL` still `http://`; set it to the `https://` URL and `docker compose up -d`                                        |
+| live co-editing not working                   | `COLLAB_SECRET` empty; set it and `docker compose up -d collab app`                                                       |

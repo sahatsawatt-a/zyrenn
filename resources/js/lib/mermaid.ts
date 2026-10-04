@@ -280,11 +280,19 @@ const fitViewBox = (host: Element, extents: Box[]): void => {
         ...extents.map((e) => e.bottom + margin),
     );
 
-    if (left === x && top === y && right === x + width && bottom === y + height) {
+    if (
+        left === x &&
+        top === y &&
+        right === x + width &&
+        bottom === y + height
+    ) {
         return;
     }
 
-    svg.setAttribute('viewBox', `${left} ${top} ${right - left} ${bottom - top}`);
+    svg.setAttribute(
+        'viewBox',
+        `${left} ${top} ${right - left} ${bottom - top}`,
+    );
 
     // Mermaid caps the drawing at its own width, which has just grown
     if (svg.style.maxWidth) {

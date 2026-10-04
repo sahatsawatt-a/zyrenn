@@ -5,11 +5,11 @@ each common one. Read [SETUP.md](SETUP.md) first if the app is not running yet.
 
 Every client needs the same two things, whatever it calls them:
 
-|              | personal (`zyrenn`)                       | admin (`zyrenn-admin`)                    |
-| ------------ | ----------------------------------------- | ----------------------------------------- |
-| **URL**      | `<app url>/mcp/user`                      | `<app url>/mcp/global`                    |
-| **Header**   | `Authorization: Bearer <your token>`      | `Authorization: Bearer <MCP_GLOBAL_TOKEN>` |
-| **Token**    | Settings → MCP in the app, shown once     | `MCP_GLOBAL_TOKEN` in `.env`              |
+|            | personal (`zyrenn`)                   | admin (`zyrenn-admin`)                     |
+| ---------- | ------------------------------------- | ------------------------------------------ |
+| **URL**    | `<app url>/mcp/user`                  | `<app url>/mcp/global`                     |
+| **Header** | `Authorization: Bearer <your token>`  | `Authorization: Bearer <MCP_GLOBAL_TOKEN>` |
+| **Token**  | Settings → MCP in the app, shown once | `MCP_GLOBAL_TOKEN` in `.env`               |
 
 `<app url>` is `http://localhost:8001`, or `https://<your host>` behind Traefik.
 The examples below use the personal server; for admin, swap the name, URL and
@@ -33,20 +33,20 @@ A `401`, or a redirect to the login page, means the token is wrong or revoked.
 
 ## Which client speaks what
 
-| client                     | remote URL + header | stdio | notes                                           |
-| -------------------------- | :-----------------: | :---: | ----------------------------------------------- |
-| Claude Code                | yes                 | yes   | `claude mcp add`                                |
-| Claude Desktop             | via bridge          | yes   | config file; remote needs `mcp-remote`          |
-| claude.ai / Claude mobile  | no                  | no    | custom connectors cannot send a bearer header   |
-| Cursor                     | yes                 | yes   | `url` + `headers`                               |
-| VS Code (Copilot)          | yes                 | yes   | key is `servers`, not `mcpServers`              |
-| Windsurf                   | yes                 | yes   | `serverUrl`                                     |
-| Google Antigravity         | yes                 | yes   | `serverUrl`                                     |
-| Gemini CLI                 | yes                 | yes   | `httpUrl`                                       |
-| Codex CLI (OpenAI)         | yes                 | yes   | TOML; token from an environment variable        |
-| Zed                        | yes                 | yes   | `context_servers`                               |
-| Cline                      | yes                 | yes   | `type: streamableHttp`                          |
-| anything else              | try the generic form below                      |
+| client                    |    remote URL + header     | stdio | notes                                         |
+| ------------------------- | :------------------------: | :---: | --------------------------------------------- |
+| Claude Code               |            yes             |  yes  | `claude mcp add`                              |
+| Claude Desktop            |         via bridge         |  yes  | config file; remote needs `mcp-remote`        |
+| claude.ai / Claude mobile |             no             |  no   | custom connectors cannot send a bearer header |
+| Cursor                    |            yes             |  yes  | `url` + `headers`                             |
+| VS Code (Copilot)         |            yes             |  yes  | key is `servers`, not `mcpServers`            |
+| Windsurf                  |            yes             |  yes  | `serverUrl`                                   |
+| Google Antigravity        |            yes             |  yes  | `serverUrl`                                   |
+| Gemini CLI                |            yes             |  yes  | `httpUrl`                                     |
+| Codex CLI (OpenAI)        |            yes             |  yes  | TOML; token from an environment variable      |
+| Zed                       |            yes             |  yes  | `context_servers`                             |
+| Cline                     |            yes             |  yes  | `type: streamableHttp`                        |
+| anything else             | try the generic form below |
 
 ## Claude Code
 
@@ -69,14 +69,19 @@ bridge (needs Node.js):
 
 ```json
 {
-  "mcpServers": {
-    "zyrenn": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "<app url>/mcp/user",
-               "--header", "Authorization:${ZYRENN_AUTH}"],
-      "env": { "ZYRENN_AUTH": "Bearer <token>" }
+    "mcpServers": {
+        "zyrenn": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "mcp-remote",
+                "<app url>/mcp/user",
+                "--header",
+                "Authorization:${ZYRENN_AUTH}"
+            ],
+            "env": { "ZYRENN_AUTH": "Bearer <token>" }
+        }
     }
-  }
 }
 ```
 
@@ -99,12 +104,12 @@ Settings → MCP → Add:
 
 ```json
 {
-  "mcpServers": {
-    "zyrenn": {
-      "url": "<app url>/mcp/user",
-      "headers": { "Authorization": "Bearer ${env:ZYRENN_TOKEN}" }
+    "mcpServers": {
+        "zyrenn": {
+            "url": "<app url>/mcp/user",
+            "headers": { "Authorization": "Bearer ${env:ZYRENN_TOKEN}" }
+        }
     }
-  }
 }
 ```
 
@@ -118,16 +123,21 @@ The top-level key is **`servers`**:
 
 ```json
 {
-  "inputs": [
-    { "type": "promptString", "id": "zyrenn-token", "description": "ZyrenN token", "password": true }
-  ],
-  "servers": {
-    "zyrenn": {
-      "type": "http",
-      "url": "<app url>/mcp/user",
-      "headers": { "Authorization": "Bearer ${input:zyrenn-token}" }
+    "inputs": [
+        {
+            "type": "promptString",
+            "id": "zyrenn-token",
+            "description": "ZyrenN token",
+            "password": true
+        }
+    ],
+    "servers": {
+        "zyrenn": {
+            "type": "http",
+            "url": "<app url>/mcp/user",
+            "headers": { "Authorization": "Bearer ${input:zyrenn-token}" }
+        }
     }
-  }
 }
 ```
 
@@ -142,12 +152,12 @@ Configure. Remote servers use **`serverUrl`**:
 
 ```json
 {
-  "mcpServers": {
-    "zyrenn": {
-      "serverUrl": "<app url>/mcp/user",
-      "headers": { "Authorization": "Bearer <token>" }
+    "mcpServers": {
+        "zyrenn": {
+            "serverUrl": "<app url>/mcp/user",
+            "headers": { "Authorization": "Bearer <token>" }
+        }
     }
-  }
 }
 ```
 
@@ -163,12 +173,12 @@ accepted:
 
 ```json
 {
-  "mcpServers": {
-    "zyrenn": {
-      "serverUrl": "<app url>/mcp/user",
-      "headers": { "Authorization": "Bearer <token>" }
+    "mcpServers": {
+        "zyrenn": {
+            "serverUrl": "<app url>/mcp/user",
+            "headers": { "Authorization": "Bearer <token>" }
+        }
     }
-  }
 }
 ```
 
@@ -185,12 +195,12 @@ or edit `~/.gemini/settings.json` (all projects) / `.gemini/settings.json`:
 
 ```json
 {
-  "mcpServers": {
-    "zyrenn": {
-      "httpUrl": "<app url>/mcp/user",
-      "headers": { "Authorization": "Bearer $ZYRENN_TOKEN" }
+    "mcpServers": {
+        "zyrenn": {
+            "httpUrl": "<app url>/mcp/user",
+            "headers": { "Authorization": "Bearer $ZYRENN_TOKEN" }
+        }
     }
-  }
 }
 ```
 
@@ -218,12 +228,12 @@ Settings (`zed: open settings`):
 
 ```json
 {
-  "context_servers": {
-    "zyrenn": {
-      "url": "<app url>/mcp/user",
-      "headers": { "Authorization": "Bearer <token>" }
+    "context_servers": {
+        "zyrenn": {
+            "url": "<app url>/mcp/user",
+            "headers": { "Authorization": "Bearer <token>" }
+        }
     }
-  }
 }
 ```
 
@@ -234,13 +244,13 @@ MCP Servers → Configure → "Configure MCP Servers" opens
 
 ```json
 {
-  "mcpServers": {
-    "zyrenn": {
-      "type": "streamableHttp",
-      "url": "<app url>/mcp/user",
-      "headers": { "Authorization": "Bearer <token>" }
+    "mcpServers": {
+        "zyrenn": {
+            "type": "streamableHttp",
+            "url": "<app url>/mcp/user",
+            "headers": { "Authorization": "Bearer <token>" }
+        }
     }
-  }
 }
 ```
 
@@ -252,17 +262,18 @@ MCP Servers → Configure → "Configure MCP Servers" opens
    docs say which. SSE-only clients will not work: ZyrenN speaks streamable HTTP.
 2. If it only launches **stdio** commands, either bridge the remote server:
 
-   ```sh
-   npx -y mcp-remote <app url>/mcp/user --header "Authorization:Bearer <token>"
-   ```
+    ```sh
+    npx -y mcp-remote <app url>/mcp/user --header "Authorization:Bearer <token>"
+    ```
 
-   or, on the machine running Docker, run the server directly (needs the stack
-   up, with `MCP_TOKEN` set to the personal token):
+    or, on the machine running Docker, run the server directly (needs the stack
+    up, with `MCP_TOKEN` set to the personal token):
 
-   ```sh
-   docker compose -f /absolute/path/to/zyrenn/docker-compose.yml \
-     exec -T -e MCP_TOKEN app php artisan mcp:start zyrenn
-   ```
+    ```sh
+    docker compose -f /absolute/path/to/zyrenn/docker-compose.yml \
+      exec -T -e MCP_TOKEN app php artisan mcp:start zyrenn
+    ```
+
 3. Prove the token with the `curl` test at the top before debugging the client.
 
 ## What a client should be able to do
@@ -274,13 +285,13 @@ content; viewers can read but not change it.
 
 ## When it does not work
 
-| symptom                                 | check                                                          |
-| --------------------------------------- | -------------------------------------------------------------- |
-| 401 / "unauthenticated"                 | token typed wrong, has a trailing space, or was revoked        |
-| redirect to a login page                | the client sent no `Authorization` header (wrong field name)   |
-| 404 on `/mcp/global`                    | `MCP_GLOBAL_TOKEN` is empty or `app` was not restarted         |
-| connected, but no tools                 | restart/refresh the client; some only load tools at startup    |
-| 429                                     | rate limit is 120 requests a minute per token                  |
-| certificate error                       | self-signed or mkcert cert the client machine does not trust   |
-| works in `curl`, not in the client      | wrong field name for that client (see its section above)       |
-| remote works, stdio does not            | run the stdio command by hand; it prints the real error        |
+| symptom                            | check                                                        |
+| ---------------------------------- | ------------------------------------------------------------ |
+| 401 / "unauthenticated"            | token typed wrong, has a trailing space, or was revoked      |
+| redirect to a login page           | the client sent no `Authorization` header (wrong field name) |
+| 404 on `/mcp/global`               | `MCP_GLOBAL_TOKEN` is empty or `app` was not restarted       |
+| connected, but no tools            | restart/refresh the client; some only load tools at startup  |
+| 429                                | rate limit is 120 requests a minute per token                |
+| certificate error                  | self-signed or mkcert cert the client machine does not trust |
+| works in `curl`, not in the client | wrong field name for that client (see its section above)     |
+| remote works, stdio does not       | run the stdio command by hand; it prints the real error      |

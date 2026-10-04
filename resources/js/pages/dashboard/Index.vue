@@ -234,7 +234,11 @@ const description = computed(() =>
             <div class="flex flex-col gap-6 lg:col-span-2">
                 <Panel
                     :icon="History"
-                    :title="project ? 'Recent activity' : 'Pick up where you left off'"
+                    :title="
+                        project
+                            ? 'Recent activity'
+                            : 'Pick up where you left off'
+                    "
                     data-test="recent"
                 >
                     <Link
@@ -319,8 +323,8 @@ const description = computed(() =>
                         v-if="!fromProjects.length"
                         class="text-muted-foreground px-2.5 py-6 text-center text-sm"
                     >
-                        When people change things in your projects, they show
-                        up here.
+                        When people change things in your projects, they show up
+                        here.
                     </p>
                 </Panel>
             </div>
@@ -370,7 +374,9 @@ const description = computed(() =>
                 <Panel
                     :icon="MessagesSquare"
                     :title="project ? 'Chat' : 'Messages'"
-                    :href="project ? projectChat(project.ref_id) : messagesIndex()"
+                    :href="
+                        project ? projectChat(project.ref_id) : messagesIndex()
+                    "
                     :href-label="project ? 'Open chat' : 'All messages'"
                     data-test="chats"
                 >

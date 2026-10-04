@@ -97,7 +97,9 @@ const onMenu = (open: boolean) => {
 
 // About 220 words a minute
 const readingTime = computed(() =>
-    size.value.words ? `${Math.max(1, Math.round(size.value.words / 220))} min read` : null,
+    size.value.words
+        ? `${Math.max(1, Math.round(size.value.words / 220))} min read`
+        : null,
 );
 
 const created = computed(() =>
