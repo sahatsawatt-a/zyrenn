@@ -7,7 +7,7 @@ namespace App\Support\Formula;
  * here, in the scope around it -- a row's columns, then the table's
  * parameters, then the other things a note or table can name.
  */
-final class NamedValues implements Scope
+final class NamedValues implements Callables, Scope
 {
     /** @var array<string, mixed> */
     private array $values = [];
@@ -38,5 +38,10 @@ final class NamedValues implements Scope
         }
 
         throw new FormulaError("Nothing is called \"{$name}\".");
+    }
+
+    public function callable(string $name): ?\Closure
+    {
+        return $this->outer instanceof Callables ? $this->outer->callable($name) : null;
     }
 }

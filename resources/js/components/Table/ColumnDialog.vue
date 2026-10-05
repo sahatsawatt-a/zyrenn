@@ -315,7 +315,10 @@ const segment = (active: boolean) =>
                         <code>[Cost (THB)] / people</code>. Parameters above the
                         table can be named too. Functions include
                         <code>if</code>, <code>round</code>, <code>sum</code>,
-                        <code>text</code> and <code>date</code>.
+                        <code>text</code> and <code>date</code>. Reach a trip or
+                        another table by its title:
+                        <code>trip("Shanghai").day(day).cost</code>,
+                        <code>sum(table("Budget").thb)</code>.
                     </p>
                     <div class="flex items-center gap-2">
                         <span class="text-muted-foreground text-xs">

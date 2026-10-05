@@ -15,6 +15,7 @@ use App\Models\Project;
 use App\Models\Table\Table;
 use App\Policies\ChatPolicy;
 use App\Policies\ContentPolicy;
+use App\Support\Formula\Dependents;
 use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -44,6 +45,9 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->configureRateLimiting();
+
+        // A formula that reads a trip or another table follows it when it changes
+        Dependents::listen();
 
         // One policy for everything a user or a project owns; the Gate finds
         // Folder's for each kind of folder

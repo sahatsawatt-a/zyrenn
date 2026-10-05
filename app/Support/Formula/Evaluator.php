@@ -224,8 +224,9 @@ final class Evaluator
         }
 
         $args = array_values(array_map(fn ($arg) => $this->value($arg), $node['args']));
+        $own = $this->scope instanceof Callables ? $this->scope->callable($name) : null;
 
-        return Functions::call($name, $args);
+        return $own !== null ? $own($args) : Functions::call($name, $args);
     }
 
     /**

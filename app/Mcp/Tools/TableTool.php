@@ -134,7 +134,11 @@ abstract class TableTool extends FiledTool
         .'like a spreadsheet\'s. Name a column by its name or, in brackets, its label, and a parameter by its name: '
         .'cny * rate, round([Cost (THB)] / people), if(kind = "estimate", 0, cost), date(start) + day - 1, '
         .'text(date, "D j M"). Functions: if, sum, avg, min, max, count, round, floor, ceil, abs, coalesce, '
-        .'text, upper, lower, len, date, today, year, month, day, weekday, days.';
+        .'text, upper, lower, len, date, today, year, month, day, weekday, days. Beyond the table, among the same '
+        .'owner\'s things, by title or ref_id: trip("Shanghai").total_cost (also stops_cost, rides_cost, stays_cost, '
+        .'nights, day_count, start_date, end_date, currency), trip("Shanghai").day(5).date (and .cost, .stops), '
+        .'trip("Shanghai").stay(1).cost (and .nights, .name); table("Budget").thb is that column as a list: '
+        .'sum(table("Budget").thb), sum(if(table("Budget").day = 5, table("Budget").thb, 0)).';
 
     /**
      * Schema for parameters to set.

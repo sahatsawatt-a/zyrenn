@@ -9,6 +9,7 @@ use App\Support\Formula\Formula;
 use App\Support\Formula\FormulaError;
 use App\Support\Formula\Functions;
 use App\Support\Formula\NamedValues;
+use App\Support\Formula\References;
 use App\Support\Formula\Scope;
 use DateTimeImmutable;
 
@@ -131,7 +132,9 @@ final class TableFormulas
     }
 
     /**
-     * The table's parameters, for a formula: a date as a date, a number as a number.
+     * The table's parameters, for a formula: a date as a date, a number as a
+     * number -- and around them, the trips and tables of the same owner that
+     * trip("…") and table("…") reach.
      */
     public static function parameters(Table $table): Scope
     {
@@ -141,7 +144,7 @@ final class TableFormulas
             $values[(string) $parameter['name']] = self::readable($parameter['value'] ?? null);
         }
 
-        return new NamedValues($values);
+        return new NamedValues($values, new References($table->owner()));
     }
 
     /**
