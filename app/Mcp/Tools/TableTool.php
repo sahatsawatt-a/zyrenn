@@ -7,6 +7,9 @@ use App\Models\Owner;
 use App\Models\Table\Table;
 use App\Models\Table\TableColumn;
 use App\Models\Table\TableFolder;
+use App\Support\Formula\FormulaError;
+use App\Support\Formula\Parser;
+use App\Support\Table\TableFormulas;
 use App\Support\Table\TableStorage;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Model;
@@ -86,6 +89,8 @@ abstract class TableTool extends FiledTool
                 'label' => $column->label,
                 'type' => $column->type,
                 'choices' => $this->choices($column) ?: null,
+                'expression' => $column->type === 'formula' ? TableFormulas::expressionOf($column) : null,
+                'summary' => TableFormulas::summaryOf($column),
             ], fn ($value) => $value !== null))
             ->all());
     }
@@ -117,9 +122,59 @@ abstract class TableTool extends FiledTool
     {
         return $schema->array()->max(50)->items($schema->object([
             'label' => $schema->string()->max(120)->description('What the column is called; its name is made from this.')->required(),
-            'type' => $schema->string()->enum(TableStorage::TYPES)->description('What it holds: varchar (a line of text, the default), text (long text), integer, numeric, boolean, select (one choice), multi_select (several choices), date (YYYY-MM-DD), email, url, phone, currency, percent, rating (1-5), user (a person\'s name) or location (a place: {lat, lng, label}, or a GeoJSON Point).'),
+            'type' => $schema->string()->enum(TableStorage::TYPES)->description('What it holds: varchar (a line of text, the default), text (long text), integer, numeric, boolean, select (one choice), multi_select (several choices), date (YYYY-MM-DD), email, url, phone, currency, percent, rating (1-5), user (a person\'s name) or location (a place: {lat, lng, label}, or a GeoJSON Point), or formula (worked out from the rest of the row: give its "expression").'),
             'choices' => $schema->array()->max(100)->items($schema->string()->max(120))->description('For select and multi_select: the choices to offer. Values written later that are not among them are added.'),
+            'expression' => $schema->string()->max(Parser::MAX_LENGTH)->description(self::EXPRESSION_HELP),
+            'summary' => $schema->string()->enum(TableFormulas::SUMMARIES)->description('What the footer shows under this column, over every row: sum, avg, min, max or count.'),
         ]))->description($description);
+    }
+
+    /** How a formula is written, for the schemas that take one */
+    protected const EXPRESSION_HELP = 'For a formula column: how its value is worked out from the rest of the row, '
+        .'like a spreadsheet\'s. Name a column by its name or, in brackets, its label, and a parameter by its name: '
+        .'cny * rate, round([Cost (THB)] / people), if(kind = "estimate", 0, cost), date(start) + day - 1, '
+        .'text(date, "D j M"). Functions: if, sum, avg, min, max, count, round, floor, ceil, abs, coalesce, '
+        .'text, upper, lower, len, date, today, year, month, day, weekday, days.';
+
+    /**
+     * Schema for parameters to set.
+     */
+    protected function parametersArgument(JsonSchema $schema): Type
+    {
+        return $schema->object()->description('Parameters to set: named values the formulas share, e.g. {"rate": 5, "people": 2, "start": "2026-12-03"}. A number, text, true/false, or a date as YYYY-MM-DD; null takes one away. The others are kept.');
+    }
+
+    /**
+     * Sets parameters by name, keeping the rest; null takes one away.
+     *
+     * @param  array<string, mixed>  $given
+     *
+     * @throws TableProblem when one can't be a parameter
+     */
+    protected function setParameters(Table $table, array $given): void
+    {
+        // Name => value, in the order they are shown; a name matches whatever its case
+        $values = array_column($table->parameters ?? [], 'value', 'name');
+
+        foreach ($given as $name => $value) {
+            $name = (string) $name;
+            $same = array_values(array_filter(array_keys($values), fn ($kept) => mb_strtolower((string) $kept) === mb_strtolower($name)));
+            $key = $same[0] ?? $name;
+
+            if ($value === null) {
+                unset($values[$key]);
+            } else {
+                $values[$key] = $value;
+            }
+        }
+
+        $parameters = array_map(fn ($name, $value) => ['name' => (string) $name, 'value' => $value], array_keys($values), array_values($values));
+
+        try {
+            $table->parameters = TableFormulas::cleanParameters($table, $parameters);
+        } catch (FormulaError $problem) {
+            throw new TableProblem($problem->getMessage());
+        }
     }
 
     /**
@@ -145,25 +200,59 @@ abstract class TableTool extends FiledTool
             "{$key}.*.type" => ['nullable', 'string', Rule::in(TableStorage::TYPES)],
             "{$key}.*.choices" => ['nullable', 'array', 'max:100'],
             "{$key}.*.choices.*" => ['string', 'max:120'],
+            "{$key}.*.expression" => ['nullable', 'string', 'max:'.Parser::MAX_LENGTH],
+            "{$key}.*.summary" => ['nullable', Rule::in(TableFormulas::SUMMARIES)],
         ];
     }
 
     /**
      * Adds columns to the table, last in line.
      *
-     * @param  list<array{label: string, type?: string|null, choices?: list<string>|null}>  $columns
+     * @param  list<array{label: string, type?: string|null, choices?: list<string>|null, expression?: string|null, summary?: string|null}>  $columns
+     *
+     * @throws TableProblem when a formula can't be worked out
      */
     protected function addColumns(Table $table, array $columns): void
     {
         foreach ($columns as $column) {
+            $type = $column['type'] ?? 'varchar';
+
+            // A formula may name a column added just before it
+            $table->unsetRelation('columns');
+            $this->checkExpression($table, $column['label'], $type, $column['expression'] ?? null);
+
             TableStorage::newColumn($table, [
                 'label' => $column['label'],
-                'type' => $column['type'] ?? 'varchar',
-                'options_meta' => ['options' => $this->options($column['choices'] ?? [])],
+                'type' => $type,
+                'options_meta' => array_filter([
+                    'options' => $this->options($column['choices'] ?? []),
+                    'expression' => $type === 'formula' ? $column['expression'] : null,
+                    'summary' => $column['summary'] ?? null,
+                ], fn ($value) => $value !== null),
             ]);
         }
 
         $table->unsetRelation('columns');
+    }
+
+    /**
+     * A formula column needs a formula this table can work out.
+     *
+     * @throws TableProblem
+     */
+    protected function checkExpression(Table $table, string $label, string $type, ?string $expression, ?string $for = null): void
+    {
+        if ($type !== 'formula') {
+            return;
+        }
+
+        $problem = blank($expression)
+            ? 'A formula column needs an "expression", e.g. cny * rate.'
+            : TableFormulas::problem($table, (string) $expression, $for);
+
+        if ($problem !== null) {
+            throw new TableProblem("The formula for \"{$label}\": {$problem}");
+        }
     }
 
     /**
@@ -186,6 +275,10 @@ abstract class TableTool extends FiledTool
 
             if (! $column) {
                 throw new TableProblem("This table has no column \"{$key}\". Its columns are: ".$columns->pluck('label')->join(', ').'.');
+            }
+
+            if ($column->type === 'formula') {
+                throw new TableProblem("\"{$column->label}\" is worked out by its formula; change what it is worked out from instead.");
             }
 
             if ($column->type === 'multi_select' && ! is_array($value)) {

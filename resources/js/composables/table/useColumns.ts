@@ -46,6 +46,7 @@ export function useColumns() {
             rating: 130,
             user: 160,
             location: 240,
+            formula: 150,
         };
 
         const newColumn: ColumnMeta = {

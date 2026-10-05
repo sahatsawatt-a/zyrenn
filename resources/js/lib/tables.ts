@@ -5,7 +5,12 @@ import { xsrfToken } from '@/lib/utils';
 import { update as updateTableRoute } from '@/routes/tables';
 import * as columnRoutes from '@/routes/tables/columns';
 import * as rowRoutes from '@/routes/tables/rows';
-import type { ColumnMeta, RowData, TableDensity } from '@/types';
+import type {
+    ColumnMeta,
+    RowData,
+    TableDensity,
+    TableParameter,
+} from '@/types';
 
 /** What a column can be told to become, beyond its name, which the server chooses. */
 export type ColumnChanges = Partial<
@@ -18,6 +23,8 @@ export type ColumnChanges = Partial<
         | 'options'
         | 'currencySymbol'
         | 'maxRating'
+        | 'expression'
+        | 'summary'
     >
 > & { sort_order?: number };
 
@@ -55,7 +62,8 @@ export const saveCell = (
     column: string,
     value: unknown,
 ) =>
-    send<{ updated_at: string }>(
+    // The row comes back with its formulas worked out again from the new value
+    send<{ updated_at: string; row: RowData }>(
         rowRoutes.update.url({ table, row }),
         'PATCH',
         { column, value },
@@ -97,6 +105,10 @@ export const deleteColumn = (table: string, column: string) =>
 
 export const updateTable = (
     table: string,
-    changes: { title?: string; density?: TableDensity },
+    changes: {
+        title?: string;
+        density?: TableDensity;
+        parameters?: TableParameter[];
+    },
 ) =>
     send<{ updated_at: string }>(updateTableRoute.url(table), 'PATCH', changes);

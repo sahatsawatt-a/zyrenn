@@ -5,6 +5,7 @@ import type {
     TableFilter,
     TableSort,
     TableDensity,
+    TableParameter,
 } from '../../types';
 
 // Pinned global module-level references ensuring single-source-of-truth reactivity
@@ -19,6 +20,8 @@ export const density = ref<TableDensity>('normal');
 export const selectedRowIds = ref<number[]>([]);
 // Who a "user" column can name: the project's members, or the table's owner
 export const people = ref<string[]>([]);
+// Named values the table's formulas share (rate = 5), as the server keeps them
+export const parameters = ref<TableParameter[]>([]);
 
 // 🌟 TRANSACTIONAL HISTORY STACKS MAPPED FROM BOARD CORE PATTERNS
 export interface TableHistorySnapshot {

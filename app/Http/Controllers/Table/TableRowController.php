@@ -61,9 +61,11 @@ class TableRowController extends Controller
 
         abort_unless(TableStorage::updateRow($table, $row, [$column->name => $validated['value']]), 404);
 
-        Live::tell(new TableChanged($table, 'row', ['row' => TableStorage::row($table, $row)]));
+        $changed = TableStorage::row($table, $row);
+        Live::tell(new TableChanged($table, 'row', ['row' => $changed]));
 
-        return response()->json(['updated_at' => $table->updated_at]);
+        // The row as it now is: its formulas worked out again from the new value
+        return response()->json(['updated_at' => $table->updated_at, 'row' => $changed]);
     }
 
     /**

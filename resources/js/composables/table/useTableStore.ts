@@ -5,6 +5,7 @@ import type {
     ColumnType,
     RowData,
     TableDensity,
+    TableParameter,
 } from '@/types';
 import { useColumns } from './useColumns';
 import { useRows } from './useRows';
@@ -18,6 +19,7 @@ import {
     density,
     filters,
     isLoading,
+    parameters,
     rows,
     searchQuery,
     selectedRowIds,
@@ -152,6 +154,7 @@ export function useTableStore() {
             options: options ?? [],
             currencySymbol: extra?.currencySymbol,
             maxRating: extra?.maxRating,
+            summary: extra?.summary,
         });
 
         if (saved) {
@@ -174,7 +177,68 @@ export function useTableStore() {
             options: updates.options,
             currencySymbol: updates.currencySymbol,
             maxRating: updates.maxRating,
+            summary: updates.summary,
         });
+    };
+
+    /**
+     * Adds a formula column, or changes one, once the server has taken its
+     * formula: only it works the rows out. Answers why not, when it won't.
+     */
+    const saveFormulaColumn = async (
+        existing: string | null,
+        changes: Partial<ColumnMeta> & Pick<ColumnMeta, 'label'>,
+    ): Promise<string | null> => {
+        const sent = {
+            label: changes.label,
+            type: 'formula' as const,
+            expression: changes.expression ?? '',
+            summary: changes.summary ?? null,
+            currencySymbol: changes.currencySymbol,
+        };
+
+        if (!sync.saving.value) {
+            return 'Formulas are worked out by the server; save the table first.';
+        }
+
+        try {
+            const saved = await sync.attemptColumn(existing, sent);
+            const at = columns.value.findIndex(
+                (column) => column.name === saved.column.name,
+            );
+
+            if (at === -1) {
+                columns.value.push(saved.column);
+            } else {
+                columns.value.splice(at, 1, saved.column);
+            }
+
+            history.clear();
+
+            return null;
+        } catch (error) {
+            return error instanceof Error ? error.message : String(error);
+        }
+    };
+
+    /** Sets the table's parameters; answers why not, when the server won't. */
+    const saveParameters = async (
+        next: TableParameter[],
+    ): Promise<string | null> => {
+        if (!sync.saving.value) {
+            parameters.value = next;
+
+            return null;
+        }
+
+        try {
+            await sync.attemptTable({ parameters: next });
+            parameters.value = next;
+
+            return null;
+        } catch (error) {
+            return error instanceof Error ? error.message : String(error);
+        }
     };
 
     const deleteColumn = (columnName: string): void => {
@@ -305,6 +369,7 @@ export function useTableStore() {
         columns,
         rows,
         selectedRowIds,
+        parameters,
         saveStatus: sync.status,
         flush: sync.flush,
         updateTable: sync.updateTable,
@@ -316,6 +381,8 @@ export function useTableStore() {
         deleteRow,
         addColumn,
         updateColumn,
+        saveFormulaColumn,
+        saveParameters,
         deleteColumn,
         duplicateColumn,
         visibleColumns: colModule.visibleColumns,

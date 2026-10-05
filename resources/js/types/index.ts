@@ -24,7 +24,17 @@ export type ColumnType =
     | 'percent'
     | 'rating'
     | 'user'
-    | 'location';
+    | 'location'
+    | 'formula';
+
+/** What a table's footer shows under a column, over its rows. */
+export type ColumnSummary = 'sum' | 'avg' | 'min' | 'max' | 'count';
+
+/** A named value a table's formulas share, e.g. rate = 5. */
+export interface TableParameter {
+    name: string;
+    value: string | number | boolean | null;
+}
 
 /** A place in a location cell: WGS84, and its address or name. */
 export interface LocationValue {
@@ -44,6 +54,9 @@ export interface ColumnMeta {
     currencySymbol?: string;
     maxRating?: number;
     defaultValue?: any;
+    // A formula column's formula, worked out by the server for every row
+    expression?: string | null;
+    summary?: ColumnSummary | null;
 }
 
 export interface RowData {

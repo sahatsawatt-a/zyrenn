@@ -10,6 +10,7 @@ import {
     MapPin,
     Percent,
     Phone,
+    Sigma,
     Star,
     Tag,
     Tags,
@@ -42,6 +43,17 @@ export const COLUMN_TYPES: {
     { type: 'rating', label: 'Rating', icon: Star },
     { type: 'user', label: 'Person', icon: User },
     { type: 'location', label: 'Location', icon: MapPin },
+    { type: 'formula', label: 'Formula', icon: Sigma },
+];
+
+/** Kinds whose values can be added up in the footer. */
+export const SUMMABLE: ColumnType[] = [
+    'integer',
+    'numeric',
+    'currency',
+    'percent',
+    'rating',
+    'formula',
 ];
 
 const ICONS = new Map(COLUMN_TYPES.map((kind) => [kind.type, kind.icon]));

@@ -4,6 +4,7 @@ namespace App\Mcp\Tools\Tables;
 
 use App\Mcp\Tools\TableTool;
 use App\Models\Table\Table;
+use App\Support\Table\TableFormulas;
 use App\Support\Table\TableStorage;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
@@ -14,9 +15,11 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[IsReadOnly]
 #[Description(<<<'TEXT'
-Get a table: its columns (name, label, type, and the choices of a select) and a page of its rows, each
-with its "id" and a value per column name. "total" says how many rows there are (or match the
-search), and "next_offset" where the next page starts, when there is one.
+Get a table: its columns (name, label, type, the choices of a select, a formula column's expression)
+and a page of its rows, each with its "id" and a value per column name. "total" says how many rows
+there are (or match the search), and "next_offset" where the next page starts, when there is one.
+"parameters" are the named values its formulas share, and "totals" what its footer shows under a
+column, over every row. A formula that can't be worked out for a row says why: {"error": "..."}.
 
 Read only what you need: "limit" and "offset" page through the rows (100 at a time unless asked),
 "search" keeps rows whose text holds it, and "columns" (labels or names) keeps just those columns.
@@ -67,9 +70,11 @@ class GetTable extends TableTool
 
         return Response::structured([
             ...$this->summary($table),
+            ...($table->parameters ? ['parameters' => array_column($table->parameters, 'value', 'name')] : []),
             'columns' => $this->describeColumns($table, $only),
             'rows' => $page['rows'],
             'total' => $page['total'],
+            ...(($totals = TableFormulas::totals($table)) !== [] ? ['totals' => $totals] : []),
             ...($offset + $limit < $page['total'] ? ['next_offset' => $offset + $limit] : []),
         ]);
     }

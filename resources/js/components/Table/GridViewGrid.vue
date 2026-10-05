@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Plus, SearchX, Sheet } from '@lucide/vue';
 import GridDataRow from '@/components/Table/GridDataRow.vue';
+import GridFooterRow from '@/components/Table/GridFooterRow.vue';
 import GridHeaderRow from '@/components/Table/GridHeaderRow.vue';
 import { Button } from '@/components/ui/button';
 import type { ColumnMeta, RowData, TableSort } from '@/types';
@@ -86,6 +87,12 @@ const emit = defineEmits<{
                     <Plus class="size-4" /> New row
                 </span>
             </button>
+
+            <GridFooterRow
+                v-if="columns.some((column) => column.summary)"
+                :columns="columns"
+                :rows="rows"
+            />
         </div>
 
         <div

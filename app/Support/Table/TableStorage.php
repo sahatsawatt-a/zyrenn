@@ -26,7 +26,7 @@ class TableStorage
     public const TYPES = [
         'varchar', 'text', 'integer', 'numeric', 'boolean', 'select',
         'multi_select', 'date', 'email', 'url', 'phone', 'currency',
-        'percent', 'rating', 'user', 'location',
+        'percent', 'rating', 'user', 'location', 'formula',
     ];
 
     /**
@@ -44,6 +44,8 @@ class TableStorage
         'multi_select' => 'json',
         // A place: {lat, lng, label} -- see toLocation()
         'location' => 'location',
+        // Worked out from the rest of the row as it is read (TableFormulas), never kept
+        'formula' => 'computed',
     ];
 
     /** Names the database already gives every row. */
@@ -128,7 +130,9 @@ class TableStorage
             $column->name = self::nameFor($table, $column->label);
             $column->save();
 
-            self::addColumn($table, $column->name, $column->type);
+            if (! self::isComputed($column->type)) {
+                self::addColumn($table, $column->name, $column->type);
+            }
 
             return $column;
         });
@@ -162,6 +166,12 @@ class TableStorage
         Schema::table(self::physicalName($table), function (Blueprint $blueprint) use ($name) {
             $blueprint->dropColumn($name);
         });
+    }
+
+    /** Whether a column of this kind is worked out rather than kept: it has no place in the rows. */
+    public static function isComputed(string $type): bool
+    {
+        return self::storageOf($type) === 'computed';
     }
 
     /** Whether a column could change from one kind to another without converting its values. */
@@ -265,11 +275,11 @@ class TableStorage
      */
     public static function rows(Table $table): array
     {
-        return array_values(DB::table(self::physicalName($table))
+        return TableFormulas::apply($table, array_values(DB::table(self::physicalName($table))
             ->orderBy('id')
             ->get()
             ->map(fn (object $row) => self::forGrid($table, $row))
-            ->all());
+            ->all()));
     }
 
     /**
@@ -303,16 +313,15 @@ class TableStorage
 
         $total = (clone $query)->count();
 
-        $rows = $query->orderBy('id')->offset($offset)->limit($limit)->get()
-            ->map(function (object $row) use ($table, $only) {
-                $values = self::forGrid($table, $row);
+        $rows = TableFormulas::apply($table, array_values($query->orderBy('id')->offset($offset)->limit($limit)->get()
+            ->map(fn (object $row) => self::forGrid($table, $row))
+            ->all()));
 
-                return $only === null ? $values : array_intersect_key($values, array_flip(['id', ...$only]));
-            })
-            ->values()
-            ->all();
+        if ($only !== null) {
+            $rows = array_map(fn (array $values) => array_intersect_key($values, array_flip(['id', ...$only])), $rows);
+        }
 
-        return ['rows' => array_values($rows), 'total' => $total];
+        return ['rows' => $rows, 'total' => $total];
     }
 
     /**
@@ -377,7 +386,7 @@ class TableStorage
         $stored = [];
 
         foreach ($table->columns as $column) {
-            if (! $column->is_primary && array_key_exists($column->name, $values)) {
+            if (! $column->is_primary && ! self::isComputed($column->type) && array_key_exists($column->name, $values)) {
                 $stored[$column->name] = self::toStored($column, $values[$column->name]);
             }
         }
@@ -394,7 +403,7 @@ class TableStorage
     {
         $found = DB::table(self::physicalName($table))->where('id', $id)->first();
 
-        return $found ? self::forGrid($table, $found) : null;
+        return $found ? TableFormulas::apply($table, [self::forGrid($table, $found)])[0] : null;
     }
 
     /**
@@ -408,7 +417,7 @@ class TableStorage
         $values = ['id' => (int) $stored['id']];
 
         foreach ($table->columns as $column) {
-            if ($column->name !== 'id') {
+            if ($column->name !== 'id' && ! self::isComputed($column->type)) {
                 $values[$column->name] = self::toGrid($column, $stored[$column->name] ?? null);
             }
         }

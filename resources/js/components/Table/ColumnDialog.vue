@@ -12,7 +12,8 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { COLUMN_TYPES } from '@/composables/table/columnTypes';
+import { COLUMN_TYPES, SUMMABLE } from '@/composables/table/columnTypes';
+import { SUMMARIES } from '@/composables/table/formulas';
 import type { Tone } from '@/composables/table/tones';
 import {
     TONES,
@@ -20,11 +21,21 @@ import {
     nextTone,
     swatchClass,
 } from '@/composables/table/tones';
-import type { ColumnMeta, ColumnOption, ColumnType } from '@/types';
+import type {
+    ColumnMeta,
+    ColumnOption,
+    ColumnSummary,
+    ColumnType,
+} from '@/types';
 
 const open = defineModel<boolean>('open', { required: true });
 
-const props = defineProps<{ column: ColumnMeta | null }>();
+const props = defineProps<{
+    column: ColumnMeta | null;
+    // Why the server wouldn't take a formula, and whether it is still being asked
+    error?: string | null;
+    busy?: boolean;
+}>();
 
 const emit = defineEmits<{
     (
@@ -51,6 +62,8 @@ const newOption = ref('');
 const tone = ref<Tone>(TONES[0]);
 const currencySymbol = ref('$');
 const maxRating = ref(5);
+const expression = ref('');
+const summary = ref<ColumnSummary | null>(null);
 
 const hasChoices = computed(
     () => type.value === 'select' || type.value === 'multi_select',
@@ -65,10 +78,21 @@ watch(open, (isOpen) => {
     label.value = props.column?.label ?? '';
     type.value = props.column?.type ?? 'varchar';
     options.value = structuredClone(props.column?.options ?? []);
-    currencySymbol.value = props.column?.currencySymbol || '$';
+    // A formula is shown as money only when asked to be
+    currencySymbol.value =
+        props.column?.currencySymbol || (type.value === 'formula' ? '' : '$');
     maxRating.value = props.column?.maxRating || 5;
+    expression.value = props.column?.expression ?? '';
+    summary.value = props.column?.summary ?? null;
     newOption.value = '';
     tone.value = TONES[0];
+});
+
+// A new formula starts as a plain number; money is opted into
+watch(type, (kind) => {
+    if (kind === 'formula' && !props.column) {
+        currencySymbol.value = '';
+    }
 });
 
 const addOption = () => {
@@ -110,9 +134,15 @@ const save = () => {
         extra: {
             currencySymbol: currencySymbol.value,
             maxRating: maxRating.value,
+            expression: type.value === 'formula' ? expression.value : null,
+            summary: SUMMABLE.includes(type.value) ? summary.value : null,
         },
     });
-    open.value = false;
+
+    // A formula has to be taken by the server first: the page closes this when it is
+    if (type.value !== 'formula') {
+        open.value = false;
+    }
 };
 
 const remove = () => {
@@ -122,9 +152,13 @@ const remove = () => {
     }
 };
 
-// A kind can only become another that is kept the same way, and never for the id
+// A kind can only become another that is kept the same way, and never for the
+// id; a formula is kept nowhere, so it stays a formula and nothing becomes one
 const canPick = (kind: ColumnType) =>
-    !props.column?.isPrimary || kind === props.column.type;
+    !props.column ||
+    (!props.column.isPrimary &&
+        (kind === 'formula') === (props.column.type === 'formula')) ||
+    kind === props.column.type;
 
 const segment = (active: boolean) =>
     active
@@ -255,6 +289,61 @@ const segment = (active: boolean) =>
                     </div>
                 </div>
 
+                <div v-else-if="type === 'formula'" class="grid gap-2">
+                    <Label for="column-expression">Formula</Label>
+                    <textarea
+                        id="column-expression"
+                        v-model="expression"
+                        rows="3"
+                        spellcheck="false"
+                        placeholder="e.g. cny * rate"
+                        class="border-input bg-background focus-visible:ring-ring/50 rounded-md border px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2"
+                        :aria-invalid="!!error"
+                        data-test="column-expression"
+                        @keydown.enter.exact.prevent="save"
+                    />
+                    <p
+                        v-if="error"
+                        class="text-destructive text-xs"
+                        data-test="column-expression-error"
+                    >
+                        {{ error }}
+                    </p>
+                    <p v-else class="text-muted-foreground text-xs leading-5">
+                        Worked out for each row, like a spreadsheet. Name a
+                        field by its name or, in brackets, its label:
+                        <code>[Cost (THB)] / people</code>. Parameters above the
+                        table can be named too. Functions include
+                        <code>if</code>, <code>round</code>, <code>sum</code>,
+                        <code>text</code> and <code>date</code>.
+                    </p>
+                    <div class="flex items-center gap-2">
+                        <span class="text-muted-foreground text-xs">
+                            Show as money
+                        </span>
+                        <div class="bg-muted flex gap-1 rounded-md p-1">
+                            <button
+                                type="button"
+                                class="rounded px-2 py-1 text-xs font-medium transition-colors"
+                                :class="segment(!currencySymbol)"
+                                @click="currencySymbol = ''"
+                            >
+                                No
+                            </button>
+                            <button
+                                v-for="symbol in CURRENCIES"
+                                :key="symbol"
+                                type="button"
+                                class="w-8 rounded py-1 text-sm font-medium transition-colors"
+                                :class="segment(currencySymbol === symbol)"
+                                @click="currencySymbol = symbol"
+                            >
+                                {{ symbol }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <div v-else-if="type === 'currency'" class="grid gap-2">
                     <Label>Currency</Label>
                     <div class="flex items-center gap-2">
@@ -294,6 +383,33 @@ const segment = (active: boolean) =>
                     </div>
                 </div>
 
+                <div v-if="SUMMABLE.includes(type)" class="grid gap-2">
+                    <Label>Under the column</Label>
+                    <div
+                        class="bg-muted flex w-fit flex-wrap gap-1 rounded-md p-1"
+                    >
+                        <button
+                            type="button"
+                            class="rounded px-2.5 py-1 text-xs font-medium transition-colors"
+                            :class="segment(summary === null)"
+                            @click="summary = null"
+                        >
+                            Nothing
+                        </button>
+                        <button
+                            v-for="option in SUMMARIES"
+                            :key="option.id"
+                            type="button"
+                            class="rounded px-2.5 py-1 text-xs font-medium transition-colors"
+                            :class="segment(summary === option.id)"
+                            :data-test="`column-summary-${option.id}`"
+                            @click="summary = option.id"
+                        >
+                            {{ option.label }}
+                        </button>
+                    </div>
+                </div>
+
                 <DialogFooter class="items-center sm:justify-between">
                     <Button
                         v-if="isEditing && !column?.isPrimary"
@@ -315,7 +431,11 @@ const segment = (active: boolean) =>
                         </Button>
                         <Button
                             type="submit"
-                            :disabled="!label.trim()"
+                            :disabled="
+                                !label.trim() ||
+                                busy ||
+                                (type === 'formula' && !expression.trim())
+                            "
                             data-test="column-save"
                         >
                             {{ isEditing ? 'Save' : 'Add field' }}

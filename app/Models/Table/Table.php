@@ -25,6 +25,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $folder_id
  * @property string $title
  * @property string $density
+ * @property list<array{name: string, value: mixed}>|null $parameters
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -46,6 +47,17 @@ class Table extends Model
         'title' => '',
         'density' => 'normal',
     ];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            // Named values its formulas share, in the order they are shown
+            'parameters' => 'array',
+        ];
+    }
 
     /**
      * A table's rows go with it: they are not reachable any other way.

@@ -19,14 +19,24 @@ import {
 } from '@/components/ui/dialog';
 import { removeRows, upsertRow } from '@/composables/table/useTableLive';
 import type { TableChange } from '@/composables/table/useTableLive';
-import { columns, people, rows } from '@/composables/table/useTableState';
+import {
+    columns,
+    parameters,
+    people,
+    rows,
+} from '@/composables/table/useTableState';
 import { useTableStore } from '@/composables/table/useTableStore';
 import { usePresence } from '@/composables/usePresence';
 import { copyToClipboard, formatRelativeTime } from '@/lib/utils';
 import { canChange, owned } from '@/lib/projects';
 import { destroy, index as ownIndex, show } from '@/routes/tables';
 import { index as projectIndex } from '@/routes/projects/tables';
-import type { ColumnMeta, RowData, TableDensity } from '@/types';
+import type {
+    ColumnMeta,
+    RowData,
+    TableDensity,
+    TableParameter,
+} from '@/types';
 
 type Table = {
     ref_id: string;
@@ -39,6 +49,8 @@ const props = defineProps<{
     table: Table;
     columns: ColumnMeta[];
     rows: RowData[];
+    // Named values its formulas share
+    parameters: TableParameter[];
     // Who a "user" column can name
     people: string[];
     // The folders the table sits in, top level first
@@ -63,8 +75,21 @@ const open = () => {
     title.value = props.table.title;
     savedAt.value = props.table.updated_at;
     people.value = props.people;
+    parameters.value = props.parameters;
     opening = false;
 };
+
+// Columns, rows and parameters from the server again, keeping the search and
+// filters: a new column, or a formula or parameter changed, here or elsewhere
+const reload = () =>
+    router.reload({
+        only: ['columns', 'rows', 'parameters'],
+        onSuccess: () => {
+            columns.value = props.columns;
+            rows.value = props.rows;
+            parameters.value = props.parameters;
+        },
+    });
 
 open();
 
@@ -129,14 +154,7 @@ const { others } = usePresence(() => `tables.${props.table.ref_id}`, {
 
                 break;
             case 'reload':
-                // New columns may bring new values to every row; keep the search and filters
-                router.reload({
-                    only: ['columns', 'rows'],
-                    onSuccess: () => {
-                        columns.value = props.columns;
-                        rows.value = props.rows;
-                    },
-                });
+                reload();
                 break;
             case 'deleted':
                 // One's own delete is heard here too: the server says where to go
@@ -284,7 +302,7 @@ onBeforeUnmount(() => {
             class="m-0 min-h-0 min-w-0 flex-1 border-0 p-0"
             :class="{ 'read-only': !editable }"
         >
-            <TableWorkspace />
+            <TableWorkspace @reload="reload" />
         </fieldset>
     </div>
 </template>

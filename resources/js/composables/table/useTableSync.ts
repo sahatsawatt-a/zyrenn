@@ -2,6 +2,7 @@ import { useDebounceFn } from '@vueuse/core';
 import { computed, ref } from 'vue';
 import * as api from '@/lib/tables';
 import type { ColumnChanges } from '@/lib/tables';
+import { applyComputed } from './useTableLive';
 import { activeTable } from './useTableState';
 
 export type SaveStatus = 'saved' | 'saving' | 'unsaved' | 'error';
@@ -65,12 +66,14 @@ function createSync() {
         await run(() =>
             Promise.all(
                 cells.map((cell) =>
-                    api.saveCell(
-                        activeTable.value,
-                        cell.row,
-                        cell.column,
-                        cell.value,
-                    ),
+                    api
+                        .saveCell(
+                            activeTable.value,
+                            cell.row,
+                            cell.column,
+                            cell.value,
+                        )
+                        .then((saved) => applyComputed(saved.row)),
                 ),
             ),
         );
@@ -113,6 +116,28 @@ function createSync() {
         void widthsLater();
     };
 
+    /**
+     * A change the server may refuse with something to say -- a formula it
+     * can't work out. The refusal comes back to be shown where it was typed,
+     * and leaves the page's status as it was: nothing went wrong in saving.
+     */
+    const attempt = async <T>(request: () => Promise<T>): Promise<T> => {
+        const before = status.value;
+        status.value = 'saving';
+
+        try {
+            const result = await request();
+            status.value =
+                pendingCells.size || pendingWidths.size ? 'unsaved' : 'saved';
+
+            return result;
+        } catch (error) {
+            status.value = before;
+
+            throw error;
+        }
+    };
+
     /** Anything waiting is sent now, as the page is left. */
     const flush = async () => {
         await Promise.all([flushCells(), flushWidths()]);
@@ -137,5 +162,16 @@ function createSync() {
             run(() => api.deleteColumn(activeTable.value, column)),
         updateTable: (changes: Parameters<typeof api.updateTable>[1]) =>
             run(() => api.updateTable(activeTable.value, changes)),
+        attemptColumn: (
+            column: string | null,
+            changes: Parameters<typeof api.createColumn>[1],
+        ) =>
+            attempt(() =>
+                column === null
+                    ? api.createColumn(activeTable.value, changes)
+                    : api.updateColumn(activeTable.value, column, changes),
+            ),
+        attemptTable: (changes: Parameters<typeof api.updateTable>[1]) =>
+            attempt(() => api.updateTable(activeTable.value, changes)),
     };
 }

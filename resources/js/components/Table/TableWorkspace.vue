@@ -5,6 +5,7 @@ import BulkSelectionBar from '@/components/Table/BulkSelectionBar.vue';
 import ColumnDialog from '@/components/Table/ColumnDialog.vue';
 import GridViewGrid from '@/components/Table/GridViewGrid.vue';
 import TableMapView from '@/components/Table/TableMapView.vue';
+import TableParameters from '@/components/Table/TableParameters.vue';
 import TableToolbar from '@/components/Table/TableToolbar.vue';
 import {
     activeTable,
@@ -18,6 +19,11 @@ import type { ColumnMeta, ColumnOption, ColumnType } from '@/types';
 // for a column. It works on the shared table state, so whichever page shows
 // it -- a saved table or the demo -- only has to load that state first.
 const store = useTableStore();
+
+const emit = defineEmits<{
+    // Formulas or parameters changed: only the server works the rows out again
+    (e: 'reload'): void;
+}>();
 
 // The grid, or -- when the table has a place in it -- the rows on a map.
 // Which one is remembered for each table, in this browser
@@ -56,6 +62,15 @@ const showRow = (id: number) => {
 
 const showColumnDialog = ref(false);
 const editingColumn = ref<ColumnMeta | null>(null);
+// Why the server wouldn't take a formula, and whether it is being asked
+const columnError = ref<string | null>(null);
+const columnBusy = ref(false);
+
+watch(showColumnDialog, (isOpen) => {
+    if (isOpen) {
+        columnError.value = null;
+    }
+});
 
 const densityPaddingClass = computed(() => {
     switch (store.density.value) {
@@ -94,6 +109,12 @@ const saveColumn = (payload: {
     options?: ColumnOption[];
     extra?: Partial<ColumnMeta>;
 }) => {
+    if (payload.type === 'formula') {
+        void saveFormula(payload.label, payload.extra ?? {});
+
+        return;
+    }
+
     if (editingColumn.value) {
         store.updateColumn(editingColumn.value.name, {
             label: payload.label,
@@ -101,6 +122,7 @@ const saveColumn = (payload: {
             options: payload.options,
             currencySymbol: payload.extra?.currencySymbol,
             maxRating: payload.extra?.maxRating,
+            summary: payload.extra?.summary,
         });
 
         return;
@@ -113,6 +135,21 @@ const saveColumn = (payload: {
         payload.options,
         payload.extra,
     );
+};
+
+/** A formula column is kept once the server has taken its formula, which it then works out. */
+const saveFormula = async (label: string, extra: Partial<ColumnMeta>) => {
+    columnBusy.value = true;
+    columnError.value = await store.saveFormulaColumn(
+        editingColumn.value?.name ?? null,
+        { ...extra, label },
+    );
+    columnBusy.value = false;
+
+    if (columnError.value === null) {
+        showColumnDialog.value = false;
+        emit('reload');
+    }
 };
 
 const duplicateSelected = () => {
@@ -170,6 +207,8 @@ const duplicateSelected = () => {
             </div>
         </div>
 
+        <TableParameters @saved="emit('reload')" />
+
         <TableMapView
             v-if="view === 'map' && hasPlaces"
             :columns="store.visibleColumns.value"
@@ -215,6 +254,8 @@ const duplicateSelected = () => {
         <ColumnDialog
             v-model:open="showColumnDialog"
             :column="editingColumn"
+            :error="columnError"
+            :busy="columnBusy"
             @save="saveColumn"
             @delete="store.deleteColumn"
         />

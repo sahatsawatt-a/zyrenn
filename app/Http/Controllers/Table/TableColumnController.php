@@ -6,7 +6,9 @@ use App\Events\TableChanged;
 use App\Http\Controllers\Controller;
 use App\Models\Table\Table;
 use App\Models\Table\TableColumn;
+use App\Support\Formula\Parser;
 use App\Support\Live\Live;
+use App\Support\Table\TableFormulas;
 use App\Support\Table\TableStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -34,6 +36,8 @@ class TableColumnController extends Controller
             'type' => ['required', Rule::in(TableStorage::TYPES)],
             ...self::settingsRules(),
         ]);
+
+        self::checkExpression($table, $validated['type'], $validated['expression'] ?? null);
 
         $column = TableStorage::newColumn($table, [
             'label' => $validated['label'],
@@ -83,7 +87,11 @@ class TableColumnController extends Controller
             unset($validated['type'], $validated['hidden'], $validated['sort_order']);
         }
 
-        $settings = array_intersect_key($validated, array_flip(['options', 'currencySymbol', 'maxRating']));
+        if (array_key_exists('expression', $validated)) {
+            self::checkExpression($table, $validated['type'] ?? $column->type, $validated['expression'], $column->name);
+        }
+
+        $settings = self::settings($validated);
 
         if ($settings !== []) {
             $current = $column->options_meta ?? [];
@@ -117,7 +125,10 @@ class TableColumnController extends Controller
         }
 
         DB::transaction(function () use ($table, $column) {
-            TableStorage::dropColumn($table, $column->name);
+            if (! TableStorage::isComputed($column->type)) {
+                TableStorage::dropColumn($table, $column->name);
+            }
+
             $column->delete();
         });
 
@@ -144,6 +155,8 @@ class TableColumnController extends Controller
             'options.*.color' => ['nullable', 'string', 'max:160'],
             'currencySymbol' => ['sometimes', 'nullable', 'string', 'max:8'],
             'maxRating' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:10'],
+            'expression' => ['sometimes', 'nullable', 'string', 'max:'.Parser::MAX_LENGTH],
+            'summary' => ['sometimes', 'nullable', Rule::in(TableFormulas::SUMMARIES)],
         ];
     }
 
@@ -153,6 +166,24 @@ class TableColumnController extends Controller
      */
     private static function settings(array $validated): array
     {
-        return array_intersect_key($validated, array_flip(['options', 'currencySymbol', 'maxRating']));
+        return array_intersect_key($validated, array_flip(['options', 'currencySymbol', 'maxRating', 'expression', 'summary']));
+    }
+
+    /**
+     * A formula column needs a formula that can be worked out from this table.
+     */
+    private static function checkExpression(Table $table, string $type, ?string $expression, ?string $for = null): void
+    {
+        if ($type !== 'formula') {
+            return;
+        }
+
+        $problem = blank($expression)
+            ? __('A formula column needs a formula, e.g. cny * rate.')
+            : TableFormulas::problem($table, (string) $expression, $for);
+
+        if ($problem !== null) {
+            throw ValidationException::withMessages(['expression' => $problem]);
+        }
     }
 }

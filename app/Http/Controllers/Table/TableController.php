@@ -8,7 +8,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Table\Table;
 use App\Models\Table\TableColumn;
 use App\Models\Table\TableFolder;
+use App\Support\Formula\FormulaError;
 use App\Support\Live\Live;
+use App\Support\Table\TableFormulas;
 use App\Support\Table\TableStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -16,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -76,6 +79,7 @@ class TableController extends Controller
 
         return Inertia::render('tables/Show', [
             'table' => $table->only(['ref_id', 'title', 'density', 'updated_at']),
+            'parameters' => $table->parameters ?? [],
             'columns' => $table->columns->map(fn (TableColumn $column) => $column->toGrid())->values(),
             'rows' => TableStorage::rows($table),
             // Who a "user" column can name: the project's members, or on one's own table, oneself
@@ -97,7 +101,20 @@ class TableController extends Controller
             'title' => ['sometimes', 'nullable', 'string', 'max:255'],
             'density' => ['sometimes', Rule::in(Table::DENSITIES)],
             'folder' => ['sometimes', 'nullable', 'string', self::ownFolder($table->owner())],
+            'parameters' => ['sometimes', 'array', 'max:'.TableFormulas::MAX_PARAMETERS],
+            'parameters.*.name' => ['required', 'string', 'max:40'],
+            'parameters.*.value' => ['present'],
         ]);
+
+        if (array_key_exists('parameters', $validated)) {
+            try {
+                $table->parameters = TableFormulas::cleanParameters($table, array_values($validated['parameters']));
+            } catch (FormulaError $problem) {
+                throw ValidationException::withMessages(['parameters' => $problem->getMessage()]);
+            }
+
+            unset($validated['parameters']);
+        }
 
         if (array_key_exists('title', $validated)) {
             $validated['title'] = (string) $validated['title'];
@@ -110,10 +127,16 @@ class TableController extends Controller
 
         $table->fill($validated);
         $looksDifferent = $table->isDirty(['title', 'density']);
+        $reworked = $table->isDirty('parameters');
         $table->save();
 
         if ($looksDifferent) {
             Live::tell(new TableChanged($table, 'table', $table->only(['title', 'density'])));
+        }
+
+        // Every formula may come out differently; others load the table again
+        if ($reworked) {
+            Live::tell(new TableChanged($table, 'reload'));
         }
 
         // The grid saves with fetch; the tables list moves tables through Inertia

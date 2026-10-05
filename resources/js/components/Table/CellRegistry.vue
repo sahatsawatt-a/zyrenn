@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CellFormula from '@/components/Table/Cells/CellFormula.vue';
 import CellLocation from '@/components/Table/Cells/CellLocation.vue';
 import CellLongText from '@/components/Table/Cells/CellLongText.vue';
 import CellNumbers from '@/components/Table/Cells/CellNumbers.vue';
@@ -31,6 +32,12 @@ const WEBLINES = ['date', 'email', 'url', 'phone'];
         >
             {{ modelValue }}
         </span>
+
+        <CellFormula
+            v-else-if="column.type === 'formula'"
+            :column="column"
+            :model-value="modelValue"
+        />
 
         <div v-else-if="column.type === 'boolean'" class="flex w-full px-2">
             <Checkbox

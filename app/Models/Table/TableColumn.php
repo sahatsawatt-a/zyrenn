@@ -84,6 +84,9 @@ class TableColumn extends Model
             'options' => $settings['options'] ?? [],
             'currencySymbol' => $settings['currencySymbol'] ?? null,
             'maxRating' => $settings['maxRating'] ?? null,
+            // A formula column's formula (TableFormulas), and what the footer shows under any column
+            'expression' => $settings['expression'] ?? null,
+            'summary' => $settings['summary'] ?? null,
         ];
     }
 
