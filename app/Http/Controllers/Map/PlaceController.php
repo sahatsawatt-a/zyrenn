@@ -21,6 +21,27 @@ class PlaceController extends Controller
 {
     use ActsForOwner;
 
+    /**
+     * Every saved place, with the list it is in, for offering them wherever a
+     * place is chosen -- a trip's stop, a table's location cell.
+     */
+    public function pick(Request $request): JsonResponse
+    {
+        $places = $this->owner($request)->places()
+            ->with('list:id,ref_id,name,color')
+            ->orderBy('name')
+            ->limit(1000)
+            ->get();
+
+        return response()->json([
+            'places' => $places->map(fn (Place $place) => [
+                ...array_intersect_key($place->toMap(), array_flip(['ref_id', 'name', 'address', 'kind', 'lat', 'lng'])),
+                'list' => $place->list?->name,
+                'color' => $place->list?->color,
+            ]),
+        ]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $owner = $this->owner($request, 'contribute');

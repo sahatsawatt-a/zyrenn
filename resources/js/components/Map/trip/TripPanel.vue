@@ -21,6 +21,7 @@ import {
     travelModes,
 } from '../format';
 import PlaceSearch from '../PlaceSearch.vue';
+import { useSavedPlaces } from '../useSavedPlaces';
 import DayTimeline from './DayTimeline.vue';
 import type { TripPlan } from './useTripPlan';
 
@@ -32,6 +33,9 @@ const props = defineProps<{
     near: () => { lat: number; lng: number };
     editable: boolean;
 }>();
+
+// Saved places come first in the search
+const local = useSavedPlaces();
 const emit = defineEmits<{ focus: [place: Candidate] }>();
 
 const day = computed(() =>
@@ -383,6 +387,7 @@ const rest = (where: 'here' | 'hotel') => {
                 </div>
                 <template v-if="editable">
                     <PlaceSearch
+                        :local="local"
                         v-model="addText"
                         :placeholder="`Add a place to Day ${dayIndex + 1}`"
                         :near="props.near"

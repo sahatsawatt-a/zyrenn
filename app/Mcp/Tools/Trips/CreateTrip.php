@@ -75,28 +75,29 @@ class CreateTrip extends TripTool
             ...$this->flightRules(),
         ]);
 
-        // Hotels and flights first: a rest at the hotel needs the hotel
-        $doc = TripDocument::normalize($this->withFlights([
-            'startDate' => $validated['start_date'] ?? null,
-            'currency' => $validated['currency'] ?? '',
-            'fromHotel' => $validated['from_hotel'] ?? true,
-            'stays' => array_map(fn (array $stay) => [
-                'place' => [...$stay, 'kind' => $stay['kind'] ?? 'tourism/hotel', 'minutes' => 0, 'cost' => 0],
-                'checkIn' => $stay['check_in'] ?? '',
-                'checkOut' => $stay['check_out'] ?? '',
-                'cost' => $stay['cost'] ?? 0,
-            ], $this->listed($validated, 'stays')),
-        ], $validated));
-
         $days = $this->listed($validated, 'days') ?: [[]];
-        $doc['days'] = array_map(fn () => ['id' => TripDocument::newId(), 'stops' => [], 'legs' => []], $days);
 
         try {
+            // Hotels and flights first: a rest at the hotel needs the hotel
+            $doc = TripDocument::normalize($this->withFlights([
+                'startDate' => $validated['start_date'] ?? null,
+                'currency' => $validated['currency'] ?? '',
+                'fromHotel' => $validated['from_hotel'] ?? true,
+                'stays' => array_map(fn (array $stay) => [
+                    'place' => $this->hotel($this->fromSaved($owner, $stay)),
+                    'checkIn' => $stay['check_in'] ?? '',
+                    'checkOut' => $stay['check_out'] ?? '',
+                    'cost' => $stay['cost'] ?? 0,
+                ], $this->listed($validated, 'stays')),
+            ], $validated));
+
+            $doc['days'] = array_map(fn () => ['id' => TripDocument::newId(), 'stops' => [], 'legs' => []], $days);
+
             foreach ($days as $index => $day) {
                 $doc['days'][$index] += ['mode' => $day['mode'] ?? null, 'start' => $day['start'] ?? null];
 
                 foreach ($this->listed($day, 'stops') as $stop) {
-                    $doc = TripParts::insertStop($doc, $index, TripParts::place($doc, $index, $stop));
+                    $doc = TripParts::insertStop($doc, $index, TripParts::place($doc, $index, $this->fromSaved($owner, $stop)));
                 }
             }
         } catch (InvalidArgumentException $problem) {

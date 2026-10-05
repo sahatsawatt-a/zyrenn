@@ -17,7 +17,7 @@ use InvalidArgumentException;
 class TripParts
 {
     /** The fields of a place a tool may give, as the document names them. */
-    public const PLACE_FIELDS = ['name', 'address', 'kind', 'lat', 'lng', 'minutes', 'cost', 'note', 'hours', 'rest'];
+    public const PLACE_FIELDS = ['name', 'address', 'kind', 'lat', 'lng', 'minutes', 'cost', 'note', 'hours', 'rest', 'placeRef'];
 
     /**
      * The date of the day at $index, YYYY-MM-DD.

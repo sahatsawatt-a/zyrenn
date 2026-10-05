@@ -4,6 +4,7 @@ namespace App\Mcp\Tools\Trips;
 
 use App\Mcp\Tools\TripTool;
 use App\Models\Map\Trip;
+use App\Support\Maps\PlaceRefs;
 use App\Support\Maps\TripDocument;
 use App\Support\Maps\TripParts;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -56,7 +57,7 @@ class GetTrip extends TripTool
             return $this->notFound($validated['ref_id']);
         }
 
-        $doc = TripDocument::normalize($trip->content);
+        $doc = PlaceRefs::trip($owner, TripDocument::normalize($trip->content));
         $totals = TripDocument::totals($doc);
 
         if (! isset($validated['day'])) {

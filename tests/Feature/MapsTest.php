@@ -193,6 +193,33 @@ class MapsTest extends TestCase
         $this->actingAs(User::factory()->create())->getJson(route('trips.content', $trip))->assertForbidden();
     }
 
+    public function test_a_saved_place_on_a_trip_follows_the_place_and_only_the_owners()
+    {
+        $user = User::factory()->create();
+        $mine = Place::factory()->for(PlaceList::factory()->for($user), 'list')->create(['name' => 'Old name', 'lat' => 31.1, 'lng' => 121.1]);
+        $theirs = Place::factory()->create(['name' => 'Not yours', 'lat' => 10, 'lng' => 10]);
+        $trip = Trip::factory()->for($user)->create(['content' => ['startDate' => '2026-11-03', 'days' => [['stops' => [
+            // Written before it was called placeRef
+            ['name' => 'Old name', 'lat' => 31.1, 'lng' => 121.1, 'savedId' => $mine->ref_id],
+            ['name' => 'Kept copy', 'lat' => 31.3, 'lng' => 121.3, 'placeRef' => $theirs->ref_id],
+        ]]]]]);
+
+        $mine->update(['name' => 'Renamed on the map', 'lat' => 31.2, 'lng' => 121.2]);
+
+        $this->actingAs($user)->getJson(route('trips.content', $trip))
+            ->assertOk()
+            ->assertJsonPath('content.days.0.stops.0.placeRef', $mine->ref_id)
+            ->assertJsonPath('content.days.0.stops.0.name', 'Renamed on the map')
+            ->assertJsonPath('content.days.0.stops.0.lat', 31.2)
+            // Someone else's place is never read through: the copy stands
+            ->assertJsonPath('content.days.0.stops.1.name', 'Kept copy');
+
+        // Gone from the map, the stop keeps the copy it had
+        $mine->delete();
+        $this->actingAs($user)->getJson(route('trips.content', $trip))
+            ->assertJsonPath('content.days.0.stops.0.name', 'Old name');
+    }
+
     public function test_someone_elses_trip_is_not_theirs_to_see_or_change()
     {
         $trip = Trip::factory()->create();
@@ -267,6 +294,21 @@ class MapsTest extends TestCase
 
         $this->assertSame($keep->id, $place->fresh()->list_id);
         $this->assertModelMissing($gone);
+    }
+
+    public function test_saved_places_are_offered_wherever_a_place_is_chosen()
+    {
+        $user = User::factory()->create();
+        $list = PlaceList::factory()->for($user)->create(['name' => 'Food', 'color' => '#10b981']);
+        Place::factory()->for($list, 'list')->create(['name' => 'Din Tai Fung']);
+        Place::factory()->create(['name' => 'Someone else’s']);
+
+        $this->actingAs($user)->getJson(route('places.pick'))
+            ->assertOk()
+            ->assertJsonCount(1, 'places')
+            ->assertJsonPath('places.0.name', 'Din Tai Fung')
+            ->assertJsonPath('places.0.list', 'Food')
+            ->assertJsonPath('places.0.color', '#10b981');
     }
 
     public function test_someone_elses_place_is_not_theirs_to_change()

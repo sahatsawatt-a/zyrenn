@@ -11,6 +11,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import PlaceSearch from '../PlaceSearch.vue';
+import { useSavedPlaces } from '../useSavedPlaces';
 import type { TripPlan } from './useTripPlan';
 
 // The flights in and out: where and when, how long the airport takes on the
@@ -21,6 +22,9 @@ const props = defineProps<{
     near: () => { lat: number; lng: number };
     editable: boolean;
 }>();
+
+// Saved places come first in the search
+const local = useSavedPlaces();
 const open = defineModel<boolean>('open', { required: true });
 
 const arrivalText = ref('');
@@ -64,6 +68,7 @@ const field =
                         </button>
                     </div>
                     <PlaceSearch
+                        :local="local"
                         v-else
                         v-model="arrivalText"
                         placeholder="Arrival airport"
@@ -129,6 +134,7 @@ const field =
                     </div>
                     <template v-else>
                         <PlaceSearch
+                            :local="local"
                             v-model="departureText"
                             placeholder="Departure airport"
                             :near="props.near"

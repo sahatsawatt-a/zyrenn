@@ -340,6 +340,36 @@ class McpTripsTest extends TestCase
             ->assertStructuredContent(fn (AssertableJson $json) => $json->where('url', route('maps.index'))->etc());
     }
 
+    public function test_a_trip_can_be_made_of_saved_places_and_follows_them()
+    {
+        $user = User::factory()->create();
+        $server = UserServer::actingAs($user);
+        $server->tool(SavePlace::class, ['name' => 'Yu Garden', 'lat' => 31.2272, 'lng' => 121.4921, 'kind' => 'tourism/attraction'])->assertOk();
+        $server->tool(SavePlace::class, ['name' => 'Inn', 'lat' => 31.23, 'lng' => 121.47])->assertOk();
+        [$garden, $inn] = [Place::query()->where('name', 'Yu Garden')->sole(), Place::query()->where('name', 'Inn')->sole()];
+
+        $server->tool(CreateTrip::class, [
+            'title' => 'From my places',
+            'start_date' => '2026-11-03',
+            'stays' => [['place' => $inn->ref_id, 'check_in' => '2026-11-03T15:00', 'check_out' => '2026-11-04T11:00']],
+            'days' => [['stops' => [['place' => $garden->ref_id, 'minutes' => 90]]]],
+        ])->assertOk();
+
+        $doc = $user->trips()->sole()->content;
+        $stop = $doc['days'][0]['stops'][0];
+
+        $this->assertSame(['Yu Garden', 31.2272, 90, $garden->ref_id], [$stop['name'], $stop['lat'], $stop['minutes'], $stop['placeRef']]);
+        $this->assertSame([$inn->ref_id, 'tourism/hotel'], [$doc['stays'][0]['place']['placeRef'], $doc['stays'][0]['place']['kind']]);
+
+        // Renamed on the map, the trip says so when it is read
+        $garden->update(['name' => 'Yuyuan Garden']);
+        $server->tool(GetTrip::class, ['ref_id' => $user->trips()->sole()->ref_id, 'day' => '1'])
+            ->assertStructuredContent(fn (AssertableJson $json) => $json->where('stops.0.name', 'Yuyuan Garden')->etc());
+
+        $server->tool(CreateTrip::class, ['title' => 'Nowhere', 'days' => [['stops' => [['place' => 'nothere']]]]])
+            ->assertHasErrors(['There is no saved place "nothere". list-places shows them.']);
+    }
+
     public function test_search_places_finds_where_a_place_is()
     {
         Http::fake(['photon.komoot.io/*' => Http::response(['features' => [[

@@ -17,6 +17,7 @@ import { pin, placePin } from '@/components/Map/markers';
 import type { LocalPlace } from '@/components/Map/PlaceSearch.vue';
 import PlaceSearch from '@/components/Map/PlaceSearch.vue';
 import { useMap } from '@/components/Map/useMap';
+import { matchingSaved } from '@/components/Map/useSavedPlaces';
 import type { Candidate, PlaceList, Route, SavedPlace } from '@/lib/maps';
 import { whatIsHere } from '@/lib/maps';
 import { canChange, owned } from '@/lib/projects';
@@ -160,16 +161,14 @@ watch([to, panel, map], () =>
 
 /** Saved places matching what is typed, for the search boxes. */
 const local = (term: string): LocalPlace[] =>
-    store.places.value
-        .filter((place) =>
-            place.name.toLowerCase().includes(term.toLowerCase()),
-        )
-        .map((place) => ({
+    matchingSaved(
+        store.places.value.map((place) => ({
             ...place,
-            savedId: place.ref_id,
-            detail: `${store.listOf(place)?.name ?? ''}${place.address ? ` · ${place.address}` : ''}`,
-            color: store.listOf(place)?.color,
-        }));
+            list: store.listOf(place)?.name ?? null,
+            color: store.listOf(place)?.color ?? null,
+        })),
+        term,
+    );
 
 const show = (target: Candidate) => {
     current.value = target;

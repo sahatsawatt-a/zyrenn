@@ -11,6 +11,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import PlaceSearch from '../PlaceSearch.vue';
+import { useSavedPlaces } from '../useSavedPlaces';
 import type { TripPlan } from './useTripPlan';
 
 // The hotels booked, each with its check-in, check-out and what the whole
@@ -22,6 +23,9 @@ const props = defineProps<{
     near: () => { lat: number; lng: number };
     editable: boolean;
 }>();
+
+// Saved places come first in the search
+const local = useSavedPlaces();
 const open = defineModel<boolean>('open', { required: true });
 
 const searchText = ref('');
@@ -124,6 +128,7 @@ const field =
 
             <template v-if="editable">
                 <PlaceSearch
+                    :local="local"
                     v-model="searchText"
                     :placeholder="
                         plan.trip.stays.length

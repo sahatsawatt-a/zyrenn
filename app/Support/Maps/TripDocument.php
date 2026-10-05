@@ -19,8 +19,9 @@ namespace App\Support\Maps;
  *     days        [{id, mode, start, stops: [stop], legs: {from>to: leg}}]
  *
  * A place (a stop, a hotel, an airport) is {id, name, address, kind, lat,
- * lng, minutes, cost, note}, with `hours` once looked up and `rest` for a
- * rest ("here" or "hotel"). Times are local, YYYY-MM-DDTHH:MM or HH:MM.
+ * lng, minutes, cost, note}, with `hours` once looked up, `rest` for a
+ * rest ("here" or "hotel"), and `placeRef` when it is one of the owner's
+ * saved places -- the rest of it then a copy of that place (PlaceRefs). Times are local, YYYY-MM-DDTHH:MM or HH:MM.
  */
 class TripDocument
 {
@@ -270,7 +271,8 @@ class TripDocument
             'minutes' => self::minutes($place['minutes'] ?? 60),
             'cost' => self::money($place['cost'] ?? 0),
             'note' => self::text($place['note'] ?? '', 2000),
-            'savedId' => is_string($place['savedId'] ?? null) ? self::text($place['savedId'], 32) : null,
+            // The saved place it is, when it is one (once called savedId): see PlaceRefs
+            'placeRef' => self::ref($place['placeRef'] ?? $place['savedId'] ?? null),
             'hours' => array_key_exists('hours', $place) ? self::hours($place['hours']) : false,
             'rest' => $rest,
         ], fn ($value) => $value !== null && $value !== false);
@@ -331,6 +333,11 @@ class TripDocument
     private static function id(mixed $id): string
     {
         return is_string($id) && preg_match('/^[\w-]{1,32}$/', $id) ? $id : self::newId();
+    }
+
+    private static function ref(mixed $ref): ?string
+    {
+        return is_string($ref) && preg_match('/^[a-z0-9]{1,16}$/', $ref) ? $ref : null;
     }
 
     private static function text(mixed $text, int $max): string

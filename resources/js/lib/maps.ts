@@ -228,6 +228,27 @@ export const saveTrip = (
         keepalive,
     );
 
+/** A saved place offered wherever a place is chosen, with the list it is in. */
+export interface SavedChoice {
+    ref_id: string;
+    name: string;
+    address: string;
+    kind: string;
+    lat: number;
+    lng: number;
+    list: string | null;
+    color: string | null;
+}
+
+/** The user's or the project's saved places, to choose one from. */
+export const listSavedPlaces = async () =>
+    (
+        await send<{ places: SavedChoice[] }>(
+            owned(placeRoutes.pick, projectPlaceRoutes.pick).url(),
+            'GET',
+        )
+    ).places;
+
 /** A trip to choose, in a list of them. */
 export interface TripSummary {
     ref_id: string;

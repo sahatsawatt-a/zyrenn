@@ -2,6 +2,7 @@
 import { ExternalLink, MapPin, X } from '@lucide/vue';
 import { ref } from 'vue';
 import PlaceSearch from '@/components/Map/PlaceSearch.vue';
+import { useSavedPlaces } from '@/components/Map/useSavedPlaces';
 import {
     Popover,
     PopoverContent,
@@ -18,6 +19,9 @@ const props = defineProps<{
     column: ColumnMeta;
     modelValue?: LocationValue | null;
 }>();
+
+// Saved places come first in the search
+const local = useSavedPlaces();
 const emit = defineEmits<{
     (e: 'update:modelValue', value: LocationValue | null): void;
 }>();
@@ -44,6 +48,8 @@ const pick = (place: Candidate) => {
         lat: place.lat,
         lng: place.lng,
         label: place.address ? `${place.name}, ${place.address}` : place.name,
+        // Chosen from the saved places: kept in step with it
+        ...(place.savedId ? { place: place.savedId } : {}),
     });
     cell.isOpen.value = false;
     text.value = '';
@@ -77,6 +83,7 @@ const clear = () => {
         </PopoverTrigger>
         <PopoverContent align="start" class="w-80 space-y-2 p-2">
             <PlaceSearch
+                :local="local"
                 v-model="text"
                 placeholder="Search for a place"
                 :near="near"

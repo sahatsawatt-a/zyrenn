@@ -41,6 +41,8 @@ export interface LocationValue {
     lat: number;
     lng: number;
     label: string;
+    /** The saved place it is, if it is one: renamed or moved on the map, it follows. */
+    place?: string;
 }
 
 export interface ColumnMeta {

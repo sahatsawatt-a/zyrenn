@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
     BedDouble,
+    Bookmark,
     Coffee,
     ExternalLink,
     GripVertical,
@@ -347,6 +348,12 @@ const drop = (index: number) => emit('drop', props.dayId, index);
                     >
                         {{ row.stop.name }}
                     </button>
+                    <Bookmark
+                        v-if="row.stop.placeRef && !row.stop.rest"
+                        class="text-muted-foreground ml-1 inline size-3 align-[-1px]"
+                        aria-label="A saved place: it follows the place on the map"
+                        data-test="stop-saved"
+                    />
                     <span
                         v-if="!row.stop.rest && hoursLine(row)"
                         class="block text-xs"

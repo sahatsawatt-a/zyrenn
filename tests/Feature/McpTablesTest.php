@@ -10,6 +10,8 @@ use App\Mcp\Tools\Tables\GetTable;
 use App\Mcp\Tools\Tables\ListTableFolders;
 use App\Mcp\Tools\Tables\ListTables;
 use App\Mcp\Tools\Tables\UpdateTable;
+use App\Models\Map\Place;
+use App\Models\Map\PlaceList;
 use App\Models\Table\Table;
 use App\Models\User;
 use App\Support\Table\TableStorage;
@@ -104,6 +106,31 @@ class McpTablesTest extends TestCase
         $this->assertEquals(['lat' => 31.2397, 'lng' => 121.4906, 'label' => 'The Bund'], $rows[2]['where']);
         $this->assertEquals([13.7563, 100.5018], [$rows[3]['where']['lat'], $rows[3]['where']['lng']]);
         $this->assertNull($rows[0]['where']);
+    }
+
+    public function test_a_location_can_be_a_saved_place_and_follows_it()
+    {
+        $user = User::factory()->create();
+        $table = $this->budget($user);
+        $place = Place::factory()->for(PlaceList::factory()->for($user), 'list')->create(['name' => 'Siam Paragon', 'address' => 'Bangkok', 'lat' => 13.7462, 'lng' => 100.5347]);
+
+        UserServer::actingAs($user)->tool(UpdateTable::class, [
+            'ref_id' => $table->ref_id,
+            'add_columns' => [['label' => 'Where', 'type' => 'location']],
+            'add_rows' => [['Owner' => 'Linus', 'Where' => ['place' => $place->ref_id]]],
+        ])->assertOk();
+
+        $this->assertEquals(
+            ['lat' => 13.7462, 'lng' => 100.5347, 'label' => 'Siam Paragon, Bangkok', 'place' => $place->ref_id],
+            TableStorage::rows($table->refresh())[2]['where'],
+        );
+
+        // Moved on the map, the cell is where the place now is
+        $place->update(['lat' => 13.75, 'name' => 'Siam Paragon Mall']);
+        $this->assertSame([13.75, 'Siam Paragon Mall, Bangkok'], [
+            TableStorage::rows($table)[2]['where']['lat'],
+            TableStorage::rows($table)[2]['where']['label'],
+        ]);
     }
 
     public function test_a_row_for_a_column_the_table_lacks_is_refused_and_nothing_is_kept()

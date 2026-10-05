@@ -4,6 +4,8 @@ namespace App\Mcp\Tools\Trips;
 
 use App\Mcp\Tools\TripTool;
 use App\Models\Map\Trip;
+use App\Models\Owner;
+use App\Support\Maps\PlaceRefs;
 use App\Support\Maps\TripDocument;
 use App\Support\Maps\TripParts;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -157,7 +159,7 @@ class UpdateTrip extends TripTool
         }
 
         try {
-            [$doc, $made] = $this->changed(TripDocument::normalize($trip->content), $validated);
+            [$doc, $made] = $this->changed(PlaceRefs::trip($owner, TripDocument::normalize($trip->content)), $validated, $owner);
         } catch (InvalidArgumentException $problem) {
             return Response::error($problem->getMessage().' Nothing was changed.');
         }
@@ -182,7 +184,7 @@ class UpdateTrip extends TripTool
      * @param  array<string, mixed>  $validated
      * @return array{array<string, mixed>, array<string, list<string>>}
      */
-    private function changed(array $doc, array $validated): array
+    private function changed(array $doc, array $validated, Owner $owner): array
     {
         $made = ['days' => [], 'stops' => [], 'stays' => []];
         $was = $doc;
@@ -210,6 +212,7 @@ class UpdateTrip extends TripTool
         foreach ($this->listed($validated, 'update_stays') as $given) {
             $at = TripParts::stayAt($doc, $given['id']);
             $stay = &$doc['stays'][$at];
+            $given = $this->fromSaved($owner, $given);
             $stay['place'] = [...$stay['place'], ...array_intersect_key($given, array_flip(array_diff(TripParts::PLACE_FIELDS, ['cost'])))];
             $stay['cost'] = $given['cost'] ?? $stay['cost'] ?? 0;
             $stay['checkIn'] = $given['check_in'] ?? $stay['checkIn'];
@@ -218,7 +221,7 @@ class UpdateTrip extends TripTool
         }
 
         foreach ($this->listed($validated, 'add_stays') as $given) {
-            $place = TripParts::place($doc, 0, [...$given, 'rest' => null, 'cost' => 0], ['kind' => 'tourism/hotel', 'minutes' => 0]);
+            $place = TripParts::place($doc, 0, [...$this->hotel($this->fromSaved($owner, $given)), 'rest' => null]);
             $doc['stays'][] = [
                 'id' => $made['stays'][] = TripDocument::newId(),
                 'place' => $place,
@@ -253,7 +256,7 @@ class UpdateTrip extends TripTool
 
         foreach ($this->listed($validated, 'update_stops') as $n => $given) {
             [$from, $at] = TripParts::stopAt($doc, $given['id']);
-            $stop = TripParts::place($doc, $from, $given, $doc['days'][$from]['stops'][$at]);
+            $stop = TripParts::place($doc, $from, $this->fromSaved($owner, $given), $doc['days'][$from]['stops'][$at]);
 
             if ($moveTo[$n] === null && ! isset($given['position'])) {
                 $doc['days'][$from]['stops'][$at] = $stop;
@@ -272,7 +275,7 @@ class UpdateTrip extends TripTool
             array_splice($doc['days'], $at, 0, [$new]);
 
             foreach ($this->listed($given, 'stops') as $stop) {
-                $place = TripParts::place($doc, $at, $stop);
+                $place = TripParts::place($doc, $at, $this->fromSaved($owner, $stop));
                 $made['stops'][] = $place['id'];
                 $doc = TripParts::insertStop($doc, $at, $place);
             }
@@ -280,7 +283,7 @@ class UpdateTrip extends TripTool
 
         foreach ($this->listed($validated, 'add_stops') as $n => $given) {
             $at = $index($addTo[$n]);
-            $place = TripParts::place($doc, $at, array_diff_key($given, ['day' => true, 'position' => true]));
+            $place = TripParts::place($doc, $at, $this->fromSaved($owner, array_diff_key($given, ['day' => true, 'position' => true])));
             $made['stops'][] = $place['id'];
             $doc = TripParts::insertStop($doc, $at, $place, $given['position'] ?? null);
         }

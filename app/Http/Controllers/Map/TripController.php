@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\BrowsesFolders;
 use App\Http\Controllers\Controller;
 use App\Models\Map\Trip;
 use App\Models\Map\TripFolder;
+use App\Support\Maps\PlaceRefs;
 use App\Support\Maps\TripDocument;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -69,7 +70,11 @@ class TripController extends Controller
         Gate::authorize('view', $trip);
 
         return Inertia::render('trips/Show', [
-            'trip' => $trip->only(['ref_id', 'title', 'content', 'revision', 'updated_at']),
+            'trip' => [
+                ...$trip->only(['ref_id', 'title', 'revision', 'updated_at']),
+                // Its saved places as they are now; saved with the next change
+                'content' => PlaceRefs::trip($trip->owner(), TripDocument::normalize($trip->content)),
+            ],
             'breadcrumbs' => self::crumbs($trip->folder),
         ]);
     }
@@ -106,7 +111,7 @@ class TripController extends Controller
     {
         Gate::authorize('view', $trip);
 
-        $doc = TripDocument::normalize($trip->content);
+        $doc = PlaceRefs::trip($trip->owner(), TripDocument::normalize($trip->content));
 
         return response()->json([
             'ref_id' => $trip->ref_id,

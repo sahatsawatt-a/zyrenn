@@ -4,6 +4,7 @@ namespace App\Support\Table;
 
 use App\Models\Table\Table;
 use App\Models\Table\TableColumn;
+use App\Support\Maps\PlaceRefs;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -195,7 +196,7 @@ class TableStorage
             'boolean' => filter_var($value, FILTER_VALIDATE_BOOLEAN),
             'date' => rescue(fn () => Carbon::parse((string) $value)->toDateString(), null, false),
             'json' => json_encode(array_values(is_array($value) ? $value : (json_decode((string) $value, true) ?? []))),
-            'location' => ($place = self::toLocation($value)) === null ? null : json_encode($place),
+            'location' => ($place = self::toLocation(PlaceRefs::filledIn($column, $value))) === null ? null : json_encode($place),
             default => is_scalar($value) ? (string) $value : json_encode($value),
         };
     }
@@ -222,11 +223,11 @@ class TableStorage
 
     /**
      * A place as a location cell keeps it: {lat, lng, label}, WGS84, the label
-     * being its address or name. Taken from that shape, from a GeoJSON point
+     * being its address or name, and "place" when it is a saved place. Taken from that shape, from a GeoJSON point
      * ({type: Point, coordinates: [lng, lat]}, a label in its properties), or
      * from "lat, lng" text. Anything else is no place at all.
      *
-     * @return array{lat: float, lng: float, label: string}|null
+     * @return array{lat: float, lng: float, label: string, place?: string}|null
      */
     public static function toLocation(mixed $value): ?array
     {
@@ -254,11 +255,14 @@ class TableStorage
         }
 
         $label = $value['label'] ?? $value['address'] ?? $value['name'] ?? '';
+        $place = $value['place'] ?? null;
 
         return [
             'lat' => round((float) $lat, 7),
             'lng' => round((float) $lng, 7),
             'label' => is_scalar($label) ? mb_substr(trim((string) $label), 0, 300) : '',
+            // One of the owner's saved places, when it is one: see PlaceRefs
+            ...(is_string($place) && preg_match('/^[a-z0-9]{1,16}$/', $place) ? ['place' => $place] : []),
         ];
     }
 
@@ -275,11 +279,11 @@ class TableStorage
      */
     public static function rows(Table $table): array
     {
-        return TableFormulas::apply($table, array_values(DB::table(self::physicalName($table))
+        return TableFormulas::apply($table, PlaceRefs::rows($table, array_values(DB::table(self::physicalName($table))
             ->orderBy('id')
             ->get()
             ->map(fn (object $row) => self::forGrid($table, $row))
-            ->all()));
+            ->all())));
     }
 
     /**
@@ -313,9 +317,9 @@ class TableStorage
 
         $total = (clone $query)->count();
 
-        $rows = TableFormulas::apply($table, array_values($query->orderBy('id')->offset($offset)->limit($limit)->get()
+        $rows = TableFormulas::apply($table, PlaceRefs::rows($table, array_values($query->orderBy('id')->offset($offset)->limit($limit)->get()
             ->map(fn (object $row) => self::forGrid($table, $row))
-            ->all()));
+            ->all())));
 
         if ($only !== null) {
             $rows = array_map(fn (array $values) => array_intersect_key($values, array_flip(['id', ...$only])), $rows);
@@ -403,7 +407,7 @@ class TableStorage
     {
         $found = DB::table(self::physicalName($table))->where('id', $id)->first();
 
-        return $found ? TableFormulas::apply($table, [self::forGrid($table, $found)])[0] : null;
+        return $found ? TableFormulas::apply($table, PlaceRefs::rows($table, [self::forGrid($table, $found)]))[0] : null;
     }
 
     /**

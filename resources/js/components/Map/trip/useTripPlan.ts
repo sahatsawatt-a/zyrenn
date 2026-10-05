@@ -42,6 +42,8 @@ export interface TripStop extends Candidate {
     hours?: Hours | null;
     /** A rest: "here" pauses where you are (no place of its own); "hotel" goes back for it. */
     rest?: 'here' | 'hotel';
+    /** The saved place it is, if it is one: renamed or moved on the map, it follows. */
+    placeRef?: string;
 }
 
 /** Landing: where, when (YYYY-MM-DDTHH:MM), then how long to get out and to rest. */
@@ -131,6 +133,8 @@ const asStop = (place: Candidate): TripStop => ({
     minutes: 0,
     cost: 0,
     note: '',
+    // Chosen from the saved places: kept in step with it
+    ...(place.savedId ? { placeRef: place.savedId } : {}),
 });
 
 /**

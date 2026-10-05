@@ -14,6 +14,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::owned(function () {
         Route::get('maps', [MapController::class, 'index'])->name('maps.index');
         Route::post('place-lists', [PlaceListController::class, 'store'])->name('place-lists.store');
+        Route::get('places/pick', [PlaceController::class, 'pick'])->name('places.pick');
         Route::post('places', [PlaceController::class, 'store'])->name('places.store');
 
         Route::get('trips/pick', [TripController::class, 'pick'])->name('trips.pick');

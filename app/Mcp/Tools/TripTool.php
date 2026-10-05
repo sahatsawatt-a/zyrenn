@@ -5,11 +5,13 @@ namespace App\Mcp\Tools;
 use App\Models\Map\Trip;
 use App\Models\Map\TripFolder;
 use App\Models\Owner;
+use App\Support\Maps\PlaceRefs;
 use App\Support\Maps\TripDocument;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\JsonSchema\Types\Type;
+use InvalidArgumentException;
 
 /**
  * Base for the trip tools shared by both MCP servers. Finding, listing and
@@ -66,6 +68,7 @@ abstract class TripTool extends FiledTool
     protected function placeArgument(JsonSchema $schema, array $also = []): Type
     {
         return $schema->object([
+            'place' => $schema->string()->max(16)->description('One of the saved places (list-places), by ref_id: its name, address and where it is come from it, and keep up with it when it is renamed or moved on the map. Other fields given here still count.'),
             'name' => $schema->string()->max(200)->description('What it is called.'),
             'lat' => $schema->number()->min(-90)->max(90)->description('Latitude. search-places finds where a place is.'),
             'lng' => $schema->number()->min(-180)->max(180)->description('Longitude.'),
@@ -78,6 +81,47 @@ abstract class TripTool extends FiledTool
             'hours' => $schema->object()->description('Opening hours by weekday, as Google words them, e.g. {"monday": "9 AM–5 PM", "tuesday": "Closed"}.'),
             ...$also,
         ]);
+    }
+
+    /**
+     * A place given as one of the owner's saved places ("place": its ref_id)
+     * as the trip keeps it: that place's name, address and whereabouts, under
+     * whatever else was given, and linked to it (see PlaceRefs).
+     *
+     * @param  array<string, mixed>  $given
+     * @return array<string, mixed>
+     *
+     * @throws InvalidArgumentException when it is no saved place of theirs
+     */
+    protected function fromSaved(Owner $owner, array $given): array
+    {
+        $ref = $given['place'] ?? null;
+        unset($given['place']);
+
+        if (! is_string($ref)) {
+            return $given;
+        }
+
+        $saved = PlaceRefs::find($owner, [$ref])[$ref]
+            ?? throw new InvalidArgumentException("There is no saved place \"{$ref}\". list-places shows them.");
+
+        return [
+            ...$saved->only(['name', 'address', 'kind', 'lat', 'lng']),
+            ...array_filter($given, fn ($value) => $value !== null),
+            'placeRef' => $ref,
+        ];
+    }
+
+    /**
+     * A hotel as the trip keeps it: no time spent at it as a stop, its cost on
+     * the stay rather than the place, and a hotel unless it says what else.
+     *
+     * @param  array<string, mixed>  $place
+     * @return array<string, mixed>
+     */
+    protected function hotel(array $place): array
+    {
+        return [...$place, 'minutes' => 0, 'cost' => 0, 'kind' => ($place['kind'] ?? '') ?: 'tourism/hotel'];
     }
 
     /**
@@ -98,6 +142,7 @@ abstract class TripTool extends FiledTool
         return [
             $key => ['sometimes', 'array', "max:{$max}"],
             "{$key}.*" => ['array'],
+            "{$key}.*.place" => ['nullable', 'string', 'max:16'],
             "{$key}.*.name" => ['nullable', 'string', 'max:200'],
             "{$key}.*.lat" => ['nullable', 'numeric', 'between:-90,90'],
             "{$key}.*.lng" => ['nullable', 'numeric', 'between:-180,180'],

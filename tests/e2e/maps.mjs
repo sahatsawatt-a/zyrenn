@@ -714,6 +714,74 @@ try {
             (await byTest('day-choose').inputValue()) === chosenDay,
     );
 
+    // ---- a saved place, kept in step wherever it is used ----
+
+    const savedList = (
+        await request('/place-lists', 'POST', { name: 'E2E linked' })
+    ).json.list;
+    const linked = (
+        await request('/places', 'POST', {
+            list: savedList.ref_id,
+            name: 'Xintiandi',
+            address: 'Huangpu',
+            kind: 'tourism/attraction',
+            lat: 31.2196,
+            lng: 121.4747,
+        })
+    ).json.place;
+
+    await page.goto(`${base}${tripPath}`, { waitUntil: 'networkidle' });
+    await tripReady();
+    await byTest('day-3').click();
+    const addSearch = page.locator('[data-test="place-search"]').first();
+    await addSearch.fill('Xintiandi');
+    const firstSuggestion = byTest('place-suggestions').locator('li').first();
+    await firstSuggestion.waitFor({ timeout: 15000 }).catch(() => {});
+    check(
+        'a saved place is offered first when adding to a trip',
+        /Xintiandi/.test(await firstSuggestion.innerText().catch(() => '')) &&
+            /E2E linked/.test(
+                await firstSuggestion.innerText().catch(() => ''),
+            ),
+        (await firstSuggestion.innerText().catch(() => '')).replace(/\n/g, ' '),
+    );
+    await firstSuggestion.click();
+    await page.waitForTimeout(500);
+    check(
+        'and the stop it makes is that saved place, and says so',
+        (await page.evaluate(
+            (ref) =>
+                window.__trip.plan.trip.days[2].stops.some(
+                    (stop) => stop.placeRef === ref,
+                ),
+            linked.ref_id,
+        )) && (await byTest('stop-saved').count()) > 0,
+    );
+    await page
+        .waitForFunction(
+            () =>
+                document.querySelector('[data-test="save-status"]')?.dataset
+                    .status === 'saved',
+            null,
+            { timeout: 15000 },
+        )
+        .catch(() => {});
+
+    // Renamed on the map, the trip says so next time it is opened
+    await request(`/places/${linked.ref_id}`, 'PATCH', {
+        name: 'Xintiandi (renamed)',
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await tripReady();
+    check(
+        'renamed on the map, the trip follows',
+        await page.evaluate(() =>
+            window.__trip.plan.trip.days[2].stops.some(
+                (stop) => stop.name === 'Xintiandi (renamed)',
+            ),
+        ),
+    );
+
     // ---- a table with places in it ----
 
     const table = await request('/tables', 'POST', { title: 'Sites' });
@@ -797,6 +865,24 @@ try {
         /外滩|Bund/.test(await cells.nth(2).innerText()) &&
             /黄浦区/.test(await cells.nth(2).innerText()),
         (await cells.nth(2).innerText()).trim(),
+    );
+
+    // A saved place chosen in a cell is that place, not a copy of it
+    await cells.nth(2).click();
+    await page.locator('[data-test="place-search"]').last().fill('Xintiandi');
+    const savedOption = byTest('place-suggestions').locator('li').first();
+    await savedOption.waitFor({ timeout: 15000 }).catch(() => {});
+    await savedOption.click();
+    await page.waitForTimeout(800);
+    const cellRows = tinker(
+        `echo json_encode(App\\Support\\Table\\TableStorage::rows(App\\Models\\Table\\Table::where('ref_id', '${tableRef}')->first()));`,
+    );
+    check(
+        'a saved place chosen in a cell keeps which place it is',
+        String(cellRows).includes(`"place":"${linked.ref_id}"`),
+        /Xintiandi/.test(await cells.nth(2).innerText())
+            ? 'shows Xintiandi'
+            : (await cells.nth(2).innerText()).trim(),
     );
 
     // The rows on a map, coloured by status
