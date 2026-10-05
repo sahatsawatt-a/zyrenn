@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { cellText } from '@/composables/table/cellText';
 import { ArrowDown, ArrowUp, Plus } from '@lucide/vue';
 import ColumnHeaderMenu from '@/components/Table/ColumnHeaderMenu.vue';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -70,7 +71,7 @@ const shownAs = (column: ColumnMeta, value: unknown): string => {
         case 'boolean':
             return '';
         default:
-            return String(value);
+            return cellText(value);
     }
 };
 

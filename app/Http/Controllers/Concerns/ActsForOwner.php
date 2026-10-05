@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Concerns;
 
 use App\Models\Owner;
 use App\Models\Project;
+use App\Support\OwnerUrl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 
@@ -39,8 +40,6 @@ trait ActsForOwner
      */
     protected static function ownerRoute(Owner $owner, string $name, array $parameters = []): string
     {
-        return $owner instanceof Project
-            ? route("projects.{$name}", ['project' => $owner, ...$parameters])
-            : route($name, $parameters);
+        return OwnerUrl::to($owner, $name, $parameters);
     }
 }

@@ -1,3 +1,4 @@
+import { cellText } from './cellText';
 import { sort } from './useTableState';
 import type { RowData } from '../../types';
 
@@ -44,12 +45,12 @@ export function useTableSort() {
                         : -1;
 
             return direction === 'asc'
-                ? String(valA)
+                ? cellText(valA)
                       .toLowerCase()
-                      .localeCompare(String(valB).toLowerCase())
-                : String(valB)
+                      .localeCompare(cellText(valB).toLowerCase())
+                : cellText(valB)
                       .toLowerCase()
-                      .localeCompare(String(valA).toLowerCase());
+                      .localeCompare(cellText(valA).toLowerCase());
         });
     };
 

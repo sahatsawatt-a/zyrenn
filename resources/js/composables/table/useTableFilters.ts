@@ -1,3 +1,4 @@
+import { cellText } from './cellText';
 import { filters, searchQuery } from './useTableState';
 import { useColumns } from './useColumns';
 import type { TableFilter, RowData } from '../../types';
@@ -38,7 +39,7 @@ export function useTableFilters() {
                         return val.some((v) =>
                             String(v).toLowerCase().includes(query),
                         );
-                    return String(val).toLowerCase().includes(query);
+                    return cellText(val).toLowerCase().includes(query);
                 });
             });
         }
@@ -59,7 +60,7 @@ export function useTableFilters() {
                                           .toLowerCase()
                                           .includes(filterVal),
                                   )
-                                : String(val ?? '')
+                                : cellText(val)
                                       .toLowerCase()
                                       .includes(filterVal);
                         case 'not_contains':
@@ -69,17 +70,17 @@ export function useTableFilters() {
                                           .toLowerCase()
                                           .includes(filterVal),
                                   )
-                                : !String(val ?? '')
+                                : !cellText(val)
                                       .toLowerCase()
                                       .includes(filterVal);
                         case 'equals':
                             return typeof val === 'boolean'
                                 ? String(val) === filterVal
-                                : String(val ?? '').toLowerCase() === filterVal;
+                                : cellText(val).toLowerCase() === filterVal;
                         case 'not_equals':
                             return typeof val === 'boolean'
                                 ? String(val) !== filterVal
-                                : String(val ?? '').toLowerCase() !== filterVal;
+                                : cellText(val).toLowerCase() !== filterVal;
                         case 'is_empty':
                             return (
                                 val === null ||

@@ -85,6 +85,27 @@ class McpTablesTest extends TestCase
         $this->assertSame(['New'], $rows[1]['tags']);
     }
 
+    public function test_a_location_column_takes_a_place_however_it_is_written()
+    {
+        $user = User::factory()->create();
+        $table = $this->budget($user);
+
+        UserServer::actingAs($user)->tool(UpdateTable::class, [
+            'ref_id' => $table->ref_id,
+            'add_columns' => [['label' => 'Where', 'type' => 'location']],
+            'add_rows' => [
+                ['Owner' => 'Linus', 'Where' => ['lat' => 31.2397, 'lng' => 121.4906, 'label' => 'The Bund']],
+                ['Owner' => 'Ken', 'Where' => '13.7563, 100.5018'],
+            ],
+        ])->assertOk();
+
+        $rows = TableStorage::rows($table->refresh());
+
+        $this->assertEquals(['lat' => 31.2397, 'lng' => 121.4906, 'label' => 'The Bund'], $rows[2]['where']);
+        $this->assertEquals([13.7563, 100.5018], [$rows[3]['where']['lat'], $rows[3]['where']['lng']]);
+        $this->assertNull($rows[0]['where']);
+    }
+
     public function test_a_row_for_a_column_the_table_lacks_is_refused_and_nothing_is_kept()
     {
         $user = User::factory()->create();

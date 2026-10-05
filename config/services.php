@@ -53,6 +53,12 @@ return [
         'secret' => env('COLLAB_SECRET'),
     ],
 
+    'serpapi' => [
+        // SerpAPI (serpapi.com), for Google's opening hours and ratings on the Maps demo;
+        // empty turns place details off. Used from the server only -- never sent to a browser
+        'key' => env('SERPAPI_KEY'),
+    ],
+
     'chrome' => [
         // The PDF printer (docker/chrome), private on the compose network
         'url' => env('CHROME_URL', 'http://chrome:3000'),

@@ -117,7 +117,7 @@ abstract class TableTool extends FiledTool
     {
         return $schema->array()->max(50)->items($schema->object([
             'label' => $schema->string()->max(120)->description('What the column is called; its name is made from this.')->required(),
-            'type' => $schema->string()->enum(TableStorage::TYPES)->description('What it holds: varchar (a line of text, the default), text (long text), integer, numeric, boolean, select (one choice), multi_select (several choices), date (YYYY-MM-DD), email, url, phone, currency, percent, rating (1-5) or user (a person\'s name).'),
+            'type' => $schema->string()->enum(TableStorage::TYPES)->description('What it holds: varchar (a line of text, the default), text (long text), integer, numeric, boolean, select (one choice), multi_select (several choices), date (YYYY-MM-DD), email, url, phone, currency, percent, rating (1-5), user (a person\'s name) or location (a place: {lat, lng, label}, or a GeoJSON Point).'),
             'choices' => $schema->array()->max(100)->items($schema->string()->max(120))->description('For select and multi_select: the choices to offer. Values written later that are not among them are added.'),
         ]))->description($description);
     }

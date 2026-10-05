@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CellLocation from '@/components/Table/Cells/CellLocation.vue';
 import CellLongText from '@/components/Table/Cells/CellLongText.vue';
 import CellNumbers from '@/components/Table/Cells/CellNumbers.vue';
 import CellSelects from '@/components/Table/Cells/CellSelects.vue';
@@ -60,6 +61,12 @@ const WEBLINES = ['date', 'email', 'url', 'phone'];
             v-else-if="
                 column.type === 'select' || column.type === 'multi_select'
             "
+            :column="column"
+            :model-value="modelValue"
+            @update:model-value="emit('update:modelValue', $event)"
+        />
+        <CellLocation
+            v-else-if="column.type === 'location'"
             :column="column"
             :model-value="modelValue"
             @update:model-value="emit('update:modelValue', $event)"

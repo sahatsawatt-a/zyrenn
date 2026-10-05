@@ -6,6 +6,10 @@ use App\Models\Board\Board;
 use App\Models\Board\BoardFolder;
 use App\Models\Drive\DriveFile;
 use App\Models\Drive\DriveFolder;
+use App\Models\Map\Place;
+use App\Models\Map\PlaceList;
+use App\Models\Map\Trip;
+use App\Models\Map\TripFolder;
 use App\Models\Note\Note;
 use App\Models\Note\NoteFolder;
 use App\Models\Owner;
@@ -14,7 +18,7 @@ use App\Models\Table\TableFolder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * An Owner's notes, boards, tables and Drive, reached through its own column
+ * An Owner's notes, boards, tables, trips, saved places and Drive, reached through its own column
  * -- "user_id" for a User, "project_id" for a Project -- so each only ever
  * sees its own.
  *
@@ -73,6 +77,38 @@ trait OwnsContent
     public function tableFolders(): HasMany
     {
         return $this->hasMany(TableFolder::class);
+    }
+
+    /**
+     * @return HasMany<Trip, $this>
+     */
+    public function trips(): HasMany
+    {
+        return $this->hasMany(Trip::class);
+    }
+
+    /**
+     * @return HasMany<TripFolder, $this>
+     */
+    public function tripFolders(): HasMany
+    {
+        return $this->hasMany(TripFolder::class);
+    }
+
+    /**
+     * @return HasMany<PlaceList, $this>
+     */
+    public function placeLists(): HasMany
+    {
+        return $this->hasMany(PlaceList::class);
+    }
+
+    /**
+     * @return HasMany<Place, $this>
+     */
+    public function places(): HasMany
+    {
+        return $this->hasMany(Place::class);
     }
 
     /**

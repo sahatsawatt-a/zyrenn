@@ -21,6 +21,10 @@ use App\Mcp\Tools\Notes\GetNote;
 use App\Mcp\Tools\Notes\ListFolders;
 use App\Mcp\Tools\Notes\ListNotes;
 use App\Mcp\Tools\Notes\UpdateNote;
+use App\Mcp\Tools\Places\DeletePlace;
+use App\Mcp\Tools\Places\ListPlaces;
+use App\Mcp\Tools\Places\SavePlace;
+use App\Mcp\Tools\Places\SearchPlaces;
 use App\Mcp\Tools\Projects\CreateProject;
 use App\Mcp\Tools\Projects\ListProjects;
 use App\Mcp\Tools\Tables\CreateTable;
@@ -29,6 +33,12 @@ use App\Mcp\Tools\Tables\GetTable;
 use App\Mcp\Tools\Tables\ListTableFolders;
 use App\Mcp\Tools\Tables\ListTables;
 use App\Mcp\Tools\Tables\UpdateTable;
+use App\Mcp\Tools\Trips\CreateTrip;
+use App\Mcp\Tools\Trips\DeleteTrip;
+use App\Mcp\Tools\Trips\GetTrip;
+use App\Mcp\Tools\Trips\ListTripFolders;
+use App\Mcp\Tools\Trips\ListTrips;
+use App\Mcp\Tools\Trips\UpdateTrip;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\Name;
@@ -37,7 +47,7 @@ use Laravel\Mcp\Server\Attributes\Version;
 #[Name('Zyrenn (personal)')]
 #[Version('1.0.0')]
 #[Instructions(<<<'TEXT'
-Zyrenn holds notes, whiteboard boards, tables and a file Drive. Every tool here acts as the user who owns
+Zyrenn holds notes, whiteboard boards, tables, trips, saved map places and a file Drive. Every tool here acts as the user who owns
 the access token, on their own content -- or, given a "project" argument, on a project they are in.
 
 Projects: shared spaces with notes, boards, tables and a Drive of their own, which belong to the project
@@ -68,12 +78,24 @@ A label can be light Markdown ("rich": "# " headings, "- " bullets, **bold**), i
 each other.
 
 Tables: rows and columns, each column of one kind -- varchar, text, integer, numeric, boolean,
-select, multi_select, date, email, url, phone, currency, percent, rating, user (list-tables,
+select, multi_select, date, email, url, phone, currency, percent, rating, user, location (list-tables,
 get-table, create-table, update-table, delete-table). A row is written as an object of values keyed
-by column label, e.g. {"Owner": "Ada", "Budget": 300}; update-table changes or deletes rows by the
+by column label, e.g. {"Owner": "Ada", "Budget": 300}; a location is {"lat", "lng", "label"}, and a
+table with one can be seen as a map; update-table changes or deletes rows by the
 "id" get-table shows. Tables have their own folder tree, listed by list-table-folders. get-table reads
 a page of rows at a time ("limit", "offset"), and can keep only rows matching a "search" and only the
 "columns" you name -- read what you need rather than the whole table.
+
+Trips: travel plans (list-trips, get-trip, create-trip, update-trip, delete-trip) -- a start date,
+the flight in and the flight home, the hotels booked with check-in and check-out, and days of stops in
+the order visited, with rests. Every place has a "lat" and "lng": search-places finds them. get-trip
+gives the outline, with every day's stops by id; with "day" it reads one day in full, with the route it
+takes and the rides between its places. update-trip adds, changes, moves and deletes days, stops and
+hotels by id, and types in a ride by hand (a metro, a taxi) -- send only what changes. Trips have their
+own folder tree, listed by list-trip-folders.
+
+Saved places: pins kept on the map, each in a list such as "Want to go" (list-places, save-place,
+delete-place).
 
 Drive: files (list-drive, get-file, upload-file, request-upload, update-file, delete-file) -- the user's private ones,
 or a project's, which its members can all open. Files are served from a URL like /drive/files/k3x9m2p7qa.
@@ -122,6 +144,16 @@ class UserServer extends Server
             new CreateTable,
             new UpdateTable,
             new DeleteTable,
+            new ListTrips,
+            new ListTripFolders,
+            new GetTrip,
+            new CreateTrip,
+            new UpdateTrip,
+            new DeleteTrip,
+            new SearchPlaces,
+            new ListPlaces,
+            new SavePlace,
+            new DeletePlace,
             new ListDrive,
             new GetFile,
             new UploadFile,

@@ -7,6 +7,7 @@ import {
     Hash,
     Link2,
     Mail,
+    MapPin,
     Percent,
     Phone,
     Star,
@@ -40,6 +41,7 @@ export const COLUMN_TYPES: {
     { type: 'percent', label: 'Percent', icon: Percent },
     { type: 'rating', label: 'Rating', icon: Star },
     { type: 'user', label: 'Person', icon: User },
+    { type: 'location', label: 'Location', icon: MapPin },
 ];
 
 const ICONS = new Map(COLUMN_TYPES.map((kind) => [kind.type, kind.icon]));

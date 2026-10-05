@@ -116,6 +116,36 @@ class TableTest extends TestCase
         $this->assertMatchesRegularExpression('/^column_/', $blank['name']);
     }
 
+    public function test_a_location_cell_keeps_a_place_however_it_was_given()
+    {
+        $user = User::factory()->create();
+        $table = Table::factory()->for($user)->create();
+        $this->addColumn($user, $table, 'Where', 'location');
+        $row = $this->actingAs($user)->postJson(route('tables.rows.store', $table))->json('row');
+        $this->assertNull($row['where']);
+
+        $write = fn (mixed $value) => $this->actingAs($user)
+            ->patchJson(route('tables.rows.update', [$table, $row['id']]), ['column' => 'where', 'value' => $value])
+            ->assertOk();
+        $read = fn () => TableStorage::row($table->fresh(), $row['id'])['where'];
+
+        // As the map writes it
+        $write(['lat' => 13.7462, 'lng' => 100.5347, 'label' => 'Siam Paragon']);
+        $this->assertSame(['lat' => 13.7462, 'lng' => 100.5347, 'label' => 'Siam Paragon'], $read());
+
+        // As GeoJSON -- [longitude, latitude], the other way round
+        $write(['type' => 'Point', 'coordinates' => [121.4921, 31.2272], 'label' => 'Yu Garden']);
+        $this->assertSame(['lat' => 31.2272, 'lng' => 121.4921, 'label' => 'Yu Garden'], $read());
+
+        // As typed
+        $write('13.75, 100.5');
+        $this->assertSame(['lat' => 13.75, 'lng' => 100.5, 'label' => ''], $read());
+
+        // Nowhere real is no place at all
+        $write(['lat' => 123, 'lng' => 0]);
+        $this->assertNull($read());
+    }
+
     public function test_cells_are_stored_the_way_their_column_is_kind()
     {
         $user = User::factory()->create();

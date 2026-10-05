@@ -6,6 +6,10 @@ use App\Models\Board\Board;
 use App\Models\Board\BoardFolder;
 use App\Models\Drive\DriveFile;
 use App\Models\Drive\DriveFolder;
+use App\Models\Map\Place;
+use App\Models\Map\PlaceList;
+use App\Models\Map\Trip;
+use App\Models\Map\TripFolder;
 use App\Models\Note\Note;
 use App\Models\Note\NoteFolder;
 use App\Models\Table\Table;
@@ -14,7 +18,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Whoever notes, boards, tables and Drive files belong to: a user, for their
+ * Whoever notes, boards, tables, trips, saved places and Drive files belong to: a user, for their
  * own, or a project, for what its members share. Things go with their owner.
  *
  * @see Concerns\OwnsContent
@@ -65,6 +69,26 @@ interface Owner
      * @return HasMany<TableFolder, covariant Model&Owner>
      */
     public function tableFolders(): HasMany;
+
+    /**
+     * @return HasMany<Trip, covariant Model&Owner>
+     */
+    public function trips(): HasMany;
+
+    /**
+     * @return HasMany<TripFolder, covariant Model&Owner>
+     */
+    public function tripFolders(): HasMany;
+
+    /**
+     * @return HasMany<PlaceList, covariant Model&Owner>
+     */
+    public function placeLists(): HasMany;
+
+    /**
+     * @return HasMany<Place, covariant Model&Owner>
+     */
+    public function places(): HasMany;
 
     /**
      * @return HasMany<DriveFile, covariant Model&Owner>

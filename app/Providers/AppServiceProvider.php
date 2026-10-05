@@ -7,6 +7,9 @@ use App\Models\Chat\AiConnection;
 use App\Models\Chat\ChatRoom;
 use App\Models\Drive\DriveFile;
 use App\Models\Folder;
+use App\Models\Map\Place;
+use App\Models\Map\PlaceList;
+use App\Models\Map\Trip;
 use App\Models\Note\Note;
 use App\Models\Project;
 use App\Models\Table\Table;
@@ -44,7 +47,7 @@ class AppServiceProvider extends ServiceProvider
 
         // One policy for everything a user or a project owns; the Gate finds
         // Folder's for each kind of folder
-        foreach ([Note::class, Board::class, Table::class, DriveFile::class, Folder::class] as $model) {
+        foreach ([Note::class, Board::class, Table::class, Trip::class, PlaceList::class, Place::class, DriveFile::class, Folder::class] as $model) {
             Gate::policy($model, ContentPolicy::class);
         }
 
@@ -81,6 +84,11 @@ class AppServiceProvider extends ServiceProvider
     protected function configureRateLimiting(): void
     {
         RateLimiter::for('mcp', fn (Request $request) => Limit::perMinute(120)
+            ->by($request->user()?->id ?: $request->ip()));
+
+        // A map asks often -- a suggestion per pause in typing, a route per day
+        // of a trip -- but most answers come from the cache, not the services
+        RateLimiter::for('maps', fn (Request $request) => Limit::perMinute(240)
             ->by($request->user()?->id ?: $request->ip()));
     }
 

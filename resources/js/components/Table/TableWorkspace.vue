@@ -1,9 +1,16 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { Map as MapIcon, Table2 } from '@lucide/vue';
+import { computed, ref, watch } from 'vue';
 import BulkSelectionBar from '@/components/Table/BulkSelectionBar.vue';
 import ColumnDialog from '@/components/Table/ColumnDialog.vue';
 import GridViewGrid from '@/components/Table/GridViewGrid.vue';
+import TableMapView from '@/components/Table/TableMapView.vue';
 import TableToolbar from '@/components/Table/TableToolbar.vue';
+import {
+    activeTable,
+    columns,
+    selectedRowIds,
+} from '@/composables/table/useTableState';
 import { useTableStore } from '@/composables/table/useTableStore';
 import type { ColumnMeta, ColumnOption, ColumnType } from '@/types';
 
@@ -11,6 +18,41 @@ import type { ColumnMeta, ColumnOption, ColumnType } from '@/types';
 // for a column. It works on the shared table state, so whichever page shows
 // it -- a saved table or the demo -- only has to load that state first.
 const store = useTableStore();
+
+// The grid, or -- when the table has a place in it -- the rows on a map.
+// Which one is remembered for each table, in this browser
+const hasPlaces = computed(() =>
+    columns.value.some((column) => column.type === 'location'),
+);
+const viewKey = () => `zyrenn:table-view:${activeTable.value}`;
+const view = ref<'grid' | 'map'>('grid');
+
+watch(
+    activeTable,
+    () => {
+        try {
+            view.value =
+                localStorage.getItem(viewKey()) === 'map' ? 'map' : 'grid';
+        } catch {
+            view.value = 'grid';
+        }
+    },
+    { immediate: true },
+);
+
+watch(view, (now) => {
+    try {
+        localStorage.setItem(viewKey(), now);
+    } catch {
+        // a private window may refuse; the choice lasts until the page closes
+    }
+});
+
+/** From the map back to the grid, with the row picked there selected. */
+const showRow = (id: number) => {
+    view.value = 'grid';
+    selectedRowIds.value = [id];
+};
 
 const showColumnDialog = ref(false);
 const editingColumn = ref<ColumnMeta | null>(null);
@@ -83,9 +125,59 @@ const duplicateSelected = () => {
         class="relative flex h-full min-h-0 w-full flex-col gap-3"
         data-test="table-workspace"
     >
-        <TableToolbar @open-add-column="openAddColumn" />
+        <div class="flex flex-wrap items-start gap-2">
+            <TableToolbar
+                class="min-w-0 flex-1"
+                @open-add-column="openAddColumn"
+            />
+            <div
+                v-if="hasPlaces"
+                class="flex rounded-md border p-0.5 text-xs"
+                role="tablist"
+                aria-label="View"
+                data-test="table-view"
+            >
+                <button
+                    type="button"
+                    role="tab"
+                    :aria-selected="view === 'grid'"
+                    class="flex items-center gap-1.5 rounded px-2.5 py-1"
+                    :class="
+                        view === 'grid'
+                            ? 'bg-primary text-primary-foreground'
+                            : 'hover:bg-accent'
+                    "
+                    data-test="view-grid"
+                    @click="view = 'grid'"
+                >
+                    <Table2 class="size-3.5" /> Grid
+                </button>
+                <button
+                    type="button"
+                    role="tab"
+                    :aria-selected="view === 'map'"
+                    class="flex items-center gap-1.5 rounded px-2.5 py-1"
+                    :class="
+                        view === 'map'
+                            ? 'bg-primary text-primary-foreground'
+                            : 'hover:bg-accent'
+                    "
+                    data-test="view-map"
+                    @click="view = 'map'"
+                >
+                    <MapIcon class="size-3.5" /> Map
+                </button>
+            </div>
+        </div>
 
+        <TableMapView
+            v-if="view === 'map' && hasPlaces"
+            :columns="store.visibleColumns.value"
+            :rows="store.filteredRows.value"
+            @show-row="showRow"
+        />
         <GridViewGrid
+            v-else
             :columns="store.visibleColumns.value"
             :rows="store.filteredRows.value"
             :selected-row-ids="store.selectedRowIds.value"

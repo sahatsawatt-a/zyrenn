@@ -26,7 +26,7 @@ class TableStorage
     public const TYPES = [
         'varchar', 'text', 'integer', 'numeric', 'boolean', 'select',
         'multi_select', 'date', 'email', 'url', 'phone', 'currency',
-        'percent', 'rating', 'user',
+        'percent', 'rating', 'user', 'location',
     ];
 
     /**
@@ -42,6 +42,8 @@ class TableStorage
         'boolean' => 'boolean',
         'date' => 'date',
         'multi_select' => 'json',
+        // A place: {lat, lng, label} -- see toLocation()
+        'location' => 'location',
     ];
 
     /** Names the database already gives every row. */
@@ -146,7 +148,7 @@ class TableStorage
                 'decimal' => $blueprint->decimal($name, 20, 4)->nullable(),
                 'boolean' => $blueprint->boolean($name)->nullable(),
                 'date' => $blueprint->date($name)->nullable(),
-                'json' => $blueprint->jsonb($name)->nullable(),
+                'json', 'location' => $blueprint->jsonb($name)->nullable(),
                 default => throw new InvalidArgumentException("No storage called \"{$storage}\"."),
             };
         });
@@ -183,6 +185,7 @@ class TableStorage
             'boolean' => filter_var($value, FILTER_VALIDATE_BOOLEAN),
             'date' => rescue(fn () => Carbon::parse((string) $value)->toDateString(), null, false),
             'json' => json_encode(array_values(is_array($value) ? $value : (json_decode((string) $value, true) ?? []))),
+            'location' => ($place = self::toLocation($value)) === null ? null : json_encode($place),
             default => is_scalar($value) ? (string) $value : json_encode($value),
         };
     }
@@ -202,8 +205,51 @@ class TableStorage
             'decimal' => (float) $value,
             'boolean' => (bool) $value,
             'json' => is_array($value) ? $value : (json_decode((string) $value, true) ?? []),
+            'location' => self::toLocation(is_array($value) ? $value : json_decode((string) $value, true)),
             default => $value,
         };
+    }
+
+    /**
+     * A place as a location cell keeps it: {lat, lng, label}, WGS84, the label
+     * being its address or name. Taken from that shape, from a GeoJSON point
+     * ({type: Point, coordinates: [lng, lat]}, a label in its properties), or
+     * from "lat, lng" text. Anything else is no place at all.
+     *
+     * @return array{lat: float, lng: float, label: string}|null
+     */
+    public static function toLocation(mixed $value): ?array
+    {
+        if (is_string($value) && preg_match('/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/', $value, $match)) {
+            $value = ['lat' => $match[1], 'lng' => $match[2]];
+        }
+
+        if (! is_array($value)) {
+            return null;
+        }
+
+        if (($value['type'] ?? null) === 'Feature') {
+            $value = [...($value['geometry'] ?? []), 'label' => $value['properties']['label'] ?? $value['properties']['name'] ?? null];
+        }
+
+        if (($value['type'] ?? null) === 'Point' && is_array($value['coordinates'] ?? null)) {
+            $value = ['lng' => $value['coordinates'][0] ?? null, 'lat' => $value['coordinates'][1] ?? null, 'label' => $value['label'] ?? null];
+        }
+
+        $lat = $value['lat'] ?? null;
+        $lng = $value['lng'] ?? $value['lon'] ?? null;
+
+        if (! is_numeric($lat) || ! is_numeric($lng) || abs((float) $lat) > 90 || abs((float) $lng) > 180) {
+            return null;
+        }
+
+        $label = $value['label'] ?? $value['address'] ?? $value['name'] ?? '';
+
+        return [
+            'lat' => round((float) $lat, 7),
+            'lng' => round((float) $lng, 7),
+            'label' => is_scalar($label) ? mb_substr(trim((string) $label), 0, 300) : '',
+        ];
     }
 
     /** How many rows the table holds. */

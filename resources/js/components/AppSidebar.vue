@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
 import {
+    Map as MapIcon,
+    Plane,
     Table2,
     BookOpen,
     FolderGit2,
@@ -52,8 +54,12 @@ import {
 import { index as projectBoardsIndex } from '@/routes/projects/boards';
 import { index as projectDriveIndex } from '@/routes/projects/drive';
 import { index as projectNotesIndex } from '@/routes/projects/notes';
+import { index as mapsIndex } from '@/routes/maps';
+import { index as projectMapsIndex } from '@/routes/projects/maps';
 import { index as projectTablesIndex } from '@/routes/projects/tables';
+import { index as projectTripsIndex } from '@/routes/projects/trips';
 import { index as tablesIndex } from '@/routes/tables';
+import { index as tripsIndex } from '@/routes/trips';
 import type { NavItem } from '@/types';
 
 const page = usePage();
@@ -83,6 +89,16 @@ const mainNavItems = computed<NavItem[]>(() => {
             title: 'Tables',
             href: owned(tablesIndex, projectTablesIndex)(),
             icon: Table2,
+        },
+        {
+            title: 'Maps',
+            href: owned(mapsIndex, projectMapsIndex)(),
+            icon: MapIcon,
+        },
+        {
+            title: 'Trips',
+            href: owned(tripsIndex, projectTripsIndex)(),
+            icon: Plane,
         },
         {
             title: 'Drive',

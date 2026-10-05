@@ -23,7 +23,15 @@ export type ColumnType =
     | 'currency'
     | 'percent'
     | 'rating'
-    | 'user';
+    | 'user'
+    | 'location';
+
+/** A place in a location cell: WGS84, and its address or name. */
+export interface LocationValue {
+    lat: number;
+    lng: number;
+    label: string;
+}
 
 export interface ColumnMeta {
     name: string;

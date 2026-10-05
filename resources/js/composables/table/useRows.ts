@@ -170,6 +170,7 @@ export function useRows() {
                 )
                     newRow[col.name] = null;
                 else if (col.type === 'multi_select') newRow[col.name] = [];
+                else if (col.type === 'location') newRow[col.name] = null;
                 else newRow[col.name] = '';
             }
         });
