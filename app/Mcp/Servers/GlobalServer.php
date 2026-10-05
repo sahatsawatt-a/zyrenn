@@ -93,7 +93,9 @@ the order visited, with rests. Every place has a "lat" and "lng": search-places 
 gives the outline, with every day's stops by id; with "day" it reads one day in full, with the route it
 takes and the rides between its places. update-trip adds, changes, moves and deletes days, stops and
 hotels by id, and types in a ride by hand (a metro, a taxi) -- send only what changes. Trips have their
-own folder tree, listed by list-trip-folders.
+own folder tree, listed by list-trip-folders. To show a trip in a note, put a ```trip fence in its
+Markdown holding "ref: <the trip's ref_id>" and "day: all" (the whole trip) or "day: <a day's id>"
+(that day's timeline), each on a line of its own.
 
 Saved places: pins kept on the map, each in a list such as "Want to go" (list-places, save-place,
 delete-place).

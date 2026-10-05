@@ -105,6 +105,19 @@ class MapsTest extends TestCase
         $this->assertSame('Shanghai', $trip->fresh()->title);
     }
 
+    public function test_hotels_are_kept_in_the_order_they_are_stayed_in()
+    {
+        $hotel = fn (string $name, string $checkIn) => ['place' => ['name' => $name, 'lat' => 31.2, 'lng' => 121.4], 'checkIn' => $checkIn, 'checkOut' => ''];
+
+        $doc = TripDocument::normalize(['stays' => [
+            $hotel('Not booked yet', ''),
+            $hotel('Water town', '2026-11-05T15:00'),
+            $hotel('First', '2026-11-03T15:00'),
+        ]]);
+
+        $this->assertSame(['First', 'Water town', 'Not booked yet'], array_column(array_column($doc['stays'], 'place'), 'name'));
+    }
+
     public function test_saving_a_trip_tells_whoever_else_has_it_open()
     {
         Event::fake([TripChanged::class]);
@@ -153,6 +166,31 @@ class MapsTest extends TestCase
         $this->assertSame([74.0, 0.0], array_column($totals['days'], 'cost'));
         // A rest isn't a place to see
         $this->assertSame([2, 0], array_column($totals['days'], 'stops'));
+    }
+
+    public function test_a_trip_is_offered_to_a_note_and_read_there_with_its_totals()
+    {
+        $user = User::factory()->create();
+        Trip::factory()->for($user)->create(['title' => 'Kyoto']);
+        $trip = Trip::factory()->for($user)->create([
+            'title' => 'Shanghai',
+            'content' => ['startDate' => '2026-11-03', 'days' => [['stops' => [['name' => 'Bund', 'lat' => 31.24, 'lng' => 121.49, 'cost' => 50]]]]],
+        ]);
+
+        $this->actingAs($user)->getJson(route('trips.pick', ['q' => 'shang']))
+            ->assertOk()
+            ->assertJsonCount(1, 'trips')
+            ->assertJsonPath('trips.0.ref_id', $trip->ref_id);
+
+        $this->actingAs($user)->getJson(route('trips.content', $trip))
+            ->assertOk()
+            ->assertJsonPath('title', 'Shanghai')
+            ->assertJsonPath('content.days.0.stops.0.name', 'Bund')
+            ->assertJsonPath('totals.total_cost', 50)
+            ->assertJsonPath('totals.days.0.date', '2026-11-03');
+
+        // A note shared with someone doesn't open the trip it shows to them
+        $this->actingAs(User::factory()->create())->getJson(route('trips.content', $trip))->assertForbidden();
     }
 
     public function test_someone_elses_trip_is_not_theirs_to_see_or_change()

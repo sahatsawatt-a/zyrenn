@@ -221,6 +221,25 @@ export const commandItems: SlashCommandItem[] = [
         },
     },
     {
+        title: 'Trip',
+        description: 'Show a trip, or one day of it, in this note.',
+        icon: '✈',
+        keywords: ['trip', 'travel', 'itinerary', 'day', 'plan', 'map'],
+        command: ({ editor, range }) => {
+            editor
+                .chain()
+                .focus()
+                .deleteRange(range)
+                .insertContent({
+                    type: 'codeBlock',
+                    attrs: { language: 'trip' },
+                    // Filled in from the block's own dropdowns
+                    content: [{ type: 'text', text: 'ref: \nday: all' }],
+                })
+                .run();
+        },
+    },
+    {
         title: 'Mermaid Diagram',
         description: 'Flowcharts, sequence, gantt, pie and 20+ more.',
         icon: '◇',

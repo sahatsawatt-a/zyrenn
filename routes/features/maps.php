@@ -16,11 +16,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('place-lists', [PlaceListController::class, 'store'])->name('place-lists.store');
         Route::post('places', [PlaceController::class, 'store'])->name('places.store');
 
+        Route::get('trips/pick', [TripController::class, 'pick'])->name('trips.pick');
         Route::resource('trips', TripController::class)->only(['index', 'store']);
         Route::resource('trip-folders', TripFolderController::class)->only(['store']);
     });
 
     Route::resource('trips', TripController::class)->only(['show', 'update', 'destroy']);
+    Route::get('trips/{trip}/content', [TripController::class, 'content'])->name('trips.content');
     Route::resource('trip-folders', TripFolderController::class)
         ->only(['update', 'destroy'])
         ->parameters(['trip-folders' => 'folder']);

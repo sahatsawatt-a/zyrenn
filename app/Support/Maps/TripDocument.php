@@ -62,7 +62,7 @@ class TripDocument
                 'at' => self::moment($doc['departure']['at'] ?? null),
                 'earlyMinutes' => self::minutes($doc['departure']['earlyMinutes'] ?? 180),
             ],
-            'stays' => self::listOf($doc['stays'] ?? [], self::MAX_STAYS, function (array $stay) {
+            'stays' => self::inOrderOfStay(self::listOf($doc['stays'] ?? [], self::MAX_STAYS, function (array $stay) {
                 $place = self::place($stay['place'] ?? null);
 
                 return $place === null ? null : [
@@ -72,11 +72,28 @@ class TripDocument
                     'checkOut' => self::moment($stay['checkOut'] ?? null),
                     'cost' => self::money($stay['cost'] ?? 0),
                 ];
-            }),
+            })),
             // A trip always has a day to plan in
             'days' => self::listOf($doc['days'] ?? [], self::MAX_DAYS, fn (array $day) => self::day($day))
                 ?: [self::day([])],
         ];
+    }
+
+    /**
+     * Hotels in the order they are stayed in, as the trip page keeps them --
+     * whoever added them, in whatever order -- so the first is always the
+     * first: formulas name a stay by its place. One with no check-in yet
+     * goes last.
+     *
+     * @param  list<array<string, mixed>>  $stays
+     * @return list<array<string, mixed>>
+     */
+    private static function inOrderOfStay(array $stays): array
+    {
+        // usort is stable: stays checking in together keep the order given
+        usort($stays, fn (array $a, array $b) => [$a['checkIn'] === '', $a['checkIn']] <=> [$b['checkIn'] === '', $b['checkIn']]);
+
+        return $stays;
     }
 
     /**

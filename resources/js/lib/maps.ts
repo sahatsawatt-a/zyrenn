@@ -10,6 +10,7 @@ import * as placeListRoutes from '@/routes/place-lists';
 import * as placeRoutes from '@/routes/places';
 import * as projectPlaceListRoutes from '@/routes/projects/place-lists';
 import * as projectPlaceRoutes from '@/routes/projects/places';
+import * as projectTripRoutes from '@/routes/projects/trips';
 import * as tripRoutes from '@/routes/trips';
 
 // ---- shapes ----
@@ -226,6 +227,53 @@ export const saveTrip = (
         undefined,
         keepalive,
     );
+
+/** A trip to choose, in a list of them. */
+export interface TripSummary {
+    ref_id: string;
+    title: string;
+    updated_at: string | null;
+}
+
+/** What a trip comes to, as the server reckons it (TripDocument::totals). */
+export interface TripTotals {
+    currency: string;
+    start_date: string;
+    end_date: string;
+    day_count: number;
+    nights: number;
+    stops_cost: number;
+    rides_cost: number;
+    stays_cost: number;
+    total_cost: number;
+    days: {
+        day: number;
+        id: string;
+        date: string;
+        stops: number;
+        cost: number;
+    }[];
+    stays: { id: string; name: string; nights: number; cost: number }[];
+}
+
+/** The user's or the project's trips, newest first, to choose one from. */
+export const listTrips = async () =>
+    (
+        await send<{ trips: TripSummary[] }>(
+            owned(tripRoutes.pick, projectTripRoutes.pick).url(),
+            'GET',
+        )
+    ).trips;
+
+/** A trip and what it comes to, to show it somewhere other than its own page. */
+export const tripContent = (trip: string) =>
+    send<{
+        ref_id: string;
+        title: string;
+        content: unknown;
+        revision: number;
+        totals: TripTotals;
+    }>(tripRoutes.content.url(trip), 'GET');
 
 // ---- other services, through us ----
 

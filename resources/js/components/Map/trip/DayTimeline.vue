@@ -195,7 +195,8 @@ const drop = (index: number) => emit('drop', props.dayId, index);
                         · {{ formatDistance(row.leg.km) }}
                     </template>
                     <template v-else>{{
-                        route?.loading ? 'Working out the way…' : '–'
+                        // Not asked for yet is on its way too: the router is asked a moment after the day changes
+                        !route || route.loading ? 'Working out the way…' : '–'
                     }}</template>
 
                     <span
@@ -408,7 +409,9 @@ const drop = (index: number) => emit('drop', props.dayId, index);
             v-if="!timeline.rows.length"
             class="text-muted-foreground py-4 text-center text-sm"
         >
-            Nothing planned yet. Add a place below, or click one on the map.
+            Nothing planned yet.{{
+                editable ? ' Add a place below, or click one on the map.' : ''
+            }}
         </li>
     </ol>
 </template>

@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\BrowsesFolders;
 use App\Http\Controllers\Controller;
 use App\Models\Map\Trip;
 use App\Models\Map\TripFolder;
+use App\Support\Maps\TripDocument;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -70,6 +71,49 @@ class TripController extends Controller
         return Inertia::render('trips/Show', [
             'trip' => $trip->only(['ref_id', 'title', 'content', 'revision', 'updated_at']),
             'breadcrumbs' => self::crumbs($trip->folder),
+        ]);
+    }
+
+    /**
+     * The user's or the project's trips, newest first, for choosing one to
+     * show somewhere else -- in a note.
+     */
+    public function pick(Request $request): JsonResponse
+    {
+        $request->validate(['q' => ['nullable', 'string', 'max:255']]);
+
+        $trips = $this->owner($request)->trips()
+            ->when($request->filled('q'), fn ($query) => $query
+                ->whereLike('title', '%'.$request->string('q').'%'))
+            ->latest('updated_at')
+            ->limit(100)
+            ->get(['ref_id', 'title', 'updated_at']);
+
+        return response()->json([
+            'trips' => $trips->map(fn (Trip $trip) => [
+                'ref_id' => $trip->ref_id,
+                'title' => $trip->title,
+                'updated_at' => $trip->updated_at?->toIso8601String(),
+            ]),
+        ]);
+    }
+
+    /**
+     * A trip and what it comes to, for showing it somewhere other than its
+     * own page.
+     */
+    public function content(Trip $trip): JsonResponse
+    {
+        Gate::authorize('view', $trip);
+
+        $doc = TripDocument::normalize($trip->content);
+
+        return response()->json([
+            'ref_id' => $trip->ref_id,
+            'title' => $trip->title,
+            'content' => $doc,
+            'revision' => $trip->revision,
+            'totals' => TripDocument::totals($doc),
         ]);
     }
 

@@ -24,11 +24,24 @@ if (process.env.DEBUG) {
             error.stack?.split('\n').slice(0, 10).join('\n'),
         ),
     );
-    page.on('response', (response) => {
+    page.on('response', async (response) => {
         if (/map-services\/(route|quickest)/.test(response.url())) {
+            const answer = await response.json().catch(() => null);
             console.log(
-                `+${((Date.now() - began) / 1000).toFixed(1)}s ${response.url().split('/').pop()} ${response.status()}`,
+                `+${((Date.now() - began) / 1000).toFixed(1)}s ${response.url().split('/').pop()} ${response.status()} ${page.url().split('/').slice(-2).join('/')}`,
+                JSON.stringify(
+                    Object.fromEntries(
+                        Object.entries(answer?.routes ?? {}).map(
+                            ([key, route]) => [key, route.error ?? route.km],
+                        ),
+                    ),
+                ),
             );
+        }
+    });
+    page.on('console', (message) => {
+        if (message.type() === 'error') {
+            console.log('console.error', message.text(), message.args().length);
         }
     });
 }
@@ -607,6 +620,99 @@ try {
         (await byTest('trip-title').inputValue()) === 'Shanghai (again)',
     );
     await page.screenshot({ path: `${SHOTS}/trip-after.png` });
+
+    // ---- the trip shown in a note ----
+
+    const tripRef = tripPath.split('/').pop();
+    await page.goto(`${base}/notes`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: /new note/i }).click();
+    await page.waitForURL(/notes\/\w+/);
+    const notePath = new URL(page.url()).pathname;
+    afterwards(() => removeAt(page, notePath));
+    await page.waitForSelector('.tiptap');
+    await page.waitForTimeout(700);
+    await page.locator('.tiptap').click();
+    await page.keyboard.type('/trip');
+    await page.waitForTimeout(700);
+    await page.keyboard.press('Enter');
+    await byTest('trip-block')
+        .waitFor({ timeout: 5000 })
+        .catch(() => {});
+    check(
+        'the slash menu puts a trip in a note',
+        (await byTest('trip-block').count()) === 1,
+    );
+
+    await byTest('trip-choose').selectOption(tripRef);
+    await byTest('trip-embed-days')
+        .waitFor({ timeout: 10000 })
+        .catch(() => {});
+    check(
+        'the whole trip shows, day by day, with what it comes to',
+        (await byTest('trip-embed-days').locator('li').count()) >= 3 &&
+            /\d/.test(
+                await byTest('trip-embed-total')
+                    .innerText()
+                    .catch(() => ''),
+            ),
+        await byTest('trip-embed-total')
+            .innerText()
+            .catch(() => 'no total'),
+    );
+
+    await byTest('day-choose').selectOption({ index: 1 });
+    await page
+        .waitForFunction(
+            () =>
+                /\d\d:\d\d/.test(
+                    document.querySelector(
+                        '[data-test="trip-block"] [data-test="timeline"]',
+                    )?.textContent ?? '',
+                ),
+            null,
+            { timeout: 30000 },
+        )
+        .catch(() => {});
+    check(
+        'one day shows as its timeline, times and all',
+        /\d\d:\d\d/.test(
+            await byTest('trip-block')
+                .locator('[data-test="timeline"]')
+                .innerText()
+                .catch(() => ''),
+        ),
+    );
+    await page
+        .waitForFunction(
+            () =>
+                !/Working out the way/.test(
+                    document.querySelector('[data-test="trip-block"]')
+                        ?.textContent ?? 'Working out the way',
+                ),
+            null,
+            { timeout: 40000 },
+        )
+        .catch(() => {});
+    check(
+        'and the routes between its places come in, as on the trip’s page',
+        /\d+ min (walk|by car)/.test(await byTest('trip-block').innerText()) &&
+            !/Working out the way/.test(await byTest('trip-block').innerText()),
+    );
+    await page.screenshot({ path: `${SHOTS}/trip-in-note.png` });
+
+    // Kept as two lines in the note, so it is there after a reload
+    const chosenDay = await byTest('day-choose').inputValue();
+    await page.waitForTimeout(2500);
+    await page.goto(`${base}${notePath}`, { waitUntil: 'networkidle' });
+    await byTest('trip-block')
+        .waitFor({ timeout: 10000 })
+        .catch(() => {});
+    await page.waitForTimeout(1500);
+    check(
+        'it comes back after a reload, on the same trip and day',
+        (await byTest('trip-choose').inputValue()) === tripRef &&
+            (await byTest('day-choose').inputValue()) === chosenDay,
+    );
 
     // ---- a table with places in it ----
 

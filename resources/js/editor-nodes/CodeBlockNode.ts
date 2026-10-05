@@ -25,6 +25,8 @@ import CodeBlockView from '../components/Editor/CodeBlockView.vue';
 import MermaidBlock from '../components/Editor/MermaidBlock.vue';
 // A board shown in the note, chosen from two dropdowns
 import BoardBlock from '../components/Editor/BoardBlock.vue';
+// A trip shown in the note, the whole of it or one day
+import TripBlock from '../components/Editor/TripBlock.vue';
 
 const lowlight = createLowlight();
 
@@ -43,8 +45,9 @@ lowlight.register('rust', rust);
 lowlight.register('plaintext', plaintext);
 // Mermaid source has no highlight.js grammar; keep it from being auto-detected as another language
 lowlight.register('mermaid', plaintext);
-// Nor does a board reference: it is two lines naming what to show
+// Nor does a board or a trip reference: it is two lines naming what to show
 lowlight.register('board', plaintext);
+lowlight.register('trip', plaintext);
 
 export const CodeBlockNode = CodeBlockLowlight.configure({
     lowlight,
@@ -54,12 +57,11 @@ export const CodeBlockNode = CodeBlockLowlight.configure({
     },
 }).extend({
     addNodeView() {
-        const kindOf = (node: ProseMirrorNode): 'mermaid' | 'board' | 'code' =>
-            node.attrs.language === 'mermaid'
-                ? 'mermaid'
-                : node.attrs.language === 'board'
-                  ? 'board'
-                  : 'code';
+        const EMBEDS = ['mermaid', 'board', 'trip'] as const;
+        const kindOf = (
+            node: ProseMirrorNode,
+        ): (typeof EMBEDS)[number] | 'code' =>
+            EMBEDS.find((kind) => kind === node.attrs.language) ?? 'code';
 
         // The view is picked once per node, so returning false when a block
         // changes kind makes ProseMirror rebuild it with the other component
@@ -77,6 +79,7 @@ export const CodeBlockNode = CodeBlockLowlight.configure({
             const views = {
                 mermaid: MermaidBlock,
                 board: BoardBlock,
+                trip: TripBlock,
                 code: CodeBlockView,
             } as const;
 
