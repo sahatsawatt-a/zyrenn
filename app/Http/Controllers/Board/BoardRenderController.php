@@ -40,12 +40,13 @@ class BoardRenderController extends Controller
             'items' => $items,
             'mode' => $validated['mode'],
             'frame' => $validated['frame'] ?? null,
-            'frames' => array_column(BoardParts::frames($items), 'id'),
+            // A page for each frame the PDF keeps
+            'frames' => BoardRender::pages($items),
         ]);
     }
 
     /**
-     * The board as a PDF download: a page for each frame.
+     * The board as a PDF download: a page for each frame not kept out of it.
      */
     public function pdf(Board $board): Response|JsonResponse
     {

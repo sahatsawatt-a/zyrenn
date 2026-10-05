@@ -209,6 +209,7 @@ abstract class BoardTool extends FiledTool
             'fit' => $schema->string()->enum(BoardItems::FITS)->description('For kind "image": "fill" stretches the picture to the box (the default), "contain" fits it whole inside, "cover" fills the box and cuts off what spills over. Its "stroke" and "lineWidth" draw a border round it.'),
             'hidden' => $schema->boolean()->description('Keep it off the board without deleting it.'),
             'locked' => $schema->boolean()->description('Stop it being picked up on the canvas.'),
+            'pdfHidden' => $schema->boolean()->description('For kind "frame": keep it on the board but leave it out of the PDF export, which otherwise has a page for every frame.'),
             'from' => $schema->object([
                 'item' => $schema->string()->max(64)->description('The id of the item this end is pinned to; it follows that shape around.'),
                 'side' => $schema->string()->enum(BoardItems::SIDES)->description('Keep this end on that edge, whatever moves. Left out, it follows the shapes and always leaves by the face pointing at the other end.'),

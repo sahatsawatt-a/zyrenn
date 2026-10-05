@@ -121,6 +121,8 @@ export type Item = {
     // Out of sight, and out of reach of the pointer, from the layers list
     hidden: boolean;
     locked: boolean;
+    // A frame kept on the board but left out of the PDF export
+    pdfHidden: boolean;
     // A picture -- SVG, PNG, JPEG -- as a data URL drawn through an <img>;
     // or, on a video, where the video is
     src: string;
@@ -222,6 +224,7 @@ export const makeItem = (
         points: [],
         hidden: false,
         locked: false,
+        pdfHidden: false,
         src: '',
         fit: 'fill',
         from: null,

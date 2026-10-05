@@ -110,6 +110,49 @@ class BoardRenderTest extends TestCase
             ->assertHeader('Content-Type', 'image/png');
     }
 
+    public function test_a_frame_hidden_in_pdf_has_no_page_of_it()
+    {
+        $this->fakeRenderer();
+        $user = User::factory()->create();
+        $board = Board::factory()->for($user)->create([
+            'content' => ['items' => BoardItems::fromSpec([
+                ['id' => 'notes', 'kind' => 'frame', 'text' => 'Speaker notes', 'pdfHidden' => true, 'x' => 0, 'y' => 0, 'width' => 960, 'height' => 540],
+                ['id' => 'slide', 'kind' => 'frame', 'text' => 'Slide', 'x' => 1100, 'y' => 0, 'width' => 800, 'height' => 600],
+            ])],
+        ]);
+
+        $this->actingAs($user)->get(route('boards.pdf', $board))->assertOk();
+
+        // The pages are the shape of the first frame printed, not of the one left out
+        Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/pdf')
+            && $request['pageSize'] === ['width' => '1280px', 'height' => '960px']);
+
+        $page = $this->sentPage('/pdf');
+        auth()->logout();
+
+        $this->get($page)
+            ->assertOk()
+            ->assertInertia(fn (Assert $inertia) => $inertia->where('frames', ['slide']));
+    }
+
+    public function test_a_board_with_every_frame_hidden_in_pdf_has_nothing_to_print()
+    {
+        $this->fakeRenderer();
+        $user = User::factory()->create();
+        $board = Board::factory()->for($user)->create([
+            'content' => ['items' => BoardItems::fromSpec([
+                ['id' => 'notes', 'kind' => 'frame', 'pdfHidden' => true],
+            ])],
+        ]);
+
+        $this->actingAs($user)
+            ->getJson(route('boards.pdf', $board))
+            ->assertStatus(422)
+            ->assertJson(['message' => 'Every frame on this board is left out of the PDF.']);
+
+        Http::assertNothingSent();
+    }
+
     public function test_a_picture_can_be_had_a_frame_at_a_time()
     {
         $this->fakeRenderer();

@@ -7,6 +7,7 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\URL;
 use RuntimeException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * A board as a picture or a PDF, drawn by a real browser.
@@ -56,14 +57,24 @@ class BoardRender
 
     /**
      * A PDF of the board: a page for each frame, in the order they are
-     * presented -- or, with no frames, one page of everything.
+     * presented, leaving out any frame kept out of the PDF -- or, with no
+     * frames, one page of everything.
      *
+     * @throws HttpException when every frame is kept out of the PDF
      * @throws RuntimeException when what came back is not a PDF
      */
     public static function pdf(Board $board): string
     {
-        $first = BoardParts::frames(self::items($board))[0] ?? null;
-        $frame = $first ? BoardParts::frame(self::items($board), $first['id']) : null;
+        $items = self::items($board);
+        $pages = self::pages($items);
+
+        abort_if(
+            $pages === [] && BoardParts::frames($items) !== [],
+            422,
+            __('Every frame on this board is left out of the PDF.'),
+        );
+
+        $frame = $pages ? BoardParts::frame($items, $pages[0]) : null;
         [$width, $height] = self::size($board, $frame, self::PAGE_WIDTH);
 
         $response = self::chrome('/pdf', [
@@ -80,6 +91,19 @@ class BoardRender
         }
 
         return $body;
+    }
+
+    /**
+     * The frames the PDF has a page for, by id: every one not kept out of it.
+     *
+     * @param  list<array<string, mixed>>  $items
+     * @return list<string>
+     */
+    public static function pages(array $items): array
+    {
+        $printed = array_filter($items, fn (array $item) => ($item['kind'] ?? '') === 'frame' && ($item['pdfHidden'] ?? false) !== true);
+
+        return array_values(array_map(fn (array $frame) => (string) $frame['id'], $printed));
     }
 
     /**

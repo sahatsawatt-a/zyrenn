@@ -159,6 +159,13 @@ const pinSide = (end: 'from' | 'to', side: Side | null) => {
     emit('update', { [end]: { ...current, side } });
 };
 
+// Frames, and only frames: each is a page of the PDF unless kept out of it
+const frames = computed(() =>
+    props.selection.every((item) => item.kind === 'frame')
+        ? props.selection
+        : [],
+);
+
 const one = computed(() =>
     props.selection.length === 1 ? props.selection[0] : null,
 );
@@ -397,6 +404,25 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                         "
                     />
                     Markdown: # heading, - bullet, **bold**
+                </label>
+            </div>
+
+            <!-- Whether the frame is a page of the PDF -->
+            <div v-if="frames.length" class="inspector-align">
+                <p class="inspector-label">PDF</p>
+                <label class="inspector-check">
+                    <input
+                        type="checkbox"
+                        :checked="frames.every((frame) => frame.pdfHidden)"
+                        data-test="prop-pdf-hidden"
+                        @change="
+                            emit('update', {
+                                pdfHidden: ($event.target as HTMLInputElement)
+                                    .checked,
+                            })
+                        "
+                    />
+                    Hide in PDF
                 </label>
             </div>
 

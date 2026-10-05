@@ -133,6 +133,40 @@ await runBoard('/demo/konva', async (b) => {
         `${hidden} → ${await painted()} px`,
     );
 
+    // --- a frame kept on the board but left out of the PDF
+    const firstFrame = groups.first();
+    const pdfToggle = firstFrame.locator('[data-test^="pdf-"]');
+    await pdfToggle.click();
+    await page.waitForTimeout(250);
+    check(
+        'a frame can be hidden in the PDF from its heading',
+        (await pdfToggle.getAttribute('title')) === 'Show in PDF' &&
+            (await pdfToggle.evaluate((el) => el.className.includes('is-on'))),
+        await pdfToggle.getAttribute('title'),
+    );
+    await firstFrame.click();
+    await page.waitForTimeout(250);
+    const pdfCheck = page.locator('[data-test="prop-pdf-hidden"]');
+    check(
+        'and the inspector shows it, without unselecting the frame',
+        (await inspectorTitle()).toLowerCase() === 'frame' &&
+            (await pdfCheck.isChecked()),
+        await inspectorTitle(),
+    );
+    await pdfCheck.click();
+    await page.waitForTimeout(250);
+    check(
+        'unticking it there puts the frame back in the PDF',
+        (await pdfToggle.getAttribute('title')) === 'Hide in PDF',
+        await pdfToggle.getAttribute('title'),
+    );
+    await loose().nth(0).click();
+    await page.waitForTimeout(250);
+    check(
+        'only a frame has the PDF setting',
+        !(await pdfCheck.isVisible()),
+    );
+
     // --- the inspector: labels, and what stays folded
     await loose().nth(0).click();
     await page.waitForTimeout(250);

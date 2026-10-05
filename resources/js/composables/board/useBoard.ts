@@ -293,7 +293,7 @@ export function useBoard(initial: Item[] | null = null) {
         settle();
     };
 
-    const toggle = (id: string, field: 'hidden' | 'locked') => {
+    const toggle = (id: string, field: 'hidden' | 'locked' | 'pdfHidden') => {
         const item = byId.value.get(id);
 
         if (!item) {
@@ -303,8 +303,9 @@ export function useBoard(initial: Item[] | null = null) {
         commit();
         item[field] = !item[field];
 
-        // Neither can stay selected: one cannot be seen, the other touched
-        if (item[field]) {
+        // Neither can stay selected: one cannot be seen, the other touched.
+        // Left out of the PDF, a frame is still there to work on.
+        if (item[field] && field !== 'pdfHidden') {
             selection.value = selection.value.filter((other) => other !== id);
         }
     };

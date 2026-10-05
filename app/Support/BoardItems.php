@@ -109,7 +109,7 @@ class BoardItems
                 }
             }
 
-            foreach (['hidden', 'locked', 'rich'] as $flag) {
+            foreach (['hidden', 'locked', 'rich', 'pdfHidden'] as $flag) {
                 if (is_bool($spec[$flag] ?? null)) {
                     $item[$flag] = $spec[$flag];
                 }
@@ -213,7 +213,7 @@ class BoardItems
                 }
             }
 
-            foreach (['hidden', 'locked', 'rich'] as $flag) {
+            foreach (['hidden', 'locked', 'rich', 'pdfHidden'] as $flag) {
                 if (($item[$flag] ?? false) === true) {
                     $spec[$flag] = true;
                 }
@@ -562,6 +562,7 @@ class BoardItems
             'points' => [],
             'hidden' => false,
             'locked' => false,
+            'pdfHidden' => false,
             'src' => '',
             'fit' => 'fill',
             'from' => null,

@@ -9,6 +9,8 @@ import {
     Lock,
     LockOpen,
     PanelLeftClose,
+    Printer,
+    PrinterX,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import { nameOf } from '../../composables/board/items';
@@ -22,7 +24,7 @@ const props = defineProps<{ items: Item[]; selection: string[] }>();
 const emit = defineEmits<{
     select: [{ id: string; add: boolean }];
     move: [{ id: string; index: number }];
-    toggle: [{ id: string; field: 'hidden' | 'locked' }];
+    toggle: [{ id: string; field: 'hidden' | 'locked' | 'pdfHidden' }];
     close: [];
 }>();
 
@@ -167,6 +169,28 @@ const onDrop = (target: Item) => {
                                 class="size-3.5"
                             />
                             <Eye v-else class="size-3.5" />
+                        </button>
+                        <button
+                            type="button"
+                            :title="
+                                group.frame.pdfHidden
+                                    ? 'Show in PDF'
+                                    : 'Hide in PDF'
+                            "
+                            :class="{ 'is-on': group.frame.pdfHidden }"
+                            :data-test="`pdf-${group.frame.id}`"
+                            @click.stop="
+                                emit('toggle', {
+                                    id: group.frame.id,
+                                    field: 'pdfHidden',
+                                })
+                            "
+                        >
+                            <PrinterX
+                                v-if="group.frame.pdfHidden"
+                                class="size-3.5"
+                            />
+                            <Printer v-else class="size-3.5" />
                         </button>
                     </template>
                 </div>
