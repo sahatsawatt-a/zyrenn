@@ -3,6 +3,7 @@
 use App\Http\Controllers\Note\NoteController;
 use App\Http\Controllers\Note\NoteFolderController;
 use App\Http\Controllers\Note\NotePdfController;
+use App\Http\Controllers\Note\NoteValueController;
 use App\Http\Controllers\Note\NoteVersionController;
 use Illuminate\Support\Facades\Route;
 
@@ -13,6 +14,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 
     Route::resource('notes', NoteController::class)->only(['show', 'update', 'destroy']);
+    // What its live values, {{ … }}, come to now
+    Route::post('notes/{note}/values', NoteValueController::class)->name('notes.values');
     // Each one holds a browser on the server for a few seconds
     Route::get('notes/{note}/pdf', [NotePdfController::class, 'show'])
         ->middleware('throttle:10,1')

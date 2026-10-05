@@ -2,6 +2,8 @@
 
 namespace App\Support\Formula;
 
+use DateTimeImmutable;
+
 /**
  * A formula, read once and worked out as often as it is asked: a column's
  * for every row, a note's chip each time it is shown.
@@ -40,6 +42,20 @@ final class Formula
     }
 
     /**
+     * An answer as JSON carries it and a page shows it: a date as YYYY-MM-DD,
+     * a list as its text, a number without floating point's noise.
+     */
+    public static function shown(mixed $value): mixed
+    {
+        return match (true) {
+            $value instanceof DateTimeImmutable => $value->format('Y-m-d'),
+            is_float($value) => is_finite($value) ? (float) Evaluator::numberText($value) : null,
+            is_array($value) => Evaluator::text($value),
+            default => $value,
+        };
+    }
+
+    /**
      * What a formula's answer reads as, or why there isn't one.
      *
      * @return array{value: mixed, text: string, error: string|null}
@@ -49,7 +65,7 @@ final class Formula
         try {
             $value = self::evaluate($source, $scope);
 
-            return ['value' => $value, 'text' => Evaluator::text($value), 'error' => null];
+            return ['value' => self::shown($value), 'text' => Evaluator::text($value), 'error' => null];
         } catch (FormulaError $problem) {
             return ['value' => null, 'text' => '', 'error' => $problem->getMessage()];
         }

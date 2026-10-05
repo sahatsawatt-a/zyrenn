@@ -157,6 +157,12 @@ final class TiptapToMarkdown
                 continue;
             }
 
+            if (($node['type'] ?? '') === 'formula') {
+                $out .= '{{ '.($node['attrs']['expression'] ?? '').' }}';
+
+                continue;
+            }
+
             $text = $node['text'] ?? '';
             $marks = [];
             foreach ($node['marks'] ?? [] as $mark) {

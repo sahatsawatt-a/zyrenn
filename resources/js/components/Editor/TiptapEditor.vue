@@ -60,6 +60,7 @@ import { BlockMath, InlineMath } from '@tiptap/extension-mathematics';
 import { CalloutNode } from '../../editor-nodes/CalloutNode';
 import { CodeBlockNode } from '../../editor-nodes/CodeBlockNode';
 import { CurrentLinePlaceholder } from '../../editor-nodes/CurrentLinePlaceholder';
+import { FormulaNode } from '../../editor-nodes/FormulaNode';
 import { PageBreak } from '../../editor-nodes/PageBreak';
 import { PdfHidden } from '../../editor-nodes/PdfHidden';
 import { ImageNode } from '../../editor-nodes/ImageNode';
@@ -289,6 +290,9 @@ const editor = useEditor({
             onClick: (_node, pos) =>
                 props.editable && editMath({ type: 'block', pos }),
         }),
+
+        // Live values, {{ … }}: a formula kept in the text, shown as what it comes to now
+        FormulaNode,
 
         // Images and videos from the Drive or a link (see ImageNode, VideoNode)
         ImageNode,

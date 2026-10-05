@@ -340,6 +340,10 @@ final class NoteBlocks
             return (string) ($node['attrs']['latex'] ?? '');
         }
 
+        if ($type === 'formula') {
+            return '{{ '.($node['attrs']['expression'] ?? '').' }}';
+        }
+
         $parts = array_map(fn ($child) => is_array($child) ? self::text($child) : '', $node['content'] ?? []);
 
         return trim(preg_replace('/\s+/u', ' ', implode(' ', $parts)) ?? '');

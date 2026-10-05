@@ -9,6 +9,7 @@ import {
     onMounted,
     ref,
     useTemplateRef,
+    watch,
     watchEffect,
 } from 'vue';
 import NoteToolbar from '@/components/Editor/NoteToolbar.vue';
@@ -19,6 +20,7 @@ import PdfPreview from '@/components/PdfPreview.vue';
 import PresenceAvatars from '@/components/PresenceAvatars.vue';
 import { usePresence } from '@/composables/usePresence';
 import { sharingIsOn, useShared } from '@/composables/useShared';
+import { refreshValues, valuesNote } from '@/lib/noteValues';
 import { canChange, owned } from '@/lib/projects';
 import { index as ownIndex, pdf, show, update } from '@/routes/notes';
 import { index as projectIndex } from '@/routes/projects/notes';
@@ -51,7 +53,16 @@ const editable = canChange();
 let deletingHere = false;
 
 // Who else has the note open
+// Its live values, {{ … }}, are asked for as this note's
+watch(
+    () => props.note.ref_id,
+    (refId: string) => (valuesNote.value = refId),
+    { immediate: true },
+);
+
 const { others } = usePresence(() => `notes.${props.note.ref_id}`, {
+    // A trip or table its values read changed: ask for them again
+    'values.changed': () => refreshValues(),
     // Deleted by someone else: close it rather than edit into nothing. One's
     // own delete is heard here too -- the request doesn't say which socket
     // sent it -- and goes where the server sends it, back to its folder

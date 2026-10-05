@@ -4,6 +4,7 @@ namespace App\Support\Markdown;
 
 use App\Support\Markdown\Extension\Callout;
 use App\Support\Markdown\Extension\InlineMath;
+use App\Support\Markdown\Extension\InlineValue;
 use App\Support\Markdown\Extension\MathBlock;
 use App\Support\Markdown\Extension\NoteSyntaxExtension;
 use League\CommonMark\Environment\Environment;
@@ -389,6 +390,7 @@ final class MarkdownToTiptap
                 // Images inside a line of text have no inline node in the editor
                 $node instanceof Image => [$this->text('!['.$this->plainText($node).']('.$node->getUrl().')', $marks)],
                 $node instanceof InlineMath => [['type' => 'inlineMath', 'attrs' => ['latex' => $node->latex]]],
+                $node instanceof InlineValue => [['type' => 'formula', 'attrs' => ['expression' => $node->expression]]],
                 $node instanceof Newline => [['type' => 'hardBreak']],
                 $node instanceof HtmlInline => [$this->text($node->getLiteral(), $marks)],
                 // Bullet list task markers become taskItem attrs; in ordered lists they stay text

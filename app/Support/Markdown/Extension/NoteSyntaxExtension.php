@@ -16,6 +16,7 @@ final class NoteSyntaxExtension implements ExtensionInterface
         $environment
             ->addBlockStartParser(new CalloutStartParser, 55)
             ->addBlockStartParser(new MathBlockStartParser, 55)
-            ->addInlineParser(new InlineMathParser);
+            ->addInlineParser(new InlineMathParser)
+            ->addInlineParser(new InlineValueParser);
     }
 }

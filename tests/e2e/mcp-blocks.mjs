@@ -211,6 +211,97 @@ await runBoard(
             `${second.x} → ${byId[second.id]?.x}`,
         );
         await page.screenshot({ path: `${SHOTS}/mcp-board.png` });
+
+        // ------------------------------------ Live values in a note, {{ … }}
+        const TABLE = `Values ${RUN}`;
+        await mcp('create-table', {
+            title: TABLE,
+            parameters: { rate: 5 },
+            columns: [
+                { label: 'CNY', type: 'numeric' },
+                { label: 'THB', type: 'formula', expression: 'cny * rate' },
+            ],
+            rows: [{ CNY: 100 }],
+        });
+        afterwards(() =>
+            tinker(
+                `App\\Models\\Table\\Table::where('title', '${TABLE}')->first()?->delete();`,
+            ),
+        );
+        const valued = await mcp('create-note', {
+            title: `Values ${RUN}`,
+            markdown: `Spent {{ sum(table("${TABLE}").thb) }} baht`,
+        });
+        const valueNote = valued.structuredContent.ref_id;
+        afterwards(() =>
+            tinker(
+                `App\\Models\\Note\\Note::where('ref_id', '${valueNote}')->first()?->delete();`,
+            ),
+        );
+
+        await page.goto(`${base}/notes/${valueNote}`, {
+            waitUntil: 'networkidle',
+        });
+        const chip = page.locator('[data-test="note-value"]');
+        await chip.first().waitFor();
+        await page.waitForTimeout(800);
+        check(
+            'a live value shows what its formula comes to',
+            (await chip.first().innerText()).trim() === '500',
+            await chip.first().innerText(),
+        );
+
+        // The table changes elsewhere; the open note follows without reloading
+        await mcp('update-table', {
+            ref_id: (await mcp('list-tables', { search: TABLE }))
+                .structuredContent.tables[0].ref_id,
+            update_rows: [{ id: 1, values: { CNY: 200 } }],
+        });
+        await page.waitForTimeout(2500);
+        check(
+            'and follows the table it reads as it changes',
+            (await chip.first().innerText()).trim() === '1,000',
+            await chip.first().innerText(),
+        );
+
+        // Typed out in full, {{ … }} becomes a value
+        await page.locator('.ProseMirror p').first().click();
+        await page.keyboard.press('End');
+        await page.keyboard.type(' and {{ 2 * 21 }}');
+        await page.waitForTimeout(1500);
+        const line = (await page.locator('.ProseMirror p').first().innerText())
+            .replace(/\s+/g, ' ')
+            .trim();
+        check(
+            'a value typed out becomes one, braces and all',
+            (await chip.count()) === 2 && line === 'Spent 1,000 baht and 42',
+            line,
+        );
+        // Clicked, a value opens its formula to change
+        await chip.nth(1).click();
+        await page
+            .locator('[data-test="note-value-expression"]')
+            .fill('6 * 7 + 1');
+        await page.locator('[data-test="note-value-save"]').click();
+        await page.waitForTimeout(1200);
+        check(
+            'a value clicked can be given another formula',
+            (await chip.nth(1).innerText()).trim() === '43',
+            await chip.nth(1).innerText(),
+        );
+        await page.screenshot({ path: `${SHOTS}/note-values.png` });
+
+        await page.waitForTimeout(2500);
+        const valuesRead = (await mcp('get-note', { ref_id: valueNote }))
+            .structuredContent;
+        check(
+            'get-note gives the formulas, and what each comes to',
+            valuesRead.markdown?.trim() ===
+                `Spent {{ sum(table("${TABLE}").thb) }} baht and {{ 6 * 7 + 1 }}` &&
+                valuesRead.values?.['6 * 7 + 1'] === '43' &&
+                valuesRead.values?.[`sum(table("${TABLE}").thb)`] === '1000',
+            JSON.stringify(valuesRead.values),
+        );
     },
     { canvas: false },
 );

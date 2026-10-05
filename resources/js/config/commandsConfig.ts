@@ -202,6 +202,20 @@ export const commandItems: SlashCommandItem[] = [
             editor.chain().focus().deleteRange(range).setPageBreak().run(),
     },
     {
+        title: 'Live value',
+        description: 'A number from a trip or table, kept up to date: {{ … }}.',
+        icon: '=',
+        keywords: ['value', 'formula', 'total', 'sum', 'live', 'variable'],
+        command: ({ editor, range }) =>
+            editor
+                .chain()
+                .focus()
+                .deleteRange(range)
+                // Opens to be written (see FormulaChip)
+                .insertContent({ type: 'formula', attrs: { expression: '' } })
+                .run(),
+    },
+    {
         title: 'Board',
         description: 'Show a board, or one of its frames, in this note.',
         icon: '▦',

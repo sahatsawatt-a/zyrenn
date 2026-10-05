@@ -11,7 +11,6 @@ use App\Support\Formula\Functions;
 use App\Support\Formula\NamedValues;
 use App\Support\Formula\References;
 use App\Support\Formula\Scope;
-use DateTimeImmutable;
 
 /**
  * A table's formulas: its formula columns, worked out for each row as rows
@@ -122,7 +121,7 @@ final class TableFormulas
             ));
 
             try {
-                $totals[$column->name] = self::shown(Functions::call((string) self::summaryOf($column), [$values]));
+                $totals[$column->name] = Formula::shown(Functions::call((string) self::summaryOf($column), [$values]));
             } catch (FormulaError $error) {
                 $totals[$column->name] = ['error' => $error->getMessage()];
             }
@@ -223,7 +222,7 @@ final class TableFormulas
             $column = $table->columns->firstWhere('name', $name);
 
             try {
-                $done[$name] = self::shown(Formula::evaluate(self::expressionOf($column), new NamedValues($values, $parameters)));
+                $done[$name] = Formula::shown(Formula::evaluate(self::expressionOf($column), new NamedValues($values, $parameters)));
             } catch (FormulaError $error) {
                 $done[$name] = ['error' => $error->getMessage()];
             } finally {
@@ -260,20 +259,6 @@ final class TableFormulas
         }
 
         return is_int($value) ? (float) $value : $value;
-    }
-
-    /**
-     * An answer as the grid shows it and JSON carries it: a date as
-     * YYYY-MM-DD, a list as its text, a whole number without its point.
-     */
-    private static function shown(mixed $value): mixed
-    {
-        return match (true) {
-            $value instanceof DateTimeImmutable => $value->format('Y-m-d'),
-            is_float($value) => is_finite($value) ? (float) Evaluator::numberText($value) : null,
-            is_array($value) => Evaluator::text($value),
-            default => $value,
-        };
     }
 
     /**
