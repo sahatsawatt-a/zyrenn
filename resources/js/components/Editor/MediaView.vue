@@ -53,6 +53,16 @@
                 </button>
                 <span class="image-divider"></span>
                 <button
+                    v-if="!isVideo && editor.isEditable"
+                    type="button"
+                    class="image-btn"
+                    title="Edit photo"
+                    data-test="edit-photo"
+                    @click="editing = true"
+                >
+                    <SlidersHorizontal :size="14" />
+                </button>
+                <button
                     type="button"
                     class="image-btn"
                     title="View full size"
@@ -62,13 +72,21 @@
                 </button>
             </div>
         </div>
+
+        <PhotoEditor
+            v-if="editing"
+            v-model:open="editing"
+            :src="node.attrs.src"
+            @saved="updateAttributes({ src: $event.src })"
+        />
     </node-view-wrapper>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { NodeViewWrapper, nodeViewProps } from '@tiptap/vue-3';
-import { Maximize2 } from '@lucide/vue';
+import { Maximize2, SlidersHorizontal } from '@lucide/vue';
+import PhotoEditor from '../photo/PhotoEditor.vue';
 import { useMediaViewer } from '../../composables/useMediaViewer';
 import type { ViewerItem } from '../../composables/useMediaViewer';
 import type { ImageSize } from '../../editor-nodes/ImageNode';
@@ -80,6 +98,7 @@ const isVideo = computed(() => props.node.type.name === 'video');
 const player = ref<HTMLVideoElement | null>(null);
 
 const failed = ref(false);
+const editing = ref(false);
 watch(
     () => props.node.attrs.src,
     () => (failed.value = false),

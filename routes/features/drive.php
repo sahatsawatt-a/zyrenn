@@ -4,6 +4,7 @@ use App\Http\Controllers\Drive\DriveController;
 use App\Http\Controllers\Drive\DriveFileController;
 use App\Http\Controllers\Drive\DriveFolderController;
 use App\Http\Controllers\Drive\DriveUploadLinkController;
+use App\Http\Controllers\Drive\PhotoEditController;
 use Illuminate\Support\Facades\Route;
 
 // A user's private file store, and each project's. Every file is streamed back
@@ -16,11 +17,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
             Route::resource('files', DriveFileController::class)->only(['store']);
             Route::resource('folders', DriveFolderController::class)->only(['store']);
+            Route::post('photo-edits', [PhotoEditController::class, 'store'])->name('photo-edits.store');
         });
     });
 
     Route::prefix('drive')->name('drive.')->group(function () {
         Route::resource('files', DriveFileController::class)->only(['show', 'update', 'destroy']);
+        Route::get('files/{file}/original', [PhotoEditController::class, 'original'])->name('files.original');
         Route::resource('folders', DriveFolderController::class)->only(['update', 'destroy']);
     });
 });

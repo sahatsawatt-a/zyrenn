@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Drive\DriveFile;
 use App\Models\Drive\DriveFolder;
+use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -359,5 +360,100 @@ class DriveTest extends TestCase
         $this->assertSame(['a.png', 'c.pdf', 'b.png'], $names(['sort' => 'size']));
         $this->assertSame(['c.pdf'], $names(['type' => 'pdf']));
         $this->assertSame(['b.png', 'a.png'], $names(['type' => 'image']));
+    }
+
+    // ---- the photo editor ----
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function photoEdit(): array
+    {
+        return [
+            'crop' => ['x' => '0.1', 'y' => '0', 'width' => '0.5', 'height' => '1'],
+            'rotate' => '90',
+            'flipX' => '1',
+            'flipY' => '0',
+            'brightness' => '120',
+            'contrast' => '100',
+            'saturation' => '80',
+        ];
+    }
+
+    public function test_an_edited_photo_is_kept_beside_its_original()
+    {
+        $user = User::factory()->create();
+        $folder = DriveFolder::factory()->for($user)->create();
+        $original = $this->upload($user, self::png('cat.png'), $folder);
+
+        $made = $this->actingAs($user)->postJson(route('drive.photo-edits.store'), [
+            'file' => self::png('photo.png'),
+            'source' => $original->ref_id,
+            'edit' => self::photoEdit(),
+        ])->assertCreated()->assertJsonPath('file.name', 'cat (edited).png');
+
+        $edited = DriveFile::query()->where('ref_id', $made->json('file.ref_id'))->sole();
+        $this->assertSame($original->id, $edited->source_id);
+        $this->assertSame($folder->id, $edited->folder_id);
+        $this->assertSame(90, $edited->edit['rotate']);
+        $this->assertTrue($edited->edit['flipX']);
+        $this->assertSame(0.5, $edited->edit['crop']['width']);
+        Storage::disk(DriveFile::DISK)->assertExists([$original->path, $edited->path]);
+
+        // Opened again, it starts from the whole original and the edit made
+        $this->actingAs($user)->getJson(route('drive.files.original', $edited))
+            ->assertOk()
+            ->assertJsonPath('source.ref_id', $original->ref_id)
+            ->assertJsonPath('edit.saturation', 80);
+        $this->actingAs($user)->getJson(route('drive.files.original', $original))
+            ->assertOk()
+            ->assertJsonPath('source', null)
+            ->assertJsonPath('edit', null);
+    }
+
+    public function test_someone_elses_picture_is_edited_into_ones_own_drive_without_a_link_to_it()
+    {
+        $user = User::factory()->create();
+        $theirs = DriveFile::factory()->create();
+
+        $this->actingAs($user)->getJson(route('drive.files.original', $theirs))->assertForbidden();
+
+        $made = $this->actingAs($user)->postJson(route('drive.photo-edits.store'), [
+            'file' => self::png(),
+            'source' => $theirs->ref_id,
+            'edit' => self::photoEdit(),
+        ])->assertCreated()->assertJsonPath('file.name', 'Photo (edited).png');
+
+        $edited = DriveFile::query()->where('ref_id', $made->json('file.ref_id'))->sole();
+        $this->assertSame($user->id, $edited->user_id);
+        $this->assertNull($edited->source_id);
+        $this->assertNull($edited->edit);
+    }
+
+    public function test_an_edit_must_be_one_the_editor_can_make()
+    {
+        $user = User::factory()->create();
+        $original = $this->upload($user, self::png());
+
+        $this->actingAs($user)->postJson(route('drive.photo-edits.store'), [
+            'file' => self::png(),
+            'source' => $original->ref_id,
+            'edit' => [...self::photoEdit(), 'rotate' => '45', 'brightness' => '900'],
+        ])->assertUnprocessable()->assertJsonValidationErrors(['edit.rotate', 'edit.brightness']);
+
+        $this->actingAs($user)->postJson(route('drive.photo-edits.store'), [
+            'file' => UploadedFile::fake()->createWithContent('page.html', '<script>alert(1)</script>'),
+        ])->assertUnprocessable()->assertJsonValidationErrors('file');
+    }
+
+    public function test_a_projects_viewer_cannot_keep_an_edited_photo_in_it()
+    {
+        $project = Project::factory()->create();
+        $viewer = User::factory()->create();
+        $project->members()->attach($viewer, ['role' => Project::VIEWER]);
+
+        $this->actingAs($viewer)->postJson(route('projects.drive.photo-edits.store', $project), [
+            'file' => self::png(),
+        ])->assertForbidden();
     }
 }

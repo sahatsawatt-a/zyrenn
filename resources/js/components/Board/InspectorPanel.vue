@@ -12,10 +12,11 @@ import {
     Copy,
     PanelRightClose,
     SendToBack,
+    SlidersHorizontal,
     Trash2,
 } from '@lucide/vue';
 import type { Component } from 'vue';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { HEAD_TYPES } from '../../composables/board/connectors';
 import { SIDES } from '../../composables/board/geometry';
 import { FONT_FAMILIES, hasText } from '../../composables/board/items';
@@ -29,6 +30,7 @@ import type {
     Side,
     VerticalAlign,
 } from '../../composables/board/items';
+import PhotoEditor from '../photo/PhotoEditor.vue';
 import ColourPicker from './ColourPicker.vue';
 import ConnectorSettings from './ConnectorSettings.vue';
 
@@ -75,6 +77,8 @@ const picture = computed(() =>
         ? props.selection[0]
         : null,
 );
+
+const editing = ref(false);
 
 const fits: { value: Fit; label: string; title: string }[] = [
     { value: 'fill', label: 'Stretch', title: 'Stretched to the box' },
@@ -442,6 +446,29 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                         {{ option.label }}
                     </button>
                 </div>
+                <div class="inspector-segments">
+                    <button
+                        type="button"
+                        class="gap-1.5"
+                        data-test="edit-photo"
+                        @click="editing = true"
+                    >
+                        <SlidersHorizontal :size="13" /> Edit photo
+                    </button>
+                </div>
+                <PhotoEditor
+                    v-if="editing"
+                    v-model:open="editing"
+                    :src="picture.src"
+                    @saved="
+                        emit('update', {
+                            src: $event.src,
+                            height: Math.round(
+                                (picture.width * $event.height) / $event.width,
+                            ),
+                        })
+                    "
+                />
             </div>
 
             <!-- Connector-only controls, when a line is what is selected -->

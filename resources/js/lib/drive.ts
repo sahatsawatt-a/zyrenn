@@ -1,9 +1,12 @@
 import { owned } from '@/lib/projects';
 import { xsrfToken } from '@/lib/utils';
 import { pick } from '@/routes/drive';
-import { store } from '@/routes/drive/files';
+import { original, store } from '@/routes/drive/files';
+import { store as photoEditStore } from '@/routes/drive/photo-edits';
 import { pick as projectPick } from '@/routes/projects/drive';
 import { store as projectStore } from '@/routes/projects/drive/files';
+import { store as projectPhotoEditStore } from '@/routes/projects/drive/photo-edits';
+import type { PhotoEdit } from './photo';
 
 // A Drive file as the server describes it (DriveFile::card)
 export type DriveFile = {
@@ -119,4 +122,77 @@ export async function listDriveMedia(
     }
 
     return (await response.json()).files;
+}
+
+/** A Drive file's ref_id, when a picture's address is one of ours. */
+export const driveRefOf = (src: string): string | null =>
+    src.match(
+        /^(?:https?:\/\/[^/]+)?\/drive\/files\/([A-Za-z0-9]+)(?:[/?#]|$)/,
+    )?.[1] ?? null;
+
+/**
+ * Where to start editing a Drive picture: the original it was made from in
+ * the photo editor, and the edit that made it -- when there is one.
+ */
+export async function photoOriginal(ref: string): Promise<{
+    file: DriveFile;
+    source: DriveFile | null;
+    edit: PhotoEdit | null;
+}> {
+    const response = await fetch(original.url(ref), {
+        headers: jsonHeaders(),
+    });
+
+    if (!response.ok) {
+        throw new Error('Couldn’t open that picture.');
+    }
+
+    return response.json();
+}
+
+/**
+ * Keep a picture from the photo editor in the Drive of wherever the page is,
+ * as made from `source` (a Drive picture's ref_id) by `edit`.
+ */
+export async function savePhotoEdit(
+    blob: Blob,
+    source: string | null,
+    edit: PhotoEdit,
+): Promise<DriveFile> {
+    const body = new FormData();
+    const ext =
+        blob.type.split('/')[1] === 'jpeg' ? 'jpg' : blob.type.split('/')[1];
+    body.append('file', blob, `photo.${ext}`);
+
+    if (source) {
+        body.append('source', source);
+
+        for (const [key, value] of Object.entries(edit)) {
+            if (key === 'crop') {
+                for (const [side, fraction] of Object.entries(edit.crop)) {
+                    body.append(`edit[crop][${side}]`, String(fraction));
+                }
+            } else {
+                body.append(
+                    `edit[${key}]`,
+                    String(typeof value === 'boolean' ? Number(value) : value),
+                );
+            }
+        }
+    }
+
+    const response = await fetch(
+        owned(photoEditStore, projectPhotoEditStore).url(),
+        { method: 'POST', headers: jsonHeaders(), body },
+    );
+
+    if (!response.ok) {
+        throw new Error(
+            response.status === 403
+                ? 'You can’t add pictures here.'
+                : 'Couldn’t save the picture.',
+        );
+    }
+
+    return (await response.json()).file;
 }

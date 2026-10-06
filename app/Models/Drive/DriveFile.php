@@ -31,10 +31,12 @@ use Illuminate\Support\Str;
  * @property string|null $ext
  * @property int $size
  * @property string $kind
+ * @property int|null $source_id
+ * @property array<string, mixed>|null $edit
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'folder_id', 'path', 'mime', 'ext', 'size', 'kind'])]
+#[Fillable(['name', 'folder_id', 'path', 'mime', 'ext', 'size', 'kind', 'source_id', 'edit'])]
 class DriveFile extends Model
 {
     /** @use HasFactory<DriveFileFactory> */
@@ -65,11 +67,33 @@ class DriveFile extends Model
     }
 
     /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'edit' => 'array',
+        ];
+    }
+
+    /**
      * @return BelongsTo<DriveFolder, $this>
      */
     public function folder(): BelongsTo
     {
         return $this->belongsTo(DriveFolder::class, 'folder_id');
+    }
+
+    /**
+     * The picture this one was made from in the photo editor.
+     *
+     * @return BelongsTo<DriveFile, $this>
+     */
+    public function source(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'source_id');
     }
 
     /**
