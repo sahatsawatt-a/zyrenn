@@ -21,6 +21,7 @@ export const matchingSaved = (
             savedId: place.ref_id,
             detail: [place.list, place.address].filter(Boolean).join(' · '),
             color: place.color ?? undefined,
+            listIcon: place.icon ?? undefined,
         }));
 };
 

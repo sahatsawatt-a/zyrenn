@@ -207,12 +207,57 @@ try {
     check('hiding a list takes its places off the map', (await drawn()) === 0);
     await byTest('toggle-Saved').click();
 
-    // And it is all still there after a reload
+    // A list's icon and colour, chosen from the shared picker
+    await byTest('places').locator('[data-test="icon-picker"]').first().click();
+    await byTest('color-#f97316').click();
+    await byTest('icon-coffee').click();
+    await page.waitForTimeout(500);
+    const listStyle = () =>
+        page.evaluate(() => {
+            const [list] = window.__maps.store.lists.value;
+
+            return `${list.icon} ${list.color}`;
+        });
+    const dotColour = () =>
+        page.evaluate(
+            async () =>
+                (await window.__maps.map().getSource('saved').getData())
+                    .features[0]?.properties.color,
+        );
+    check(
+        'a list takes the icon and colour picked, and its dots follow',
+        (await listStyle()) === 'coffee #f97316' &&
+            (await dotColour()) === '#f97316',
+        `${await listStyle()}, dot ${await dotColour()}`,
+    );
+    await page.screenshot({ path: `${SHOTS}/maps-list-icon.png` });
+
+    // And it is all still there after a reload -- the street map first, even
+    // in dark mode
+    const appearance = (value) =>
+        page.evaluate((value) => {
+            localStorage.setItem('appearance', value);
+            document.cookie = `appearance=${value};path=/`;
+        }, value);
+    await appearance('dark');
+    afterwards(() => appearance('system').catch(() => {}));
     await page.reload({ waitUntil: 'networkidle' });
     await mapReady();
     check(
         'saved places come back from the server',
         (await saved()).length === 1 && (await drawn()) === 1,
+    );
+    check(
+        'a list’s icon and colour are kept',
+        (await listStyle()) === 'coffee #f97316',
+    );
+    check(
+        'the map starts on the street map',
+        (
+            await byTest('basemaps')
+                .getByRole('button', { name: 'Map', exact: true })
+                .getAttribute('class')
+        ).includes('bg-primary'),
     );
 
     // ---- a trip ----

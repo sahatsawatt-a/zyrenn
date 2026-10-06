@@ -64,6 +64,8 @@ export interface PlaceList {
     ref_id: string;
     name: string;
     color: string;
+    /** Its icon's name in the app's set (lib/icons). */
+    icon: string;
 }
 
 export interface SavedPlace {
@@ -173,7 +175,7 @@ export const createList = (name: string) =>
 
 export const updateList = (
     list: string,
-    changes: Partial<Pick<PlaceList, 'name' | 'color'>>,
+    changes: Partial<Pick<PlaceList, 'name' | 'color' | 'icon'>>,
 ) =>
     send<{ list: PlaceList }>(
         placeListRoutes.update.url(list),
@@ -238,6 +240,7 @@ export interface SavedChoice {
     lng: number;
     list: string | null;
     color: string | null;
+    icon: string | null;
 }
 
 /** The user's or the project's saved places, to choose one from. */

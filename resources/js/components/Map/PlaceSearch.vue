@@ -1,13 +1,7 @@
 <script setup lang="ts">
-import {
-    Bookmark,
-    LocateFixed,
-    LoaderCircle,
-    MapPin,
-    Search,
-    X,
-} from '@lucide/vue';
+import { LocateFixed, LoaderCircle, MapPin, Search, X } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import IconByName from '@/components/icons/IconByName.vue';
 import type { Candidate, Hit } from '@/lib/maps';
 import { searchPlaces } from '@/lib/maps';
 
@@ -19,6 +13,8 @@ import { searchPlaces } from '@/lib/maps';
 export interface LocalPlace extends Candidate {
     detail: string;
     color?: string;
+    /** The icon of the list it is saved in. */
+    listIcon?: string;
 }
 
 const props = defineProps<{
@@ -47,6 +43,7 @@ type Option = {
     detail: string;
     icon: 'saved' | 'place' | 'me';
     color?: string;
+    listIcon?: string;
     pick: () => Promise<Candidate | null> | Candidate | null;
 };
 
@@ -91,6 +88,7 @@ const options = computed<Option[]>(() => {
                 detail: place.detail,
                 icon: 'saved',
                 color: place.color,
+                listIcon: place.listIcon,
                 pick: () => place,
             });
         }
@@ -243,11 +241,11 @@ const key = (event: KeyboardEvent) => {
                     v-if="option.icon === 'me'"
                     class="text-primary mt-0.5 size-4 shrink-0"
                 />
-                <Bookmark
+                <IconByName
                     v-else-if="option.icon === 'saved'"
+                    :name="option.listIcon"
                     class="mt-0.5 size-4 shrink-0"
                     :style="{ color: option.color }"
-                    :fill="option.color"
                 />
                 <MapPin
                     v-else

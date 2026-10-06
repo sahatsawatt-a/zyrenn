@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import {
     Bookmark,
-    BookmarkCheck,
     Check,
     Copy,
     ExternalLink,
@@ -15,6 +14,7 @@ import {
     X,
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
+import IconByName from '@/components/icons/IconByName.vue';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -191,8 +191,9 @@ const today = WEEKDAYS[(new Date().getDay() + 6) % 7];
                         variant="outline"
                         :data-test="saved ? 'saved-in' : 'save-place'"
                     >
-                        <BookmarkCheck
+                        <IconByName
                             v-if="saved"
+                            :name="list?.icon"
                             class="size-4"
                             :style="{ color: list?.color }"
                         />
@@ -216,9 +217,10 @@ const today = WEEKDAYS[(new Date().getDay() + 6) % 7];
                                 : keep(each.ref_id)
                         "
                     >
-                        <span
-                            class="size-2.5 rounded-full"
-                            :style="{ background: each.color }"
+                        <IconByName
+                            :name="each.icon"
+                            class="size-4"
+                            :style="{ color: each.color }"
                         />
                         {{ each.name }}
                         <Check

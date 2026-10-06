@@ -281,6 +281,29 @@ class MapsTest extends TestCase
         $this->assertSame($user->id, $user->places()->sole()->user_id);
     }
 
+    public function test_a_list_shows_an_icon_that_can_be_changed()
+    {
+        $user = User::factory()->create();
+
+        $made = $this->actingAs($user)->postJson(route('place-lists.store'), ['name' => 'Food'])
+            ->assertCreated()
+            ->assertJsonPath('list.icon', 'bookmark');
+        $list = PlaceList::query()->where('ref_id', $made->json('list.ref_id'))->sole();
+
+        $this->actingAs($user)->patchJson(route('place-lists.update', $list), ['icon' => 'utensils-crossed'])
+            ->assertOk()
+            ->assertJsonPath('list.icon', 'utensils-crossed');
+
+        // A name of the icon set's kind, not markup
+        $this->actingAs($user)->patchJson(route('place-lists.update', $list), ['icon' => '<svg onload=x>'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('icon');
+
+        Place::factory()->for($list, 'list')->create();
+        $this->actingAs($user)->getJson(route('places.pick'))
+            ->assertJsonPath('places.0.icon', 'utensils-crossed');
+    }
+
     public function test_a_deleted_list_hands_its_places_to_another()
     {
         $user = User::factory()->create();

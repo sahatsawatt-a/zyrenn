@@ -11,6 +11,7 @@ import {
     Upload,
 } from '@lucide/vue';
 import { ref } from 'vue';
+import IconPicker from '@/components/icons/IconPicker.vue';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -22,7 +23,8 @@ import type { SavedPlace } from '@/lib/maps';
 import type { PlaceStore } from './usePlaceStore';
 
 // The saved places, by list: show or hide a list on the map, open a place,
-// make, rename or delete a list, and take the lot in or out as GeoJSON.
+// make, rename, restyle (icon and colour) or delete a list, and take the lot in or out
+// as GeoJSON.
 
 const props = defineProps<{ store: PlaceStore; editable: boolean }>();
 const emit = defineEmits<{ open: [place: SavedPlace] }>();
@@ -121,18 +123,40 @@ const upload = async (event: Event) => {
             <div class="group flex items-center gap-2 px-4 py-2">
                 <button
                     type="button"
+                    class="shrink-0"
+                    :aria-label="
+                        expanded[list.ref_id]
+                            ? `Fold ${list.name}`
+                            : `Open ${list.name}`
+                    "
+                    @click="expanded[list.ref_id] = !expanded[list.ref_id]"
+                >
+                    <ChevronRight
+                        class="text-muted-foreground size-3.5 transition-transform"
+                        :class="expanded[list.ref_id] && 'rotate-90'"
+                    />
+                </button>
+                <IconPicker
+                    :model-value="list.icon"
+                    :color="list.color"
+                    :label="`${list.name}'s icon`"
+                    colorable
+                    :disabled="!editable"
+                    @update:model-value="
+                        (icon) =>
+                            icon && store.restyleList(list.ref_id, { icon })
+                    "
+                    @update:color="
+                        (color) =>
+                            color && store.restyleList(list.ref_id, { color })
+                    "
+                />
+                <button
+                    type="button"
                     class="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
                     :data-test="`list-${list.name}`"
                     @click="expanded[list.ref_id] = !expanded[list.ref_id]"
                 >
-                    <ChevronRight
-                        class="text-muted-foreground size-3.5 shrink-0 transition-transform"
-                        :class="expanded[list.ref_id] && 'rotate-90'"
-                    />
-                    <span
-                        class="size-2.5 shrink-0 rounded-full"
-                        :style="{ background: list.color }"
-                    />
                     <input
                         v-if="naming === list.ref_id"
                         v-model="nameDraft"

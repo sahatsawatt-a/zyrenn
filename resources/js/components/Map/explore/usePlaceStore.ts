@@ -144,6 +144,20 @@ export function usePlaceStore(initial: {
         return run(() => updateList(ref, { name }));
     };
 
+    /** A list's icon or colour, changed. */
+    const restyleList = (
+        ref: string,
+        changes: Partial<Pick<PlaceList, 'icon' | 'color'>>,
+    ) => {
+        const list = lists.value.find((each) => each.ref_id === ref);
+
+        if (list) {
+            Object.assign(list, changes);
+        }
+
+        return run(() => updateList(ref, changes));
+    };
+
     /** A list goes; its places move to the list the server names. */
     const removeList = (ref: string) =>
         run(async () => {
@@ -255,6 +269,7 @@ export function usePlaceStore(initial: {
         update,
         remove,
         renameList,
+        restyleList,
         removeList,
         exportGeoJson,
         importGeoJson,

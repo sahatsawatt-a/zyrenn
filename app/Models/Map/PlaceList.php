@@ -12,17 +12,19 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
- * A list of saved places -- "Want to go", "Work" -- in a colour of its own.
+ * A list of saved places -- "Want to go", "Work" -- with an icon and a
+ * colour of its own.
  *
  * @property int $id
  * @property string $ref_id
  * @property string $name
  * @property string $color
+ * @property string $icon
  * @property int $sort_order
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'color', 'sort_order'])]
+#[Fillable(['name', 'color', 'icon', 'sort_order'])]
 class PlaceList extends Model
 {
     /** @use HasFactory<PlaceListFactory> */
@@ -37,6 +39,7 @@ class PlaceList extends Model
      * @var array<string, mixed>
      */
     protected $attributes = [
+        'icon' => 'bookmark',
         'sort_order' => 0,
     ];
 
@@ -73,6 +76,7 @@ class PlaceList extends Model
             'ref_id' => $this->ref_id,
             'name' => $this->name,
             'color' => $this->color,
+            'icon' => $this->icon,
         ];
     }
 }

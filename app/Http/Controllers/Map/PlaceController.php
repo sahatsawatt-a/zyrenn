@@ -28,7 +28,7 @@ class PlaceController extends Controller
     public function pick(Request $request): JsonResponse
     {
         $places = $this->owner($request)->places()
-            ->with('list:id,ref_id,name,color')
+            ->with('list:id,ref_id,name,color,icon')
             ->orderBy('name')
             ->limit(1000)
             ->get();
@@ -38,6 +38,7 @@ class PlaceController extends Controller
                 ...array_intersect_key($place->toMap(), array_flip(['ref_id', 'name', 'address', 'kind', 'lat', 'lng'])),
                 'list' => $place->list?->name,
                 'color' => $place->list?->color,
+                'icon' => $place->list?->icon,
             ]),
         ]);
     }

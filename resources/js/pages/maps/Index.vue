@@ -166,6 +166,7 @@ const local = (term: string): LocalPlace[] =>
             ...place,
             list: store.listOf(place)?.name ?? null,
             color: store.listOf(place)?.color ?? null,
+            icon: store.listOf(place)?.icon ?? null,
         })),
         term,
     );

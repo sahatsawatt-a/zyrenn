@@ -19,6 +19,9 @@ class PlaceListController extends Controller
 
     private const COLOR = ['string', 'regex:/^#[0-9a-fA-F]{6}$/'];
 
+    /** An icon by its name in the app's icon set, which the page draws. */
+    private const ICON = ['string', 'max:40', 'regex:/^[a-z0-9-]+$/'];
+
     public function store(Request $request): JsonResponse
     {
         $owner = $this->owner($request, 'contribute');
@@ -26,6 +29,7 @@ class PlaceListController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:80'],
             'color' => ['nullable', ...self::COLOR],
+            'icon' => ['nullable', ...self::ICON],
         ]);
 
         $count = $owner->placeLists()->count();
@@ -34,6 +38,7 @@ class PlaceListController extends Controller
             'name' => $validated['name'],
             // Each new list the next colour round
             'color' => $validated['color'] ?? PlaceList::COLORS[$count % count(PlaceList::COLORS)],
+            'icon' => $validated['icon'] ?? 'bookmark',
             'sort_order' => $count,
         ])->save();
 
@@ -47,6 +52,7 @@ class PlaceListController extends Controller
         $placeList->fill($request->validate([
             'name' => ['sometimes', 'string', 'max:80'],
             'color' => ['sometimes', ...self::COLOR],
+            'icon' => ['sometimes', ...self::ICON],
             'sort_order' => ['sometimes', 'integer', 'min:0'],
         ]))->save();
 
