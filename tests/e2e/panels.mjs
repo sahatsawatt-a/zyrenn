@@ -162,10 +162,7 @@ await runBoard('/demo/konva', async (b) => {
     );
     await loose().nth(0).click();
     await page.waitForTimeout(250);
-    check(
-        'only a frame has the PDF setting',
-        !(await pdfCheck.isVisible()),
-    );
+    check('only a frame has the PDF setting', !(await pdfCheck.isVisible()));
 
     // --- the inspector: labels, and what stays folded
     await loose().nth(0).click();
