@@ -8,7 +8,7 @@ import {
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import type { Ref } from 'vue';
 import type { BasemapId } from './maplibre';
-import { basemaps, startingBasemap, styleOf } from './maplibre';
+import { basemaps, styleOf } from './maplibre';
 
 // One MapLibre map in a container: the usual controls, the background map
 // chosen (and switched), and the page's own sources and layers put back each
@@ -30,7 +30,8 @@ export function useMap(
     options: MapOptions = {},
 ) {
     const map = shallowRef<MapLibreMap | null>(null);
-    const basemap = ref<BasemapId>(startingBasemap());
+    // The street map to start on, even in dark mode -- Dark is a click away
+    const basemap = ref<BasemapId>('map');
     const dark = () =>
         basemaps.find((each) => each.id === basemap.value)?.dark ?? false;
 

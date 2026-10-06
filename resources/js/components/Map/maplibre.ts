@@ -71,7 +71,3 @@ export const styleOf = (id: BasemapId): string | StyleSpecification => {
             return styleUrl('liberty');
     }
 };
-
-/** The background map to start on: the dark one in dark mode. */
-export const startingBasemap = (): BasemapId =>
-    document.documentElement.classList.contains('dark') ? 'dark' : 'map';
