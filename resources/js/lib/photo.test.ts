@@ -13,6 +13,9 @@ import {
     newHidden,
     pictureFrame,
     outputSize,
+    outputType,
+    saveScale,
+    straightenScale,
     turn,
     UNEDITED,
 } from './photo';
@@ -201,15 +204,21 @@ describe('hiding an area', () => {
     const middle = { x: 0.25, y: 0.25, width: 0.5, height: 0.5 };
 
     it('blacks a box out, and leaves what is round it', () => {
-        const done = hidePixels(board(), [{ ...middle, style: 'fill' }]);
+        const done = hidePixels(board(), [
+            { ...middle, style: 'fill', shape: 'rect' },
+        ]);
 
         expect([at(done, 20, 20), at(done, 21, 20)]).toEqual([24, 24]);
         expect([at(done, 0, 0), at(done, 1, 0)]).toEqual([0, 255]);
     });
 
     it('pixelates into even squares, and blurs to an even grey', () => {
-        const coarse = hidePixels(board(), [{ ...middle, style: 'pixelate' }]);
-        const soft = hidePixels(board(), [{ ...middle, style: 'blur' }]);
+        const coarse = hidePixels(board(), [
+            { ...middle, style: 'pixelate', shape: 'rect' },
+        ]);
+        const soft = hidePixels(board(), [
+            { ...middle, style: 'blur', shape: 'rect' },
+        ]);
 
         // Squares of 3 (a 40th of 40, at least 3) from the area's corner
         expect(at(coarse, 10, 10)).toBe(at(coarse, 11, 11));
@@ -229,10 +238,33 @@ describe('hiding an area', () => {
         expect(frame).toEqual({ x: -40, y: -0, width: 80, height: 40 });
         const done = hidePixels(
             board(),
-            [{ x: 0.75, y: 0, width: 0.05, height: 0.1, style: 'fill' }],
+            [
+                {
+                    x: 0.75,
+                    y: 0,
+                    width: 0.05,
+                    height: 0.1,
+                    style: 'fill',
+                    shape: 'rect',
+                },
+            ],
             frame,
         );
         expect([at(done, 20, 0), at(done, 19, 0)]).toEqual([24, 255]);
+    });
+
+    it('hides only inside its shape: an oval leaves the corners of its box', () => {
+        const done = hidePixels(board(), [
+            { ...middle, style: 'fill', shape: 'circle' },
+        ]);
+
+        // The middle of the box is blacked out; its corner is as it was
+        expect(at(done, 20, 20)).toBe(24);
+        expect([at(done, 10, 10), at(done, 11, 10)]).toEqual([0, 255]);
+        expect(
+            fullEdit({ hidden: [{ ...middle, style: 'blur' }] } as never)
+                .hidden[0].shape,
+        ).toBe('rect');
     });
 
     it('goes round and over with the picture, and counts as an edit', () => {
@@ -248,5 +280,47 @@ describe('hiding an area', () => {
         close(flip(edit, 'y').hidden[0] as never, { y: 1 - area.height });
         expect(isUnedited(edit)).toBe(false);
         expect(fullEdit({ rotate: 90 }).hidden).toEqual([]);
+    });
+});
+
+describe('straightening, shape and size', () => {
+    it('grows a straightened picture just enough to fill its frame', () => {
+        expect(straightenScale({ width: 100, height: 100 }, 45)).toBeCloseTo(
+            Math.SQRT2,
+        );
+        expect(straightenScale({ width: 200, height: 100 }, 0)).toBe(1);
+        // A wide picture tilted needs more than a square one
+        expect(
+            straightenScale({ width: 200, height: 100 }, 10),
+        ).toBeGreaterThan(straightenScale({ width: 100, height: 100 }, 10));
+    });
+
+    it('keeps the tilt as it turns, and leans the other way when flipped', () => {
+        const tilted = { ...UNEDITED, angle: 5 };
+
+        expect(turn(tilted, true).angle).toBe(5);
+        expect(flip(tilted, 'x').angle).toBe(-5);
+    });
+
+    it('saves a shape as PNG, to see through round it', () => {
+        expect(outputType('image/jpeg')).toBe('image/jpeg');
+        expect(outputType('image/jpeg', 'circle')).toBe('image/png');
+        expect(outputType('image/webp', 'rounded')).toBe('image/webp');
+    });
+
+    it('saves smaller when asked, and never larger', () => {
+        const big = { width: 4000, height: 2000 };
+
+        expect(
+            saveScale(big, { ...UNEDITED, maxSide: 1600 }, 'image/jpeg'),
+        ).toBe(0.4);
+        expect(
+            saveScale(
+                { width: 400, height: 200 },
+                { ...UNEDITED, maxSide: 1600 },
+                'image/png',
+            ),
+        ).toBe(1);
+        expect(saveScale(big, UNEDITED, 'image/jpeg')).toBe(1);
     });
 });

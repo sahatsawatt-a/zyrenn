@@ -380,8 +380,11 @@ class DriveTest extends TestCase
             'warmth' => '-20',
             'vignette' => '40',
             'hidden' => [
-                ['x' => '0.1', 'y' => '0.2', 'width' => '0.3', 'height' => '0.1', 'style' => 'fill'],
+                ['x' => '0.1', 'y' => '0.2', 'width' => '0.3', 'height' => '0.1', 'style' => 'fill', 'shape' => 'circle'],
             ],
+            'angle' => '-2.5',
+            'shape' => 'circle',
+            'maxSide' => '1600',
         ];
     }
 
@@ -411,7 +414,10 @@ class DriveTest extends TestCase
             ->assertJsonPath('source.ref_id', $original->ref_id)
             ->assertJsonPath('edit.saturation', 80)
             ->assertJsonPath('edit.warmth', -20)
-            ->assertJsonPath('edit.hidden.0', ['x' => 0.1, 'y' => 0.2, 'width' => 0.3, 'height' => 0.1, 'style' => 'fill']);
+            ->assertJsonPath('edit.angle', -2.5)
+            ->assertJsonPath('edit.shape', 'circle')
+            ->assertJsonPath('edit.maxSide', 1600)
+            ->assertJsonPath('edit.hidden.0', ['x' => 0.1, 'y' => 0.2, 'width' => 0.3, 'height' => 0.1, 'style' => 'fill', 'shape' => 'circle']);
 
         // The Drive says which is a copy of which
         $this->actingAs($user)->get(route('drive.index', ['folder' => $folder->ref_id]))
@@ -457,10 +463,14 @@ class DriveTest extends TestCase
                 'rotate' => '45',
                 'brightness' => '900',
                 'warmth' => '-101',
+                'angle' => '60',
+                'shape' => 'star',
+                'maxSide' => '999',
                 'hidden' => [['x' => '2', 'y' => '0', 'width' => '0.1', 'height' => '0.1', 'style' => 'erase']],
             ],
         ])->assertUnprocessable()->assertJsonValidationErrors([
             'edit.rotate', 'edit.brightness', 'edit.warmth', 'edit.hidden.0.x', 'edit.hidden.0.style',
+            'edit.angle', 'edit.shape', 'edit.maxSide',
         ]);
 
         $this->actingAs($user)->postJson(route('drive.photo-edits.store'), [

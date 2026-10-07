@@ -2,6 +2,7 @@
 import {
     Aperture,
     Blend,
+    Circle,
     Contrast,
     Droplet,
     Eye,
@@ -9,10 +10,12 @@ import {
     FlipVertical2,
     Grid3x3,
     LoaderCircle,
+    RectangleHorizontal,
     Redo2,
     RotateCcw,
     RotateCw,
     Square,
+    Squircle,
     Sun,
     Thermometer,
     Undo2,
@@ -20,6 +23,12 @@ import {
 import type { Component } from 'vue';
 import { computed, ref, shallowRef, watch } from 'vue';
 import { Button } from '@/components/ui/button';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+} from '@/components/ui/select';
 import {
     Dialog,
     DialogContent,
@@ -29,7 +38,14 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { driveRefOf, photoOriginal, savePhotoEdit } from '@/lib/drive';
-import type { HideStyle, Light, LightKey, PhotoEdit, Size } from '@/lib/photo';
+import type {
+    HideStyle,
+    Light,
+    LightKey,
+    PhotoEdit,
+    Shape,
+    Size,
+} from '@/lib/photo';
 import {
     flip,
     fractionRatio,
@@ -37,7 +53,10 @@ import {
     isUnedited,
     largestCrop,
     newHidden,
+    outputSize,
     renderPhoto,
+    SAVE_SIZES,
+    saveScale,
     turn,
     turnedSize,
     UNEDITED,
@@ -218,6 +237,54 @@ const chooseRatio = (id: string) => {
     }
 
     record();
+};
+
+const shapes: { shape: Shape; label: string; icon: Component }[] = [
+    { shape: 'rect', label: 'Rectangle', icon: RectangleHorizontal },
+    { shape: 'rounded', label: 'Rounded', icon: Squircle },
+    { shape: 'circle', label: 'Circle', icon: Circle },
+];
+
+/** A circle starts square; any other ratio can be chosen after. */
+const chooseShape = (shape: Shape) => {
+    edit.value = { ...edit.value, shape };
+
+    if (shape === 'circle' && ratio.value !== '1:1') {
+        chooseRatio('1:1');
+    } else {
+        record();
+    }
+};
+
+const setAngle = (angle: number) => {
+    edit.value = { ...edit.value, angle };
+};
+
+/** The size to save at, as the select holds it. */
+const saveSize = computed({
+    get: () => String(edit.value.maxSide),
+    set: (value: string) => {
+        edit.value = { ...edit.value, maxSide: Number(value) };
+        record();
+    },
+});
+
+const sizeName = computed(
+    () =>
+        SAVE_SIZES.find((option) => option.value === edit.value.maxSide)
+            ?.label ?? 'Full size',
+);
+
+/** How large each size comes out, in pixels, for this picture as edited. */
+const sizeLabel = (maxSide: number) => {
+    const sized = { ...edit.value, maxSide };
+    const out = outputSize(
+        size.value,
+        sized,
+        saveScale(size.value, sized, mime.value),
+    );
+
+    return `${out.width} × ${out.height}`;
 };
 
 const turnBy = (clockwise: boolean) => {
@@ -453,6 +520,25 @@ watch(open, (now) => now && begin(), { immediate: true });
                                 {{ each.label }}
                             </button>
                         </div>
+                        <div class="mt-1.5 grid grid-cols-3 gap-1">
+                            <button
+                                v-for="each in shapes"
+                                :key="each.shape"
+                                type="button"
+                                class="flex items-center justify-center gap-1 rounded-md border px-1 py-1 text-xs"
+                                :class="
+                                    edit.shape === each.shape
+                                        ? 'bg-primary text-primary-foreground border-primary'
+                                        : 'hover:bg-accent'
+                                "
+                                :aria-pressed="edit.shape === each.shape"
+                                :data-test="`shape-${each.shape}`"
+                                @click="chooseShape(each.shape)"
+                            >
+                                <component :is="each.icon" class="size-3.5" />
+                                {{ each.label }}
+                            </button>
+                        </div>
                     </section>
 
                     <section>
@@ -499,6 +585,39 @@ watch(open, (now) => now && begin(), { immediate: true });
                                 <FlipVertical2 class="size-4" />
                             </Button>
                         </div>
+                        <label class="mt-3 block">
+                            <span
+                                class="text-muted-foreground mb-1 flex items-center text-xs"
+                            >
+                                Straighten
+                                <span class="ml-auto tabular-nums"
+                                    >{{ edit.angle > 0 ? '+' : ''
+                                    }}{{ edit.angle }}°</span
+                                >
+                            </span>
+                            <input
+                                type="range"
+                                min="-45"
+                                max="45"
+                                step="0.5"
+                                class="accent-primary w-full"
+                                :value="edit.angle"
+                                data-test="straighten"
+                                @input="
+                                    setAngle(
+                                        Number(
+                                            ($event.target as HTMLInputElement)
+                                                .value,
+                                        ),
+                                    )
+                                "
+                                @change="record"
+                                @dblclick="
+                                    setAngle(0);
+                                    record();
+                                "
+                            />
+                        </label>
                     </section>
 
                     <section>
@@ -617,6 +736,34 @@ watch(open, (now) => now && begin(), { immediate: true });
                     </Button>
                 </div>
                 <div class="flex gap-2">
+                    <Select v-model="saveSize">
+                        <SelectTrigger
+                            class="w-44"
+                            aria-label="Size to save at"
+                            data-test="save-size"
+                        >
+                            <!-- Its own words: the size follows the picture as it changes -->
+                            <span class="truncate">
+                                {{ sizeName }}
+                                <span class="text-muted-foreground">{{
+                                    sizeLabel(edit.maxSide)
+                                }}</span>
+                            </span>
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem
+                                v-for="option in SAVE_SIZES"
+                                :key="option.value"
+                                :value="String(option.value)"
+                                :data-test="`save-size-${option.value}`"
+                            >
+                                {{ option.label }}
+                                <span class="text-muted-foreground text-xs">
+                                    {{ sizeLabel(option.value) }}
+                                </span>
+                            </SelectItem>
+                        </SelectContent>
+                    </Select>
                     <Button variant="outline" @click="open = false"
                         >Cancel</Button
                     >

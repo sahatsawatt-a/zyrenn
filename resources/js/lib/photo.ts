@@ -1,8 +1,9 @@
 // The photo editor's arithmetic: what an edit is, how the crop box moves and
 // turns with the picture, and how the edited picture is drawn. An edit is
-// applied in one order -- turn, then flip, then the areas hidden, then crop,
-// then light and colour -- and the crop and the hidden areas are in fractions
-// of the turned picture, so they hold at any size.
+// applied in one order -- turn, then flip, then straighten, then the areas
+// hidden, then crop, then light and colour, then the shape cut out -- and the
+// crop and the hidden areas are in fractions of the turned picture, so they
+// hold at any size.
 
 export interface Rect {
     x: number;
@@ -30,13 +31,71 @@ export interface PhotoEdit {
     vignette: number;
     /** Areas blurred, pixelated or blacked out -- a face, a password. */
     hidden: Hidden[];
+    /**
+     * Degrees to straighten by, -45 to 45, clockwise -- the picture growing
+     * just enough that no corner is left empty.
+     */
+    angle: number;
+    /** The shape cut out of the crop; anything but a rectangle is see-through round it. */
+    shape: Shape;
+    /** The longest side to save at, in pixels, never larger; 0 for as it is. */
+    maxSide: number;
 }
+
+export type Shape = 'rect' | 'rounded' | 'circle';
+
+/** The sizes offered to save at, by their longest side. */
+export const SAVE_SIZES: { value: number; label: string }[] = [
+    { value: 0, label: 'Full size' },
+    { value: 2560, label: 'Large' },
+    { value: 1600, label: 'Medium' },
+    { value: 1024, label: 'Small' },
+];
 
 export type HideStyle = 'blur' | 'pixelate' | 'fill';
 
 export interface Hidden extends Rect {
     style: HideStyle;
+    /** Only what is inside the shape is hidden: an oval for a face, say. */
+    shape: Shape;
 }
+
+/** A rounded hidden area's corners, as a share of its shorter side. */
+export const HIDDEN_ROUNDING = 0.25;
+
+/**
+ * Whether the middle of a pixel is inside a shape drawn in a box -- an oval
+ * for a circle, corners cut round for rounded.
+ */
+export const inShape = (
+    shape: Shape,
+    box: Rect,
+    x: number,
+    y: number,
+    rounding = HIDDEN_ROUNDING,
+) => {
+    const across = x + 0.5 - (box.x + box.width / 2);
+    const down = y + 0.5 - (box.y + box.height / 2);
+
+    if (shape === 'circle') {
+        return (
+            (across / (box.width / 2)) ** 2 + (down / (box.height / 2)) ** 2 <=
+            1
+        );
+    }
+
+    if (shape === 'rounded') {
+        const radius = Math.min(box.width, box.height) * rounding;
+        const pastX = Math.abs(across) - (box.width / 2 - radius);
+        const pastY = Math.abs(down) - (box.height / 2 - radius);
+
+        return (
+            pastX <= 0 || pastY <= 0 || pastX ** 2 + pastY ** 2 <= radius ** 2
+        );
+    }
+
+    return true;
+};
 
 /** The parts of an edit that are light and colour rather than shape. */
 export type LightKey =
@@ -66,6 +125,9 @@ export const UNEDITED: PhotoEdit = {
     warmth: 0,
     vignette: 0,
     hidden: [],
+    angle: 0,
+    shape: 'rect',
+    maxSide: 0,
 };
 
 /** An edit as kept, filled out to the whole of an edit today. */
@@ -75,7 +137,10 @@ export const fullEdit = (
     ...UNEDITED,
     ...edit,
     crop: { ...WHOLE, ...edit?.crop },
-    hidden: edit?.hidden ?? [],
+    hidden: (edit?.hidden ?? []).map((area) => ({
+        ...area,
+        shape: area.shape ?? 'rect',
+    })),
 });
 
 /** Looks to start from: light and colour only, the crop left alone. */
@@ -158,6 +223,8 @@ export const turn = (edit: PhotoEdit, clockwise: boolean): PhotoEdit => ({
 export const flip = (edit: PhotoEdit, across: 'x' | 'y'): PhotoEdit => ({
     ...edit,
     ...(across === 'x' ? { flipX: !edit.flipX } : { flipY: !edit.flipY }),
+    // A tilt seen in a mirror leans the other way
+    angle: edit.angle ? -edit.angle : 0,
     crop: flipRect(edit.crop, across),
     hidden: edit.hidden.map((area) => flipRect(area, across)),
 });
@@ -165,6 +232,7 @@ export const flip = (edit: PhotoEdit, across: 'x' | 'y'): PhotoEdit => ({
 /** A new area to hide: a box in the middle of what the crop keeps. */
 export const newHidden = (crop: Rect, style: HideStyle): Hidden => ({
     style,
+    shape: 'rect',
     x: crop.x + crop.width * 0.35,
     y: crop.y + crop.height * 0.4,
     width: crop.width * 0.3,
@@ -348,6 +416,23 @@ export const hidePixels = <
             continue;
         }
 
+        // A shape keeps what is outside it: kept now, put back after
+        const box = {
+            x: frame.x + area.x * frame.width,
+            y: frame.y + area.y * frame.height,
+            width: area.width * frame.width,
+            height: area.height * frame.height,
+        };
+        const kept =
+            area.shape === 'rect'
+                ? null
+                : Array.from({ length: bottom - top }, (_, row) =>
+                      data.slice(
+                          ((top + row) * width + left) * 4,
+                          ((top + row) * width + right) * 4,
+                      ),
+                  );
+
         if (area.style === 'fill') {
             for (let y = top; y < bottom; y++) {
                 for (let x = left; x < right; x++) {
@@ -360,6 +445,20 @@ export const hidePixels = <
             pixelate(data, width, left, top, right, bottom, block);
         } else {
             blur(data, width, left, top, right, bottom, block);
+        }
+
+        if (kept) {
+            for (let y = top; y < bottom; y++) {
+                for (let x = left; x < right; x++) {
+                    if (!inShape(area.shape, box, x, y)) {
+                        const from = (x - left) * 4;
+                        data.set(
+                            kept[y - top].subarray(from, from + 4),
+                            (y * width + x) * 4,
+                        );
+                    }
+                }
+            }
         }
     }
 
@@ -586,6 +685,21 @@ export const outputSize = (size: Size, edit: PhotoEdit, scale = 1): Size => {
  * The picture turned, flipped and cropped onto a canvas, at `scale` of its
  * own pixels. `whole` leaves the crop out, for showing the crop box over it.
  */
+/**
+ * How much larger a picture straightened by `angle` degrees has to be drawn
+ * for it to still fill its own frame, with no empty corner.
+ */
+export const straightenScale = (size: Size, angle: number) => {
+    const turnBy = (Math.abs(angle) * Math.PI) / 180;
+    const cos = Math.cos(turnBy);
+    const sin = Math.sin(turnBy);
+
+    return Math.max(
+        cos + (size.height / size.width) * sin,
+        cos + (size.width / size.height) * sin,
+    );
+};
+
 export const drawPhoto = (
     image: CanvasImageSource,
     size: Size,
@@ -602,8 +716,17 @@ export const drawPhoto = (
     const context = canvas.getContext('2d')!;
     context.imageSmoothingQuality = 'high';
     context.scale(scale, scale);
-    // Last first: the image is turned, then flipped, then cut to the crop
+    // Last first: the image is turned, then flipped, then straightened, then
+    // cut to the crop
     context.translate(-crop.x * turned.width, -crop.y * turned.height);
+
+    if (edit.angle) {
+        const grow = straightenScale(turned, edit.angle);
+        context.translate(turned.width / 2, turned.height / 2);
+        context.rotate((edit.angle * Math.PI) / 180);
+        context.scale(grow, grow);
+        context.translate(-turned.width / 2, -turned.height / 2);
+    }
 
     if (edit.flipX) {
         context.translate(turned.width, 0);
@@ -632,38 +755,94 @@ export const drawPhoto = (
 const MOST_PIXELS = 16_777_216;
 
 /** What an edited picture is saved as: PNG keeps a see-through background. */
-export const outputType = (mime: string | null | undefined) =>
-    mime === 'image/jpeg'
-        ? 'image/jpeg'
-        : mime === 'image/webp'
-          ? 'image/webp'
+export const outputType = (
+    mime: string | null | undefined,
+    shape: Shape = 'rect',
+) =>
+    mime === 'image/webp'
+        ? 'image/webp'
+        : mime === 'image/jpeg' && shape === 'rect'
+          ? 'image/jpeg'
           : 'image/png';
 
+/** A rounded crop's corners, as a share of its shorter side. */
+export const ROUNDING = 0.08;
+
+/** Everything outside the shape made see-through. */
+const cutShape = (canvas: HTMLCanvasElement, shape: Shape) => {
+    if (shape === 'rect') {
+        return;
+    }
+
+    const context = canvas.getContext('2d')!;
+    const { width, height } = canvas;
+    context.save();
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.globalCompositeOperation = 'destination-in';
+    context.beginPath();
+
+    if (shape === 'circle') {
+        context.ellipse(
+            width / 2,
+            height / 2,
+            width / 2,
+            height / 2,
+            0,
+            0,
+            Math.PI * 2,
+        );
+    } else {
+        context.roundRect(
+            0,
+            0,
+            width,
+            height,
+            Math.min(width, height) * ROUNDING,
+        );
+    }
+
+    context.fill();
+    context.restore();
+};
+
 /**
- * The edited picture, ready to keep. A drawing (SVG) has no pixels of its
- * own, so it is drawn large enough to stay sharp.
+ * How large the edited picture is saved, against its own pixels: smaller
+ * when a size to save at is chosen (never larger), or past what a phone's
+ * browser will draw; a drawing (SVG) has no pixels of its own, so it is drawn
+ * large enough to stay sharp.
  */
+export const saveScale = (
+    size: Size,
+    edit: PhotoEdit,
+    mime: string | null | undefined,
+) => {
+    const full = outputSize(size, edit);
+    const longest = Math.max(full.width, full.height);
+
+    return Math.min(
+        mime === 'image/svg+xml' ? Math.max(1, 2000 / longest) : 1,
+        Math.sqrt(MOST_PIXELS / (full.width * full.height)),
+        edit.maxSide ? Math.min(1, edit.maxSide / longest) : Infinity,
+    );
+};
+
+/** The edited picture, ready to keep. */
 export const renderPhoto = async (
     image: CanvasImageSource,
     size: Size,
     edit: PhotoEdit,
     mime: string | null | undefined,
 ): Promise<{ blob: Blob; width: number; height: number }> => {
-    const full = outputSize(size, edit);
-    const drawing = mime === 'image/svg+xml';
-    const scale = Math.min(
-        drawing ? Math.max(1, 2000 / Math.max(full.width, full.height)) : 1,
-        Math.sqrt(MOST_PIXELS / (full.width * full.height)),
-    );
-
+    const scale = saveScale(size, edit, mime);
     const canvas = drawPhoto(image, size, edit, { scale });
     const context = canvas.getContext('2d')!;
     const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
     hidePixels(pixels, edit.hidden, pictureFrame(size, edit, scale));
     adjustPixels(pixels, edit);
     context.putImageData(pixels, 0, 0);
+    cutShape(canvas, edit.shape);
 
-    const type = outputType(mime);
+    const type = outputType(mime, edit.shape);
     const blob = await new Promise<Blob | null>((resolve) =>
         canvas.toBlob(resolve, type, 0.92),
     );

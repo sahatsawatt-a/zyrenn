@@ -43,6 +43,9 @@ class PhotoEditController extends Controller
             'edit.saturation' => ['required_with:edit', 'integer', 'between:0,200'],
             'edit.warmth' => ['required_with:edit', 'integer', 'between:-100,100'],
             'edit.vignette' => ['required_with:edit', 'integer', 'between:0,100'],
+            'edit.angle' => ['required_with:edit', 'numeric', 'between:-45,45'],
+            'edit.shape' => ['required_with:edit', 'string', 'in:rect,rounded,circle'],
+            'edit.maxSide' => ['required_with:edit', 'integer', 'in:0,1024,1600,2560'],
             // Areas blurred, pixelated or blacked out; a form sends none at all
             // when there are none
             'edit.hidden' => ['nullable', 'array', 'max:50'],
@@ -51,6 +54,7 @@ class PhotoEditController extends Controller
             'edit.hidden.*.width' => ['required', 'numeric', 'between:0,1'],
             'edit.hidden.*.height' => ['required', 'numeric', 'between:0,1'],
             'edit.hidden.*.style' => ['required', 'string', 'in:blur,pixelate,fill'],
+            'edit.hidden.*.shape' => ['nullable', 'string', 'in:rect,rounded,circle'],
         ]);
 
         // The picture the editor started from, if it is a Drive picture this
@@ -116,9 +120,13 @@ class PhotoEditController extends Controller
             'saturation' => (int) $edit['saturation'],
             'warmth' => (int) $edit['warmth'],
             'vignette' => (int) $edit['vignette'],
+            'angle' => (float) $edit['angle'],
+            'shape' => $edit['shape'],
+            'maxSide' => (int) $edit['maxSide'],
             'hidden' => array_map(fn (array $area) => [
                 ...array_map('floatval', array_intersect_key($area, array_flip(['x', 'y', 'width', 'height']))),
                 'style' => $area['style'],
+                'shape' => $area['shape'] ?? 'rect',
             ], array_values($edit['hidden'] ?? [])),
         ];
     }

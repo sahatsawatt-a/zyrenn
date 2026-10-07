@@ -1,14 +1,25 @@
 <script setup lang="ts">
 import { useElementSize } from '@vueuse/core';
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import { X } from '@lucide/vue';
-import type { HideStyle, Handle, PhotoEdit, Rect, Size } from '@/lib/photo';
+import { Circle, Square, Squircle, X } from '@lucide/vue';
+import type { Component } from 'vue';
+import type {
+    HideStyle,
+    Handle,
+    Hidden,
+    PhotoEdit,
+    Rect,
+    Shape,
+    Size,
+} from '@/lib/photo';
 import {
     adjustPixels,
     dragCrop,
     drawPhoto,
     HANDLES,
+    HIDDEN_ROUNDING,
     hidePixels,
+    ROUNDING,
     turnedSize,
     UNEDITED,
 } from '@/lib/photo';
@@ -113,6 +124,7 @@ watch(
         view.value.rotate,
         view.value.flipX,
         view.value.flipY,
+        view.value.angle,
         Math.round(shown.value.width),
     ],
     rebuild,
@@ -271,11 +283,54 @@ const rest = (event: KeyboardEvent) => {
     }
 };
 
+const reshape = (index: number, shape: Shape) => {
+    edit.value = {
+        ...edit.value,
+        hidden: edit.value.hidden.map((area, each) =>
+            each === index ? { ...area, shape } : area,
+        ),
+    };
+    emit('settle');
+};
+
+const AREA_SHAPES: { shape: Shape; label: string; icon: Component }[] = [
+    { shape: 'rect', label: 'Rectangle', icon: Square },
+    { shape: 'rounded', label: 'Rounded', icon: Squircle },
+    { shape: 'circle', label: 'Oval', icon: Circle },
+];
+
+/** A hidden area's box drawn in its shape. */
+const areaRounding = (area: Hidden) =>
+    area.shape === 'circle'
+        ? '50%'
+        : area.shape === 'rounded'
+          ? `${
+                Math.min(
+                    area.width * shown.value.width,
+                    area.height * shown.value.height,
+                ) * HIDDEN_ROUNDING
+            }px`
+          : '0';
+
 const STYLES: Record<HideStyle, string> = {
     blur: 'Blur',
     pixelate: 'Pixelate',
     fill: 'Black box',
 };
+
+/** The crop box drawn in the shape it will be cut to. */
+const cropRounding = computed(() =>
+    edit.value.shape === 'circle'
+        ? '50%'
+        : edit.value.shape === 'rounded'
+          ? `${
+                Math.min(
+                    edit.value.crop.width * shown.value.width,
+                    edit.value.crop.height * shown.value.height,
+                ) * ROUNDING
+            }px`
+          : '0',
+);
 
 /** A box's place on the picture, as percentages. */
 const boxAt = (rect: Rect) => ({
@@ -329,7 +384,11 @@ const handleAt = (handle: Handle) => ({
                 role="group"
                 aria-label="Crop box. Drag it or its handles; arrow keys move it."
                 data-test="photo-crop"
-                :style="{ ...boxAt(edit.crop), cursor: 'move' }"
+                :style="{
+                    ...boxAt(edit.crop),
+                    borderRadius: cropRounding,
+                    cursor: 'move',
+                }"
                 @pointerdown="grab('crop', 'move', $event)"
                 @keydown="nudge('crop', $event)"
                 @keyup="rest"
@@ -354,7 +413,11 @@ const handleAt = (handle: Handle) => ({
                     role="group"
                     :aria-label="`${STYLES[area.style]}. Drag it or its handles; arrow keys move it, Delete takes it away.`"
                     :data-test="`hidden-${index}`"
-                    :style="{ ...boxAt(area), cursor: 'move' }"
+                    :style="{
+                        ...boxAt(area),
+                        borderRadius: areaRounding(area),
+                        cursor: 'move',
+                    }"
                     @pointerdown.stop="grab(index, 'move', $event)"
                     @keydown="nudge(index, $event)"
                     @keyup="rest"
@@ -370,16 +433,30 @@ const handleAt = (handle: Handle) => ({
                             :style="handleAt(handle)"
                             @pointerdown.stop="grab(index, handle, $event)"
                         />
-                        <button
-                            type="button"
-                            class="photo-hidden-remove"
-                            :aria-label="`Take the ${STYLES[area.style].toLowerCase()} away`"
-                            data-test="hidden-remove"
-                            @pointerdown.stop
-                            @click.stop="remove(index)"
-                        >
-                            <X class="size-3" />
-                        </button>
+                        <div class="photo-hidden-tools" @pointerdown.stop>
+                            <button
+                                v-for="each in AREA_SHAPES"
+                                :key="each.shape"
+                                type="button"
+                                :class="area.shape === each.shape && 'is-on'"
+                                :title="each.label"
+                                :aria-label="each.label"
+                                :aria-pressed="area.shape === each.shape"
+                                :data-test="`hidden-shape-${each.shape}`"
+                                @click.stop="reshape(index, each.shape)"
+                            >
+                                <component :is="each.icon" class="size-3" />
+                            </button>
+                            <button
+                                type="button"
+                                :aria-label="`Take the ${STYLES[area.style].toLowerCase()} away`"
+                                title="Take it away"
+                                data-test="hidden-remove"
+                                @click.stop="remove(index)"
+                            >
+                                <X class="size-3" />
+                            </button>
+                        </div>
                     </template>
                 </div>
             </template>
@@ -462,22 +539,33 @@ const handleAt = (handle: Handle) => ({
     pointer-events: none;
     white-space: nowrap;
 }
-.photo-hidden-remove {
+.photo-hidden-tools {
     /* Above the box, clear of its handles */
     position: absolute;
-    top: -30px;
+    bottom: calc(100% + 10px);
     left: 50%;
-    margin-left: -10px;
+    display: flex;
+    gap: 1px;
+    padding: 2px;
+    transform: translateX(-50%);
+    border-radius: 6px;
+    background: var(--background);
+    color: var(--foreground);
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.3);
+    cursor: default;
+}
+.photo-hidden-tools button {
     display: flex;
     align-items: center;
     justify-content: center;
     width: 20px;
     height: 20px;
-    border-radius: 9999px;
-    background: var(--background);
-    color: var(--foreground);
-    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.3);
+    border-radius: 4px;
     cursor: pointer;
+}
+.photo-hidden-tools button:hover,
+.photo-hidden-tools button.is-on {
+    background: var(--accent);
 }
 .photo-handle.is-small {
     width: 10px;
