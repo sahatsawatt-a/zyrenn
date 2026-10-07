@@ -2,9 +2,6 @@
 import {
     ChevronLeft,
     ChevronRight,
-    ClipboardCopy,
-    Download,
-    HardDrive,
     Maximize,
     Minus,
     PanelLeftOpen,
@@ -48,22 +45,12 @@ import {
     Transformer,
 } from 'vue-konva';
 import BoardNode from './BoardNode.vue';
+import FrameMenu from './FrameMenu.vue';
 import InspectorPanel from './InspectorPanel.vue';
 import LayersPanel from './LayersPanel.vue';
 import { isImageFile, uploadToDrive } from '@/lib/drive';
 import MediaPickerDialog from '@/components/media/MediaPickerDialog.vue';
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { deliver } from '@/lib/exporting';
-import { toast } from 'vue-sonner';
 import MediaViewer from '@/components/media/MediaViewer.vue';
-import { useMediaViewer } from '@/composables/useMediaViewer';
 import BoardOverlay from './BoardOverlay.vue';
 import BoardFormulae from './BoardFormulae.vue';
 import BoardShortcuts from './BoardShortcuts.vue';
@@ -99,7 +86,8 @@ import { useConnectorEnds } from '@/features/boards/composables/useConnectorEnds
 import { useDrawing } from '@/features/boards/composables/useDrawing';
 import { useShortcuts } from '@/features/boards/composables/useShortcuts';
 import { usePictures } from '@/features/boards/composables/usePictures';
-import { VIDEO_PLAY, useVideos } from '@/features/boards/composables/useVideos';
+import { useVideos } from '@/features/boards/composables/useVideos';
+import { useVideoControls } from '@/features/boards/composables/useVideoControls';
 import { useBoard } from '@/features/boards/composables/useBoard';
 import { useCamera } from '@/features/boards/composables/useCamera';
 import {
@@ -403,18 +391,6 @@ const onStagePointerDown = (event: Konva.KonvaEventObject<PointerEvent>) => {
 
 // --------------------------------------------------- A frame, right-clicked
 const frameMenu = ref<{ frame: Item; x: number; y: number } | null>(null);
-const frameMenuOpen = computed({
-    get: () => frameMenu.value !== null,
-    set: (open) => {
-        if (!open) frameMenu.value = null;
-    },
-});
-
-// Copying a picture is a newer thing than downloading one
-const canCopyPicture =
-    typeof window !== 'undefined' &&
-    'ClipboardItem' in window &&
-    !!navigator.clipboard?.write;
 
 /** The frame a board point is on -- the topmost, where frames overlap. */
 const frameAt = (point: { x: number; y: number }): Item | null => {
@@ -451,36 +427,6 @@ const onContextMenu = (event: Konva.KonvaEventObject<PointerEvent>) => {
     event.evt.preventDefault();
     frameMenu.value = { frame, x: point.x, y: point.y };
 };
-
-const frameName = (frame: Item) => frame.text?.trim() || 'Frame';
-
-async function saveFrame(to: 'download' | 'drive' | 'copy'): Promise<void> {
-    const frame = frameMenu.value?.frame;
-    const draw = props.pictureOfFrame;
-
-    if (!frame || !draw) {
-        return;
-    }
-
-    const loading = toast.loading(`Drawing “${frameName(frame)}”…`);
-
-    try {
-        if (to === 'copy') {
-            // Handed the drawing still to come, so the copy keeps the click
-            // that asked for it while the server draws
-            await navigator.clipboard.write([
-                new ClipboardItem({ 'image/png': draw(frame) }),
-            ]);
-            toast.success(`Copied “${frameName(frame)}” as a picture`);
-        } else {
-            await deliver(await draw(frame), to);
-        }
-    } catch (error) {
-        toast.error((error as Error).message);
-    } finally {
-        toast.dismiss(loading);
-    }
-}
 
 // ------------------------------------------------------------------ Pictures
 const {
@@ -589,96 +535,14 @@ const videos = useVideos(
     () => contentLayer.value?.getNode(),
 );
 
-const viewer = useMediaViewer();
-
-/** The video item a click landed on, if it landed on one. */
-const videoAt = (event: Konva.KonvaEventObject<MouseEvent>) => {
-    const id = event.target.id() || event.target.getParent()?.id();
-    const item = id ? board.byId.value.get(id) : undefined;
-
-    return item?.kind === 'video' ? item : undefined;
-};
-
-// A click on a video's play button plays it, and so does any click on one
-// while presenting. Clicking the selected video pauses it; otherwise a click
-// is the usual select.
-const onClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
-    const video = videoAt(event);
-
-    if (video && tool.value === 'select') {
-        const chosen =
-            board.selection.value.length === 1 &&
-            board.selection.value[0] === video.id;
-
-        if (
-            presenting.value ||
-            event.target.name() === VIDEO_PLAY ||
-            (chosen && videos.isPlaying(video.id))
-        ) {
-            videos.toggle(video.id);
-        }
-    }
-
-    onItemClick(event);
-};
-
-/** Watch a video full size, from wherever it had got to. */
-const expandVideo = (item: Item) => {
-    const element = videos.elementOf(item.id);
-
-    videos.pause(item.id);
-    viewer.open([
-        {
-            type: 'video',
-            src: item.src,
-            start: element?.currentTime,
-        },
-    ]);
-};
-
-// Double-clicking a video watches it full size; anything else is labelled
-const onDoubleClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
-    const video = videoAt(event);
-
-    if (video) {
-        expandVideo(video);
-
-        return;
-    }
-
-    onItemDoubleClick(event);
-};
-
-/** The one selected video, and where its controls go: just under it. */
-const videoBar = computed(() => {
-    const item = board.selected.value[0];
-
-    if (
-        presenting.value ||
-        board.selected.value.length !== 1 ||
-        item?.kind !== 'video'
-    ) {
-        return null;
-    }
-
-    const element = videos.elementOf(item.id);
-
-    if (!element) {
-        return null;
-    }
-
-    const scale = camera.scale.value;
-    const { x, y } = camera.position.value;
-
-    return {
-        item,
-        element,
-        style: {
-            left: `${item.x * scale + x}px`,
-            top: `${(item.y + item.height) * scale + y + 10}px`,
-            width: `${Math.max(300, item.width * scale)}px`,
-        },
-    };
+const { onClick, onDoubleClick, expandVideo, videoBar } = useVideoControls({
+    board,
+    videos,
+    camera,
+    tool,
+    presenting,
+    onItemClick,
+    onItemDoubleClick,
 });
 
 onMounted(() => {
@@ -958,49 +822,11 @@ const connectorPath = (item: Item) =>
             />
 
             <!-- What a right-click on a frame offers, where it was clicked -->
-            <DropdownMenu v-model:open="frameMenuOpen" :modal="false">
-                <DropdownMenuTrigger as-child>
-                    <span
-                        class="pointer-events-none absolute size-0"
-                        :style="{
-                            left: `${frameMenu?.x ?? 0}px`,
-                            top: `${frameMenu?.y ?? 0}px`,
-                        }"
-                    />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                    align="start"
-                    class="w-56"
-                    data-test="frame-menu"
-                >
-                    <DropdownMenuLabel class="truncate">
-                        {{ frameMenu ? frameName(frameMenu.frame) : '' }}
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                        data-test="frame-download"
-                        @select="saveFrame('download')"
-                    >
-                        <Download />
-                        Download picture
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                        v-if="canCopyPicture"
-                        data-test="frame-copy"
-                        @select="saveFrame('copy')"
-                    >
-                        <ClipboardCopy />
-                        Copy picture
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                        data-test="frame-drive"
-                        @select="saveFrame('drive')"
-                    >
-                        <HardDrive />
-                        Save picture to Drive
-                    </DropdownMenuItem>
-                </DropdownMenuContent>
-            </DropdownMenu>
+            <FrameMenu
+                v-if="pictureOfFrame"
+                v-model="frameMenu"
+                :picture-of-frame="pictureOfFrame"
+            />
 
             <!-- The tools, along the bottom middle so the sides keep the panels -->
             <div
