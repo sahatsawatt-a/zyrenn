@@ -5,9 +5,11 @@ import type { Light, LightKey, PhotoEdit, Size } from '@/lib/photo';
 import {
     adjustPixels,
     drawPhoto,
+    hidePixels,
     LOOKS,
     lookLight,
     outputSize,
+    pictureFrame,
 } from '@/lib/photo';
 
 // Looks to start from, each shown on the picture as it is cropped: picking
@@ -32,11 +34,14 @@ const thumbnails = ref<Record<string, string>>({});
 
 const draw = () => {
     const out = outputSize(props.size, props.edit);
-    const small = drawPhoto(props.image, props.size, props.edit, {
-        scale: 96 / Math.max(out.width, out.height),
-    });
+    const scale = 96 / Math.max(out.width, out.height);
+    const small = drawPhoto(props.image, props.size, props.edit, { scale });
     const context = small.getContext('2d')!;
-    const base = context.getImageData(0, 0, small.width, small.height);
+    const base = hidePixels(
+        context.getImageData(0, 0, small.width, small.height),
+        props.edit.hidden,
+        pictureFrame(props.size, props.edit, scale),
+    );
 
     thumbnails.value = Object.fromEntries(
         LOOKS.map((look) => {
@@ -65,6 +70,7 @@ watch(
         props.edit.flipX,
         props.edit.flipY,
         JSON.stringify(props.edit.crop),
+        JSON.stringify(props.edit.hidden),
     ],
     useDebounceFn(draw, 150),
     { immediate: true },

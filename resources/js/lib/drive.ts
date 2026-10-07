@@ -154,6 +154,20 @@ export async function photoOriginal(ref: string): Promise<{
     return response.json();
 }
 
+/** Nested values as PHP reads a form: edit[crop][x], edit[hidden][0][style]. */
+const appendFields = (body: FormData, name: string, value: unknown) => {
+    if (value !== null && typeof value === 'object') {
+        for (const [key, each] of Object.entries(value)) {
+            appendFields(body, `${name}[${key}]`, each);
+        }
+    } else {
+        body.append(
+            name,
+            String(typeof value === 'boolean' ? Number(value) : value),
+        );
+    }
+};
+
 /**
  * Keep a picture from the photo editor in the Drive of wherever the page is,
  * as made from `source` (a Drive picture's ref_id) by `edit`.
@@ -170,19 +184,7 @@ export async function savePhotoEdit(
 
     if (source) {
         body.append('source', source);
-
-        for (const [key, value] of Object.entries(edit)) {
-            if (key === 'crop') {
-                for (const [side, fraction] of Object.entries(edit.crop)) {
-                    body.append(`edit[crop][${side}]`, String(fraction));
-                }
-            } else {
-                body.append(
-                    `edit[${key}]`,
-                    String(typeof value === 'boolean' ? Number(value) : value),
-                );
-            }
-        }
+        appendFields(body, 'edit', edit);
     }
 
     const response = await fetch(

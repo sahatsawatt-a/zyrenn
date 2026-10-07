@@ -43,6 +43,14 @@ class PhotoEditController extends Controller
             'edit.saturation' => ['required_with:edit', 'integer', 'between:0,200'],
             'edit.warmth' => ['required_with:edit', 'integer', 'between:-100,100'],
             'edit.vignette' => ['required_with:edit', 'integer', 'between:0,100'],
+            // Areas blurred, pixelated or blacked out; a form sends none at all
+            // when there are none
+            'edit.hidden' => ['nullable', 'array', 'max:50'],
+            'edit.hidden.*.x' => ['required', 'numeric', 'between:0,1'],
+            'edit.hidden.*.y' => ['required', 'numeric', 'between:0,1'],
+            'edit.hidden.*.width' => ['required', 'numeric', 'between:0,1'],
+            'edit.hidden.*.height' => ['required', 'numeric', 'between:0,1'],
+            'edit.hidden.*.style' => ['required', 'string', 'in:blur,pixelate,fill'],
         ]);
 
         // The picture the editor started from, if it is a Drive picture this
@@ -108,6 +116,10 @@ class PhotoEditController extends Controller
             'saturation' => (int) $edit['saturation'],
             'warmth' => (int) $edit['warmth'],
             'vignette' => (int) $edit['vignette'],
+            'hidden' => array_map(fn (array $area) => [
+                ...array_map('floatval', array_intersect_key($area, array_flip(['x', 'y', 'width', 'height']))),
+                'style' => $area['style'],
+            ], array_values($edit['hidden'] ?? [])),
         ];
     }
 }

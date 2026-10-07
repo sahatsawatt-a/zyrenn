@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import { useElementSize } from '@vueuse/core';
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import type { Handle, PhotoEdit, Size } from '@/lib/photo';
+import { X } from '@lucide/vue';
+import type { HideStyle, Handle, PhotoEdit, Rect, Size } from '@/lib/photo';
 import {
     adjustPixels,
     dragCrop,
     drawPhoto,
     HANDLES,
+    hidePixels,
     turnedSize,
     UNEDITED,
 } from '@/lib/photo';
 
 // The picture being edited, drawn by the same arithmetic that makes the saved
-// one -- so what is seen is what is kept -- with the crop box over it, moved
-// by dragging or the arrow keys. Comparing shows the original, untouched.
+// one -- so what is seen is what is kept -- with the crop box over it and a
+// box for each area hidden, each moved by dragging or the arrow keys. The
+// chosen hidden area can be taken away with its button or Delete. Comparing
+// shows the original, untouched.
 
 const props = defineProps<{
     image: HTMLImageElement;
@@ -66,6 +70,7 @@ const paint = () => {
 
         if (!props.comparing) {
             const { crop } = edit.value;
+            hidePixels(pixels, edit.value.hidden);
             adjustPixels(pixels, edit.value, {
                 x: crop.x * base.width,
                 y: crop.y * base.height,
@@ -124,28 +129,65 @@ watch(
         edit.value.warmth,
         edit.value.vignette,
         edit.value.vignette ? JSON.stringify(edit.value.crop) : '',
+        JSON.stringify(edit.value.hidden),
     ],
     paint,
 );
 
 onBeforeUnmount(() => cancelAnimationFrame(frame));
 
-// ---- the crop box ----
+// ---- the crop box, and the hidden areas ----
+
+/** What is being moved: the crop box, or a hidden area by its place. */
+type Target = 'crop' | number;
+
+/** The hidden area chosen, to move with the keys or take away. */
+const chosen = ref<number | null>(null);
+
+// One just added is the one chosen; one gone is chosen no longer
+watch(
+    () => edit.value.hidden.length,
+    (now, before) => {
+        if (now > before) {
+            chosen.value = now - 1;
+        } else if (chosen.value !== null && chosen.value >= now) {
+            chosen.value = null;
+        }
+    },
+);
+
+const rectOf = (target: Target): Rect =>
+    target === 'crop' ? edit.value.crop : edit.value.hidden[target];
+
+const place = (target: Target, rect: Rect) => {
+    edit.value =
+        target === 'crop'
+            ? { ...edit.value, crop: rect }
+            : {
+                  ...edit.value,
+                  hidden: edit.value.hidden.map((area, index) =>
+                      index === target ? { ...area, ...rect } : area,
+                  ),
+              };
+};
 
 let dragging: {
+    target: Target;
     handle: Handle;
     x: number;
     y: number;
-    crop: PhotoEdit['crop'];
+    rect: Rect;
 } | null = null;
 
-const grab = (handle: Handle, event: PointerEvent) => {
+const grab = (target: Target, handle: Handle, event: PointerEvent) => {
     (event.currentTarget as Element).setPointerCapture(event.pointerId);
+    chosen.value = target === 'crop' ? null : target;
     dragging = {
+        target,
         handle,
         x: event.clientX,
         y: event.clientY,
-        crop: edit.value.crop,
+        rect: rectOf(target),
     };
 };
 
@@ -154,16 +196,16 @@ const drag = (event: PointerEvent) => {
         return;
     }
 
-    edit.value = {
-        ...edit.value,
-        crop: dragCrop(
-            dragging.crop,
+    place(
+        dragging.target,
+        dragCrop(
+            dragging.rect,
             dragging.handle,
             (event.clientX - dragging.x) / shown.value.width,
             (event.clientY - dragging.y) / shown.value.height,
-            props.ratio,
+            dragging.target === 'crop' ? props.ratio : null,
         ),
-    };
+    );
 };
 
 const drop = () => {
@@ -180,8 +222,30 @@ const ARROWS: Record<string, [number, number]> = {
     ArrowDown: [0, 1],
 };
 
-/** An arrow key moves the box a pixel as shown; with Shift, ten. */
-const nudge = (event: KeyboardEvent) => {
+const remove = (index: number) => {
+    edit.value = {
+        ...edit.value,
+        hidden: edit.value.hidden.filter((_, each) => each !== index),
+    };
+    chosen.value = null;
+    emit('settle');
+};
+
+/**
+ * An arrow key moves the box a pixel as shown; with Shift, ten. Delete takes
+ * a hidden area away.
+ */
+const nudge = (target: Target, event: KeyboardEvent) => {
+    if (
+        target !== 'crop' &&
+        (event.key === 'Delete' || event.key === 'Backspace')
+    ) {
+        event.preventDefault();
+        remove(target);
+
+        return;
+    }
+
     const arrow = ARROWS[event.key];
 
     if (!arrow) {
@@ -190,15 +254,15 @@ const nudge = (event: KeyboardEvent) => {
 
     event.preventDefault();
     const step = event.shiftKey ? 10 : 1;
-    edit.value = {
-        ...edit.value,
-        crop: dragCrop(
-            edit.value.crop,
+    place(
+        target,
+        dragCrop(
+            rectOf(target),
             'move',
             (arrow[0] * step) / shown.value.width,
             (arrow[1] * step) / shown.value.height,
         ),
-    };
+    );
 };
 
 const rest = (event: KeyboardEvent) => {
@@ -206,6 +270,20 @@ const rest = (event: KeyboardEvent) => {
         emit('settle');
     }
 };
+
+const STYLES: Record<HideStyle, string> = {
+    blur: 'Blur',
+    pixelate: 'Pixelate',
+    fill: 'Black box',
+};
+
+/** A box's place on the picture, as percentages. */
+const boxAt = (rect: Rect) => ({
+    left: `${rect.x * 100}%`,
+    top: `${rect.y * 100}%`,
+    width: `${rect.width * 100}%`,
+    height: `${rect.height * 100}%`,
+});
 
 const cursors: Record<Handle, string> = {
     move: 'move',
@@ -251,15 +329,9 @@ const handleAt = (handle: Handle) => ({
                 role="group"
                 aria-label="Crop box. Drag it or its handles; arrow keys move it."
                 data-test="photo-crop"
-                :style="{
-                    left: `${edit.crop.x * 100}%`,
-                    top: `${edit.crop.y * 100}%`,
-                    width: `${edit.crop.width * 100}%`,
-                    height: `${edit.crop.height * 100}%`,
-                    cursor: 'move',
-                }"
-                @pointerdown="grab('move', $event)"
-                @keydown="nudge"
+                :style="{ ...boxAt(edit.crop), cursor: 'move' }"
+                @pointerdown="grab('crop', 'move', $event)"
+                @keydown="nudge('crop', $event)"
                 @keyup="rest"
             >
                 <span class="photo-thirds" />
@@ -269,9 +341,48 @@ const handleAt = (handle: Handle) => ({
                     class="photo-handle"
                     :data-test="`crop-${handle}`"
                     :style="handleAt(handle)"
-                    @pointerdown.stop="grab(handle, $event)"
+                    @pointerdown.stop="grab('crop', handle, $event)"
                 />
             </div>
+            <template v-if="!comparing">
+                <div
+                    v-for="(area, index) in edit.hidden"
+                    :key="index"
+                    class="photo-hidden absolute"
+                    :class="chosen === index && 'is-chosen'"
+                    tabindex="0"
+                    role="group"
+                    :aria-label="`${STYLES[area.style]}. Drag it or its handles; arrow keys move it, Delete takes it away.`"
+                    :data-test="`hidden-${index}`"
+                    :style="{ ...boxAt(area), cursor: 'move' }"
+                    @pointerdown.stop="grab(index, 'move', $event)"
+                    @keydown="nudge(index, $event)"
+                    @keyup="rest"
+                >
+                    <span class="photo-hidden-label">{{
+                        STYLES[area.style]
+                    }}</span>
+                    <template v-if="chosen === index">
+                        <span
+                            v-for="handle in HANDLES"
+                            :key="handle"
+                            class="photo-handle is-small"
+                            :style="handleAt(handle)"
+                            @pointerdown.stop="grab(index, handle, $event)"
+                        />
+                        <button
+                            type="button"
+                            class="photo-hidden-remove"
+                            :aria-label="`Take the ${STYLES[area.style].toLowerCase()} away`"
+                            data-test="hidden-remove"
+                            @pointerdown.stop
+                            @click.stop="remove(index)"
+                        >
+                            <X class="size-3" />
+                        </button>
+                    </template>
+                </div>
+            </template>
         </div>
         <slot />
     </div>
@@ -330,6 +441,48 @@ const handleAt = (handle: Handle) => ({
             rgb(255 255 255 / 0.45) calc(66.66% + 0.5px),
             transparent calc(66.66% + 0.5px)
         );
+}
+
+.photo-hidden {
+    outline: 1.5px dashed rgb(255 255 255 / 0.85);
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35);
+}
+.photo-hidden.is-chosen,
+.photo-hidden:focus-visible {
+    outline: 2px solid var(--primary);
+}
+.photo-hidden-label {
+    position: absolute;
+    top: 2px;
+    left: 4px;
+    font-size: 10px;
+    line-height: 1.2;
+    color: white;
+    text-shadow: 0 0 3px rgb(0 0 0 / 0.8);
+    pointer-events: none;
+    white-space: nowrap;
+}
+.photo-hidden-remove {
+    /* Above the box, clear of its handles */
+    position: absolute;
+    top: -30px;
+    left: 50%;
+    margin-left: -10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 9999px;
+    background: var(--background);
+    color: var(--foreground);
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.3);
+    cursor: pointer;
+}
+.photo-handle.is-small {
+    width: 10px;
+    height: 10px;
+    margin: -5px 0 0 -5px;
 }
 
 .photo-handle {

@@ -1,7 +1,8 @@
 // The photo editor's arithmetic: what an edit is, how the crop box moves and
 // turns with the picture, and how the edited picture is drawn. An edit is
-// applied in one order -- turn, then flip, then crop, then light and colour --
-// and the crop is in fractions of the turned picture, so it holds at any size.
+// applied in one order -- turn, then flip, then the areas hidden, then crop,
+// then light and colour -- and the crop and the hidden areas are in fractions
+// of the turned picture, so they hold at any size.
 
 export interface Rect {
     x: number;
@@ -27,6 +28,14 @@ export interface PhotoEdit {
     warmth: number;
     /** How dark the corners are drawn, from 0 to 100. */
     vignette: number;
+    /** Areas blurred, pixelated or blacked out -- a face, a password. */
+    hidden: Hidden[];
+}
+
+export type HideStyle = 'blur' | 'pixelate' | 'fill';
+
+export interface Hidden extends Rect {
+    style: HideStyle;
 }
 
 /** The parts of an edit that are light and colour rather than shape. */
@@ -56,13 +65,17 @@ export const UNEDITED: PhotoEdit = {
     saturation: 100,
     warmth: 0,
     vignette: 0,
+    hidden: [],
 };
 
 /** An edit as kept, filled out to the whole of an edit today. */
-export const fullEdit = (edit: Partial<PhotoEdit> | null | undefined) => ({
+export const fullEdit = (
+    edit: Partial<PhotoEdit> | null | undefined,
+): PhotoEdit => ({
     ...UNEDITED,
     ...edit,
     crop: { ...WHOLE, ...edit?.crop },
+    hidden: edit?.hidden ?? [],
 });
 
 /** Looks to start from: light and colour only, the crop left alone. */
@@ -101,7 +114,9 @@ export const isUnedited = (edit: PhotoEdit) =>
             ? (['x', 'y', 'width', 'height'] as const).every(
                   (side) => Math.abs(edit.crop[side] - WHOLE[side]) < 1e-6,
               )
-            : edit[key] === UNEDITED[key],
+            : key === 'hidden'
+              ? edit.hidden.length === 0
+              : edit[key] === UNEDITED[key],
     );
 
 /** The picture's size once turned: a quarter turn swaps its sides. */
@@ -111,40 +126,50 @@ export const turnedSize = (size: Size, rotate: Turn): Size =>
 const clamp = (value: number, least: number, most: number) =>
     Math.min(most, Math.max(least, value));
 
+/** A box on the picture, where it is once the picture turns a quarter. */
+const turnRect = <R extends Rect>(rect: R, clockwise: boolean): R => {
+    const { x, y, width, height } = rect;
+
+    return clockwise
+        ? { ...rect, x: 1 - (y + height), y: x, width: height, height: width }
+        : { ...rect, x: y, y: 1 - (x + width), width: height, height: width };
+};
+
+/** A box on the picture, where it is once the picture is mirrored. */
+const flipRect = <R extends Rect>(rect: R, across: 'x' | 'y'): R =>
+    across === 'x'
+        ? { ...rect, x: 1 - (rect.x + rect.width) }
+        : { ...rect, y: 1 - (rect.y + rect.height) };
+
 /**
- * A quarter turn of the whole picture, the crop going round with it. A flip
- * turned a quarter is the other flip, so the two swap.
+ * A quarter turn of the whole picture, the crop and the hidden areas going
+ * round with it. A flip turned a quarter is the other flip, so the two swap.
  */
-export const turn = (edit: PhotoEdit, clockwise: boolean): PhotoEdit => {
-    const { x, y, width, height } = edit.crop;
+export const turn = (edit: PhotoEdit, clockwise: boolean): PhotoEdit => ({
+    ...edit,
+    rotate: ((edit.rotate + (clockwise ? 90 : 270)) % 360) as Turn,
+    flipX: edit.flipY,
+    flipY: edit.flipX,
+    crop: turnRect(edit.crop, clockwise),
+    hidden: edit.hidden.map((area) => turnRect(area, clockwise)),
+});
 
-    return {
-        ...edit,
-        rotate: ((edit.rotate + (clockwise ? 90 : 270)) % 360) as Turn,
-        flipX: edit.flipY,
-        flipY: edit.flipX,
-        crop: clockwise
-            ? { x: 1 - (y + height), y: x, width: height, height: width }
-            : { x: y, y: 1 - (x + width), width: height, height: width },
-    };
-};
+/** A mirror of the picture as it is seen, the boxes on it mirrored with it. */
+export const flip = (edit: PhotoEdit, across: 'x' | 'y'): PhotoEdit => ({
+    ...edit,
+    ...(across === 'x' ? { flipX: !edit.flipX } : { flipY: !edit.flipY }),
+    crop: flipRect(edit.crop, across),
+    hidden: edit.hidden.map((area) => flipRect(area, across)),
+});
 
-/** A mirror of the picture as it is seen, the crop mirrored with it. */
-export const flip = (edit: PhotoEdit, across: 'x' | 'y'): PhotoEdit => {
-    const { crop } = edit;
-
-    return across === 'x'
-        ? {
-              ...edit,
-              flipX: !edit.flipX,
-              crop: { ...crop, x: 1 - (crop.x + crop.width) },
-          }
-        : {
-              ...edit,
-              flipY: !edit.flipY,
-              crop: { ...crop, y: 1 - (crop.y + crop.height) },
-          };
-};
+/** A new area to hide: a box in the middle of what the crop keeps. */
+export const newHidden = (crop: Rect, style: HideStyle): Hidden => ({
+    style,
+    x: crop.x + crop.width * 0.35,
+    y: crop.y + crop.height * 0.4,
+    width: crop.width * 0.3,
+    height: crop.height * 0.2,
+});
 
 /**
  * A width-to-height ratio in pixels, as a ratio of the crop's fractions --
@@ -262,6 +287,205 @@ export const dragCrop = (
         width,
         height,
     };
+};
+
+/**
+ * Where the whole turned picture lies in pixels drawn of it: all of them for
+ * the whole picture, or reaching past them when they are of the crop.
+ */
+export const pictureFrame = (
+    size: Size,
+    edit: PhotoEdit,
+    scale: number,
+    whole = false,
+): Rect => {
+    const turned = turnedSize(size, edit.rotate);
+    const crop = whole ? WHOLE : edit.crop;
+
+    return {
+        x: -crop.x * turned.width * scale,
+        y: -crop.y * turned.height * scale,
+        width: turned.width * scale,
+        height: turned.height * scale,
+    };
+};
+
+/** The darkness a black box is filled with. */
+const INK = 24;
+
+/**
+ * The hidden areas put into the pixels. How coarse the pixels and how wide
+ * the blur go by the picture's own size (a 40th of its shorter side), not
+ * the area's, so the preview and the saved picture look alike -- and only
+ * what is inside an area is used, so nothing of it leaks back from around it.
+ */
+export const hidePixels = <
+    P extends { data: Uint8ClampedArray; width: number; height: number },
+>(
+    pixels: P,
+    hidden: Hidden[],
+    frame: Rect = { x: 0, y: 0, width: pixels.width, height: pixels.height },
+) => {
+    const { data, width, height } = pixels;
+    const block = Math.max(
+        3,
+        Math.round(Math.min(frame.width, frame.height) / 40),
+    );
+
+    for (const area of hidden) {
+        const left = Math.max(0, Math.floor(frame.x + area.x * frame.width));
+        const top = Math.max(0, Math.floor(frame.y + area.y * frame.height));
+        const right = Math.min(
+            width,
+            Math.ceil(frame.x + (area.x + area.width) * frame.width),
+        );
+        const bottom = Math.min(
+            height,
+            Math.ceil(frame.y + (area.y + area.height) * frame.height),
+        );
+
+        if (right <= left || bottom <= top) {
+            continue;
+        }
+
+        if (area.style === 'fill') {
+            for (let y = top; y < bottom; y++) {
+                for (let x = left; x < right; x++) {
+                    const i = (y * width + x) * 4;
+                    data[i] = data[i + 1] = data[i + 2] = INK;
+                    data[i + 3] = 255;
+                }
+            }
+        } else if (area.style === 'pixelate') {
+            pixelate(data, width, left, top, right, bottom, block);
+        } else {
+            blur(data, width, left, top, right, bottom, block);
+        }
+    }
+
+    return pixels;
+};
+
+/** Each square of the area, from its top-left corner, made its average. */
+const pixelate = (
+    data: Uint8ClampedArray,
+    width: number,
+    left: number,
+    top: number,
+    right: number,
+    bottom: number,
+    block: number,
+) => {
+    for (let y0 = top; y0 < bottom; y0 += block) {
+        for (let x0 = left; x0 < right; x0 += block) {
+            const y1 = Math.min(bottom, y0 + block);
+            const x1 = Math.min(right, x0 + block);
+            const sum = [0, 0, 0, 0];
+
+            for (let y = y0; y < y1; y++) {
+                for (let x = x0; x < x1; x++) {
+                    const i = (y * width + x) * 4;
+                    sum[0] += data[i];
+                    sum[1] += data[i + 1];
+                    sum[2] += data[i + 2];
+                    sum[3] += data[i + 3];
+                }
+            }
+
+            const count = (y1 - y0) * (x1 - x0);
+
+            for (let y = y0; y < y1; y++) {
+                for (let x = x0; x < x1; x++) {
+                    const i = (y * width + x) * 4;
+                    data[i] = sum[0] / count;
+                    data[i + 1] = sum[1] / count;
+                    data[i + 2] = sum[2] / count;
+                    data[i + 3] = sum[3] / count;
+                }
+            }
+        }
+    }
+};
+
+/**
+ * A box blur, three times over each way -- near enough a Gaussian -- kept to
+ * the area: at its edges it reaches only as far as the area does.
+ */
+const blur = (
+    data: Uint8ClampedArray,
+    width: number,
+    left: number,
+    top: number,
+    right: number,
+    bottom: number,
+    radius: number,
+) => {
+    const across = right - left;
+    const down = bottom - top;
+    const area = new Float32Array(across * down * 4);
+
+    for (let y = 0; y < down; y++) {
+        for (let x = 0; x < across; x++) {
+            const from = ((top + y) * width + left + x) * 4;
+            area.set(data.subarray(from, from + 4), (y * across + x) * 4);
+        }
+    }
+
+    // One run along a line of `length` pixels, `step` apart in `area`
+    const line = new Float32Array(Math.max(across, down) * 4);
+    const pass = (start: number, step: number, length: number) => {
+        for (let k = 0; k < length; k++) {
+            line.set(
+                area.subarray(start + k * step, start + k * step + 4),
+                k * 4,
+            );
+        }
+
+        for (let channel = 0; channel < 4; channel++) {
+            let sum = 0;
+            let count = 0;
+
+            for (let k = 0; k < Math.min(radius, length); k++) {
+                sum += line[k * 4 + channel];
+                count++;
+            }
+
+            for (let k = 0; k < length; k++) {
+                const enter = k + radius;
+                const leave = k - radius - 1;
+
+                if (enter < length) {
+                    sum += line[enter * 4 + channel];
+                    count++;
+                }
+
+                if (leave >= 0) {
+                    sum -= line[leave * 4 + channel];
+                    count--;
+                }
+
+                area[start + k * step + channel] = sum / count;
+            }
+        }
+    };
+
+    for (let round = 0; round < 3; round++) {
+        for (let y = 0; y < down; y++) {
+            pass(y * across * 4, 4, across);
+        }
+
+        for (let x = 0; x < across; x++) {
+            pass(x * 4, across * 4, down);
+        }
+    }
+
+    for (let y = 0; y < down; y++) {
+        for (let x = 0; x < across; x++) {
+            const to = ((top + y) * width + left + x) * 4;
+            const from = (y * across + x) * 4;
+            data.set(area.subarray(from, from + 4), to);
+        }
+    }
 };
 
 /**
@@ -435,6 +659,7 @@ export const renderPhoto = async (
     const canvas = drawPhoto(image, size, edit, { scale });
     const context = canvas.getContext('2d')!;
     const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    hidePixels(pixels, edit.hidden, pictureFrame(size, edit, scale));
     adjustPixels(pixels, edit);
     context.putImageData(pixels, 0, 0);
 

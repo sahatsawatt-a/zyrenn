@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import {
     Aperture,
+    Blend,
     Contrast,
     Droplet,
     Eye,
     FlipHorizontal2,
     FlipVertical2,
+    Grid3x3,
     LoaderCircle,
     Redo2,
     RotateCcw,
     RotateCw,
+    Square,
     Sun,
     Thermometer,
     Undo2,
@@ -26,13 +29,14 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { driveRefOf, photoOriginal, savePhotoEdit } from '@/lib/drive';
-import type { Light, LightKey, PhotoEdit, Size } from '@/lib/photo';
+import type { HideStyle, Light, LightKey, PhotoEdit, Size } from '@/lib/photo';
 import {
     flip,
     fractionRatio,
     fullEdit,
     isUnedited,
     largestCrop,
+    newHidden,
     renderPhoto,
     turn,
     turnedSize,
@@ -226,6 +230,21 @@ const turnBy = (clockwise: boolean) => {
 
 const flipAcross = (across: 'x' | 'y') => {
     edit.value = flip(edit.value, across);
+    record();
+};
+
+const hideStyles: { style: HideStyle; label: string; icon: Component }[] = [
+    { style: 'blur', label: 'Blur', icon: Blend },
+    { style: 'pixelate', label: 'Pixelate', icon: Grid3x3 },
+    { style: 'fill', label: 'Black box', icon: Square },
+];
+
+/** A box to hide something under, in the middle of what the crop keeps. */
+const hideArea = (style: HideStyle) => {
+    edit.value = {
+        ...edit.value,
+        hidden: [...edit.value.hidden, newHidden(edit.value.crop, style)],
+    };
     record();
 };
 
@@ -479,6 +498,27 @@ watch(open, (now) => now && begin(), { immediate: true });
                             >
                                 <FlipVertical2 class="size-4" />
                             </Button>
+                        </div>
+                    </section>
+
+                    <section>
+                        <h3 class="mb-1 text-xs font-medium">Hide</h3>
+                        <p class="text-muted-foreground mb-2 text-xs">
+                            Cover a face, a number plate or a password. A black
+                            box hides text for certain.
+                        </p>
+                        <div class="grid grid-cols-3 gap-1">
+                            <button
+                                v-for="each in hideStyles"
+                                :key="each.style"
+                                type="button"
+                                class="hover:bg-accent flex flex-col items-center gap-1 rounded-md border px-1 py-1.5 text-xs"
+                                :data-test="`hide-${each.style}`"
+                                @click="hideArea(each.style)"
+                            >
+                                <component :is="each.icon" class="size-4" />
+                                {{ each.label }}
+                            </button>
                         </div>
                     </section>
 

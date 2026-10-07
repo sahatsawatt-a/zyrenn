@@ -354,4 +354,73 @@ await runBoard('/demo/konva', async (ctx) => {
                 'none',
     );
     await page.screenshot({ path: `${SHOTS}/photo-editor-drive.png` });
+
+    // ---- hiding an area ----
+
+    await card('quarters.png').hover();
+    await card('quarters.png')
+        .getByRole('button', { name: 'File actions' })
+        .click();
+    await byTest('edit-photo').click();
+    await byTest('photo-crop').waitFor();
+    await page.waitForTimeout(400);
+
+    // A black box, dragged onto the red quarter
+    await byTest('hide-fill').click();
+    const area = await byTest('hidden-0').boundingBox();
+    const whole = await byTest('photo-picture').boundingBox();
+    await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+        whole.x + whole.width * 0.25,
+        whole.y + whole.height * 0.25,
+        { steps: 8 },
+    );
+    await page.mouse.up();
+
+    // A second, taken away with Delete -- and back, and away again
+    const areas = '[data-test^="hidden-"]:not([data-test="hidden-remove"])';
+    await byTest('hide-pixelate').click();
+    await byTest('hidden-1').focus();
+    await page.keyboard.press('Delete');
+    const afterDelete = await page.locator(areas).count();
+    await page.keyboard.press('Control+z');
+    const afterUndo = await page.locator(areas).count();
+    await page.keyboard.press('Control+Shift+z');
+    check(
+        'a hidden area is added, taken away with Delete, and undone',
+        afterDelete === 1 &&
+            afterUndo === 2 &&
+            (await page.locator(areas).count()) === 1,
+        `${afterDelete} → ${afterUndo}`,
+    );
+
+    // It goes round with the picture: top left, turned right, is top right
+    await byTest('turn-right').click();
+    await page.waitForTimeout(300);
+    const turnedArea = await byTest('hidden-0').getAttribute('style');
+    check(
+        'the hidden area turns with the picture',
+        Number(turnedArea.match(/left: ([\d.]+)%/)[1]) > 50,
+        turnedArea,
+    );
+    await page.screenshot({ path: `${SHOTS}/photo-editor-hide.png` });
+    await byTest('photo-save').click();
+    await byTest('photo-editor').waitFor({ state: 'detached' });
+    await page.waitForTimeout(1500);
+
+    const hiddenCopy = await page
+        .locator('div.group', {
+            has: page.locator('[data-test="edited-from"]'),
+        })
+        .first()
+        .locator('img')
+        .getAttribute('src');
+    const covered = await read(hiddenCopy);
+    check(
+        'the black box is in the saved picture, where it was put',
+        covered.size === '200×400' &&
+            covered.corners === 'blue grey yellow green',
+        `${covered.size}: ${covered.corners}`,
+    );
 });

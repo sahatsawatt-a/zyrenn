@@ -5,10 +5,13 @@ import {
     flip,
     fractionRatio,
     fullEdit,
+    hidePixels,
     isUnedited,
     largestCrop,
     LOOKS,
     lookLight,
+    newHidden,
+    pictureFrame,
     outputSize,
     turn,
     UNEDITED,
@@ -178,5 +181,72 @@ describe('light and colour', () => {
         expect(kept.warmth).toBe(0);
         expect(kept.crop).toEqual({ x: 0.5, y: 0, width: 1, height: 1 });
         expect(lookLight(LOOKS[1].light).saturation).toBe(0);
+    });
+});
+
+describe('hiding an area', () => {
+    // A 40×40 checkerboard of black and white single pixels
+    const board = () => {
+        const data = new Uint8ClampedArray(40 * 40 * 4);
+
+        for (let i = 0; i < 40 * 40; i++) {
+            const on = ((i % 40) + Math.floor(i / 40)) % 2 ? 255 : 0;
+            data.set([on, on, on, 255], i * 4);
+        }
+
+        return { data, width: 40, height: 40 };
+    };
+    const at = (pixels: { data: Uint8ClampedArray }, x: number, y: number) =>
+        pixels.data[(y * 40 + x) * 4];
+    const middle = { x: 0.25, y: 0.25, width: 0.5, height: 0.5 };
+
+    it('blacks a box out, and leaves what is round it', () => {
+        const done = hidePixels(board(), [{ ...middle, style: 'fill' }]);
+
+        expect([at(done, 20, 20), at(done, 21, 20)]).toEqual([24, 24]);
+        expect([at(done, 0, 0), at(done, 1, 0)]).toEqual([0, 255]);
+    });
+
+    it('pixelates into even squares, and blurs to an even grey', () => {
+        const coarse = hidePixels(board(), [{ ...middle, style: 'pixelate' }]);
+        const soft = hidePixels(board(), [{ ...middle, style: 'blur' }]);
+
+        // Squares of 3 (a 40th of 40, at least 3) from the area's corner
+        expect(at(coarse, 10, 10)).toBe(at(coarse, 11, 11));
+        expect(Math.abs(at(soft, 20, 20) - 127)).toBeLessThan(20);
+        expect(Math.abs(at(soft, 21, 20) - 127)).toBeLessThan(20);
+        expect(at(soft, 9, 9)).toBe(255 * (18 % 2));
+    });
+
+    it('is drawn where it lies on the picture, when the pixels are of the crop', () => {
+        const edit = {
+            ...UNEDITED,
+            crop: { x: 0.5, y: 0, width: 0.5, height: 1 },
+        };
+        const frame = pictureFrame({ width: 80, height: 40 }, edit, 1);
+
+        // The right half of an 80-wide picture: the area at x 0.75 is at 20
+        expect(frame).toEqual({ x: -40, y: -0, width: 80, height: 40 });
+        const done = hidePixels(
+            board(),
+            [{ x: 0.75, y: 0, width: 0.05, height: 0.1, style: 'fill' }],
+            frame,
+        );
+        expect([at(done, 20, 0), at(done, 19, 0)]).toEqual([24, 255]);
+    });
+
+    it('goes round and over with the picture, and counts as an edit', () => {
+        const area = newHidden({ x: 0, y: 0, width: 1, height: 1 }, 'blur');
+        const edit = { ...UNEDITED, hidden: [{ ...area, x: 0, y: 0 }] };
+
+        close(turn(edit, true).hidden[0] as never, {
+            x: 1 - area.height,
+            y: 0,
+            width: area.height,
+            height: area.width,
+        });
+        close(flip(edit, 'y').hidden[0] as never, { y: 1 - area.height });
+        expect(isUnedited(edit)).toBe(false);
+        expect(fullEdit({ rotate: 90 }).hidden).toEqual([]);
     });
 });
