@@ -56,6 +56,33 @@ export const SUMMABLE: ColumnType[] = [
     'formula',
 ];
 
+// How each kind is kept, as TableStorage::STORAGE has it on the server. A
+// column can only become a kind kept the same way: anything else would mean
+// converting every value in it, which the server refuses.
+const STORAGE: Record<ColumnType, string> = {
+    varchar: 'string',
+    email: 'string',
+    url: 'string',
+    phone: 'string',
+    select: 'string',
+    user: 'string',
+    text: 'text',
+    integer: 'integer',
+    percent: 'integer',
+    rating: 'integer',
+    numeric: 'decimal',
+    currency: 'decimal',
+    boolean: 'boolean',
+    date: 'date',
+    multi_select: 'json',
+    location: 'location',
+    formula: 'computed',
+};
+
+/** Whether a column of one kind can be switched to another as it stands. */
+export const canBecome = (from: ColumnType, to: ColumnType): boolean =>
+    STORAGE[from] === STORAGE[to];
+
 const ICONS = new Map(COLUMN_TYPES.map((kind) => [kind.type, kind.icon]));
 
 /** The icon a column's kind is drawn with. */

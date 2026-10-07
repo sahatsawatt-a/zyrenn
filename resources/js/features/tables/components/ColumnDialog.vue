@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import {
     COLUMN_TYPES,
     SUMMABLE,
+    canBecome,
 } from '@/features/tables/composables/columnTypes';
 import { SUMMARIES } from '@/features/tables/composables/formulas';
 import type { Tone } from '@/features/tables/composables/tones';
@@ -80,7 +81,10 @@ watch(open, (isOpen) => {
 
     label.value = props.column?.label ?? '';
     type.value = props.column?.type ?? 'varchar';
-    options.value = structuredClone(props.column?.options ?? []);
+    // A copy to change freely; the column's own are reactive, which structuredClone refuses
+    options.value = (props.column?.options ?? []).map((option) => ({
+        ...option,
+    }));
     // A formula is shown as money only when asked to be
     currencySymbol.value =
         props.column?.currencySymbol || (type.value === 'formula' ? '' : '$');
@@ -159,9 +163,8 @@ const remove = () => {
 // id; a formula is kept nowhere, so it stays a formula and nothing becomes one
 const canPick = (kind: ColumnType) =>
     !props.column ||
-    (!props.column.isPrimary &&
-        (kind === 'formula') === (props.column.type === 'formula')) ||
-    kind === props.column.type;
+    kind === props.column.type ||
+    (!props.column.isPrimary && canBecome(props.column.type, kind));
 
 const segment = (active: boolean) =>
     active

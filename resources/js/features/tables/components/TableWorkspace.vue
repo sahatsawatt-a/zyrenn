@@ -116,7 +116,7 @@ const saveColumn = (payload: {
     }
 
     if (editingColumn.value) {
-        store.updateColumn(editingColumn.value.name, {
+        void store.updateColumn(editingColumn.value.name, {
             label: payload.label,
             type: payload.type,
             options: payload.options,

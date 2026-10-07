@@ -88,6 +88,34 @@ await runBoard(
             await cell(0, 'budget').inputValue(),
         );
 
+        // A field is renamed, and offered only kinds its values are kept as
+        const kind = (type) =>
+            page.locator(`[data-test="column-type-${type}"]`);
+
+        await page
+            .locator('[data-test="column-header"][data-column="owner"]')
+            .hover();
+        await page
+            .locator(
+                '[data-test="column-header"][data-column="owner"] [data-test="column-menu"]',
+            )
+            .click();
+        await page.getByText(/edit field/i).click();
+        check(
+            'a text field may become an email, but not a number',
+            (await kind('email').isEnabled()) &&
+                !(await kind('integer').isEnabled()),
+        );
+        await page.locator('[data-test="column-label"]').fill('Lead');
+        await kind('email').click();
+        await page.locator('[data-test="column-save"]').click();
+        const edited = await saved();
+        check(
+            'editing a field saves it',
+            edited.startsWith('Saved') && (await headers()).includes('Lead'),
+            `${edited} / ${(await headers()).join(' | ')}`,
+        );
+
         await page.screenshot({ path: `${SHOTS}/tables-filled.png` });
 
         await page.reload({ waitUntil: 'networkidle' });
@@ -98,8 +126,9 @@ await runBoard(
                 TITLE,
         );
         check(
-            'and so do the columns',
-            (await headers()).join('|').match(/Owner.*Budget/i) !== null,
+            'and so do the columns, as edited',
+            (await headers()).join('|').match(/Lead.*Budget/i) !== null,
+            (await headers()).join(' | '),
         );
         check(
             'and what was typed',

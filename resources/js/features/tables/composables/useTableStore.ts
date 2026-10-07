@@ -1,4 +1,4 @@
-import { computed } from 'vue';
+import { computed, toRaw } from 'vue';
 import type {
     ColumnMeta,
     ColumnOption,
@@ -166,12 +166,20 @@ export function useTableStore() {
         }
     };
 
-    const updateColumn = (
+    const updateColumn = async (
         columnName: string,
         updates: Partial<ColumnMeta>,
-    ): void => {
+    ): Promise<void> => {
+        const column = columns.value.find((item) => item.name === columnName);
+        const before = column && structuredClone(toRaw(column));
+
         colModule.updateColumn(columnName, updates);
-        void sync.updateColumn(columnName, {
+
+        if (!sync.saving.value) {
+            return;
+        }
+
+        const saved = await sync.updateColumn(columnName, {
             label: updates.label,
             type: updates.type,
             options: updates.options,
@@ -179,6 +187,12 @@ export function useTableStore() {
             maxRating: updates.maxRating,
             summary: updates.summary,
         });
+        const at = columns.value.findIndex((item) => item.name === columnName);
+
+        // The server refused it: the column goes back to how it is stored
+        if (!saved && before && at !== -1) {
+            columns.value.splice(at, 1, before);
+        }
     };
 
     /**
