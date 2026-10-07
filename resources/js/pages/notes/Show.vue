@@ -12,15 +12,15 @@ import {
     watch,
     watchEffect,
 } from 'vue';
-import NoteToolbar from '@/components/Editor/NoteToolbar.vue';
-import TiptapEditor from '@/components/Editor/TiptapEditor.vue';
+import NoteToolbar from '@/features/notes/components/NoteToolbar.vue';
+import TiptapEditor from '@/features/notes/components/TiptapEditor.vue';
 import { fetchExport } from '@/lib/exporting';
 import { formatRelativeTime, xsrfToken } from '@/lib/utils';
-import PdfPreview from '@/components/PdfPreview.vue';
-import PresenceAvatars from '@/components/PresenceAvatars.vue';
+import PdfPreview from '@/components/media/PdfPreview.vue';
+import PresenceAvatars from '@/components/common/PresenceAvatars.vue';
 import { usePresence } from '@/composables/usePresence';
 import { sharingIsOn, useShared } from '@/composables/useShared';
-import { refreshValues, valuesNote } from '@/lib/noteValues';
+import { refreshValues, valuesNote } from '@/features/notes/lib/noteValues';
 import { canChange, owned } from '@/lib/projects';
 import { index as ownIndex, pdf, show, update } from '@/routes/notes';
 import { index as projectIndex } from '@/routes/projects/notes';

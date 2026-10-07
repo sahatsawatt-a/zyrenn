@@ -42,7 +42,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import TiptapEditor from '../../components/Editor/TiptapEditor.vue';
+import TiptapEditor from '@/features/notes/components/TiptapEditor.vue';
 
 const isDrawerOpen = ref<boolean>(false);
 

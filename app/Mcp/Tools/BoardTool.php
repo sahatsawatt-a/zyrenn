@@ -5,7 +5,7 @@ namespace App\Mcp\Tools;
 use App\Models\Board\Board;
 use App\Models\Board\BoardFolder;
 use App\Models\Owner;
-use App\Support\BoardItems;
+use App\Support\Board\BoardItems;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;

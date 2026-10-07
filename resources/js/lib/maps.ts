@@ -2,9 +2,9 @@
 // and -- through us, never straight from the browser -- place search, routes
 // and Google's details. Each answers with JSON; a refusal comes back as an
 // Error carrying the server's own words.
-import { socketHeaders } from '@/lib/live';
-import { owned } from '@/lib/projects';
-import { xsrfToken } from '@/lib/utils';
+import { socketHeaders } from './live';
+import { owned } from './projects';
+import { xsrfToken } from './utils';
 import * as services from '@/routes/map-services';
 import * as placeListRoutes from '@/routes/place-lists';
 import * as placeRoutes from '@/routes/places';

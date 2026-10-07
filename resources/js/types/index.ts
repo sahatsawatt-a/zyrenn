@@ -5,7 +5,7 @@ export * from './ui';
 export interface ColumnOption {
     id: string;
     value: string;
-    color: string; // A tone's name, like "amber" -- see composables/table/tones.ts
+    color: string; // A tone's name, like "amber" -- see features/tables/composables/tones.ts
 }
 
 export type ColumnType =

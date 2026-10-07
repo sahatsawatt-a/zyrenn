@@ -10,7 +10,7 @@
   `!important` because component styles are scoped and load after this file:
   on a tie, the later rule wins, and a lost tie prints a toolbar into the PDF.
 
-  Two styles, picked with `data-print-style` on <html> (App\Support\NotePdf):
+  Two styles, picked with `data-print-style` on <html> (App\Support\Note\NotePdf):
   the rules straight under @media print are both -- the Simple look, as on
   screen -- and the report section at the bottom is layered on top of them.
   Ctrl+P, with no style asked for, prints Simple.

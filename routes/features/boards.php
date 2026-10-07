@@ -32,7 +32,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->parameters(['board-folders' => 'folder']);
 });
 
-// The board drawn for the renderer (App\Support\BoardRender), which is signed
+// The board drawn for the renderer (App\Support\Board\BoardRender), which is signed
 // in as nobody: the signed link is all the leave it has, and it runs out
 Route::get('boards/{board}/render', [BoardRenderController::class, 'page'])
     ->middleware('signed:relative')

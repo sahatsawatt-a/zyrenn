@@ -17,8 +17,8 @@ import {
 } from '@lucide/vue';
 import { computed } from 'vue';
 import type { Component } from 'vue';
-import Panel from '@/components/dashboard/Panel.vue';
-import PageHeader from '@/components/folders/PageHeader.vue';
+import Panel from '@/features/dashboard/components/Panel.vue';
+import PageHeader from '@/components/common/PageHeader.vue';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

@@ -2,9 +2,9 @@ import type { VisitOptions } from '@inertiajs/core';
 import { router, setLayoutProps } from '@inertiajs/vue3';
 import { computed, watchEffect } from 'vue';
 import { toast } from 'vue-sonner';
-import { useDragMove } from '@/composables/useDragMove';
-import { useFolderDialogs } from '@/composables/useFolderDialogs';
-import type { FolderItem } from '@/composables/useFolderDialogs';
+import { useDragMove } from './useDragMove';
+import { useFolderDialogs } from './useFolderDialogs';
+import type { FolderItem } from './useFolderDialogs';
 import { canChange } from '@/lib/projects';
 import type { RouteDefinition, RouteQueryOptions } from '@/wayfinder';
 

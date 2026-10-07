@@ -1,6 +1,6 @@
 <?php
 
-use App\Support\TiptapMarkdown;
+use App\Support\Markdown\TiptapMarkdown;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;

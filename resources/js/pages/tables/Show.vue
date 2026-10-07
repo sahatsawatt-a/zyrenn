@@ -4,8 +4,8 @@ import { Check, Copy, Trash2 } from '@lucide/vue';
 import { toast } from 'vue-sonner';
 import { useDebounceFn, useEventListener } from '@vueuse/core';
 import { computed, onBeforeUnmount, ref, watch, watchEffect } from 'vue';
-import PresenceAvatars from '@/components/PresenceAvatars.vue';
-import TableWorkspace from '@/components/Table/TableWorkspace.vue';
+import PresenceAvatars from '@/components/common/PresenceAvatars.vue';
+import TableWorkspace from '@/features/tables/components/TableWorkspace.vue';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -17,15 +17,18 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
-import { removeRows, upsertRow } from '@/composables/table/useTableLive';
-import type { TableChange } from '@/composables/table/useTableLive';
+import {
+    removeRows,
+    upsertRow,
+} from '@/features/tables/composables/useTableLive';
+import type { TableChange } from '@/features/tables/composables/useTableLive';
 import {
     columns,
     parameters,
     people,
     rows,
-} from '@/composables/table/useTableState';
-import { useTableStore } from '@/composables/table/useTableStore';
+} from '@/features/tables/composables/useTableState';
+import { useTableStore } from '@/features/tables/composables/useTableStore';
 import { usePresence } from '@/composables/usePresence';
 import { copyToClipboard, formatRelativeTime } from '@/lib/utils';
 import { canChange, owned } from '@/lib/projects';

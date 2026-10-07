@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
 import { Bot, Plus } from '@lucide/vue';
-import RoomList from '@/components/chat/RoomList.vue';
-import EmptyState from '@/components/folders/EmptyState.vue';
-import PageHeader from '@/components/folders/PageHeader.vue';
+import RoomList from '@/features/chat/components/RoomList.vue';
+import EmptyState from '@/components/common/EmptyState.vue';
+import PageHeader from '@/components/common/PageHeader.vue';
 import { Button } from '@/components/ui/button';
 import { index, store } from '@/routes/chats';
 import { index as connectionsIndex } from '@/routes/ai-connections';

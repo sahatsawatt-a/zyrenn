@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Support\TiptapMarkdown;
+use App\Support\Markdown\TiptapMarkdown;
 use Tests\TestCase;
 
 class TiptapMarkdownTest extends TestCase

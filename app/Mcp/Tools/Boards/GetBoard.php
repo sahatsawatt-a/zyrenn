@@ -4,9 +4,9 @@ namespace App\Mcp\Tools\Boards;
 
 use App\Mcp\Tools\BoardTool;
 use App\Models\Board\Board;
-use App\Support\BoardItems;
-use App\Support\BoardParts;
-use App\Support\BoardRender;
+use App\Support\Board\BoardItems;
+use App\Support\Board\BoardParts;
+use App\Support\Board\BoardRender;
 use App\Support\Live\Collab;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Http\Client\ConnectionException;

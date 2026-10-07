@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { Head } from '@inertiajs/vue3';
-import MermaidNode from '@/components/Board/demo/MermaidNode.vue';
+import MermaidNode from '@/features/boards/components/demo/MermaidNode.vue';
 
 const mermaidCode = ref(`graph LR
     A[Laravel 13] --> B(Konva Canvases)

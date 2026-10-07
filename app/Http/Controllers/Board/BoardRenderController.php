@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Board;
 
 use App\Http\Controllers\Controller;
 use App\Models\Board\Board;
-use App\Support\BoardParts;
-use App\Support\BoardRender;
+use App\Support\Board\BoardParts;
+use App\Support\Board\BoardRender;
 use App\Support\Live\Collab;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;

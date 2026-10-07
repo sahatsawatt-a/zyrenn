@@ -7,7 +7,7 @@ use App\Mcp\Tools\Boards\GetBoard;
 use App\Mcp\Tools\Boards\UpdateBoard;
 use App\Models\Board\Board;
 use App\Models\User;
-use App\Support\BoardItems;
+use App\Support\Board\BoardItems;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as SentRequest;
 use Illuminate\Support\Facades\Http;

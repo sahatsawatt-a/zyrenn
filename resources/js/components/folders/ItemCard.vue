@@ -3,8 +3,8 @@ import { Link } from '@inertiajs/vue3';
 import type { InertiaLinkProps } from '@inertiajs/vue3';
 import { Folder } from '@lucide/vue';
 import type { Component } from 'vue';
-import Highlight from '@/components/folders/Highlight.vue';
-import ItemActions from '@/components/folders/ItemActions.vue';
+import Highlight from '@/components/common/Highlight.vue';
+import ItemActions from './ItemActions.vue';
 import { formatRelativeTime } from '@/lib/utils';
 
 // A note, board or table in a folder view, as a card in the grid or a row in

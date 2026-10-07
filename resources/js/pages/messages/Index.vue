@@ -2,11 +2,11 @@
 import { Head, Link, router } from '@inertiajs/vue3';
 import { MessageCircle, MessagesSquare, Plus, Users } from '@lucide/vue';
 import { ref } from 'vue';
-import PeoplePicker from '@/components/chat/PeoplePicker.vue';
-import type { Person } from '@/components/chat/PeoplePicker.vue';
-import RoomList from '@/components/chat/RoomList.vue';
-import EmptyState from '@/components/folders/EmptyState.vue';
-import PageHeader from '@/components/folders/PageHeader.vue';
+import PeoplePicker from '@/features/chat/components/PeoplePicker.vue';
+import type { Person } from '@/features/chat/components/PeoplePicker.vue';
+import RoomList from '@/features/chat/components/RoomList.vue';
+import EmptyState from '@/components/common/EmptyState.vue';
+import PageHeader from '@/components/common/PageHeader.vue';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,

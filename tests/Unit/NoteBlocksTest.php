@@ -2,9 +2,9 @@
 
 namespace Tests\Unit;
 
-use App\Support\NoteBlockProblem;
-use App\Support\NoteBlocks;
-use App\Support\TiptapMarkdown;
+use App\Support\Markdown\TiptapMarkdown;
+use App\Support\Note\NoteBlockProblem;
+use App\Support\Note\NoteBlocks;
 use Tests\TestCase;
 
 class NoteBlocksTest extends TestCase

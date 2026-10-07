@@ -4,7 +4,7 @@ namespace App\Mcp\Tools\Boards;
 
 use App\Mcp\Tools\BoardTool;
 use App\Models\Board\Board;
-use App\Support\BoardItems;
+use App\Support\Board\BoardItems;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;

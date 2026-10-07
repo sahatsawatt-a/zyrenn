@@ -2,8 +2,8 @@
 import { Link } from '@inertiajs/vue3';
 import type { InertiaLinkProps } from '@inertiajs/vue3';
 import { Folder } from '@lucide/vue';
-import Highlight from '@/components/folders/Highlight.vue';
-import ItemActions from '@/components/folders/ItemActions.vue';
+import Highlight from '@/components/common/Highlight.vue';
+import ItemActions from './ItemActions.vue';
 
 // A folder in a folder view. Drag and drop handlers bound on it fall through to the card.
 defineProps<{

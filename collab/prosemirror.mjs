@@ -7,7 +7,7 @@
 // here is the one an editor would have made. Reading back is y-tiptap's own.
 import * as Y from 'yjs';
 import { yXmlFragmentToProsemirrorJSON } from '@tiptap/y-tiptap';
-import blocks from '../resources/js/lib/note-blocks.json' with { type: 'json' };
+import blocks from '../resources/js/features/notes/lib/note-blocks.json' with { type: 'json' };
 
 /**
  * Fills an empty fragment with a Tiptap document ({type: 'doc', content}).
@@ -47,7 +47,7 @@ export function readDoc(fragment) {
 }
 
 /**
- * Gives every block that should carry an id (resources/js/lib/note-blocks.json)
+ * Gives every block that should carry an id (resources/js/features/notes/lib/note-blocks.json)
  * one it doesn't share: blocks written before ids, or by an editor that
  * hasn't named them yet. Answers whether it gave any.
  *

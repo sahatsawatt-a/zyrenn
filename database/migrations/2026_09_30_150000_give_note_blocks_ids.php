@@ -1,6 +1,6 @@
 <?php
 
-use App\Support\NoteBlocks;
+use App\Support\Note\NoteBlocks;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 

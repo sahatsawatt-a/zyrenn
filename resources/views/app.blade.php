@@ -1,6 +1,6 @@
 <!DOCTYPE html>
-{{-- ?print={style} is how the PDF printer asks for a look on paper (App\Support\NotePdf, resources/css/print.css) --}}
-@php($printStyle = in_array(request()->query('print'), App\Support\NotePdf::STYLES, true) ? request()->query('print') : null)
+{{-- ?print={style} is how the PDF printer asks for a look on paper (App\Support\Note\NotePdf, resources/css/print.css) --}}
+@php($printStyle = in_array(request()->query('print'), App\Support\Note\NotePdf::STYLES, true) ? request()->query('print') : null)
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}"  @class(['dark' => ($appearance ?? 'system') == 'dark']) @if ($printStyle) data-print-style="{{ $printStyle }}" @endif>
     <head>
         <meta charset="utf-8">

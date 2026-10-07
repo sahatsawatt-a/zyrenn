@@ -1,5 +1,5 @@
 import { ref, shallowRef } from 'vue';
-import type { FolderItem } from '@/composables/useFolderDialogs';
+import type { FolderItem } from './useFolderDialogs';
 
 // Marks our own drags, so they're never mistaken for files dropped from the desktop
 const MIME = 'application/x-zyrenn-item';

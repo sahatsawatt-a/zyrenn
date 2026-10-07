@@ -2,9 +2,9 @@
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { Check, Pencil, Plug, Trash2, X } from '@lucide/vue';
 import { computed, ref } from 'vue';
-import Heading from '@/components/Heading.vue';
-import InputError from '@/components/InputError.vue';
-import ModelPicker from '@/components/chat/ModelPicker.vue';
+import Heading from '@/components/common/Heading.vue';
+import InputError from '@/components/common/InputError.vue';
+import ModelPicker from '@/features/chat/components/ModelPicker.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

@@ -13,7 +13,7 @@ use App\Mcp\Tools\Notes\UpdateNote;
 use App\Mcp\Tools\Users\ListUsers;
 use App\Models\Note\Note;
 use App\Models\User;
-use App\Support\TiptapMarkdown;
+use App\Support\Markdown\TiptapMarkdown;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\Fluent\AssertableJson;
 use Tests\TestCase;

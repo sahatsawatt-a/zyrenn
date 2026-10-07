@@ -174,7 +174,30 @@ Windsurf, Antigravity, Gemini CLI, Codex and others) in
 ## How the code is laid out
 
 Ordinary Laravel and Inertia, grouped by feature: `Models/Note/`,
-`Controllers/Board/`, `components/Table/` and so on. A few parts are worth a map.
+`Controllers/Board/`, `Support/Board/` on the server, `features/boards/` in the
+page. A few parts are worth a map.
+
+**Where page code lives** (`resources/js/`). The rule: code one feature uses
+lives with that feature; code two or more use lives outside every feature.
+
+|                      |                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `pages/`             | one file per Inertia page, named as the controller renders it                                                                   |
+| `features/<x>/`      | one feature's own `components/`, `composables/` and `lib/` (its API calls, its helpers)                                         |
+| `components/ui/`     | shadcn-vue, as generated -- not edited by hand                                                                                  |
+| `components/`        | shared: `app/` (sidebar, header), `common/` (headings, dialogs, empty states), `folders/`, `map/`, `media/`, `photo/`, `icons/` |
+| `composables/`       | shared composables: presence, folder pages, appearance                                                                          |
+| `lib/`               | shared helpers: `drive`, `maps`, `projects`, `live`, `photo`, `icons`, `exporting`, `utils`                                     |
+| `layouts/`, `types/` | page layouts, and types every part uses                                                                                         |
+
+The features are `boards`, `notes` (the editor, its nodes and slash commands),
+`tables`, `maps` (the Maps page and trips), `chat`, `drive`, `dashboard` and
+`account` (sign-in security). A note showing a board or a trip imports the
+board's or trip's own view from that feature; the map pieces a table's map
+view also needs (`useMap`, `PlaceSearch`, the basemaps) are in `components/map/`.
+
+Imports use `@/` across folders and `./` within one, with no file endings
+but `.vue` and `.json`.
 
 **Folders** are the same for every feature. `app/Models/Folder.php` is the tree
 each kind's folder model extends, with one `FolderPolicy` for all of them;
@@ -185,8 +208,8 @@ are called and what they count. The MCP tools share the same way:
 `app/Mcp/Tools/FiledTool.php`, and the list, get and delete tools in `Concerns/`.
 
 **The board** is one flat list of items in paint order, which keeps z-order,
-undo and hit-testing simple. Its logic is in `resources/js/composables/board/`,
-its components in `resources/js/components/Board/`.
+undo and hit-testing simple. Its logic is in `resources/js/features/boards/composables/`,
+its components in `resources/js/features/boards/components/`.
 
 |                                                                             |                                                                            |
 | --------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
@@ -204,12 +227,15 @@ its components in `resources/js/components/Board/`.
 `table_columns` says what each is. Every schema change and row write goes
 through `app/Support/Table/TableStorage.php`, which names columns itself from
 their labels, so nothing from a request becomes an identifier. The grid edits
-itself first and saves behind (`resources/js/composables/table/`).
+itself first and saves behind (`resources/js/features/tables/composables/`).
 
-**The board's server side** keeps the canvas's own JSON. `app/Support/BoardItems.php`
+**The board's server side** keeps the canvas's own JSON. `app/Support/Board/BoardItems.php`
 translates between that and the short form MCP clients write, with
-`Board/BoardLayout.php` placing anything sent without coordinates and
-`Board/BoardPins.php` deciding where a connector's ends sit.
+`BoardLayout.php` placing anything sent without coordinates and
+`BoardPins.php` deciding where a connector's ends sit, all in the same folder.
+`app/Support` keeps shared helpers at its top (`Folders`, `OwnerUrl`,
+`RemoteDownload`) and each feature's in a folder of its own: `Board/`,
+`Note/`, `Markdown/`, `Table/`, `Formula/`, `Maps/`, `Chat/`, `Live/`.
 
 ## Three things that will catch you out
 

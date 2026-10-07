@@ -7,7 +7,7 @@ use App\Mcp\Tools\Boards\GetBoard;
 use App\Models\Board\Board;
 use App\Models\Drive\DriveFile;
 use App\Models\User;
-use App\Support\BoardItems;
+use App\Support\Board\BoardItems;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;

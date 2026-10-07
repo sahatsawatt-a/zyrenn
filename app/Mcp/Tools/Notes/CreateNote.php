@@ -4,7 +4,7 @@ namespace App\Mcp\Tools\Notes;
 
 use App\Mcp\Tools\NoteTool;
 use App\Models\Note\Note;
-use App\Support\TiptapMarkdown;
+use App\Support\Markdown\TiptapMarkdown;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;

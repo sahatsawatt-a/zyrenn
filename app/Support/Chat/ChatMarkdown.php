@@ -2,7 +2,7 @@
 
 namespace App\Support\Chat;
 
-use App\Support\TiptapMarkdown;
+use App\Support\Markdown\TiptapMarkdown;
 
 /**
  * An agent's Markdown as the note editor's document, converted by the same

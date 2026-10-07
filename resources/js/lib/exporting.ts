@@ -1,5 +1,5 @@
 import { toast } from 'vue-sonner';
-import { uploadToDrive } from '@/lib/drive';
+import { uploadToDrive } from './drive';
 
 /**
  * A file the server makes when asked -- a note's or a board's PDF, a picture

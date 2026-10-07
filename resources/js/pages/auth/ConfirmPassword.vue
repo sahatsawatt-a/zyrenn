@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Form, Head } from '@inertiajs/vue3';
-import InputError from '@/components/InputError.vue';
-import PasswordInput from '@/components/PasswordInput.vue';
+import InputError from '@/components/common/InputError.vue';
+import PasswordInput from '@/components/common/PasswordInput.vue';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
@@ -10,7 +10,7 @@ import {
     index as confirmOptions,
     store as confirmStore,
 } from '@/actions/Laravel/Passkeys/Http/Controllers/PasskeyConfirmationController';
-import PasskeyVerify from '@/components/PasskeyVerify.vue';
+import PasskeyVerify from '@/features/account/components/PasskeyVerify.vue';
 
 defineOptions({
     layout: {

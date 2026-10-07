@@ -4,7 +4,7 @@ namespace App\Support\Board;
 
 /**
  * How much room a label on a board takes, worked out the way the canvas lays
- * it out (resources/js/composables/board/labels.ts; keep the two in step):
+ * it out (resources/js/features/boards/composables/labels.ts; keep the two in step):
  * Arial, Times New Roman or Courier New, wrapped at word breaks, lines 1.3
  * font sizes apart, in the box the item leaves for its label -- plain, or
  * read as light Markdown when the item is "rich".

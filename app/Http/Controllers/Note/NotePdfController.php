@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Note;
 
 use App\Http\Controllers\Controller;
 use App\Models\Note\Note;
-use App\Support\NotePdf;
+use App\Support\Note\NotePdf;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;

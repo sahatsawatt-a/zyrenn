@@ -11,7 +11,7 @@ import {
     Users,
 } from '@lucide/vue';
 import type { Component } from 'vue';
-import AppLogoIcon from '@/components/AppLogoIcon.vue';
+import AppLogoIcon from '@/components/app/AppLogoIcon.vue';
 import { Button } from '@/components/ui/button';
 import { dashboard, login, register } from '@/routes';
 

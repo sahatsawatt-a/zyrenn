@@ -4,9 +4,9 @@ import { Check, Copy, FileDown, Trash2 } from '@lucide/vue';
 import { useDebounceFn, useEventListener } from '@vueuse/core';
 import { computed, onBeforeUnmount, ref, watchEffect } from 'vue';
 import { toast } from 'vue-sonner';
-import BoardCanvas from '@/components/Board/BoardCanvas.vue';
-import BoardView from '@/components/Board/BoardView.vue';
-import type { Item } from '@/composables/board/items';
+import BoardCanvas from '@/features/boards/components/BoardCanvas.vue';
+import BoardView from '@/features/boards/components/BoardView.vue';
+import type { Item } from '@/features/boards/composables/items';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -19,8 +19,8 @@ import {
     DialogTrigger,
 } from '@/components/ui/dialog';
 import { copyToClipboard, formatRelativeTime, xsrfToken } from '@/lib/utils';
-import PresenceAvatars from '@/components/PresenceAvatars.vue';
-import { useSharedItems } from '@/composables/board/useBoardSync';
+import PresenceAvatars from '@/components/common/PresenceAvatars.vue';
+import { useSharedItems } from '@/features/boards/composables/useBoardSync';
 import { usePresence } from '@/composables/usePresence';
 import { sharingIsOn, useShared } from '@/composables/useShared';
 import { canChange, owned } from '@/lib/projects';
@@ -32,7 +32,7 @@ import {
     show,
     update,
 } from '@/routes/boards';
-import PdfPreview from '@/components/PdfPreview.vue';
+import PdfPreview from '@/components/media/PdfPreview.vue';
 import { fetchExport } from '@/lib/exporting';
 import { index as projectIndex } from '@/routes/projects/boards';
 

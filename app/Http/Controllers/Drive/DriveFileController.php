@@ -76,7 +76,7 @@ class DriveFileController extends Controller
 
     /**
      * Send a file to whoever holds a signed link to it: the renderer drawing
-     * a board (App\Support\BoardRender), which is signed in as nobody.
+     * a board (App\Support\Board\BoardRender), which is signed in as nobody.
      */
     public function signed(Request $request, DriveFile $file): BinaryFileResponse
     {

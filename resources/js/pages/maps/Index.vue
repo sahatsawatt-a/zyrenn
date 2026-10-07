@@ -7,17 +7,17 @@ import type {
     MapGeoJSONFeature,
 } from 'maplibre-gl';
 import { computed, ref, toRaw, watch, watchEffect } from 'vue';
-import BasemapSwitcher from '@/components/Map/BasemapSwitcher.vue';
-import DirectionsPanel from '@/components/Map/explore/DirectionsPanel.vue';
-import PlaceCard from '@/components/Map/explore/PlaceCard.vue';
-import PlacesPanel from '@/components/Map/explore/PlacesPanel.vue';
-import { usePlaceStore } from '@/components/Map/explore/usePlaceStore';
-import FloatingPanel from '@/components/Map/FloatingPanel.vue';
-import { pin, placePin } from '@/components/Map/markers';
-import type { LocalPlace } from '@/components/Map/PlaceSearch.vue';
-import PlaceSearch from '@/components/Map/PlaceSearch.vue';
-import { useMap } from '@/components/Map/useMap';
-import { matchingSaved } from '@/components/Map/useSavedPlaces';
+import BasemapSwitcher from '@/components/map/BasemapSwitcher.vue';
+import DirectionsPanel from '@/features/maps/components/explore/DirectionsPanel.vue';
+import PlaceCard from '@/features/maps/components/explore/PlaceCard.vue';
+import PlacesPanel from '@/features/maps/components/explore/PlacesPanel.vue';
+import { usePlaceStore } from '@/features/maps/composables/usePlaceStore';
+import FloatingPanel from '@/features/maps/components/FloatingPanel.vue';
+import { pin, placePin } from '@/features/maps/lib/markers';
+import type { LocalPlace } from '@/components/map/PlaceSearch.vue';
+import PlaceSearch from '@/components/map/PlaceSearch.vue';
+import { useMap } from '@/components/map/useMap';
+import { matchingSaved } from '@/components/map/useSavedPlaces';
 import type { Candidate, PlaceList, Route, SavedPlace } from '@/lib/maps';
 import { whatIsHere } from '@/lib/maps';
 import { canChange, owned } from '@/lib/projects';

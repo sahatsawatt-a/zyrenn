@@ -2,12 +2,12 @@
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { Plus, Users } from '@lucide/vue';
 import { computed, ref } from 'vue';
-import PeoplePicker from '@/components/chat/PeoplePicker.vue';
-import type { Person } from '@/components/chat/PeoplePicker.vue';
-import RoomList from '@/components/chat/RoomList.vue';
-import EmptyState from '@/components/folders/EmptyState.vue';
-import PageHeader from '@/components/folders/PageHeader.vue';
-import InputError from '@/components/InputError.vue';
+import PeoplePicker from '@/features/chat/components/PeoplePicker.vue';
+import type { Person } from '@/features/chat/components/PeoplePicker.vue';
+import RoomList from '@/features/chat/components/RoomList.vue';
+import EmptyState from '@/components/common/EmptyState.vue';
+import PageHeader from '@/components/common/PageHeader.vue';
+import InputError from '@/components/common/InputError.vue';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,

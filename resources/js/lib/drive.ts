@@ -1,5 +1,5 @@
-import { owned } from '@/lib/projects';
-import { xsrfToken } from '@/lib/utils';
+import { owned } from './projects';
+import { xsrfToken } from './utils';
 import { pick } from '@/routes/drive';
 import { original, store } from '@/routes/drive/files';
 import { store as photoEditStore } from '@/routes/drive/photo-edits';

@@ -4,9 +4,9 @@ namespace App\Mcp\Tools\Boards;
 
 use App\Mcp\Tools\BoardTool;
 use App\Models\Board\Board;
-use App\Support\BoardItemProblem;
-use App\Support\BoardItems;
-use App\Support\BoardParts;
+use App\Support\Board\BoardItemProblem;
+use App\Support\Board\BoardItems;
+use App\Support\Board\BoardParts;
 use App\Support\Live\Collab;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;

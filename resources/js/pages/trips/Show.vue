@@ -17,15 +17,15 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import BasemapSwitcher from '@/components/Map/BasemapSwitcher.vue';
-import FloatingPanel from '@/components/Map/FloatingPanel.vue';
-import { pin, placePin } from '@/components/Map/markers';
-import TripHeader from '@/components/Map/trip/TripHeader.vue';
-import TripPanel from '@/components/Map/trip/TripPanel.vue';
-import TripPlaceCard from '@/components/Map/trip/TripPlaceCard.vue';
-import type { TripContent } from '@/components/Map/trip/useTripPlan';
-import { useTripPlan } from '@/components/Map/trip/useTripPlan';
-import { useMap } from '@/components/Map/useMap';
+import BasemapSwitcher from '@/components/map/BasemapSwitcher.vue';
+import FloatingPanel from '@/features/maps/components/FloatingPanel.vue';
+import { pin, placePin } from '@/features/maps/lib/markers';
+import TripHeader from '@/features/maps/components/trips/TripHeader.vue';
+import TripPanel from '@/features/maps/components/trips/TripPanel.vue';
+import TripPlaceCard from '@/features/maps/components/trips/TripPlaceCard.vue';
+import type { TripContent } from '@/features/maps/composables/useTripPlan';
+import { useTripPlan } from '@/features/maps/composables/useTripPlan';
+import { useMap } from '@/components/map/useMap';
 import { usePresence } from '@/composables/usePresence';
 import type { Candidate } from '@/lib/maps';
 import { whatIsHere } from '@/lib/maps';

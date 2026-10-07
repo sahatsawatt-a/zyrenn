@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Form, Head } from '@inertiajs/vue3';
-import InputError from '@/components/InputError.vue';
-import PasswordInput from '@/components/PasswordInput.vue';
-import TextLink from '@/components/TextLink.vue';
+import InputError from '@/components/common/InputError.vue';
+import PasswordInput from '@/components/common/PasswordInput.vue';
+import TextLink from '@/components/common/TextLink.vue';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { register } from '@/routes';
 import { store } from '@/routes/login';
 import { request } from '@/routes/password';
-import PasskeyVerify from '@/components/PasskeyVerify.vue';
+import PasskeyVerify from '@/features/account/components/PasskeyVerify.vue';
 
 defineOptions({
     layout: {

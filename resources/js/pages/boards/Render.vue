@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 import { onMounted } from 'vue';
-import BoardView from '@/components/Board/BoardView.vue';
-import type { Item } from '@/composables/board/items';
+import BoardView from '@/features/boards/components/BoardView.vue';
+import type { Item } from '@/features/boards/composables/items';
 import { markEditorReady } from '@/lib/printReady';
 
-// A board drawn for the renderer (App\Support\BoardRender) and nothing else:
+// A board drawn for the renderer (App\Support\Board\BoardRender) and nothing else:
 // as a picture -- one frame, or everything -- or as pages, a frame to each,
 // for a PDF. The renderer sizes the window (or the paper) to fit.
 const props = defineProps<{

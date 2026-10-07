@@ -15,7 +15,7 @@ use App\Models\Drive\DriveFile;
 use App\Models\Drive\DriveFolder;
 use App\Models\Project;
 use App\Models\User;
-use App\Support\TiptapMarkdown;
+use App\Support\Markdown\TiptapMarkdown;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Http\UploadedFile;

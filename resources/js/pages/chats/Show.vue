@@ -3,9 +3,9 @@ import { Head, Link, router, setLayoutProps, usePage } from '@inertiajs/vue3';
 import type { JSONContent } from '@tiptap/vue-3';
 import { LogOut, Send, Settings2, Square, Trash2 } from '@lucide/vue';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import ModelPicker from '@/components/chat/ModelPicker.vue';
-import PresenceAvatars from '@/components/PresenceAvatars.vue';
-import TiptapEditor from '@/components/Editor/TiptapEditor.vue';
+import ModelPicker from '@/features/chat/components/ModelPicker.vue';
+import PresenceAvatars from '@/components/common/PresenceAvatars.vue';
+import TiptapEditor from '@/features/notes/components/TiptapEditor.vue';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,

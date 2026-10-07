@@ -28,7 +28,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 });
 
-// One file, for the renderer drawing a board (App\Support\BoardRender): no
+// One file, for the renderer drawing a board (App\Support\Board\BoardRender): no
 // session, only a signed link that runs out in minutes
 Route::get('drive/files/{file}/signed', [DriveFileController::class, 'signed'])
     ->middleware('signed:relative')
