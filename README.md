@@ -1,16 +1,33 @@
 # ZyrenN
 
-A personal workspace: notes, boards, tables, and a private Drive behind them.
+A personal workspace: notes, boards, tables, maps and trips, and a private
+Drive behind them -- on your own, or shared in projects.
 
-- **Notes** — a rich editor (Tiptap) filed in folders, saved as you type.
-  Markdown in and out, with callouts, tables, code, Mermaid diagrams and KaTeX.
+- **Notes** — a rich editor (Tiptap) filed in folders, saved as you type and
+  edited together live. Markdown in and out, with callouts, tables, code,
+  Mermaid diagrams (an ER diagram turns into SQL), KaTeX, live values from a
+  table or a trip, and a board or a trip shown in place. Versions to go back
+  to, and a PDF export.
 - **Boards** — an endless canvas (Konva): sticky notes, shapes, flowchart
-  symbols, connectors that stay joined to what they link, pictures, formulae,
-  and 16:9 frames that play as slides.
+  symbols, connectors that stay joined to what they link, pictures, videos,
+  formulae, and 16:9 frames that play as slides or export as a PDF. Edited
+  together live.
 - **Tables** — rows and columns of your own, each column of a kind (text,
-  numbers, dates, choices, ratings…), with search, filters, sort and CSV export.
+  numbers, dates, choices, ratings, a place…), with formulas that can read a
+  trip or another table, named parameters, search, filters, sort, CSV export,
+  and a map of the rows that have a place.
+- **Maps and trips** — search, saved places in lists (each with an icon and a
+  colour), directions; and trips planned day by day, with flights, hotels,
+  stops, rests, opening hours and the quickest order.
 - **Drive** — the files behind the rest. A picture on a board or in a note lives
-  here and is served only to its owner.
+  here and is served only to whoever may see it. Pictures can be edited in
+  place: cropped, turned, straightened, adjusted, with parts blurred out --
+  kept as a new file beside the original.
+- **Projects** — a shared space with its own notes, boards, tables, trips and
+  Drive, whose members are owners, editors or viewers.
+- **Chat and messages** — an AI chat on a model of your choosing, apart from
+  messages between people: one to one, or a project's group.
+- **Dashboard** — what changed lately, open to-dos, and conversations.
 - **MCP** — an AI client can read and write all of it. See [Agent access](#agent-access).
 
 ## Running ZyrenN locally
@@ -127,7 +144,9 @@ Reaching a model that runs on your machine, from the app's container:
 ```sh
 docker compose exec app php artisan test   # the PHP suite
 docker compose exec app composer ci:check  # what CI runs: format, lint, types, tests
-npm run test:e2e                           # boards and tables, in a real browser
+npm test                                   # unit tests of the page code (vitest)
+npm run test:collab                        # the collaboration server
+npm run test:e2e                           # every part of the app, in a real browser
 ```
 
 `composer ci:check` is the one to run before pushing. It fails on lint
@@ -144,6 +163,10 @@ HEADED=0 npm run test:e2e            # quietly
 HEADED=0 node tests/e2e/board.mjs    # one suite
 ```
 
+`tests/e2e/maps.mjs` is left out of `test:e2e` because it asks the real map
+services (Photon, Valhalla, OpenFreeMap, and Google through SerpAPI when
+`SERPAPI_KEY` is set), so it needs the internet; run it on its own.
+
 `SLOWMO`, `APP_URL`, `E2E_EMAIL` and `E2E_PASSWORD` override the defaults.
 Every suite shares `tests/e2e/harness.mjs`, which signs in and hands over the
 helpers for reading the canvas back; a suite holds only what is particular to
@@ -158,9 +181,13 @@ Two MCP servers, both over HTTP and stdio:
 - **`zyrenn-admin`** reaches every user's content with `MCP_GLOBAL_TOKEN`, and
   takes a `user_id` on each call.
 
-Notes are read and written as Markdown, boards as a list of items, tables as
-columns and rows of values keyed by column label, and files through the Drive. A picture has to be in the Drive before a note or a board
-can show it — the tools say so, and hand back the line or URL to use.
+Notes are read and written as Markdown -- a long one block by block, by id --
+boards as a list of items (a frame at a time on a big board), tables as
+columns and rows of values keyed by column label, trips as days of stops,
+saved places by list, and files through the Drive. Any tool takes a
+`project` to work in a project instead of the user's own. A picture has to
+be in the Drive before a note or a board can show it — the tools say so,
+and hand back the line or URL to use.
 
 ```sh
 docker compose exec app php artisan mcp:start zyrenn   # stdio, reads MCP_TOKEN
@@ -221,6 +248,7 @@ its components in `resources/js/features/boards/components/`.
 | `useLabelEditor.ts`, `useFormulae.ts`, `usePictures.ts`, `usePresenting.ts` | writing on things, KaTeX, pictures, playing the frames                     |
 | `BoardCanvas.vue`                                                           | the page: panels, the stage, and what is bound to what                     |
 | `BoardItem.vue`, `BoardOverlay.vue`                                         | what one thing looks like, and what is drawn over the board                |
+| `FrameMenu.vue`, `useVideoControls.ts`                                      | a frame right-clicked, as a picture; a video played, paused and watched    |
 
 **A table** keeps its rows in a database table of its own,
 `user_table_<ref_id>`, with one real column per column of the grid;
@@ -228,6 +256,28 @@ its components in `resources/js/features/boards/components/`.
 through `app/Support/Table/TableStorage.php`, which names columns itself from
 their labels, so nothing from a request becomes an identifier. The grid edits
 itself first and saves behind (`resources/js/features/tables/composables/`).
+
+**A trip** is one document (`TripDocument` on the server), saved whole with a
+revision: a save on top of someone else's newer one is refused, and the page
+asks which to keep. `features/maps/lib/trip.ts` says what a trip is,
+`useTripPlan.ts` edits it and works out each day's route and timeline, and
+`useTripSave.ts` saves it a moment after each change. A trip's stops, a
+table's place cells and the map share saved places by reference, so renaming
+a place renames it everywhere.
+
+**Editing together.** Notes and boards are Yjs documents passed between
+whoever has them open by the `collab` service (`collab/server.mjs`), which
+keeps nothing itself: Laravel loads and stores them, and an MCP edit reaches
+open pages through it. Tables and trips save as before and tell everyone
+else through Reverb (`TableChanged`, `TripChanged`); presence -- who else is
+looking -- goes the same way.
+
+**The photo editor** (`components/photo/`, `lib/photo.ts`) edits a picture in
+the browser and keeps the result as a new Drive file, with the original's id
+and the edit (`drive_files.source_id` and `edit`), so the next edit starts
+from the whole original. Notes, boards and the Drive all open the same one.
+The preview is drawn by the same code that makes the saved file, so what is
+shown is what is kept.
 
 **The board's server side** keeps the canvas's own JSON. `app/Support/Board/BoardItems.php`
 translates between that and the short form MCP clients write, with
