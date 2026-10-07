@@ -22,6 +22,16 @@
         <!-- Row / column controls while the cursor is inside a table -->
         <TableMenu v-if="editor" :editor="editor" />
 
+        <!-- Open, copy, change or take off the link the caret is in -->
+        <LinkMenu v-if="editor && editable" :editor="editor" />
+
+        <!-- A link pasted on its own line: keep it, or make it a card or a map -->
+        <LinkPasteMenu
+            v-if="editor && editable"
+            v-model="pastedLink"
+            :editor="editor"
+        />
+
         <!-- LaTeX editor for inline / block math -->
         <MathPopover v-if="editor" ref="mathPopover" :editor="editor" />
 
@@ -40,6 +50,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, useTemplateRef } from 'vue';
 import type { Editor } from '@tiptap/core';
+import type { EditorState } from '@tiptap/pm/state';
 import { toast } from 'vue-sonner';
 import { useEventListener } from '@vueuse/core';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
@@ -73,6 +84,15 @@ import type { MediaKind } from '@/lib/drive';
 import { markEditorReady } from '@/lib/printReady';
 import CustomMenu from './CustomMenu.vue';
 import TableMenu from './TableMenu.vue';
+import LinkMenu from './LinkMenu.vue';
+import LinkPasteMenu from './LinkPasteMenu.vue';
+import { LinkIcons } from '@/features/notes/nodes/LinkIcons';
+import {
+    isSafeUrl,
+    pastedUrl,
+    SAFE_PROTOCOLS,
+    shortLabel,
+} from '@/features/notes/lib/links';
 import BlockHandle from './BlockHandle.vue';
 import MathPopover from './MathPopover.vue';
 import type { MathTarget } from './MathPopover.vue';
@@ -232,7 +252,22 @@ const editor = useEditor({
             codeBlock: false,
             // Shared, undo is the collaboration's own: it takes back only your edits
             ...(props.shared ? { undoRedo: false as const } : {}),
+            // A link typed without a scheme is https, and only a safe scheme
+            // is a link at all; LinkIcons opens them, so a click while writing
+            // only puts the caret in one
+            link: {
+                openOnClick: false,
+                defaultProtocol: 'https',
+                protocols: SAFE_PROTOCOLS.filter(
+                    (scheme) => !scheme.startsWith('http'),
+                ),
+                isAllowedUri: (url, { defaultValidate }) =>
+                    isSafeUrl(url) && defaultValidate(url),
+            },
         }),
+
+        // Each link's site icon before it, and Ctrl/Cmd+click to open it
+        LinkIcons,
 
         // Every block carries a short id of its own, so one can be read or
         // changed alone -- over MCP, say (App\Support\Note\NoteBlocks). A block
@@ -318,10 +353,15 @@ const editor = useEditor({
             const files = Array.from(event.clipboardData?.files ?? []).filter(
                 isMediaFile,
             );
-            if (!files.length) return false;
+            if (files.length) {
+                void uploadMedia(files, view.state.selection.from);
+                return true;
+            }
 
-            void uploadMedia(files, view.state.selection.from);
-            return true;
+            return pasteLink(
+                view.state,
+                event.clipboardData?.getData('text/plain') ?? '',
+            );
         },
         handleDrop: (view, event, _slice, moved) => {
             // Moving a block inside the editor is ProseMirror's job
@@ -347,6 +387,44 @@ const editor = useEditor({
         emit('update', editor.getJSON());
     },
 });
+
+// ---- a link pasted ----
+
+const pastedLink = ref<{ pos: number; url: string } | null>(null);
+
+/**
+ * A bare link pasted. Over chosen text, it links the text (the Link
+ * extension's own linkOnPaste). On a line of its own, it goes in as a link and
+ * LinkPasteMenu offers a card or a map instead. Anywhere else, it goes in
+ * written short -- "example.com/a-long-pa…" -- linking the whole of it.
+ */
+const pasteLink = (state: EditorState, text: string) => {
+    const url = pastedUrl(text);
+    const { selection } = state;
+
+    if (!url || !isSafeUrl(url) || !selection.empty || !editor.value) {
+        return false;
+    }
+
+    const parent = selection.$from.parent;
+    const alone = parent.type.name === 'paragraph' && parent.content.size === 0;
+    const label = shortLabel(url);
+
+    editor.value
+        .chain()
+        .insertContent({
+            type: 'text',
+            text: label,
+            marks: [{ type: 'link', attrs: { href: url } }],
+        })
+        // What is typed next is not part of the link
+        .unsetMark('link')
+        .run();
+
+    pastedLink.value = alone ? { pos: selection.$from.before(), url } : null;
+
+    return true;
+};
 
 // Slash commands insert a formula and ask for it to be opened for editing
 useEventListener(

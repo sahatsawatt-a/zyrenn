@@ -37,6 +37,7 @@ require __DIR__.'/features/tables.php';
 require __DIR__.'/features/maps.php';
 require __DIR__.'/features/chats.php';
 require __DIR__.'/features/projects.php';
+require __DIR__.'/features/links.php';
 
 // ---------------------------------
 //      Demo

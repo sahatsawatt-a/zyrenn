@@ -23,6 +23,13 @@ export interface MapOptions {
     onStyle?: (map: MapLibreMap, dark: boolean) => void;
     /** Leave the buttons off: a small map inside something else. */
     bare?: boolean;
+    /**
+     * Keep what is drawn, so the map comes out when the page is printed: a
+     * browser prints a WebGL canvas blank unless it keeps its drawing.
+     */
+    printable?: boolean;
+    /** Leave it still: no dragging, zooming or turning -- a picture of a place. */
+    still?: boolean;
 }
 
 export function useMap(
@@ -43,6 +50,10 @@ export function useMap(
             zoom: options.zoom ?? 11,
             hash: options.hash ?? false,
             attributionControl: false,
+            interactive: !options.still,
+            ...(options.printable
+                ? { canvasContextAttributes: { preserveDrawingBuffer: true } }
+                : {}),
         });
         made.addControl(
             new AttributionControl({ compact: true }),

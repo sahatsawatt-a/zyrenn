@@ -26,6 +26,10 @@ import MermaidBlock from '@/features/notes/components/MermaidBlock.vue';
 import BoardBlock from '@/features/notes/components/BoardBlock.vue';
 // A trip shown in the note, the whole of it or one day
 import TripBlock from '@/features/notes/components/TripBlock.vue';
+// A place shown on a small map
+import MapBlock from '@/features/notes/components/MapBlock.vue';
+// A link shown as a card: its page's picture, title and site
+import LinkCard from '@/features/notes/components/LinkCard.vue';
 
 const lowlight = createLowlight();
 
@@ -44,9 +48,12 @@ lowlight.register('rust', rust);
 lowlight.register('plaintext', plaintext);
 // Mermaid source has no highlight.js grammar; keep it from being auto-detected as another language
 lowlight.register('mermaid', plaintext);
-// Nor does a board or a trip reference: it is two lines naming what to show
+// Nor does a board or a trip reference, a place, or a card's link: they are
+// "key: value" lines naming what to show
 lowlight.register('board', plaintext);
 lowlight.register('trip', plaintext);
+lowlight.register('map', plaintext);
+lowlight.register('link', plaintext);
 
 export const CodeBlockNode = CodeBlockLowlight.configure({
     lowlight,
@@ -56,7 +63,7 @@ export const CodeBlockNode = CodeBlockLowlight.configure({
     },
 }).extend({
     addNodeView() {
-        const EMBEDS = ['mermaid', 'board', 'trip'] as const;
+        const EMBEDS = ['mermaid', 'board', 'trip', 'map', 'link'] as const;
         const kindOf = (
             node: ProseMirrorNode,
         ): (typeof EMBEDS)[number] | 'code' =>
@@ -79,6 +86,8 @@ export const CodeBlockNode = CodeBlockLowlight.configure({
                 mermaid: MermaidBlock,
                 board: BoardBlock,
                 trip: TripBlock,
+                map: MapBlock,
+                link: LinkCard,
                 code: CodeBlockView,
             } as const;
 

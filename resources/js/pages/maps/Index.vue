@@ -13,7 +13,7 @@ import PlaceCard from '@/features/maps/components/explore/PlaceCard.vue';
 import PlacesPanel from '@/features/maps/components/explore/PlacesPanel.vue';
 import { usePlaceStore } from '@/features/maps/composables/usePlaceStore';
 import FloatingPanel from '@/features/maps/components/FloatingPanel.vue';
-import { pin, placePin } from '@/features/maps/lib/markers';
+import { pin, placePin } from '@/components/map/markers';
 import type { LocalPlace } from '@/components/map/PlaceSearch.vue';
 import PlaceSearch from '@/components/map/PlaceSearch.vue';
 import { useMap } from '@/components/map/useMap';

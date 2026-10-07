@@ -136,6 +136,13 @@ const getTableReference = () => {
 </script>
 
 <style scoped>
+/* A menu is for the screen, not for the printed note */
+@media print {
+    .table-menu {
+        display: none !important;
+    }
+}
+
 .table-menu {
     display: flex;
     align-items: center;

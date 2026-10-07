@@ -321,6 +321,33 @@
 }
 
 /* ==========================================================================
+   LINKS
+   ========================================================================== */
+
+/* A link reads as one: the theme's colour, underlined below the letters */
+.tiptap a[href] {
+    color: var(--primary);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in oklab, var(--primary) 40%, transparent);
+    text-underline-offset: 3px;
+}
+.tiptap a[href]:hover {
+    text-decoration-color: currentColor;
+}
+
+/* The site's icon, drawn before its link (LinkIcons) */
+.tiptap .link-icon {
+    display: inline;
+    width: 14px;
+    height: 14px;
+    margin: 0 3px 0 1px;
+    border-radius: 3px;
+    vertical-align: -2px;
+    /* A click on it is a click on the link, so the caret goes into the link */
+    pointer-events: none;
+}
+
+/* ==========================================================================
    TABLES
    ========================================================================== */
 .tiptap .tableWrapper {

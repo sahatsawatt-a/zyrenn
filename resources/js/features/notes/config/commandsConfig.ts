@@ -47,6 +47,7 @@ export const commandItems: SlashCommandItem[] = [
         title: 'Heading 1',
         description: 'Big section heading.',
         icon: 'H1',
+        keywords: ['h1', '#', 'title', 'heading', 'header', 'big'],
         command: ({ editor, range }) =>
             editor
                 .chain()
@@ -59,6 +60,7 @@ export const commandItems: SlashCommandItem[] = [
         title: 'Heading 2',
         description: 'Medium section heading.',
         icon: 'H2',
+        keywords: ['h2', '##', 'subtitle', 'subheading', 'heading', 'header'],
         command: ({ editor, range }) =>
             editor
                 .chain()
@@ -71,6 +73,7 @@ export const commandItems: SlashCommandItem[] = [
         title: 'Heading 3',
         description: 'Small section heading.',
         icon: 'H3',
+        keywords: ['h3', '###', 'heading', 'header', 'small heading'],
         command: ({ editor, range }) =>
             editor
                 .chain()
@@ -83,6 +86,15 @@ export const commandItems: SlashCommandItem[] = [
         title: 'To-do List',
         description: 'Track tasks with checkboxes.',
         icon: '☑️',
+        keywords: [
+            'todo',
+            'task',
+            'tasks',
+            'checkbox',
+            'checklist',
+            'check',
+            '[]',
+        ],
         command: ({ editor, range }) =>
             editor.chain().focus().deleteRange(range).toggleTaskList().run(),
     },
@@ -90,6 +102,16 @@ export const commandItems: SlashCommandItem[] = [
         title: 'Callout',
         description: 'Make writing stand out.',
         icon: '💡',
+        keywords: [
+            'note',
+            'info',
+            'tip',
+            'warning',
+            'alert',
+            'highlight',
+            'box',
+            'aside',
+        ],
         command: ({ editor, range }) =>
             editor.chain().focus().deleteRange(range).wrapIn('callout').run(),
     },
@@ -97,6 +119,7 @@ export const commandItems: SlashCommandItem[] = [
         title: 'Numbered List',
         description: 'Create a list with sequential numbers.',
         icon: '1.',
+        keywords: ['ol', '1.', 'ordered', 'numbers', 'steps', 'list'],
         command: ({ editor, range }) =>
             editor.chain().focus().deleteRange(range).toggleOrderedList().run(),
     },
@@ -104,6 +127,7 @@ export const commandItems: SlashCommandItem[] = [
         title: 'Quote',
         description: 'Capture a quote or citation.',
         icon: '”',
+        keywords: ['blockquote', 'citation', 'cite', '>', 'quotation'],
         command: ({ editor, range }) =>
             editor.chain().focus().deleteRange(range).toggleBlockquote().run(),
     },
@@ -112,6 +136,7 @@ export const commandItems: SlashCommandItem[] = [
         title: 'Code Block',
         description: 'Snippets with syntax highlighting.',
         icon: '‹›',
+        keywords: ['code', '```', 'snippet', 'pre', 'program', 'source'],
         command: ({ editor, range }) =>
             editor.chain().focus().deleteRange(range).toggleCodeBlock().run(),
     },
@@ -119,7 +144,7 @@ export const commandItems: SlashCommandItem[] = [
         title: 'Table',
         description: 'Rows and columns with a header row.',
         icon: '▦',
-        keywords: ['grid', 'spreadsheet', 'rows', 'columns'],
+        keywords: ['grid', 'spreadsheet', 'rows', 'columns', 'tbl', 'cells'],
         command: ({ editor, range }) =>
             editor
                 .chain()
@@ -132,7 +157,18 @@ export const commandItems: SlashCommandItem[] = [
         title: 'Image',
         description: 'Upload, pick from Drive, or link.',
         icon: '🖼️',
-        keywords: ['picture', 'photo', 'upload', 'img', 'drive'],
+        keywords: [
+            'picture',
+            'photo',
+            'upload',
+            'img',
+            'drive',
+            'pic',
+            'image',
+            'png',
+            'jpg',
+            'gif',
+        ],
         command: ({ editor, range }) => {
             editor.chain().focus().deleteRange(range).run();
             editor.view.dom.dispatchEvent(
@@ -144,7 +180,16 @@ export const commandItems: SlashCommandItem[] = [
         title: 'Video',
         description: 'Play a video from Drive, an upload, or a link.',
         icon: '🎬',
-        keywords: ['movie', 'clip', 'film', 'mp4', 'upload', 'drive'],
+        keywords: [
+            'movie',
+            'clip',
+            'film',
+            'mp4',
+            'upload',
+            'drive',
+            'youtube',
+            'vid',
+        ],
         command: ({ editor, range }) => {
             editor.chain().focus().deleteRange(range).run();
             editor.view.dom.dispatchEvent(
@@ -156,7 +201,7 @@ export const commandItems: SlashCommandItem[] = [
         title: 'Inline Math',
         description: 'LaTeX formula inside a line of text.',
         icon: '∑',
-        keywords: ['math', 'latex', 'katex', 'formula'],
+        keywords: ['math', 'latex', 'katex', 'formula', '$', 'inline'],
         command: ({ editor, range }) =>
             insertMath(editor, range, 'inline', 'E = mc^2'),
     },
@@ -164,7 +209,15 @@ export const commandItems: SlashCommandItem[] = [
         title: 'Equation',
         description: 'Centered LaTeX equation block.',
         icon: '∫',
-        keywords: ['math', 'latex', 'katex', 'formula', 'block'],
+        keywords: [
+            'math',
+            'latex',
+            'katex',
+            'formula',
+            'block',
+            '$$',
+            'formula block',
+        ],
         command: ({ editor, range }) =>
             insertMath(
                 editor,
@@ -177,6 +230,7 @@ export const commandItems: SlashCommandItem[] = [
         title: 'Bullet List',
         description: 'Create a simple bulleted list.',
         icon: '•',
+        keywords: ['ul', '-', '*', 'unordered', 'bullets', 'points', 'list'],
         command: ({ editor, range }) =>
             editor.chain().focus().deleteRange(range).toggleBulletList().run(),
     },
@@ -184,6 +238,7 @@ export const commandItems: SlashCommandItem[] = [
         title: 'Text',
         description: 'Just start writing plain text.',
         icon: '📄',
+        keywords: ['p', 'paragraph', 'plain', 'normal', 'body', 'words'],
         command: ({ editor, range }) =>
             editor
                 .chain()
@@ -204,7 +259,18 @@ export const commandItems: SlashCommandItem[] = [
         title: 'Live value',
         description: 'A number from a trip or table, kept up to date: {{ … }}.',
         icon: '=',
-        keywords: ['value', 'formula', 'total', 'sum', 'live', 'variable'],
+        keywords: [
+            'value',
+            'formula',
+            'total',
+            'sum',
+            'live',
+            'variable',
+            '{{',
+            'number',
+            'calc',
+            'computed',
+        ],
         command: ({ editor, range }) =>
             editor
                 .chain()
@@ -218,7 +284,16 @@ export const commandItems: SlashCommandItem[] = [
         title: 'Board',
         description: 'Show a board, or one of its frames, in this note.',
         icon: '▦',
-        keywords: ['board', 'canvas', 'frame', 'slide', 'diagram'],
+        keywords: [
+            'board',
+            'canvas',
+            'frame',
+            'slide',
+            'diagram',
+            'whiteboard',
+            'drawing',
+            'sketch',
+        ],
         command: ({ editor, range }) => {
             editor
                 .chain()
@@ -237,7 +312,15 @@ export const commandItems: SlashCommandItem[] = [
         title: 'Trip',
         description: 'Show a trip, or one day of it, in this note.',
         icon: '✈',
-        keywords: ['trip', 'travel', 'itinerary', 'day', 'plan', 'map'],
+        keywords: [
+            'trip',
+            'travel',
+            'itinerary',
+            'day',
+            'plan',
+            'holiday',
+            'journey',
+        ],
         command: ({ editor, range }) => {
             editor
                 .chain()
@@ -248,6 +331,68 @@ export const commandItems: SlashCommandItem[] = [
                     attrs: { language: 'trip' },
                     // Filled in from the block's own dropdowns
                     content: [{ type: 'text', text: 'ref: \nday: all' }],
+                })
+                .run();
+        },
+    },
+    {
+        title: 'Link',
+        description:
+            'A link shown as a card, with its page’s title and picture.',
+        icon: '🔗',
+        keywords: [
+            'url',
+            'link',
+            'web',
+            'website',
+            'site',
+            'href',
+            'bookmark',
+            'card',
+            'embed',
+            'preview',
+            'http',
+        ],
+        command: ({ editor, range }) => {
+            editor
+                .chain()
+                .focus()
+                .deleteRange(range)
+                // Asks for the link itself (see LinkCard)
+                .insertContent({
+                    type: 'codeBlock',
+                    attrs: { language: 'link' },
+                })
+                .run();
+        },
+    },
+    {
+        title: 'Map',
+        description: 'Show a place on a map in this note.',
+        icon: '📍',
+        keywords: [
+            'map',
+            'place',
+            'location',
+            'address',
+            'pin',
+            'where',
+            'gps',
+            'coordinates',
+            'spot',
+            'venue',
+            'directions',
+            'geo',
+        ],
+        command: ({ editor, range }) => {
+            editor
+                .chain()
+                .focus()
+                .deleteRange(range)
+                // Chosen in the block's own search (see MapBlock)
+                .insertContent({
+                    type: 'codeBlock',
+                    attrs: { language: 'map' },
                 })
                 .run();
         },

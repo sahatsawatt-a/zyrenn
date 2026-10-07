@@ -31,7 +31,8 @@ let asked: { at: number; url: string; places: Promise<SavedChoice[]> } | null =
     null;
 const FRESH_FOR = 30_000;
 
-const savedPlaces = () => {
+/** Every saved place, asked once between the searches and blocks of a page. */
+export const savedPlaces = () => {
     const url = window.location.pathname;
 
     if (!asked || asked.url !== url || Date.now() - asked.at > FRESH_FOR) {

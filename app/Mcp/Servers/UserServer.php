@@ -94,7 +94,10 @@ takes and the rides between its places. update-trip adds, changes, moves and del
 hotels by id, and types in a ride by hand (a metro, a taxi) -- send only what changes. Trips have their
 own folder tree, listed by list-trip-folders. To show a trip in a note, put a ```trip fence in its
 Markdown holding "ref: <the trip's ref_id>" and "day: all" (the whole trip) or "day: <a day's id>"
-(that day's timeline), each on a line of its own.
+(that day's timeline), each on a line of its own. To show one place on a map in a note, put a ```map
+fence holding "name: ", "address: ", "lat: " and "lng: " lines (and "zoom: ", 1 to 20, or "saved: <a
+saved place's ref_id>" to show that place as it is now); to show a link as a card with its page's
+title and picture, a ```link fence holding "url: " and "title: ".
 
 Saved places: pins kept on the map, each in a list such as "Want to go" (list-places, save-place,
 delete-place).

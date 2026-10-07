@@ -4,6 +4,7 @@ import type {
     SuggestionProps,
 } from '@tiptap/suggestion';
 import type { SlashCommandItem } from './useSlashCommands';
+import { searchCommands } from '@/features/notes/lib/commandSearch';
 
 export function useMenuRenderer(commandItems: SlashCommandItem[]) {
     const showMenu = ref<boolean>(false);
@@ -16,15 +17,10 @@ export function useMenuRenderer(commandItems: SlashCommandItem[]) {
     });
     let currentSuggestionProps: SuggestionProps<SlashCommandItem> | null = null;
 
-    const filteredItems = computed<SlashCommandItem[]>(() => {
-        const query = searchQuery.value.toLowerCase();
-
-        return commandItems.filter((item) =>
-            [item.title, ...(item.keywords ?? [])].some((term) =>
-                term.toLowerCase().includes(query),
-            ),
-        );
-    });
+    // By name, by the words people use for it, or a letter off; best first
+    const filteredItems = computed<SlashCommandItem[]>(() =>
+        searchCommands(commandItems, searchQuery.value),
+    );
 
     // Auto-reset selection index when user updates typing string query
     watch(filteredItems, () => {

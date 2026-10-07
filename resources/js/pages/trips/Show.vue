@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dialog';
 import BasemapSwitcher from '@/components/map/BasemapSwitcher.vue';
 import FloatingPanel from '@/features/maps/components/FloatingPanel.vue';
-import { pin, placePin } from '@/features/maps/lib/markers';
+import { pin, placePin } from '@/components/map/markers';
 import TripHeader from '@/features/maps/components/trips/TripHeader.vue';
 import TripPanel from '@/features/maps/components/trips/TripPanel.vue';
 import TripPlaceCard from '@/features/maps/components/trips/TripPlaceCard.vue';

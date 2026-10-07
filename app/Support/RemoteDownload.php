@@ -5,13 +5,14 @@ namespace App\Support;
 use GuzzleHttp\Psr7\Uri;
 use GuzzleHttp\Psr7\UriResolver;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Psr\Http\Message\StreamInterface;
 use Symfony\Component\Mime\MimeTypes;
 
 /**
- * Fetch a file from the public web into a temporary file, for upload-file's
- * "source_url".
+ * Fetch from the public web: a file into a temporary file, for upload-file's
+ * "source_url"; or the start of a page, for a link's preview.
  *
  * The server makes the request, so it must never be talked into fetching
  * from itself or its own network (the database, the collab server, a cloud
@@ -33,13 +34,66 @@ class RemoteDownload
      */
     public static function fetch(string $url, int $maxBytes): array
     {
+        [$response, $url] = self::start($url);
+
+        if ((int) $response->header('Content-Length') > $maxBytes) {
+            throw new RemoteDownloadFailed(self::tooBig($maxBytes));
+        }
+
+        return [
+            'path' => self::save($response->toPsrResponse()->getBody(), $maxBytes),
+            'name' => self::nameFor($url, $response->header('Content-Type')),
+        ];
+    }
+
+    /**
+     * The start of what a URL answers -- enough of a web page to read its
+     * <head> -- without failing on a page larger than that.
+     *
+     * @return array{body: string, url: string, type: string} up to $maxBytes of it, where it ended up after redirects, and its Content-Type
+     *
+     * @throws RemoteDownloadFailed
+     */
+    public static function peek(string $url, int $maxBytes, int $timeout = 8): array
+    {
+        [$response, $url] = self::start($url, $timeout);
+        $body = $response->toPsrResponse()->getBody();
+        $read = '';
+
+        try {
+            while (! $body->eof() && strlen($read) < $maxBytes) {
+                $read .= $body->read(min(self::CHUNK_BYTES, $maxBytes - strlen($read)));
+            }
+        } catch (\Throwable) {
+            // What arrived before it broke off is still worth reading
+        }
+
+        $body->close();
+
+        return [
+            'body' => $read,
+            'url' => $url,
+            'type' => strtolower(trim(explode(';', $response->header('Content-Type'))[0])),
+        ];
+    }
+
+    /**
+     * A successful answer from a public address, after following redirects
+     * by hand, and the URL it came from in the end; its body not yet read.
+     *
+     * @return array{Response, string}
+     *
+     * @throws RemoteDownloadFailed
+     */
+    public static function start(string $url, int $timeout = 300): array
+    {
         for ($hop = 0; $hop <= self::MAX_REDIRECTS; $hop++) {
             [$host, $port, $ip] = self::publicTarget($url);
 
             try {
                 $response = Http::withoutRedirecting()
-                    ->connectTimeout(10)
-                    ->timeout(300)
+                    ->connectTimeout(min(10, $timeout))
+                    ->timeout($timeout)
                     ->withUserAgent('Zyrenn')
                     ->withOptions([
                         'stream' => true,
@@ -67,14 +121,7 @@ class RemoteDownload
                 throw new RemoteDownloadFailed("{$host} answered {$response->status()} for that URL.");
             }
 
-            if ((int) $response->header('Content-Length') > $maxBytes) {
-                throw new RemoteDownloadFailed(self::tooBig($maxBytes));
-            }
-
-            return [
-                'path' => self::save($response->toPsrResponse()->getBody(), $maxBytes),
-                'name' => self::nameFor($url, $response->header('Content-Type')),
-            ];
+            return [$response, $url];
         }
 
         throw new RemoteDownloadFailed('That URL redirects more than '.self::MAX_REDIRECTS.' times.');
