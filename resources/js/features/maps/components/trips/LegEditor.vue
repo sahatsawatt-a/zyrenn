@@ -2,7 +2,7 @@
 import { reactive } from 'vue';
 import { Button } from '@/components/ui/button';
 import { legModes } from '@/features/maps/lib/format';
-import type { LegOverride } from '@/features/maps/composables/useTripPlan';
+import type { LegOverride } from '@/features/maps/lib/trip';
 
 // Typing in a leg as you'll really make it: how, how long, what it costs,
 // and a note -- "Line 2 to Lujiazui, exit 6".

@@ -31,13 +31,9 @@ import {
 } from '@/features/maps/lib/format';
 import LegEditor from './LegEditor.vue';
 import StopEditor from './StopEditor.vue';
-import type {
-    LegOverride,
-    LegRow,
-    StopRow,
-    TripPlan,
-} from '@/features/maps/composables/useTripPlan';
-import { transitLinks } from '@/features/maps/composables/useTripPlan';
+import type { TripPlan } from '@/features/maps/composables/useTripPlan';
+import type { LegOverride, LegRow, StopRow } from '@/features/maps/lib/trip';
+import { transitLinks } from '@/features/maps/lib/trip';
 
 // One day, in time: out of the hotel or in from the airport, each leg and how
 // long it takes, each stop with when you arrive and move on, and where the

@@ -4,7 +4,7 @@ import { ref } from 'vue';
 import { Button } from '@/components/ui/button';
 import type { Weekday } from '@/lib/maps';
 import { readHours } from '@/features/maps/lib/hours';
-import type { TripStop } from '@/features/maps/composables/useTripPlan';
+import type { TripStop } from '@/features/maps/lib/trip';
 
 // A stop's own settings: how long to stay, what it costs, a note, and its
 // opening hours on that day -- typed in where Google has none.

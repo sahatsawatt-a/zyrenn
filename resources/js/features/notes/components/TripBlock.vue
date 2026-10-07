@@ -9,8 +9,8 @@ import {
     ref,
     watch,
 } from 'vue';
-import type { TripContent } from '@/features/maps/composables/useTripPlan';
-import { addDays, shortDate } from '@/features/maps/composables/useTripPlan';
+import type { TripContent } from '@/features/maps/lib/trip';
+import { addDays, shortDate } from '@/features/maps/lib/trip';
 import type { TripSummary, TripTotals } from '@/lib/maps';
 import { listTrips, tripContent } from '@/lib/maps';
 import { holdPrint } from '@/lib/printReady';

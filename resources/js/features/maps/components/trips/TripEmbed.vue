@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, watch } from 'vue';
 import type { TripTotals } from '@/lib/maps';
 import { formatMoney } from '@/features/maps/lib/format';
 import DayTimeline from './DayTimeline.vue';
-import type { TripContent } from '@/features/maps/composables/useTripPlan';
+import type { TripContent } from '@/features/maps/lib/trip';
 import { useTripPlan } from '@/features/maps/composables/useTripPlan';
 
 // A trip shown somewhere other than its own page -- in a note. The whole of

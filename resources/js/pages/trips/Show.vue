@@ -23,7 +23,7 @@ import { pin, placePin } from '@/features/maps/lib/markers';
 import TripHeader from '@/features/maps/components/trips/TripHeader.vue';
 import TripPanel from '@/features/maps/components/trips/TripPanel.vue';
 import TripPlaceCard from '@/features/maps/components/trips/TripPlaceCard.vue';
-import type { TripContent } from '@/features/maps/composables/useTripPlan';
+import type { TripContent } from '@/features/maps/lib/trip';
 import { useTripPlan } from '@/features/maps/composables/useTripPlan';
 import { useMap } from '@/components/map/useMap';
 import { usePresence } from '@/composables/usePresence';

@@ -18,11 +18,7 @@ import { formatMoney } from '@/features/maps/lib/format';
 import FlightsDialog from './FlightsDialog.vue';
 import HotelsDialog from './HotelsDialog.vue';
 import type { TripPlan } from '@/features/maps/composables/useTripPlan';
-import {
-    addDays,
-    shortDate,
-    timeIn,
-} from '@/features/maps/composables/useTripPlan';
+import { addDays, shortDate, timeIn } from '@/features/maps/lib/trip';
 
 // The top of the trip panel: what it's called, when, what it costs, whether
 // it's saved -- and the flights, hotels and settings, each a click away.
