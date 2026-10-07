@@ -41,6 +41,8 @@ class PhotoEditController extends Controller
             'edit.brightness' => ['required_with:edit', 'integer', 'between:0,200'],
             'edit.contrast' => ['required_with:edit', 'integer', 'between:0,200'],
             'edit.saturation' => ['required_with:edit', 'integer', 'between:0,200'],
+            'edit.warmth' => ['required_with:edit', 'integer', 'between:-100,100'],
+            'edit.vignette' => ['required_with:edit', 'integer', 'between:0,100'],
         ]);
 
         // The picture the editor started from, if it is a Drive picture this
@@ -104,6 +106,8 @@ class PhotoEditController extends Controller
             'brightness' => (int) $edit['brightness'],
             'contrast' => (int) $edit['contrast'],
             'saturation' => (int) $edit['saturation'],
+            'warmth' => (int) $edit['warmth'],
+            'vignette' => (int) $edit['vignette'],
         ];
     }
 }

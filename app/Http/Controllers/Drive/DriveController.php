@@ -55,6 +55,8 @@ class DriveController extends Controller
         $paths = DriveFolder::pathsById($allFolders);
 
         $files = $owner->driveFiles()
+            ->with('source:id,ref_id,name,user_id,project_id')
+            ->withCount('edits')
             ->when(! $searching, fn ($files) => $files->where('folder_id', $folder?->id))
             ->when($searching, fn ($files) => $files->whereLike('name', "%{$query}%"))
             ->when($type, fn ($files) => $files->where('kind', $type))

@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
@@ -32,6 +33,7 @@ use Illuminate\Support\Str;
  * @property int $size
  * @property string $kind
  * @property int|null $source_id
+ * @property int|null $edits_count
  * @property array<string, mixed>|null $edit
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -94,6 +96,16 @@ class DriveFile extends Model
     public function source(): BelongsTo
     {
         return $this->belongsTo(self::class, 'source_id');
+    }
+
+    /**
+     * The pictures made from this one in the photo editor.
+     *
+     * @return HasMany<DriveFile, $this>
+     */
+    public function edits(): HasMany
+    {
+        return $this->hasMany(self::class, 'source_id');
     }
 
     /**
@@ -164,6 +176,16 @@ class DriveFile extends Model
     }
 
     /**
+     * Whether another file is in the same Drive as this one.
+     */
+    private function sameOwner(?self $other): bool
+    {
+        return $other !== null
+            && $other->user_id === $this->user_id
+            && $other->project_id === $this->project_id;
+    }
+
+    /**
      * The shape the client sees.
      *
      * @return array<string, mixed>
@@ -180,6 +202,10 @@ class DriveFile extends Model
             'is_video' => $this->isVideo(),
             'url' => $this->url(),
             'created_at' => $this->created_at,
+            // When the Drive is listed: which original an edited copy came
+            // from, and how many copies an original has -- in the same Drive
+            ...($this->relationLoaded('source') ? ['edited_from' => $this->sameOwner($this->source) ? $this->source->only(['ref_id', 'name']) : null] : []),
+            ...(isset($this->edits_count) ? ['edits_count' => (int) $this->edits_count] : []),
         ];
     }
 }

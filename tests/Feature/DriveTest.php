@@ -377,6 +377,8 @@ class DriveTest extends TestCase
             'brightness' => '120',
             'contrast' => '100',
             'saturation' => '80',
+            'warmth' => '-20',
+            'vignette' => '40',
         ];
     }
 
@@ -404,7 +406,15 @@ class DriveTest extends TestCase
         $this->actingAs($user)->getJson(route('drive.files.original', $edited))
             ->assertOk()
             ->assertJsonPath('source.ref_id', $original->ref_id)
-            ->assertJsonPath('edit.saturation', 80);
+            ->assertJsonPath('edit.saturation', 80)
+            ->assertJsonPath('edit.warmth', -20);
+
+        // The Drive says which is a copy of which
+        $this->actingAs($user)->get(route('drive.index', ['folder' => $folder->ref_id]))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('files.0.ref_id', $edited->ref_id)
+                ->where('files.0.edited_from', ['ref_id' => $original->ref_id, 'name' => 'cat.png'])
+                ->where('files.1.edits_count', 1));
         $this->actingAs($user)->getJson(route('drive.files.original', $original))
             ->assertOk()
             ->assertJsonPath('source', null)
@@ -438,8 +448,8 @@ class DriveTest extends TestCase
         $this->actingAs($user)->postJson(route('drive.photo-edits.store'), [
             'file' => self::png(),
             'source' => $original->ref_id,
-            'edit' => [...self::photoEdit(), 'rotate' => '45', 'brightness' => '900'],
-        ])->assertUnprocessable()->assertJsonValidationErrors(['edit.rotate', 'edit.brightness']);
+            'edit' => [...self::photoEdit(), 'rotate' => '45', 'brightness' => '900', 'warmth' => '-101'],
+        ])->assertUnprocessable()->assertJsonValidationErrors(['edit.rotate', 'edit.brightness', 'edit.warmth']);
 
         $this->actingAs($user)->postJson(route('drive.photo-edits.store'), [
             'file' => UploadedFile::fake()->createWithContent('page.html', '<script>alert(1)</script>'),

@@ -19,6 +19,10 @@ export type DriveFile = {
     is_video: boolean;
     url: string;
     created_at: string;
+    // Only in the Drive's own listing: the original an edited copy was made
+    // from in the photo editor, and how many copies an original has
+    edited_from?: { ref_id: string; name: string } | null;
+    edits_count?: number;
 };
 
 // Kept in sync with DriveFile::IMAGE_MIMES

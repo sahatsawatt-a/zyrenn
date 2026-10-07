@@ -23,7 +23,21 @@ export interface PhotoEdit {
     brightness: number;
     contrast: number;
     saturation: number;
+    /** Cooler below 0, warmer above, from -100 to 100. */
+    warmth: number;
+    /** How dark the corners are drawn, from 0 to 100. */
+    vignette: number;
 }
+
+/** The parts of an edit that are light and colour rather than shape. */
+export type LightKey =
+    | 'brightness'
+    | 'contrast'
+    | 'saturation'
+    | 'warmth'
+    | 'vignette';
+
+export type Light = Pick<PhotoEdit, LightKey>;
 
 export interface Size {
     width: number;
@@ -40,7 +54,45 @@ export const UNEDITED: PhotoEdit = {
     brightness: 100,
     contrast: 100,
     saturation: 100,
+    warmth: 0,
+    vignette: 0,
 };
+
+/** An edit as kept, filled out to the whole of an edit today. */
+export const fullEdit = (edit: Partial<PhotoEdit> | null | undefined) => ({
+    ...UNEDITED,
+    ...edit,
+    crop: { ...WHOLE, ...edit?.crop },
+});
+
+/** Looks to start from: light and colour only, the crop left alone. */
+export const LOOKS: { id: string; label: string; light: Partial<Light> }[] = [
+    { id: 'none', label: 'Original', light: {} },
+    { id: 'mono', label: 'B&W', light: { saturation: 0, contrast: 115 } },
+    { id: 'vivid', label: 'Vivid', light: { saturation: 145, contrast: 112 } },
+    { id: 'warm', label: 'Warm', light: { warmth: 35, saturation: 110 } },
+    { id: 'cool', label: 'Cool', light: { warmth: -35, brightness: 104 } },
+    {
+        id: 'fade',
+        label: 'Fade',
+        light: { contrast: 80, brightness: 108, saturation: 75 },
+    },
+    {
+        id: 'drama',
+        label: 'Drama',
+        light: { contrast: 130, saturation: 90, vignette: 45 },
+    },
+];
+
+/** A look's whole light, everything it doesn't name left as it was taken. */
+export const lookLight = (look: Partial<Light>): Light => ({
+    brightness: UNEDITED.brightness,
+    contrast: UNEDITED.contrast,
+    saturation: UNEDITED.saturation,
+    warmth: UNEDITED.warmth,
+    vignette: UNEDITED.vignette,
+    ...look,
+});
 
 /** The edit changes nothing at all. */
 export const isUnedited = (edit: PhotoEdit) =>
@@ -212,25 +264,28 @@ export const dragCrop = (
     };
 };
 
-/** Light and colour as a CSS filter, for showing the edit as it is made. */
-export const cssFilter = (edit: PhotoEdit) =>
-    `brightness(${edit.brightness}%) contrast(${edit.contrast}%) saturate(${edit.saturation}%)`;
-
 /**
- * Light and colour put into the pixels themselves, worked as the CSS filter
- * does -- brightness, then contrast, then saturation -- so what is saved is
- * what was shown.
+ * Light and colour put into the pixels: brightness, then contrast, then
+ * saturation (as CSS filters work them), then warmth, then the vignette --
+ * darkening towards the corners of `frame`, the part of the pixels that is
+ * the picture as cropped (all of them, unless said).
  */
-export const adjustPixels = (
-    data: Uint8ClampedArray,
-    edit: Pick<PhotoEdit, 'brightness' | 'contrast' | 'saturation'>,
+export const adjustPixels = <
+    P extends { data: Uint8ClampedArray; width: number; height: number },
+>(
+    pixels: P,
+    light: Light,
+    frame: Rect = { x: 0, y: 0, width: pixels.width, height: pixels.height },
 ) => {
-    const b = edit.brightness / 100;
-    const c = edit.contrast / 100;
-    const s = edit.saturation / 100;
+    const { data, width } = pixels;
+    const b = light.brightness / 100;
+    const c = light.contrast / 100;
+    const s = light.saturation / 100;
+    const warm = light.warmth * 0.35;
+    const vignette = light.vignette / 100;
 
-    if (b === 1 && c === 1 && s === 1) {
-        return data;
+    if (b === 1 && c === 1 && s === 1 && !warm && !vignette) {
+        return pixels;
     }
 
     // One table for brightness and contrast, which treat each channel alike
@@ -241,33 +296,53 @@ export const adjustPixels = (
         tone[value] = (bright - 127.5) * c + 127.5;
     }
 
-    for (let i = 0; i < data.length; i += 4) {
-        const r = tone[data[i]];
-        const g = tone[data[i + 1]];
-        const bl = tone[data[i + 2]];
+    const middleX = frame.x + frame.width / 2;
+    const middleY = frame.y + frame.height / 2;
 
-        if (s === 1) {
-            data[i] = r;
-            data[i + 1] = g;
-            data[i + 2] = bl;
-            continue;
+    for (let i = 0; i < data.length; i += 4) {
+        let r = tone[data[i]];
+        let g = tone[data[i + 1]];
+        let bl = tone[data[i + 2]];
+
+        if (s !== 1) {
+            [r, g, bl] = [
+                (0.213 + 0.787 * s) * r +
+                    (0.715 - 0.715 * s) * g +
+                    (0.072 - 0.072 * s) * bl,
+                (0.213 - 0.213 * s) * r +
+                    (0.715 + 0.285 * s) * g +
+                    (0.072 - 0.072 * s) * bl,
+                (0.213 - 0.213 * s) * r +
+                    (0.715 - 0.715 * s) * g +
+                    (0.072 + 0.928 * s) * bl,
+            ];
         }
 
-        data[i] =
-            (0.213 + 0.787 * s) * r +
-            (0.715 - 0.715 * s) * g +
-            (0.072 - 0.072 * s) * bl;
-        data[i + 1] =
-            (0.213 - 0.213 * s) * r +
-            (0.715 + 0.285 * s) * g +
-            (0.072 - 0.072 * s) * bl;
-        data[i + 2] =
-            (0.213 - 0.213 * s) * r +
-            (0.715 - 0.715 * s) * g +
-            (0.072 + 0.928 * s) * bl;
+        r += warm;
+        bl -= warm;
+
+        if (vignette) {
+            // 0 in the middle, 1 in the corners, darkening from halfway out
+            const pixel = i / 4;
+            const across =
+                ((pixel % width) + 0.5 - middleX) / (frame.width / 2);
+            const down =
+                (Math.floor(pixel / width) + 0.5 - middleY) /
+                (frame.height / 2);
+            const out = Math.min(1, Math.hypot(across, down) / Math.SQRT2);
+            const fall = Math.max(0, (out - 0.35) / 0.65);
+            const keep = 1 - vignette * 0.8 * fall * fall * (3 - 2 * fall);
+            r *= keep;
+            g *= keep;
+            bl *= keep;
+        }
+
+        data[i] = r;
+        data[i + 1] = g;
+        data[i + 2] = bl;
     }
 
-    return data;
+    return pixels;
 };
 
 /** The size the edited picture comes out at, in pixels. */
@@ -360,7 +435,7 @@ export const renderPhoto = async (
     const canvas = drawPhoto(image, size, edit, { scale });
     const context = canvas.getContext('2d')!;
     const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-    adjustPixels(pixels.data, edit);
+    adjustPixels(pixels, edit);
     context.putImageData(pixels, 0, 0);
 
     const type = outputType(mime);

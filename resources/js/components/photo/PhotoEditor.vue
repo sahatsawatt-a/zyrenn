@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import {
+    Aperture,
     Contrast,
     Droplet,
+    Eye,
     FlipHorizontal2,
     FlipVertical2,
     LoaderCircle,
+    Redo2,
     RotateCcw,
     RotateCw,
     Sun,
+    Thermometer,
+    Undo2,
 } from '@lucide/vue';
-import { useElementSize } from '@vueuse/core';
 import type { Component } from 'vue';
-import { computed, nextTick, ref, shallowRef, watch } from 'vue';
+import { computed, ref, shallowRef, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -22,14 +26,11 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { driveRefOf, photoOriginal, savePhotoEdit } from '@/lib/drive';
-import type { Handle, PhotoEdit, Size } from '@/lib/photo';
+import type { Light, LightKey, PhotoEdit, Size } from '@/lib/photo';
 import {
-    cssFilter,
-    dragCrop,
-    drawPhoto,
     flip,
     fractionRatio,
-    HANDLES,
+    fullEdit,
     isUnedited,
     largestCrop,
     renderPhoto,
@@ -37,10 +38,13 @@ import {
     turnedSize,
     UNEDITED,
 } from '@/lib/photo';
+import PhotoLooks from './PhotoLooks.vue';
+import PhotoStage from './PhotoStage.vue';
 
 // A picture cropped, turned, flipped and lightened, wherever pictures are --
-// a note, a board. Saving keeps a new picture in the Drive beside the
-// original, which is where the next edit starts from: the crop is never lost.
+// a note, a board, the Drive. Saving keeps a new picture in the Drive beside
+// the original, which is where the next edit starts from: the crop is never
+// lost. Every change can be undone, and the original held up to compare.
 
 const props = defineProps<{ src: string }>();
 const open = defineModel<boolean>('open', { required: true });
@@ -60,120 +64,9 @@ const edit = ref<PhotoEdit>(UNEDITED);
 const loading = ref(false);
 const saving = ref(false);
 const error = ref('');
+const comparing = ref(false);
 
-// ---- opening a picture ----
-
-const loadImage = (url: string, cors: boolean) =>
-    new Promise<HTMLImageElement>((resolve, reject) => {
-        const loaded = new Image();
-
-        if (cors) {
-            loaded.crossOrigin = 'anonymous';
-        }
-
-        loaded.onload = () => resolve(loaded);
-        loaded.onerror = () =>
-            reject(new Error('The picture couldn’t be loaded.'));
-        loaded.src = url;
-    });
-
-const foreign = (url: string) =>
-    !url.startsWith('data:') &&
-    new URL(url, window.location.href).origin !== window.location.origin;
-
-const begin = async () => {
-    loading.value = true;
-    error.value = '';
-    image.value = null;
-    source.value = null;
-    wasEdited.value = false;
-    ratio.value = 'free';
-    let url = props.src;
-    let start = UNEDITED;
-    mime.value = props.src.match(/^data:([^;,]+)/)?.[1] ?? null;
-
-    try {
-        const ref = driveRefOf(props.src);
-
-        if (ref) {
-            const found = await photoOriginal(ref);
-            const from = found.source ?? found.file;
-            url = from.url;
-            mime.value = from.mime;
-            source.value = { ref: from.ref_id, url: from.url };
-            wasEdited.value = found.source !== null;
-            start = found.edit ?? UNEDITED;
-        }
-
-        // Another site's picture can only be saved if it lets us read it
-        image.value = foreign(url)
-            ? await loadImage(url, true).catch(() => loadImage(url, false))
-            : await loadImage(url, false);
-        size.value = {
-            width: image.value.naturalWidth || 1000,
-            height: image.value.naturalHeight || 1000,
-        };
-        begun.value = start;
-        edit.value = start;
-    } catch (thrown) {
-        error.value = (thrown as Error).message;
-    } finally {
-        loading.value = false;
-    }
-};
-
-// ---- the picture on the stage ----
-
-const stage = ref<HTMLElement>();
-const { width: stageWidth, height: stageHeight } = useElementSize(stage);
-const preview = ref<HTMLCanvasElement>();
-
-const turned = computed(() => turnedSize(size.value, edit.value.rotate));
-const shown = computed(() => {
-    const scale = Math.min(
-        (stageWidth.value - 32) / turned.value.width,
-        (stageHeight.value - 32) / turned.value.height,
-    );
-
-    return {
-        width: Math.max(1, turned.value.width * scale),
-        height: Math.max(1, turned.value.height * scale),
-    };
-});
-
-// Drawn again only when it turns or flips; the crop and light are laid over
-const redraw = async () => {
-    await nextTick();
-
-    if (!image.value || !preview.value || shown.value.width < 2) {
-        return;
-    }
-
-    const scale = Math.min(
-        1,
-        (shown.value.width * window.devicePixelRatio) / turned.value.width,
-    );
-    const drawn = drawPhoto(image.value, size.value, edit.value, {
-        scale,
-        whole: true,
-    });
-    preview.value.width = drawn.width;
-    preview.value.height = drawn.height;
-    preview.value.getContext('2d')?.drawImage(drawn, 0, 0);
-};
-
-watch(
-    () => [
-        image.value,
-        edit.value.rotate,
-        edit.value.flipX,
-        edit.value.flipY,
-        Math.round(shown.value.width),
-    ],
-    redraw,
-);
-
-// ---- cropping ----
+// ---- cropping to a ratio ----
 
 type Ratio = {
     id: string;
@@ -201,8 +94,117 @@ const held = computed(() => {
         return null;
     }
 
-    return chosen.value === 0 ? 1 : fractionRatio(chosen.value, turned.value);
+    return chosen.value === 0
+        ? 1
+        : fractionRatio(
+              chosen.value,
+              turnedSize(size.value, edit.value.rotate),
+          );
 });
+
+// ---- undo and redo ----
+
+type Step = { edit: PhotoEdit; ratio: string };
+
+const history = ref<Step[]>([]);
+const at = ref(0);
+
+/** Keep where the edit has got to, as one step to go back over. */
+const record = () => {
+    const last = history.value[at.value];
+
+    if (
+        last &&
+        last.ratio === ratio.value &&
+        JSON.stringify(last.edit) === JSON.stringify(edit.value)
+    ) {
+        return;
+    }
+
+    history.value = [
+        ...history.value.slice(0, at.value + 1),
+        { edit: edit.value, ratio: ratio.value },
+    ];
+    at.value = history.value.length - 1;
+};
+
+const goTo = (step: number) => {
+    at.value = step;
+    edit.value = history.value[step].edit;
+    ratio.value = history.value[step].ratio;
+};
+
+const canUndo = computed(() => at.value > 0);
+const canRedo = computed(() => at.value < history.value.length - 1);
+const undo = () => canUndo.value && goTo(at.value - 1);
+const redo = () => canRedo.value && goTo(at.value + 1);
+
+// ---- opening a picture ----
+
+const loadImage = (url: string, cors: boolean) =>
+    new Promise<HTMLImageElement>((resolve, reject) => {
+        const loaded = new Image();
+
+        if (cors) {
+            loaded.crossOrigin = 'anonymous';
+        }
+
+        loaded.onload = () => resolve(loaded);
+        loaded.onerror = () =>
+            reject(new Error('The picture couldn’t be loaded.'));
+        loaded.src = url;
+    });
+
+const foreign = (url: string) =>
+    !url.startsWith('data:') &&
+    new URL(url, window.location.href).origin !== window.location.origin;
+
+const begin = async () => {
+    loading.value = true;
+    error.value = '';
+    image.value = null;
+    source.value = null;
+    wasEdited.value = false;
+    comparing.value = false;
+    ratio.value = 'free';
+    let url = props.src;
+    let start = UNEDITED;
+    mime.value = props.src.match(/^data:([^;,]+)/)?.[1] ?? null;
+
+    try {
+        const ref = driveRefOf(props.src);
+
+        if (ref) {
+            const found = await photoOriginal(ref);
+            const from = found.source ?? found.file;
+            url = from.url;
+            mime.value = from.mime;
+            source.value = { ref: from.ref_id, url: from.url };
+            wasEdited.value = found.source !== null;
+            start = fullEdit(found.edit);
+        }
+
+        // Another site's picture can only be saved if it lets us read it
+        const loaded = foreign(url)
+            ? await loadImage(url, true).catch(() => loadImage(url, false))
+            : await loadImage(url, false);
+        size.value = {
+            width: loaded.naturalWidth || 1000,
+            height: loaded.naturalHeight || 1000,
+        };
+        begun.value = start;
+        edit.value = start;
+        history.value = [{ edit: start, ratio: 'free' }];
+        at.value = 0;
+        image.value = loaded;
+    } catch (thrown) {
+        error.value = (thrown as Error).message;
+    } finally {
+        loading.value = false;
+    }
+};
+
+// ---- the tools ----
 
 const chooseRatio = (id: string) => {
     ratio.value = id;
@@ -210,95 +212,91 @@ const chooseRatio = (id: string) => {
     if (held.value) {
         edit.value = { ...edit.value, crop: largestCrop(held.value) };
     }
+
+    record();
 };
-
-let dragging: {
-    handle: Handle;
-    x: number;
-    y: number;
-    crop: PhotoEdit['crop'];
-} | null = null;
-
-const grab = (handle: Handle, event: PointerEvent) => {
-    (event.currentTarget as Element).setPointerCapture(event.pointerId);
-    dragging = {
-        handle,
-        x: event.clientX,
-        y: event.clientY,
-        crop: edit.value.crop,
-    };
-};
-
-const drag = (event: PointerEvent) => {
-    if (!dragging) {
-        return;
-    }
-
-    edit.value = {
-        ...edit.value,
-        crop: dragCrop(
-            dragging.crop,
-            dragging.handle,
-            (event.clientX - dragging.x) / shown.value.width,
-            (event.clientY - dragging.y) / shown.value.height,
-            held.value,
-        ),
-    };
-};
-
-const drop = () => (dragging = null);
-
-const cursors: Record<Handle, string> = {
-    move: 'move',
-    n: 'ns-resize',
-    s: 'ns-resize',
-    e: 'ew-resize',
-    w: 'ew-resize',
-    ne: 'nesw-resize',
-    sw: 'nesw-resize',
-    nw: 'nwse-resize',
-    se: 'nwse-resize',
-};
-
-/** Where a handle sits on the crop box, as percentages. */
-const handleAt = (handle: Handle) => ({
-    left: handle.includes('w') ? '0%' : handle.includes('e') ? '100%' : '50%',
-    top: handle.includes('n') ? '0%' : handle.includes('s') ? '100%' : '50%',
-    cursor: cursors[handle],
-});
-
-// ---- turning, flipping, light ----
 
 const turnBy = (clockwise: boolean) => {
     edit.value = turn(edit.value, clockwise);
     // A 16:9 crop turned is a 9:16 one
     ratio.value =
         ratios.find((each) => each.id === ratio.value)?.inverse ?? 'free';
+    record();
+};
+
+const flipAcross = (across: 'x' | 'y') => {
+    edit.value = flip(edit.value, across);
+    record();
 };
 
 const sliders: {
-    key: 'brightness' | 'contrast' | 'saturation';
+    key: LightKey;
     label: string;
     icon: Component;
+    min: number;
+    max: number;
 }[] = [
-    { key: 'brightness', label: 'Brightness', icon: Sun },
-    { key: 'contrast', label: 'Contrast', icon: Contrast },
-    { key: 'saturation', label: 'Saturation', icon: Droplet },
+    { key: 'brightness', label: 'Brightness', icon: Sun, min: 0, max: 200 },
+    { key: 'contrast', label: 'Contrast', icon: Contrast, min: 0, max: 200 },
+    { key: 'saturation', label: 'Saturation', icon: Droplet, min: 0, max: 200 },
+    { key: 'warmth', label: 'Warmth', icon: Thermometer, min: -100, max: 100 },
+    { key: 'vignette', label: 'Vignette', icon: Aperture, min: 0, max: 100 },
 ];
 
-const setLight = (
-    key: 'brightness' | 'contrast' | 'saturation',
-    event: Event,
-) => {
-    edit.value = {
-        ...edit.value,
-        [key]: Number((event.target as HTMLInputElement).value),
-    };
+/** A slider's setting as it reads: 0 for as the picture was taken. */
+const reading = (key: LightKey) => {
+    const away = edit.value[key] - UNEDITED[key];
+
+    return `${away > 0 ? '+' : ''}${away}`;
+};
+
+const setLight = (key: LightKey, value: number) => {
+    edit.value = { ...edit.value, [key]: value };
+};
+
+const pickLook = (light: Light) => {
+    edit.value = { ...edit.value, ...light };
+    record();
 };
 
 const reset = () => {
     edit.value = UNEDITED;
     ratio.value = 'free';
+    record();
+};
+
+/**
+ * Ctrl+Z and Ctrl+Shift+Z (or Ctrl+Y) undo and redo; holding \ shows the
+ * original. Arrow keys belong to the crop box and the sliders.
+ */
+const onKey = (event: KeyboardEvent) => {
+    const command = event.ctrlKey || event.metaKey;
+    const key = event.key.toLowerCase();
+
+    // The keys are the editor's while it is open: a board behind it would
+    // otherwise undo, or move what is chosen on it, as well. Escape and Tab
+    // still reach the dialog, to close it and keep the focus inside it.
+    if (key !== 'escape' && key !== 'tab') {
+        event.stopPropagation();
+    }
+
+    const down = event.type === 'keydown';
+
+    if (command && key === 'z') {
+        event.preventDefault();
+
+        if (down) {
+            (event.shiftKey ? redo : undo)();
+        }
+    } else if (command && key === 'y') {
+        event.preventDefault();
+
+        if (down) {
+            redo();
+        }
+    } else if (key === '\\') {
+        comparing.value = down;
+    }
 };
 
 // ---- keeping it ----
@@ -358,7 +356,12 @@ watch(open, (now) => now && begin(), { immediate: true });
 
 <template>
     <Dialog v-model:open="open">
-        <DialogContent class="sm:max-w-5xl" data-test="photo-editor">
+        <DialogContent
+            class="sm:max-w-5xl"
+            data-test="photo-editor"
+            @keydown="onKey"
+            @keyup="onKey"
+        >
             <DialogHeader>
                 <DialogTitle>Edit photo</DialogTitle>
                 <DialogDescription>
@@ -368,56 +371,49 @@ watch(open, (now) => now && begin(), { immediate: true });
             </DialogHeader>
 
             <div class="flex min-w-0 flex-col gap-4 md:flex-row">
-                <div
-                    ref="stage"
-                    class="photo-stage relative flex h-[min(60vh,560px)] min-w-0 flex-1 items-center justify-center overflow-hidden rounded-md"
-                >
-                    <LoaderCircle
-                        v-if="loading"
-                        class="text-muted-foreground size-6 animate-spin"
-                    />
+                <div class="relative h-[min(60vh,560px)] min-w-0 flex-1">
                     <div
-                        v-else-if="image"
-                        class="relative touch-none select-none"
-                        :style="{
-                            width: `${shown.width}px`,
-                            height: `${shown.height}px`,
-                        }"
-                        @pointermove="drag"
-                        @pointerup="drop"
-                        @pointercancel="drop"
+                        v-if="loading"
+                        class="bg-muted flex size-full items-center justify-center rounded-md"
                     >
-                        <canvas
-                            ref="preview"
-                            class="block size-full"
-                            :style="{ filter: cssFilter(edit) }"
+                        <LoaderCircle
+                            class="text-muted-foreground size-6 animate-spin"
                         />
-                        <div
-                            class="photo-crop absolute"
-                            data-test="photo-crop"
-                            :style="{
-                                left: `${edit.crop.x * 100}%`,
-                                top: `${edit.crop.y * 100}%`,
-                                width: `${edit.crop.width * 100}%`,
-                                height: `${edit.crop.height * 100}%`,
-                                cursor: 'move',
-                            }"
-                            @pointerdown="grab('move', $event)"
-                        >
-                            <span class="photo-thirds" />
-                            <span
-                                v-for="handle in HANDLES"
-                                :key="handle"
-                                class="photo-handle"
-                                :data-test="`crop-${handle}`"
-                                :style="handleAt(handle)"
-                                @pointerdown.stop="grab(handle, $event)"
-                            />
-                        </div>
                     </div>
+                    <PhotoStage
+                        v-else-if="image"
+                        v-model:edit="edit"
+                        :image="image"
+                        :size="size"
+                        :ratio="held"
+                        :comparing="comparing"
+                        @settle="record"
+                    >
+                        <button
+                            type="button"
+                            class="bg-background/90 hover:bg-background absolute top-2 right-2 flex touch-none items-center gap-1.5 rounded-md border px-2 py-1 text-xs shadow-sm select-none"
+                            :class="comparing && 'ring-primary ring-2'"
+                            :aria-pressed="comparing"
+                            title="Hold to see the original (or hold \)"
+                            data-test="photo-compare"
+                            @pointerdown="
+                                (
+                                    $event.currentTarget as Element
+                                ).setPointerCapture($event.pointerId);
+                                comparing = true;
+                            "
+                            @pointerup="comparing = false"
+                            @pointercancel="comparing = false"
+                        >
+                            <Eye class="size-3.5" />
+                            Hold to compare
+                        </button>
+                    </PhotoStage>
                 </div>
 
-                <div class="flex flex-col gap-5 md:w-60">
+                <div
+                    class="flex flex-col gap-5 md:max-h-[min(60vh,560px)] md:w-64 md:overflow-y-auto md:pr-1"
+                >
                     <section>
                         <h3 class="mb-2 text-xs font-medium">Crop</h3>
                         <div class="grid grid-cols-4 gap-1">
@@ -469,7 +465,7 @@ watch(open, (now) => now && begin(), { immediate: true });
                                 aria-label="Flip left to right"
                                 title="Flip left to right"
                                 data-test="flip-x"
-                                @click="edit = flip(edit, 'x')"
+                                @click="flipAcross('x')"
                             >
                                 <FlipHorizontal2 class="size-4" />
                             </Button>
@@ -479,11 +475,21 @@ watch(open, (now) => now && begin(), { immediate: true });
                                 aria-label="Flip upside down"
                                 title="Flip upside down"
                                 data-test="flip-y"
-                                @click="edit = flip(edit, 'y')"
+                                @click="flipAcross('y')"
                             >
                                 <FlipVertical2 class="size-4" />
                             </Button>
                         </div>
+                    </section>
+
+                    <section v-if="image">
+                        <h3 class="mb-2 text-xs font-medium">Looks</h3>
+                        <PhotoLooks
+                            :image="image"
+                            :size="size"
+                            :edit="edit"
+                            @pick="pickLook"
+                        />
                     </section>
 
                     <section class="space-y-3">
@@ -499,20 +505,29 @@ watch(open, (now) => now && begin(), { immediate: true });
                                 <component :is="slider.icon" class="size-3.5" />
                                 {{ slider.label }}
                                 <span class="ml-auto tabular-nums">
-                                    {{ edit[slider.key] - 100 > 0 ? '+' : ''
-                                    }}{{ edit[slider.key] - 100 }}
+                                    {{ reading(slider.key) }}
                                 </span>
                             </span>
                             <input
                                 type="range"
-                                min="0"
-                                max="200"
+                                :min="slider.min"
+                                :max="slider.max"
                                 class="accent-primary w-full"
                                 :value="edit[slider.key]"
                                 :data-test="`light-${slider.key}`"
-                                @input="setLight(slider.key, $event)"
+                                @input="
+                                    setLight(
+                                        slider.key,
+                                        Number(
+                                            ($event.target as HTMLInputElement)
+                                                .value,
+                                        ),
+                                    )
+                                "
+                                @change="record"
                                 @dblclick="
-                                    edit = { ...edit, [slider.key]: 100 }
+                                    setLight(slider.key, UNEDITED[slider.key]);
+                                    record();
                                 "
                             />
                         </label>
@@ -529,14 +544,38 @@ watch(open, (now) => now && begin(), { immediate: true });
             </p>
 
             <DialogFooter class="gap-2 sm:justify-between">
-                <Button
-                    variant="ghost"
-                    :disabled="!image || isUnedited(edit)"
-                    data-test="photo-reset"
-                    @click="reset"
-                >
-                    <RotateCcw class="size-4" /> Reset to original
-                </Button>
+                <div class="flex gap-1">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Undo"
+                        title="Undo (Ctrl+Z)"
+                        :disabled="!canUndo"
+                        data-test="photo-undo"
+                        @click="undo"
+                    >
+                        <Undo2 class="size-4" />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Redo"
+                        title="Redo (Ctrl+Shift+Z)"
+                        :disabled="!canRedo"
+                        data-test="photo-redo"
+                        @click="redo"
+                    >
+                        <Redo2 class="size-4" />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        :disabled="!image || isUnedited(edit)"
+                        data-test="photo-reset"
+                        @click="reset"
+                    >
+                        <RotateCcw class="size-4" /> Reset to original
+                    </Button>
+                </div>
                 <div class="flex gap-2">
                     <Button variant="outline" @click="open = false"
                         >Cancel</Button
@@ -557,67 +596,3 @@ watch(open, (now) => now && begin(), { immediate: true });
         </DialogContent>
     </Dialog>
 </template>
-
-<style scoped>
-/* A see-through picture shows as see-through */
-.photo-stage {
-    background-color: var(--muted);
-    background-image:
-        linear-gradient(45deg, var(--border) 25%, transparent 25%),
-        linear-gradient(-45deg, var(--border) 25%, transparent 25%),
-        linear-gradient(45deg, transparent 75%, var(--border) 75%),
-        linear-gradient(-45deg, transparent 75%, var(--border) 75%);
-    background-size: 16px 16px;
-    background-position:
-        0 0,
-        0 8px,
-        8px -8px,
-        -8px 0;
-}
-
-/* What is cut off is dimmed, all round the box */
-.photo-crop {
-    outline: 1px solid rgb(255 255 255 / 0.9);
-    box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.55);
-}
-
-.photo-thirds {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background:
-        linear-gradient(
-            to right,
-            transparent calc(33.33% - 0.5px),
-            rgb(255 255 255 / 0.45) calc(33.33% - 0.5px),
-            rgb(255 255 255 / 0.45) calc(33.33% + 0.5px),
-            transparent calc(33.33% + 0.5px),
-            transparent calc(66.66% - 0.5px),
-            rgb(255 255 255 / 0.45) calc(66.66% - 0.5px),
-            rgb(255 255 255 / 0.45) calc(66.66% + 0.5px),
-            transparent calc(66.66% + 0.5px)
-        ),
-        linear-gradient(
-            to bottom,
-            transparent calc(33.33% - 0.5px),
-            rgb(255 255 255 / 0.45) calc(33.33% - 0.5px),
-            rgb(255 255 255 / 0.45) calc(33.33% + 0.5px),
-            transparent calc(33.33% + 0.5px),
-            transparent calc(66.66% - 0.5px),
-            rgb(255 255 255 / 0.45) calc(66.66% - 0.5px),
-            rgb(255 255 255 / 0.45) calc(66.66% + 0.5px),
-            transparent calc(66.66% + 0.5px)
-        );
-}
-
-.photo-handle {
-    position: absolute;
-    width: 14px;
-    height: 14px;
-    margin: -7px 0 0 -7px;
-    border-radius: 3px;
-    background: white;
-    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.4);
-    touch-action: none;
-}
-</style>

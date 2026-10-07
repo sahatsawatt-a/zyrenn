@@ -9,12 +9,16 @@ import {
     FileVideo,
     Folder,
     Play,
+    SlidersHorizontal,
 } from '@lucide/vue';
-import { computed } from 'vue';
+import { router } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 import Highlight from '@/components/folders/Highlight.vue';
 import ItemActions from '@/components/folders/ItemActions.vue';
+import PhotoEditor from '@/components/photo/PhotoEditor.vue';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import type { DriveFile } from '@/lib/drive';
+import { canChange } from '@/lib/projects';
 import { formatBytes, formatRelativeTime } from '@/lib/utils';
 import { show } from '@/routes/drive/files';
 
@@ -37,6 +41,12 @@ const action = computed(() =>
 const downloadUrl = computed(() =>
     show.url(props.file.ref_id, { query: { download: 1 } }),
 );
+
+// A picture is edited into a new one beside it, which the list then shows
+const editable = computed(() => props.file.is_image && canChange());
+const editing = ref(false);
+// After the menu has closed, so the dialog takes the focus it hands back
+const startEditing = () => setTimeout(() => (editing.value = true));
 
 const icon = computed(
     () =>
@@ -109,6 +119,26 @@ const icon = computed(
                     {{ formatBytes(file.size) }} ·
                     {{ formatRelativeTime(file.created_at) }}
                 </p>
+                <p
+                    v-if="file.edited_from"
+                    class="text-muted-foreground truncate text-xs"
+                    :title="`Edited from ${file.edited_from.name}`"
+                    data-test="edited-from"
+                >
+                    <SlidersHorizontal
+                        class="mr-1 inline size-3 align-[-2px]"
+                    />Edited from {{ file.edited_from.name }}
+                </p>
+                <p
+                    v-else-if="file.edits_count"
+                    class="text-muted-foreground text-xs"
+                    data-test="edit-count"
+                >
+                    <SlidersHorizontal
+                        class="mr-1 inline size-3 align-[-2px]"
+                    />{{ file.edits_count }} edited
+                    {{ file.edits_count === 1 ? 'copy' : 'copies' }}
+                </p>
             </div>
 
             <ItemActions
@@ -120,10 +150,24 @@ const icon = computed(
                 <DropdownMenuItem @select="$emit('open')">
                     <ExternalLink /> {{ action }}
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                    v-if="editable"
+                    data-test="edit-photo"
+                    @select="startEditing"
+                >
+                    <SlidersHorizontal /> Edit photo
+                </DropdownMenuItem>
                 <DropdownMenuItem as-child>
                     <a :href="downloadUrl"><Download /> Download</a>
                 </DropdownMenuItem>
             </ItemActions>
         </div>
+
+        <PhotoEditor
+            v-if="editing"
+            v-model:open="editing"
+            :src="file.url"
+            @saved="router.reload({ only: ['files'] })"
+        />
     </div>
 </template>

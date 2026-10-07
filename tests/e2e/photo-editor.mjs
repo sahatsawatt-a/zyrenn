@@ -77,7 +77,20 @@ await runBoard('/demo/konva', async (ctx) => {
                     ).data,
                 );
 
+            const light = (x, y) => {
+                const [r, g, b] = context.getImageData(
+                    Math.floor(canvas.width * x),
+                    Math.floor(canvas.height * y),
+                    1,
+                    1,
+                ).data;
+
+                return r + g + b;
+            };
+
             return {
+                // The very corner against the middle of its quarter
+                darkCorner: light(0.01, 0.01) < light(0.25, 0.25) - 60,
                 size: `${canvas.width}×${canvas.height}`,
                 corners: [
                     at(0.25, 0.25),
@@ -130,6 +143,39 @@ await runBoard('/demo/konva', async (ctx) => {
     await byTest('flip-x').click();
     await byTest('ratio-1:1').click();
     await page.waitForTimeout(300);
+    const cropStyle = () => byTest('photo-crop').getAttribute('style');
+    const squared = await cropStyle();
+
+    // Undone, and done again
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(200);
+    const undone = await cropStyle();
+    await byTest('photo-redo').click();
+    await page.waitForTimeout(200);
+    check(
+        'Ctrl+Z undoes the crop, and redo puts it back',
+        /height: 100%/.test(undone) && (await cropStyle()) === squared,
+        `${undone} → ${await cropStyle()}`,
+    );
+
+    // Held up against the original: not turned, nothing cropped
+    const box = await byTest('photo-picture').boundingBox();
+    const compare = await byTest('photo-compare').boundingBox();
+    await page.mouse.move(compare.x + 10, compare.y + 10);
+    await page.mouse.down();
+    await page.waitForTimeout(250);
+    const held = await byTest('photo-picture').boundingBox();
+    const cropWhileHeld = await byTest('photo-crop').count();
+    await page.mouse.up();
+    await page.waitForTimeout(250);
+    check(
+        'holding compare shows the original, and letting go the edit',
+        held.width > held.height &&
+            box.height > box.width &&
+            cropWhileHeld === 0 &&
+            (await byTest('photo-crop').count()) === 1,
+        `${Math.round(box.width)}×${Math.round(box.height)} → ${Math.round(held.width)}×${Math.round(held.height)}`,
+    );
     await page.screenshot({ path: `${SHOTS}/photo-editor-board.png` });
     await byTest('photo-save').click();
     await byTest('photo-editor').waitFor({ state: 'detached' });
@@ -168,6 +214,22 @@ await runBoard('/demo/konva', async (ctx) => {
         'the edit is picked up where it was left, on the whole picture',
         /height: 50%/.test(crop) && stage[1] > stage[0],
         `${crop} on ${stage.join('×')}`,
+    );
+
+    // Arrow keys move the crop box, each press a step undo takes back
+    await byTest('photo-crop').focus();
+    for (let i = 0; i < 3; i++) {
+        await page.keyboard.press('Shift+ArrowDown');
+    }
+    const nudged = await cropStyle();
+    for (let i = 0; i < 3; i++) {
+        await page.keyboard.press('Control+z');
+    }
+    await page.waitForTimeout(150);
+    check(
+        'arrow keys nudge the crop, and undo takes the nudges back',
+        !/top: 25%/.test(nudged) && /top: 25%/.test(await cropStyle()),
+        nudged,
     );
     await byTest('photo-reset').click();
     await byTest('photo-save').click();
@@ -212,11 +274,20 @@ await runBoard('/demo/konva', async (ctx) => {
     );
 
     await byTest('ratio-16:9').click();
-    await byTest('light-saturation').evaluate((input) => {
-        input.value = '0';
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+    await byTest('look-mono').click();
     await page.waitForTimeout(300);
+    check(
+        'a look sets the light, and shows as chosen',
+        (await byTest('look-mono').getAttribute('aria-pressed')) === 'true' &&
+            (await byTest('light-saturation').inputValue()) === '0' &&
+            (await byTest('look-mono').locator('img').count()) === 1,
+    );
+    await byTest('light-vignette').evaluate((input) => {
+        input.value = '100';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await page.waitForTimeout(400);
     await page.screenshot({ path: `${SHOTS}/photo-editor-note.png` });
     await byTest('photo-save').click();
     await byTest('photo-editor').waitFor({ state: 'detached' });
@@ -225,11 +296,12 @@ await runBoard('/demo/konva', async (ctx) => {
     const noteSrc = await noteImage.getAttribute('src');
     const grey = await read(noteSrc);
     check(
-        'the note shows the picture cropped 16:9, in grey',
+        'the note shows the picture cropped 16:9, black and white, its corners darkened',
         noteSrc !== original.src.replace(base, '') &&
             grey.size === '356×200' &&
-            grey.corners === 'grey grey grey grey',
-        `${grey.size}: ${grey.corners}`,
+            grey.corners === 'grey grey grey grey' &&
+            grey.darkCorner,
+        `${grey.size}: ${grey.corners}, dark corner ${grey.darkCorner}`,
     );
 
     // Kept with the note
@@ -241,4 +313,45 @@ await runBoard('/demo/konva', async (ctx) => {
         (await page.locator('.ProseMirror img').first().getAttribute('src')) ===
             noteSrc,
     );
+
+    // ---- in the Drive ----
+
+    await page.goto(`${base}/drive`, { waitUntil: 'networkidle' });
+    const card = (name) =>
+        page.locator('div.group', {
+            has: page.locator(`[title="${name}"]`),
+        });
+    check(
+        'the Drive says which pictures are edited copies, and of what',
+        (await byTest('edited-from').first().innerText()).includes(
+            'quarters.png',
+        ) &&
+            /2 edited copies/.test(
+                await card('quarters.png')
+                    .locator('[data-test="edit-count"]')
+                    .innerText(),
+            ),
+    );
+
+    await card('quarters.png').hover();
+    await card('quarters.png')
+        .getByRole('button', { name: 'File actions' })
+        .click();
+    await byTest('edit-photo').click();
+    await byTest('photo-crop').waitFor();
+    await byTest('turn-left').click();
+    await byTest('photo-save').click();
+    await byTest('photo-editor').waitFor({ state: 'detached' });
+    await page.waitForTimeout(1500);
+    check(
+        'a picture is edited from the Drive, and its copy is listed',
+        /3 edited copies/.test(
+            await card('quarters.png')
+                .locator('[data-test="edit-count"]')
+                .innerText(),
+        ) &&
+            (await page.evaluate(() => document.body.style.pointerEvents)) !==
+                'none',
+    );
+    await page.screenshot({ path: `${SHOTS}/photo-editor-drive.png` });
 });

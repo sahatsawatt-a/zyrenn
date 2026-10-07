@@ -4,8 +4,11 @@ import {
     dragCrop,
     flip,
     fractionRatio,
+    fullEdit,
     isUnedited,
     largestCrop,
+    LOOKS,
+    lookLight,
     outputSize,
     turn,
     UNEDITED,
@@ -110,12 +113,16 @@ describe('the crop box', () => {
 });
 
 describe('light and colour', () => {
-    it('leaves the pixels alone when nothing is changed', () => {
-        const data = new Uint8ClampedArray([10, 20, 30, 255]);
+    const pixels = (...values: number[]) => ({
+        data: new Uint8ClampedArray(values),
+        width: values.length / 4,
+        height: 1,
+    });
 
-        expect(Array.from(adjustPixels(data, UNEDITED))).toEqual([
-            10, 20, 30, 255,
-        ]);
+    it('leaves the pixels alone when nothing is changed', () => {
+        expect(
+            Array.from(adjustPixels(pixels(10, 20, 30, 255), UNEDITED).data),
+        ).toEqual([10, 20, 30, 255]);
         expect(isUnedited(UNEDITED)).toBe(true);
         expect(isUnedited(cropped)).toBe(false);
     });
@@ -123,21 +130,53 @@ describe('light and colour', () => {
     it('brightens, and takes the colour out', () => {
         expect(
             Array.from(
-                adjustPixels(new Uint8ClampedArray([100, 50, 0, 255]), {
+                adjustPixels(pixels(100, 50, 0, 255), {
+                    ...UNEDITED,
                     brightness: 200,
-                    contrast: 100,
-                    saturation: 100,
-                }),
+                }).data,
             ),
         ).toEqual([200, 100, 0, 255]);
 
-        const [r, g, b, a] = adjustPixels(
-            new Uint8ClampedArray([200, 40, 10, 128]),
-            { brightness: 100, contrast: 100, saturation: 0 },
-        );
+        const [r, g, b, a] = adjustPixels(pixels(200, 40, 10, 128), {
+            ...UNEDITED,
+            saturation: 0,
+        }).data;
 
         expect(r).toBe(g);
         expect(g).toBe(b);
         expect(a).toBe(128);
+    });
+
+    it('warms towards red and cools towards blue', () => {
+        const [r, , b] = adjustPixels(pixels(100, 100, 100, 255), {
+            ...UNEDITED,
+            warmth: 100,
+        }).data;
+
+        expect([r > 100, b < 100]).toEqual([true, true]);
+    });
+
+    it('darkens the corners of the frame, not its middle', () => {
+        // A row of grey: the ends are the frame's edges, the middle its centre
+        const row = adjustPixels(
+            {
+                data: new Uint8ClampedArray(Array(9 * 4).fill(200)),
+                width: 9,
+                height: 1,
+            },
+            { ...UNEDITED, vignette: 100 },
+            { x: 0, y: -4, width: 9, height: 9 },
+        ).data;
+
+        expect(row[4 * 4]).toBe(200);
+        expect(row[0]).toBeLessThan(row[4 * 4]);
+    });
+
+    it('fills out an edit kept before warmth and vignette were there', () => {
+        const kept = fullEdit({ rotate: 90, crop: { x: 0.5 } } as never);
+
+        expect(kept.warmth).toBe(0);
+        expect(kept.crop).toEqual({ x: 0.5, y: 0, width: 1, height: 1 });
+        expect(lookLight(LOOKS[1].light).saturation).toBe(0);
     });
 });
