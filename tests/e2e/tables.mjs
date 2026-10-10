@@ -35,7 +35,10 @@ await runBoard(
             ).trim();
         };
 
-        await page.getByRole('button', { name: /new table/i }).click();
+        await page
+            .getByRole('button', { name: /new table/i })
+            .first()
+            .click();
         await page.waitForURL(/tables\/\w+/, { timeout: 30000 });
         await page.waitForSelector('[data-test="table-workspace"]');
         check('a new table opens', true);

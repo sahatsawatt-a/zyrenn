@@ -46,7 +46,7 @@ if (process.env.DEBUG) {
     });
 }
 const base = new URL(page.url()).origin;
-const me = "App\\Models\\User::where('email', 'test@example.com')->first()";
+const me = `App\\Models\\User::where('email', '${process.env.E2E_EMAIL ?? 'test@example.com'}')->first()`;
 
 // Each run starts with no saved places, and leaves none behind
 const clearPlaces = () => tinker(`${me}->placeLists()->delete(); echo 'ok';`);

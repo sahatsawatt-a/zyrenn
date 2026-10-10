@@ -56,7 +56,10 @@ await runBoard(
         });
         await page.getByText(NAME).first().waitFor({ timeout: 30000 });
 
-        const card = page.locator('[title="Play"]').first();
+        // This upload's own card, never one an earlier run left behind
+        const card = page
+            .locator('div.group', { has: page.locator(`[title="${NAME}"]`) })
+            .locator('[title="Play"]');
         // The thumbnail asks for a moment just in; the file is the rest
         const fileUrl = (await card.locator('video').getAttribute('src')).split(
             '#',
@@ -104,7 +107,10 @@ await runBoard(
 
         // ------------------------------------------------------------ Board
         await page.goto(`${APP}/boards`, { waitUntil: 'networkidle' });
-        await page.getByRole('button', { name: /new board/i }).click();
+        await page
+            .getByRole('button', { name: /new board/i })
+            .first()
+            .click();
         await page.waitForURL(/boards\/\w+/, { timeout: 30000 });
         const boardRef = page.url().split('/').pop();
         afterwards(() => remove(`/boards/${boardRef}`));

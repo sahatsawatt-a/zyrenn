@@ -7,6 +7,7 @@
 //     node tests/e2e/board.mjs          # watch it happen
 //     HEADED=0 node tests/e2e/board.mjs # quietly
 import { execFileSync } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright-core';
 
 const APP = process.env.APP_URL ?? 'http://127.0.0.1:8001';
@@ -18,6 +19,52 @@ const WHO = {
 };
 
 export const SHOTS = process.env.E2E_SHOTS ?? '/tmp/zyrenn-e2e';
+
+// What Chrome says of itself, never of the app: its graphics drawing without a
+// GPU, headless, and the dev server's font preloads on a busy machine
+const BROWSER_NOISE =
+    /GL Driver Message|GPU stall due to ReadPixels|WebGL: CONTEXT_LOST_WEBGL: loseContext|__laravel_vite_plugin__\/fonts\/.* was preloaded using link preload but not used/;
+
+/**
+ * A page signed in as `email`, by a session kept from the last time -- the
+ * form is filled in only when there is none yet, or it has run out. Opens
+ * `path` once signed in.
+ */
+async function signedIn(
+    browser,
+    base,
+    email,
+    password,
+    path,
+    viewport,
+    watch = () => {},
+) {
+    mkdirSync(SHOTS, { recursive: true });
+    const kept = `${SHOTS}/.session-${email}.json`;
+    let context;
+
+    try {
+        context = await browser.newContext({ viewport, storageState: kept });
+    } catch {
+        context = await browser.newContext({ viewport });
+    }
+
+    const page = await context.newPage();
+    watch(page);
+    await page.goto(`${base}${path}`, { waitUntil: 'networkidle' });
+
+    if (new URL(page.url()).pathname === '/login') {
+        await page.getByLabel('Email address').fill(email);
+        await page.getByLabel('Password', { exact: true }).fill(password);
+        await page.getByRole('button', { name: /log in/i }).click();
+        // Back to where it was going, or the dashboard
+        await page.waitForURL((url) => url.pathname !== '/login');
+        await context.storageState({ path: kept });
+        await page.goto(`${base}${path}`, { waitUntil: 'networkidle' });
+    }
+
+    return { context, page };
+}
 
 /**
  * Opens the app at `path` with somebody signed in, and hands back the page
@@ -32,28 +79,30 @@ export async function openBoard(path = '/demo/konva', size = {}) {
         headless: process.env.HEADED === '0',
         slowMo: Number(process.env.SLOWMO ?? 40),
     });
-    const page = await browser.newPage({
-        viewport: { width: size.width ?? 1500, height: size.height ?? 950 },
-    });
-
-    page.on('console', (message) => {
-        if (message.type() === 'error' || message.type() === 'warning') {
-            problems.push(
-                `console.${message.type()}: ${message.text().slice(0, 160)}`,
+    const { page } = await signedIn(
+        browser,
+        APP,
+        WHO.email,
+        WHO.password,
+        path,
+        { width: size.width ?? 1500, height: size.height ?? 950 },
+        (page) => {
+            page.on('console', (message) => {
+                if (
+                    (message.type() === 'error' ||
+                        message.type() === 'warning') &&
+                    !BROWSER_NOISE.test(message.text())
+                ) {
+                    problems.push(
+                        `console.${message.type()}: ${message.text().slice(0, 160)}`,
+                    );
+                }
+            });
+            page.on('pageerror', (error) =>
+                problems.push(`pageerror: ${error.message.slice(0, 160)}`),
             );
-        }
-    });
-    page.on('pageerror', (error) =>
-        problems.push(`pageerror: ${error.message.slice(0, 160)}`),
+        },
     );
-
-    await page.goto(`${APP}/login`, { waitUntil: 'networkidle' });
-    await page.getByLabel('Email address').fill(WHO.email);
-    await page.getByLabel('Password', { exact: true }).fill(WHO.password);
-    await page.getByRole('button', { name: /log in/i }).click();
-    await page.waitForURL(/dashboard/);
-
-    await page.goto(`${APP}${path}`, { waitUntil: 'networkidle' });
 
     const check = (label, passed, detail = '') => {
         results.push(
@@ -381,19 +430,17 @@ export async function runBoard(path, suite, size) {
  * A second person, signed in in a browser context of their own -- someone to
  * share a project with. Close the context when done.
  */
-export async function signIn(browser, base, email, password = 'password') {
-    const context = await browser.newContext({
-        viewport: { width: 1500, height: 950 },
+export async function signIn(
+    browser,
+    base,
+    email,
+    password = 'password',
+    path = '/dashboard',
+) {
+    return signedIn(browser, base, email, password, path, {
+        width: 1500,
+        height: 950,
     });
-    const page = await context.newPage();
-
-    await page.goto(`${base}/login`, { waitUntil: 'networkidle' });
-    await page.getByLabel('Email address').fill(email);
-    await page.getByLabel('Password', { exact: true }).fill(password);
-    await page.getByRole('button', { name: /log in/i }).click();
-    await page.waitForURL(/dashboard/);
-
-    return { context, page };
 }
 
 /**

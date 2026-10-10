@@ -11,7 +11,10 @@ await runBoard(
     async (b) => {
         const { page, check, at, layerNames, ready } = b;
 
-        await page.getByRole('button', { name: /new board/i }).click();
+        await page
+            .getByRole('button', { name: /new board/i })
+            .first()
+            .click();
         await page.waitForURL(
             /boards\/\w+/,
             { timeout: 30000 },

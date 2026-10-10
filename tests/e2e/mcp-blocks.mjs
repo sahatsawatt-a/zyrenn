@@ -26,11 +26,11 @@ await runBoard(
     async ({ page, check, afterwards, ready, draw, screenOf, itemCount }) => {
         const base = new URL(page.url()).origin;
         const token = tinker(
-            `echo App\\Models\\User::where('email', 'test@example.com')->first()->createToken('${TOKEN_NAME}', ['mcp'])->plainTextToken;`,
+            `echo App\\Models\\User::where('email', '${process.env.E2E_EMAIL ?? 'test@example.com'}')->first()->createToken('${TOKEN_NAME}', ['mcp'])->plainTextToken;`,
         );
         afterwards(() =>
             tinker(
-                `App\\Models\\User::where('email', 'test@example.com')->first()->tokens()->where('name', '${TOKEN_NAME}')->delete();`,
+                `App\\Models\\User::where('email', '${process.env.E2E_EMAIL ?? 'test@example.com'}')->first()->tokens()->where('name', '${TOKEN_NAME}')->delete();`,
             ),
         );
 

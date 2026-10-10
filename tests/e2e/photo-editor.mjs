@@ -5,7 +5,7 @@
 //     node tests/e2e/photo-editor.mjs
 import { makeNote, runBoard, SHOTS, tinker } from './harness.mjs';
 
-const me = "App\\Models\\User::where('email', 'test@example.com')->first()";
+const me = `App\\Models\\User::where('email', '${process.env.E2E_EMAIL ?? 'test@example.com'}')->first()`;
 
 await runBoard('/demo/konva', async (ctx) => {
     const { page, check, afterwards, inspectorTitle } = ctx;

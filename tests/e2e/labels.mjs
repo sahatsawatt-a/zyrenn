@@ -28,7 +28,10 @@ await runBoard(
     async (b) => {
         const { page, check, ready, draw, screenOf, afterwards } = b;
 
-        await page.getByRole('button', { name: /new board/i }).click();
+        await page
+            .getByRole('button', { name: /new board/i })
+            .first()
+            .click();
         await page.waitForURL(/boards\/\w+/, { timeout: 30000 });
         const ref = page.url().split('/').pop();
         afterwards(() => removeAt(page, `/boards/${ref}`));

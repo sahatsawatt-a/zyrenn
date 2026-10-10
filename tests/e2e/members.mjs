@@ -3,7 +3,7 @@
 //
 // Needs a second account to add, E2E_MEMBER (e2e-member@example.com by default)
 // with the password "password".
-import { SHOTS, runBoard } from './harness.mjs';
+import { SHOTS, runBoard, signIn } from './harness.mjs';
 
 const MEMBER = process.env.E2E_MEMBER ?? 'e2e-member@example.com';
 
@@ -53,7 +53,11 @@ await runBoard(
         await addForm.getByPlaceholder('Their email address').fill(MEMBER);
         await addForm.locator('select').selectOption('viewer');
         await addForm.getByRole('button', { name: 'Add' }).click();
-        await page.waitForTimeout(800);
+        await page
+            .getByText(MEMBER)
+            .first()
+            .waitFor({ timeout: 10000 })
+            .catch(() => {});
         check(
             'the owner adds someone by email',
             (await page.getByText(MEMBER).count()) > 0,
@@ -63,7 +67,10 @@ await runBoard(
             .getByPlaceholder('Their email address')
             .fill('nobody@example.com');
         await addForm.getByRole('button', { name: 'Add' }).click();
-        await page.waitForTimeout(600);
+        await page
+            .getByText('Nobody has an account')
+            .waitFor({ timeout: 10000 })
+            .catch(() => {});
         check(
             'but only someone with an account',
             (await page.getByText('Nobody has an account').count()) > 0,
@@ -71,15 +78,13 @@ await runBoard(
         await page.screenshot({ path: `${SHOTS}/members-1-added.png` });
 
         // ------------------------------------- The viewer only looks
-        const context = await browser.newContext({
-            viewport: { width: 1500, height: 950 },
-        });
-        const other = await context.newPage();
-        await other.goto(`${base}/login`, { waitUntil: 'networkidle' });
-        await other.getByLabel('Email address').fill(MEMBER);
-        await other.getByLabel('Password', { exact: true }).fill('password');
-        await other.getByRole('button', { name: /log in/i }).click();
-        await other.waitForURL(/dashboard/);
+        const { context, page: other } = await signIn(
+            browser,
+            base,
+            MEMBER,
+            'password',
+            '/notes',
+        );
 
         await other.locator('[data-test="project-switcher"]').click();
         await other.getByRole('menuitem', { name: NAME }).click();
@@ -135,9 +140,17 @@ await runBoard(
             .locator('li', { hasText: MEMBER })
             .locator('[data-test="member-role"]');
         await theirRole.selectOption('editor');
-        await page.waitForTimeout(800);
+        // Until the change is saved
+        await page.waitForLoadState('networkidle');
 
-        await other.goto(`${base}/p/${project}/notes`);
+        await other.goto(`${base}/p/${project}/notes`, {
+            waitUntil: 'networkidle',
+        });
+        await other
+            .getByRole('button', { name: /new note/i })
+            .first()
+            .waitFor({ timeout: 10000 })
+            .catch(() => {});
         check(
             'made an editor, they can make notes',
             (await other.getByRole('button', { name: /new note/i }).count()) >

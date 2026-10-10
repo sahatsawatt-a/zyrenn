@@ -6,7 +6,7 @@
 import { SHOTS, makeNote, runBoard, tinker } from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);
-const USER = "App\\Models\\User::where('email', 'test@example.com')->first()";
+const USER = `App\\Models\\User::where('email', '${process.env.E2E_EMAIL ?? 'test@example.com'}')->first()`;
 
 await runBoard(
     '/notes',

@@ -10,7 +10,10 @@ await runBoard(
         const { page, check, at, ready } = b;
 
         // --- a board worth showing: two frames with something on each
-        await page.getByRole('button', { name: /new board/i }).click();
+        await page
+            .getByRole('button', { name: /new board/i })
+            .first()
+            .click();
         await page.waitForURL(/boards\/\w+/, { timeout: 30000 });
         await ready();
         const boardUrl = page.url();
