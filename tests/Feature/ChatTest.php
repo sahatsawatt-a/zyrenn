@@ -2,9 +2,9 @@
 
 namespace Tests\Feature;
 
-use App\Models\Chat\AiConnection;
 use App\Models\Chat\ChatMessage;
 use App\Models\Chat\ChatRoom;
+use App\Models\Connection;
 use App\Models\User;
 use App\Support\Chat\ChatEngine;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -17,6 +17,17 @@ use Tests\TestCase;
 class ChatTest extends TestCase
 {
     use RefreshDatabase;
+
+    /**
+     * These are of a room's own agent, which answers only while rooms may
+     * have one (CHAT_AGENTS); off by default, when AI comes from workflows.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config(['services.chat.agents' => true]);
+    }
 
     /**
      * What a host streams back for an answer in these words, as chat completions do.
@@ -38,7 +49,7 @@ class ChatTest extends TestCase
      */
     private function room(User $user, array $room = []): ChatRoom
     {
-        $connection = AiConnection::factory()->for($user)->create();
+        $connection = Connection::factory()->for($user)->create();
 
         return ChatRoom::factory()->for($user)->create([
             'ai_connection_id' => $connection->id,
@@ -81,17 +92,17 @@ class ChatTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('chats/Index')
-                ->has('rooms', 2)
-                ->where('rooms.1.title', 'Mine')
-                ->where('rooms.1.agent', 'Local Ollama · llama3')
-                ->where('rooms.0.agent', null));
+                ->has('personal', 2)
+                ->where('personal.1.title', 'Mine')
+                ->where('personal.1.agent', 'Local Ollama · llama3')
+                ->where('personal.0.agent', null));
     }
 
     public function test_a_new_room_is_answered_by_the_connection_made_last()
     {
         $user = User::factory()->create();
-        AiConnection::factory()->for($user)->create();
-        $latest = AiConnection::factory()->openrouter()->for($user)->create();
+        Connection::factory()->for($user)->create();
+        $latest = Connection::factory()->openrouter()->for($user)->create();
 
         $this->actingAs($user)->post(route('chats.store'))->assertRedirect();
 
@@ -117,7 +128,7 @@ class ChatTest extends TestCase
                 ->has('messages', 2)
                 ->where('messages.1.content', 'Hello!')
                 ->has('connections', 1)
-                ->missing('connections.0.api_key')
+                ->missing('connections.0.secrets')
                 ->missing('connections.0.base_url'));
     }
 
@@ -149,7 +160,7 @@ class ChatTest extends TestCase
     {
         $user = User::factory()->create();
         $room = ChatRoom::factory()->for($user)->create();
-        $connection = AiConnection::factory()->for($user)->create();
+        $connection = Connection::factory()->for($user)->create();
 
         $this->actingAs($user)
             ->patch(route('chats.update', $room), [
@@ -175,7 +186,7 @@ class ChatTest extends TestCase
     {
         $user = User::factory()->create();
         $room = ChatRoom::factory()->for($user)->create();
-        $theirs = AiConnection::factory()->openrouter()->create();
+        $theirs = Connection::factory()->openrouter()->create();
 
         $this->actingAs($user)
             ->patch(route('chats.update', $room), ['connection' => $theirs->ref_id])
@@ -221,7 +232,7 @@ class ChatTest extends TestCase
     {
         Http::fake(['openrouter.ai/*' => Http::response($this->answer(['Yes.']))]);
         $user = User::factory()->create();
-        $connection = AiConnection::factory()->openrouter()->for($user)->create(['default_model' => 'openai/gpt-4o-mini']);
+        $connection = Connection::factory()->openrouter()->for($user)->create(['settings' => ['base_url' => 'https://openrouter.ai/api/v1', 'default_model' => 'openai/gpt-4o-mini']]);
         $room = ChatRoom::factory()->for($user)->create(['ai_connection_id' => $connection->id]);
 
         $this->say($user, $room, 'Is this on?');
@@ -284,7 +295,7 @@ class ChatTest extends TestCase
     {
         Http::fake();
         $user = User::factory()->create();
-        $connection = AiConnection::factory()->for($user)->create(['default_model' => null]);
+        $connection = Connection::factory()->for($user)->create(['settings' => ['base_url' => 'http://ollama.test:11434']]);
         $room = ChatRoom::factory()->for($user)->create(['ai_connection_id' => $connection->id]);
 
         $events = $this->say($user, $room, 'Anyone there?');
@@ -387,6 +398,30 @@ class ChatTest extends TestCase
 
         $this->assertDatabaseCount('chat_rooms', 0);
         $this->assertDatabaseCount('chat_messages', 0);
-        $this->assertDatabaseCount('ai_connections', 0);
+        $this->assertDatabaseCount('connections', 0);
+    }
+
+    public function test_with_agents_off_a_room_never_answers_offers_no_set_up_and_gets_no_connection()
+    {
+        config(['services.chat.agents' => false]);
+        Http::fake();
+        $user = User::factory()->create();
+        $room = $this->room($user);
+
+        $events = $this->say($user, $room, 'Hello?');
+
+        $this->assertSame(['user', 'done'], array_column($events, 0));
+        Http::assertNothingSent();
+
+        $this->actingAs($user)->get(route('chats.show', $room))
+            ->assertInertia(fn ($page) => $page->where('agents', false)->where('connections', [])->where('room.ready', false));
+        $this->actingAs($user)->get(route('chats.index'))
+            ->assertInertia(fn ($page) => $page->where('agents', false));
+
+        // Its agent can't be set up meanwhile; a new room is made without one
+        $this->actingAs($user)->patch(route('chats.update', $room), ['system_prompt' => 'Be brief'])->assertRedirect();
+        $this->assertNull($room->fresh()->system_prompt);
+        $this->actingAs($user)->post(route('chats.store'))->assertRedirect();
+        $this->assertNull($user->chatRooms()->latest('id')->first()->ai_connection_id);
     }
 }

@@ -9,6 +9,7 @@ use App\Models\Table\TableColumn;
 use App\Models\Table\TableFolder;
 use App\Support\Formula\FormulaError;
 use App\Support\Formula\Parser;
+use App\Support\Table\RowValues;
 use App\Support\Table\TableFormulas;
 use App\Support\Table\TableStorage;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -17,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use RuntimeException;
 
 /**
  * Base for the table tools shared by both MCP servers. Finding, listing and
@@ -34,8 +36,6 @@ abstract class TableTool extends FiledTool
     protected const MAX_ROWS = 500;
 
     /** The colours a new choice is given in turn, as the grid names them. */
-    private const TONES = ['amber', 'sky', 'purple', 'emerald', 'fuchsia', 'indigo', 'rose', 'cyan'];
-
     protected function noun(): string
     {
         return 'table';
@@ -270,33 +270,11 @@ abstract class TableTool extends FiledTool
      */
     protected function rowValues(Table $table, array $given): array
     {
-        $columns = $table->columns->reject(fn (TableColumn $column) => $column->is_primary);
-        $values = [];
-
-        foreach ($given as $key => $value) {
-            $column = $columns->first(fn (TableColumn $column) => $column->name === $key)
-                ?? $columns->first(fn (TableColumn $column) => Str::lower($column->label) === Str::lower((string) $key));
-
-            if (! $column) {
-                throw new TableProblem("This table has no column \"{$key}\". Its columns are: ".$columns->pluck('label')->join(', ').'.');
-            }
-
-            if ($column->type === 'formula') {
-                throw new TableProblem("\"{$column->label}\" is worked out by its formula; change what it is worked out from instead.");
-            }
-
-            if ($column->type === 'multi_select' && ! is_array($value)) {
-                $value = $value === null || $value === '' ? [] : [$value];
-            }
-
-            if (in_array($column->type, ['select', 'multi_select'], true)) {
-                $this->offer($column, array_filter((array) $value, 'is_string'));
-            }
-
-            $values[$column->name] = $value;
+        try {
+            return RowValues::of($table, $given);
+        } catch (RuntimeException $e) {
+            throw new TableProblem($e->getMessage());
         }
-
-        return $values;
     }
 
     /**
@@ -306,29 +284,7 @@ abstract class TableTool extends FiledTool
      */
     private function choices(TableColumn $column): array
     {
-        return array_column($column->toGrid()['options'], 'value');
-    }
-
-    /**
-     * Makes sure a select column offers each of these choices.
-     *
-     * @param  array<array-key, string>  $wanted
-     */
-    private function offer(TableColumn $column, array $wanted): void
-    {
-        $missing = array_values(array_diff(array_unique($wanted), $this->choices($column)));
-
-        if ($missing === []) {
-            return;
-        }
-
-        $settings = $column->toGrid();
-        $meta = $column->options_meta ?? [];
-        $meta = array_is_list($meta) ? ['options' => $meta] : $meta;
-        $meta['options'] = [...$settings['options'], ...$this->options($missing, count($settings['options']))];
-
-        $column->options_meta = $meta;
-        $column->save();
+        return RowValues::choices($column);
     }
 
     /**
@@ -339,12 +295,6 @@ abstract class TableTool extends FiledTool
      */
     private function options(array $values, int $after = 0): array
     {
-        $values = array_values($values);
-
-        return array_map(fn (string $value, int $index) => [
-            'id' => Str::lower(Str::random(8)),
-            'value' => $value,
-            'color' => self::TONES[($after + $index) % count(self::TONES)],
-        ], $values, array_keys($values));
+        return RowValues::options($values, $after);
     }
 }

@@ -10,7 +10,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->parameters(['chats' => 'room']);
 
     // Talking with people, kept apart from one's own rooms with an agent
-    Route::get('messages', [ChatRoomController::class, 'messages'])->name('messages.index');
 
     // Someone to talk with, and a project's room -- before {room}, so neither is taken for one
     Route::post('chats/direct', [ChatRoomController::class, 'direct'])->name('chats.direct');

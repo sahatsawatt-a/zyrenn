@@ -2,25 +2,23 @@
 
 namespace App\Policies;
 
-use App\Models\Chat\AiConnection;
 use App\Models\Chat\ChatRoom;
 use App\Models\User;
 
 /**
- * Chat rooms and the connections they answer through.
+ * Chat rooms.
  *
  * Everyone in a room may read it and talk in it. One's own room is set up,
  * renamed and deleted by its owner, since its agent answers with their key;
  * a group, by whoever started it, while they are still in its project. A
  * group is joined by anyone in its project, and left by anyone in it. A
- * direct room is never renamed or deleted: it is the two of them. A
- * connection holds a personal key, so it is its owner's alone.
+ * direct room is never renamed or deleted: it is the two of them.
  */
 class ChatPolicy
 {
-    public function view(User $user, ChatRoom|AiConnection $thing): bool
+    public function view(User $user, ChatRoom $room): bool
     {
-        return $thing instanceof ChatRoom ? $thing->includes($user) : $thing->user_id === $user->id;
+        return $room->includes($user);
     }
 
     /**
@@ -31,14 +29,14 @@ class ChatPolicy
         return $room->includes($user);
     }
 
-    public function update(User $user, ChatRoom|AiConnection $thing): bool
+    public function update(User $user, ChatRoom $room): bool
     {
-        return $this->manages($user, $thing);
+        return $this->manages($user, $room);
     }
 
-    public function delete(User $user, ChatRoom|AiConnection $thing): bool
+    public function delete(User $user, ChatRoom $room): bool
     {
-        return $this->manages($user, $thing);
+        return $this->manages($user, $room);
     }
 
     /**
@@ -57,15 +55,11 @@ class ChatPolicy
         return $room->kind === ChatRoom::GROUP && $room->members()->whereKey($user->id)->exists();
     }
 
-    private function manages(User $user, ChatRoom|AiConnection $thing): bool
+    private function manages(User $user, ChatRoom $room): bool
     {
-        if ($thing instanceof AiConnection) {
-            return $thing->user_id === $user->id;
-        }
-
-        return match ($thing->kind) {
-            ChatRoom::PERSONAL => $thing->user_id === $user->id,
-            ChatRoom::GROUP => $thing->created_by === $user->id && $thing->inProject($user),
+        return match ($room->kind) {
+            ChatRoom::PERSONAL => $room->user_id === $user->id,
+            ChatRoom::GROUP => $room->created_by === $user->id && $room->inProject($user),
             default => false,
         };
     }

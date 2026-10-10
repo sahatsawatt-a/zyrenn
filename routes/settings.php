@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\Settings\AiConnectionController;
+use App\Http\Controllers\ConnectionController;
 use App\Http\Controllers\Settings\McpController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
@@ -31,15 +31,22 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('settings/mcp/tokens', [McpController::class, 'store'])->name('mcp.tokens.store');
     Route::delete('settings/mcp/tokens/{token}', [McpController::class, 'destroy'])->name('mcp.tokens.destroy');
 
-    // Where the chat rooms reach their models: the user's own hosts and keys
-    Route::resource('settings/ai-connections', AiConnectionController::class)
-        ->only(['index', 'store', 'update', 'destroy'])
-        ->parameters(['ai-connections' => 'connection']);
-    // Tries what the form holds before it is saved; it reaches out for the user, so not without limit
-    Route::post('settings/ai-connections/check', [AiConnectionController::class, 'check'])
-        ->middleware('throttle:30,1')->name('ai-connections.check');
-    Route::get('settings/ai-connections/{connection}/models', [AiConnectionController::class, 'models'])
-        ->name('ai-connections.models');
+    // Where chats and workflows reach outside -- hosts, bots, keys: one's own
+    // at /settings/connections, a project's at /p/{project}/settings/connections
+    Route::owned(function () {
+        Route::get('settings/connections', [ConnectionController::class, 'index'])->name('connections.index');
+        Route::post('settings/connections', [ConnectionController::class, 'store'])->name('connections.store');
+        // Tries what the form holds before it is saved; it reaches out for the user, so not without limit
+        Route::post('settings/connections/check', [ConnectionController::class, 'check'])
+            ->middleware('throttle:30,1')->name('connections.check');
+    });
+    Route::patch('settings/connections/{connection}', [ConnectionController::class, 'update'])->name('connections.update');
+    Route::delete('settings/connections/{connection}', [ConnectionController::class, 'destroy'])->name('connections.destroy');
+    Route::get('settings/connections/{connection}/test', [ConnectionController::class, 'test'])
+        ->middleware('throttle:30,1')->name('connections.test');
+    Route::get('settings/connections/{connection}/models', [ConnectionController::class, 'models'])
+        ->name('connections.models');
+    Route::redirect('settings/ai-connections', '/settings/connections');
 });
 
 Route::get('.well-known/passkey-endpoints', function () {

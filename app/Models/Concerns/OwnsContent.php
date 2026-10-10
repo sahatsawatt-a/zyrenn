@@ -4,6 +4,7 @@ namespace App\Models\Concerns;
 
 use App\Models\Board\Board;
 use App\Models\Board\BoardFolder;
+use App\Models\Connection;
 use App\Models\Drive\DriveFile;
 use App\Models\Drive\DriveFolder;
 use App\Models\Map\Place;
@@ -15,10 +16,12 @@ use App\Models\Note\NoteFolder;
 use App\Models\Owner;
 use App\Models\Table\Table;
 use App\Models\Table\TableFolder;
+use App\Models\Workflow\Workflow;
+use App\Models\Workflow\WorkflowFolder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * An Owner's notes, boards, tables, trips, saved places and Drive, reached through its own column
+ * An Owner's notes, boards, tables, trips, saved places, Drive, connections and workflows, reached through its own column
  * -- "user_id" for a User, "project_id" for a Project -- so each only ever
  * sees its own.
  *
@@ -125,5 +128,29 @@ trait OwnsContent
     public function driveFolders(): HasMany
     {
         return $this->hasMany(DriveFolder::class);
+    }
+
+    /**
+     * @return HasMany<Connection, $this>
+     */
+    public function connections(): HasMany
+    {
+        return $this->hasMany(Connection::class);
+    }
+
+    /**
+     * @return HasMany<Workflow, $this>
+     */
+    public function workflows(): HasMany
+    {
+        return $this->hasMany(Workflow::class);
+    }
+
+    /**
+     * @return HasMany<WorkflowFolder, $this>
+     */
+    public function workflowFolders(): HasMany
+    {
+        return $this->hasMany(WorkflowFolder::class);
     }
 }

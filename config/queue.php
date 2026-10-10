@@ -40,7 +40,9 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // Above the longest a job may run (a workflow step: 150 s), so one is
+            // never handed to a second worker while the first is still on it
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 200),
             'after_commit' => false,
         ],
 

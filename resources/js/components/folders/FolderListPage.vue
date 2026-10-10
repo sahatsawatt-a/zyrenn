@@ -82,6 +82,10 @@ const props = defineProps<{
 defineSlots<{
     // What the list says of each one beyond its title, e.g. "3 items"
     meta?: (props: { item: T }) => unknown;
+    // Ways of making one beside "New …", e.g. a workflow from a template
+    actions?: (props: { editable: boolean }) => unknown;
+    // Shown above the list, e.g. how a kind's runs have been going
+    top?: () => unknown;
 }>();
 
 const isEmpty = computed(() => !props.folders.length && !props.items.length);
@@ -187,6 +191,8 @@ const plural = computed(() => props.rootLabel.toLowerCase());
             :title="folder?.name ?? rootLabel"
             :description="description"
         >
+            <!-- Ways of making one that only some kinds have -->
+            <slot name="actions" :editable="editable" />
             <Button v-if="editable" variant="outline" @click="newFolder">
                 <FolderPlus />
                 New folder
@@ -204,6 +210,9 @@ const plural = computed(() => props.rootLabel.toLowerCase());
                 </Button>
             </Form>
         </PageHeader>
+
+        <!-- Anything a kind shows above its list -->
+        <slot name="top" />
 
         <ListToolbar
             v-model:q="filters.q"

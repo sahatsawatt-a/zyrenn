@@ -3,11 +3,12 @@
 namespace App\Http\Controllers\Chat;
 
 use App\Http\Controllers\Controller;
-use App\Models\Chat\AiConnection;
 use App\Models\Chat\ChatMessage;
 use App\Models\Chat\ChatRoom;
+use App\Models\Connection;
 use App\Models\Project;
 use App\Models\User;
+use App\Support\Connections\Services;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -24,35 +25,22 @@ class ChatRoomController extends Controller
     public const PAGE = 100;
 
     /**
-     * List the user's own rooms, each answered by an agent of theirs or by
-     * nothing, the latest first. Talking with people is kept apart, under messages.
+     * List all chat rooms: personal AI chats, direct messages with people,
+     * and groups the user is in.
      */
     public function index(Request $request): Response
     {
         $user = $request->user();
-
-        return Inertia::render('chats/Index', [
-            'rooms' => $this->listed($user, $user->chatRooms()->getQuery()),
-            'hasConnections' => $user->aiConnections()->exists(),
-        ]);
-    }
-
-    /**
-     * List the rooms the user shares with people: each person they talk with,
-     * and each group they are in, the latest first.
-     */
-    public function messages(Request $request): Response
-    {
-        $user = $request->user();
-
         $shared = collect($this->listed($user, ChatRoom::query()->visibleTo($user)->shared()));
 
-        return Inertia::render('messages/Index', [
+        return Inertia::render('chats/Index', [
+            'personal' => $this->listed($user, $user->chatRooms()->getQuery()),
             'direct' => $shared->where('kind', ChatRoom::DIRECT)->values(),
             'groups' => $shared->where('kind', ChatRoom::GROUP)->values(),
             'people' => $this->reachable($user),
-            // Where a group can be started or joined
             'projects' => $user->projects()->orderBy('name')->get()->map(fn (Project $project) => $project->only(['ref_id', 'name']))->values(),
+            'hasConnections' => $user->connections()->ai()->exists(),
+            'agents' => ChatRoom::agentsOn(),
         ]);
     }
 
@@ -63,7 +51,8 @@ class ChatRoomController extends Controller
     {
         $room = new ChatRoom;
         $room->user_id = $request->user()->id;
-        $room->ai_connection_id = $request->user()->aiConnections()->latest('id')->value('id');
+        // With agents on, answered by the connection made last; off, a room people and workflows write in
+        $room->ai_connection_id = ChatRoom::agentsOn() ? $request->user()->connections()->ai()->latest('id')->value('id') : null;
         $room->save();
 
         return to_route('chats.show', $room);
@@ -183,8 +172,11 @@ class ChatRoomController extends Controller
         }
 
         $own = $room->kind === ChatRoom::PERSONAL;
+        $agents = ChatRoom::agentsOn();
 
         return Inertia::render('chats/Show', [
+            // Whether one's own room can be given an agent at all
+            'agents' => $agents,
             'room' => [
                 ...$room->only(['ref_id', 'kind', 'model', 'system_prompt']),
                 'title' => $room->titleFor($user),
@@ -195,13 +187,17 @@ class ChatRoomController extends Controller
                 'manage' => Gate::allows('update', $room),
                 'leave' => Gate::allows('leave', $room),
                 'project' => $room->kind === ChatRoom::GROUP ? $room->project?->only(['ref_id', 'name']) : null,
+                // What it is linked to outside: what is written in it may go back there
+                'link' => $room->linkShown(),
             ],
             'messages' => $shown->map(fn (ChatMessage $message) => $message->toChat()),
             'hasEarlier' => $latest->count() > self::PAGE,
             'people' => $own ? [] : $room->people()->map(fn (User $person) => $person->only(['id', 'name']))->values(),
-            'connections' => $own ? $user->aiConnections()->orderBy('name')->get()
-                ->map(fn (AiConnection $connection) => [
-                    ...$connection->only(['ref_id', 'name', 'kind', 'default_model']),
+            'connections' => $own && $agents ? $user->connections()->ai()->orderBy('name')->get()
+                ->map(fn (Connection $connection) => [
+                    ...$connection->only(['ref_id', 'name']),
+                    'kind' => $connection->service,
+                    'default_model' => $connection->setting('default_model'),
                     'label' => $connection->label(),
                 ])
                 ->values() : [],
@@ -263,10 +259,15 @@ class ChatRoomController extends Controller
 
         $validated = $request->validate([
             'title' => ['sometimes', 'nullable', 'string', 'max:255'],
-            // A connection is only ever one of the user's own
-            'connection' => ['sometimes', 'nullable', 'string', Rule::exists('ai_connections', 'ref_id')->where('user_id', $request->user()->id)],
-            'model' => ['sometimes', 'nullable', 'string', 'max:255'],
-            'system_prompt' => ['sometimes', 'nullable', 'string', 'max:10000'],
+            // An agent is set up only while rooms may have one
+            ...ChatRoom::agentsOn() ? [
+                // A connection is only ever one of the user's own, and one that answers chats
+                'connection' => ['sometimes', 'nullable', 'string', Rule::exists('connections', 'ref_id')
+                    ->where('user_id', $request->user()->id)
+                    ->whereIn('service', Services::ai())],
+                'model' => ['sometimes', 'nullable', 'string', 'max:255'],
+                'system_prompt' => ['sometimes', 'nullable', 'string', 'max:10000'],
+            ] : [],
         ]);
 
         if (array_key_exists('title', $validated)) {
@@ -275,7 +276,7 @@ class ChatRoomController extends Controller
 
         if (array_key_exists('connection', $validated)) {
             $validated['ai_connection_id'] = $validated['connection']
-                ? $request->user()->aiConnections()->where('ref_id', $validated['connection'])->value('id')
+                ? $request->user()->connections()->where('ref_id', $validated['connection'])->value('id')
                 : null;
             unset($validated['connection']);
         }
@@ -309,7 +310,7 @@ class ChatRoomController extends Controller
     private function listed(User $user, Builder $rooms): array
     {
         return $rooms
-            ->with(['aiConnection:id,name', 'members:id,name', 'project:id,name'])
+            ->with(['aiConnection:id,name,service,settings', 'members:id,name', 'project:id,name'])
             ->withCount('messages')
             ->withUnreadFor($user)
             ->latest('updated_at')

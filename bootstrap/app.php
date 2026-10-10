@@ -36,9 +36,10 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // The collaboration server stores shared documents with its own secret
         // (VerifyCollabSecret), and an agent uploads to the Drive with a signed
-        // link (DriveUploadLinkController): neither has a session to carry a
-        // CSRF token in.
-        $middleware->preventRequestForgery(except: ['internal/collab/*', 'drive/upload']);
+        // link (DriveUploadLinkController), and outside services send workflows
+        // their events with signatures of their own (HookController): none has
+        // a session to carry a CSRF token in.
+        $middleware->preventRequestForgery(except: ['internal/collab/*', 'drive/upload', 'hooks/*']);
 
         $middleware->trimStrings(except: [$autosave]);
         $middleware->convertEmptyStringsToNull(except: [$autosave]);

@@ -44,6 +44,20 @@ return [
         // What "localhost" means in a connection when the app runs in a container: empty finds
         // the machine the container runs on by itself; a name or an address says where; "off" is literal
         'localhost_as' => env('CHAT_LOCALHOST_AS'),
+        // Whether one's own room can have an AI agent of its own that answers in it. Off: rooms
+        // are written in by people and workflows, and AI answers come from workflows
+        'agents' => (bool) env('CHAT_AGENTS', false),
+    ],
+
+    'workflows' => [
+        // Where Telegram, LINE and other senders reach /hooks/* from outside, e.g. an
+        // ngrok address; empty when nothing outside can, and bots are asked instead
+        'public_url' => env('WORKFLOWS_PUBLIC_URL'),
+        // How long what happened is kept, in days: runs that have ended (with
+        // their steps, logs and sends), what came in by webhook, who changed what
+        'keep_runs_days' => (int) env('WORKFLOWS_KEEP_RUNS_DAYS', 30),
+        'keep_events_days' => (int) env('WORKFLOWS_KEEP_EVENTS_DAYS', 14),
+        'keep_audit_days' => (int) env('WORKFLOWS_KEEP_AUDIT_DAYS', 365),
     ],
 
     'collab' => [

@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { Head, Link, router, setLayoutProps, usePage } from '@inertiajs/vue3';
 import type { JSONContent } from '@tiptap/vue-3';
-import { LogOut, Send, Settings2, Square, Trash2 } from '@lucide/vue';
+import {
+    Link2,
+    LogOut,
+    Send,
+    Settings2,
+    Square,
+    Trash2,
+    Zap,
+} from '@lucide/vue';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import ModelPicker from '@/features/chat/components/ModelPicker.vue';
 import PresenceAvatars from '@/components/common/PresenceAvatars.vue';
@@ -29,7 +37,7 @@ import { usePresence } from '@/composables/usePresence';
 import { colourFor, socketHeaders } from '@/lib/live';
 import type { Member } from '@/lib/live';
 import { xsrfToken } from '@/lib/utils';
-import { index as connectionsIndex, models } from '@/routes/ai-connections';
+import { index as connectionsIndex, models } from '@/routes/connections';
 import {
     destroy,
     index,
@@ -41,12 +49,12 @@ import {
     index as earlierMessages,
     store as sendMessage,
 } from '@/routes/chats/messages';
-import { index as messagesIndex } from '@/routes/messages';
+import { index as chatsIndex } from '@/routes/chats';
 import { chat as projectChat } from '@/routes/projects';
 
 type Message = {
     id: number;
-    role: 'user' | 'assistant';
+    role: 'user' | 'assistant' | 'workflow';
     content: string;
     // An agent's words as the note editor's document, so they are drawn as a note is
     doc: JSONContent | null;
@@ -54,6 +62,13 @@ type Message = {
     error: string | null;
     // Who said it, when a person did; id is null for someone since gone
     author: { id: number | null; name: string } | null;
+    // A workflow's: under its name, or the outside sender's it carried over
+    sender?: {
+        name: string;
+        outside: boolean;
+        by: string | null;
+        workflow: string | null;
+    } | null;
 };
 
 type Room = {
@@ -72,6 +87,8 @@ type Room = {
     system_prompt: string | null;
     connection: string | null;
     ready: boolean;
+    // Linked to a chat outside: a workflow may send what is written here there
+    link: { service: string; through: string | null } | null;
 };
 
 type Connection = {
@@ -90,6 +107,8 @@ const props = defineProps<{
     // Who is in a room shared with others
     people: { id: number; name: string }[];
     connections: Connection[];
+    // Whether one's own room may have an AI agent (CHAT_AGENTS); off, AI comes from workflows
+    agents: boolean;
 }>();
 
 const page = usePage();
@@ -100,13 +119,13 @@ const shared = props.room.kind !== 'personal';
 setLayoutProps({
     breadcrumbs: [
         props.room.kind === 'personal'
-            ? { title: 'AI chat', href: index() }
+            ? { title: 'Chat', href: index() }
             : props.room.kind === 'group' && props.room.project
               ? {
                     title: 'Groups',
                     href: projectChat(props.room.project.ref_id),
                 }
-              : { title: 'Messages', href: messagesIndex() },
+              : { title: 'Chat', href: chatsIndex() },
         { title: props.room.title || 'New chat', href: '' },
     ],
 });
@@ -155,14 +174,14 @@ async function readUpTo(id: number) {
     }
 }
 
-const { others } = shared
-    ? usePresence(() => `chats.${props.room.ref_id}`, {
-          'chat.message': (event: { message: Message }) => {
-              add(event.message);
-              void readUpTo(event.message.id);
-          },
-      })
-    : { others: ref<Member[]>([]) };
+// Live in one's own chats too: a workflow can write in them
+const presence = usePresence(() => `chats.${props.room.ref_id}`, {
+    'chat.message': (event: { message: Message }) => {
+        add(event.message);
+        void readUpTo(event.message.id);
+    },
+});
+const others = shared ? presence.others : ref<Member[]>([]);
 
 // --- scrolling back ---
 const loadingEarlier = ref(false);
@@ -471,6 +490,18 @@ function saveSettings() {
                     {{ people.map((person) => person.name).join(', ') }}
                 </p>
             </div>
+            <span
+                v-if="room.link"
+                class="flex shrink-0 items-center gap-1 rounded-full bg-sky-500/10 px-2 py-0.5 text-xs text-sky-700 dark:text-sky-400"
+                :title="`What you write here can be sent on through ${room.link.service}, by a workflow`"
+                data-chat-link
+            >
+                <Link2 class="size-3" />
+                {{ room.link.service
+                }}<template v-if="room.link.through">
+                    · {{ room.link.through }}</template
+                >
+            </span>
             <p
                 v-if="room.manage && room.kind === 'group'"
                 class="text-muted-foreground hidden max-w-48 truncate text-xs sm:block"
@@ -479,7 +510,7 @@ function saveSettings() {
             </p>
             <PresenceAvatars :others="others" />
             <Button
-                v-if="room.mine"
+                v-if="room.mine && agents"
                 variant="ghost"
                 size="sm"
                 @click="settingsOpen = true"
@@ -528,7 +559,7 @@ function saveSettings() {
             </div>
 
             <p
-                v-if="room.mine && !room.ready"
+                v-if="room.mine && agents && !room.ready"
                 class="bg-muted/40 rounded-lg border px-4 py-3 text-sm"
                 data-chat-no-agent
             >
@@ -594,6 +625,42 @@ function saveSettings() {
                         </p>
                         <p
                             class="bg-muted rounded-2xl rounded-bl-md px-4 py-2 text-sm whitespace-pre-wrap"
+                        >
+                            {{ message.content }}
+                        </p>
+                    </div>
+                </div>
+                <div
+                    v-else-if="message.role === 'workflow'"
+                    class="flex items-end gap-2"
+                    data-chat-workflow
+                >
+                    <span
+                        class="flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                        :title="message.sender?.name"
+                    >
+                        <Zap class="size-3.5" />
+                    </span>
+                    <div class="max-w-[85%] min-w-0">
+                        <p
+                            class="text-muted-foreground mb-0.5 px-1 text-xs"
+                            data-chat-author
+                        >
+                            {{ message.sender?.name ?? 'Workflow' }}
+                            <template
+                                v-if="
+                                    !message.sender?.outside &&
+                                    message.sender?.by
+                                "
+                            >
+                                · for {{ message.sender.by }}</template
+                            >
+                            <template v-else-if="message.sender?.outside">
+                                · by a workflow</template
+                            >
+                        </p>
+                        <p
+                            class="rounded-2xl rounded-bl-md border border-amber-500/20 bg-amber-500/5 px-4 py-2 text-sm whitespace-pre-wrap"
                         >
                             {{ message.content }}
                         </p>
@@ -668,7 +735,7 @@ function saveSettings() {
             </div>
         </form>
 
-        <Dialog v-model:open="settingsOpen">
+        <Dialog v-if="agents" v-model:open="settingsOpen">
             <DialogContent class="sm:max-w-lg">
                 <DialogHeader>
                     <DialogTitle>Agent</DialogTitle>

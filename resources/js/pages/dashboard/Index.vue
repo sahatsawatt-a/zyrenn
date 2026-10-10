@@ -29,7 +29,7 @@ import { dashboard } from '@/routes';
 import * as boards from '@/routes/boards';
 import { show as chatRoom } from '@/routes/chats';
 import { index as driveIndex } from '@/routes/drive';
-import { index as messagesIndex } from '@/routes/messages';
+import { index as chatsIndex } from '@/routes/chats';
 import * as notes from '@/routes/notes';
 import {
     chat as projectChat,
@@ -374,9 +374,7 @@ const description = computed(() =>
                 <Panel
                     :icon="MessagesSquare"
                     :title="project ? 'Chat' : 'Messages'"
-                    :href="
-                        project ? projectChat(project.ref_id) : messagesIndex()
-                    "
+                    :href="project ? projectChat(project.ref_id) : chatsIndex()"
                     :href-label="project ? 'Open chat' : 'All messages'"
                     data-test="chats"
                 >

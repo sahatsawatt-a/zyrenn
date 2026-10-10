@@ -99,6 +99,40 @@ services:
                 condition: service_healthy
         command: php artisan reverb:start --host=0.0.0.0 --port=8080
 
+    # Works through what was put off for later -- a workflow's steps, one job
+    # at a time. A workflow retries its own steps, by each step's own rules
+    # (a job says how often it may be handed out again). After a deploy,
+    # `php artisan queue:restart` lets it finish the step in hand first.
+    worker:
+        image: zyrenn-app:local
+        pull_policy: never
+        restart: unless-stopped
+        working_dir: /var/www/html
+        volumes:
+            - .:/var/www/html
+        # So an AI step can reach an Ollama on this machine, as a chat does
+        extra_hosts:
+            - 'host.docker.internal:host-gateway'
+        depends_on:
+            app:
+                condition: service_healthy
+        command: php artisan queue:work --sleep=1 --tries=1 --max-time=3600
+        stop_grace_period: 60s
+
+    # Runs the app's timetable (routes/console.php) every minute: scheduled
+    # workflows, and looking for runs that are stuck.
+    scheduler:
+        image: zyrenn-app:local
+        pull_policy: never
+        restart: unless-stopped
+        working_dir: /var/www/html
+        volumes:
+            - .:/var/www/html
+        depends_on:
+            app:
+                condition: service_healthy
+        command: php artisan schedule:work
+
     # Live co-editing of notes and boards (collab/server.mjs): a Yjs server
     # that passes every edit between the people who have one open, and loads
     # and stores each document through the app. Shares the app image for its

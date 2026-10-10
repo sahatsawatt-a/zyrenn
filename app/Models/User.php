@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Models\Chat\AiConnection;
 use App\Models\Chat\ChatRoom;
 use App\Models\Concerns\OwnsContent;
 use App\Models\Drive\DriveFile;
@@ -124,16 +123,6 @@ class User extends Authenticatable implements Owner, PasskeyUser
                 ->where('project_user.role', Project::OWNER))
             ->orderBy('name')
             ->get();
-    }
-
-    /**
-     * Where the user reaches models: their hosts and keys.
-     *
-     * @return HasMany<AiConnection, $this>
-     */
-    public function aiConnections(): HasMany
-    {
-        return $this->hasMany(AiConnection::class);
     }
 
     /**

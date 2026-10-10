@@ -16,6 +16,7 @@ import {
     ChartNoAxesCombined,
     Presentation,
     Settings,
+    Workflow,
 } from '@lucide/vue';
 import { computed } from 'vue';
 import AppLogo from './AppLogo.vue';
@@ -45,7 +46,6 @@ import { index as boardsIndex } from '@/routes/boards';
 import { index as chatsIndex } from '@/routes/chats';
 import { index as driveIndex } from '@/routes/drive';
 import { index as notesIndex } from '@/routes/notes';
-import { index as messagesIndex } from '@/routes/messages';
 import {
     chat as projectChat,
     dashboard as projectDashboard,
@@ -58,8 +58,10 @@ import { index as mapsIndex } from '@/routes/maps';
 import { index as projectMapsIndex } from '@/routes/projects/maps';
 import { index as projectTablesIndex } from '@/routes/projects/tables';
 import { index as projectTripsIndex } from '@/routes/projects/trips';
+import { index as projectWorkflowsIndex } from '@/routes/projects/workflows';
 import { index as tablesIndex } from '@/routes/tables';
 import { index as tripsIndex } from '@/routes/trips';
+import { index as workflowsIndex } from '@/routes/workflows';
 import type { NavItem } from '@/types';
 
 const page = usePage();
@@ -105,6 +107,11 @@ const mainNavItems = computed<NavItem[]>(() => {
             href: owned(driveIndex, projectDriveIndex)(),
             icon: HardDrive,
         },
+        {
+            title: 'Workflows',
+            href: owned(workflowsIndex, projectWorkflowsIndex)(),
+            icon: Workflow,
+        },
         // A project's groups; in your own space, your AI chats and your
         // messages, kept apart: an AI chat answers through your own key
         ...(project
@@ -118,13 +125,8 @@ const mainNavItems = computed<NavItem[]>(() => {
               ]
             : [
                   {
-                      title: 'AI chat',
+                      title: 'Chat',
                       href: chatsIndex(),
-                      icon: Bot,
-                  },
-                  {
-                      title: 'Messages',
-                      href: messagesIndex(),
                       icon: MessagesSquare,
                       badge: unread.value,
                   },

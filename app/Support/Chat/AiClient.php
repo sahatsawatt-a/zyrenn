@@ -2,7 +2,8 @@
 
 namespace App\Support\Chat;
 
-use App\Models\Chat\AiConnection;
+use App\Models\Connection;
+use App\Support\Connections\Services;
 use Generator;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -29,7 +30,7 @@ class AiClient
      *
      * @throws AiFailed
      */
-    public function catalog(AiConnection $connection): array
+    public function catalog(Connection $connection): array
     {
         $response = $this->send($connection, fn (PendingRequest $http) => $http->timeout(15)->get($this->root($connection).'/models'));
 
@@ -88,7 +89,7 @@ class AiClient
      *
      * @throws AiFailed
      */
-    public function stream(AiConnection $connection, string $model, array $messages): Generator
+    public function stream(Connection $connection, string $model, array $messages): Generator
     {
         $response = $this->send($connection, fn (PendingRequest $http) => $http
             // A model that has to be loaded can sit quiet for a while before the first word
@@ -128,7 +129,7 @@ class AiClient
     /**
      * Where to call: the connection's address, with "localhost" read as the user means it.
      */
-    private function root(AiConnection $connection): string
+    private function root(Connection $connection): string
     {
         return HostAddress::reachable($connection->apiRoot());
     }
@@ -171,25 +172,25 @@ class AiClient
      *
      * @throws AiFailed
      */
-    private function send(AiConnection $connection, callable $call): Response
+    private function send(Connection $connection, callable $call): Response
     {
         $http = Http::withoutRedirecting()
             ->connectTimeout(10)
             ->acceptJson()
             ->withUserAgent('Zyrenn');
 
-        if ($connection->api_key) {
-            $http = $http->withToken($connection->api_key);
+        if ($connection->secret('api_key')) {
+            $http = $http->withToken($connection->secret('api_key'));
         }
 
-        if ($connection->kind === AiConnection::OPENROUTER) {
+        if ($connection->service === Services::OPENROUTER) {
             $http = $http->withHeaders(['X-Title' => 'Zyrenn']);
         }
 
         try {
             $response = $call($http);
         } catch (ConnectionException) {
-            throw new AiFailed('Could not reach '.(parse_url($connection->base_url, PHP_URL_HOST) ?: 'the host').'.');
+            throw new AiFailed('Could not reach '.(parse_url($connection->setting('base_url') ?? '', PHP_URL_HOST) ?: 'the host').'.');
         }
 
         if ($response->successful()) {

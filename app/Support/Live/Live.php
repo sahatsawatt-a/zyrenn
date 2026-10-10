@@ -24,4 +24,17 @@ final class Live
             report($problem);
         }
     }
+
+    /**
+     * Send to everyone watching, the one who caused it too: what changed
+     * happened elsewhere -- in a worker -- so their screen doesn't show it yet.
+     */
+    public static function tellEveryone(ShouldBroadcast $event): void
+    {
+        try {
+            broadcast($event);
+        } catch (Throwable $problem) {
+            report($problem);
+        }
+    }
 }

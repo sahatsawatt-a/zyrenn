@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useCurrentUrl } from '@/composables/useCurrentUrl';
 import { toUrl } from '@/lib/utils';
-import { index as aiConnections } from '@/routes/ai-connections';
+import { index as connections } from '@/routes/connections';
 import { edit as editAppearance } from '@/routes/appearance';
 import { edit as editMcp } from '@/routes/mcp';
 import { edit as editProfile } from '@/routes/profile';
@@ -30,8 +30,8 @@ const sidebarNavItems: NavItem[] = [
         href: editMcp(),
     },
     {
-        title: 'AI connections',
-        href: aiConnections(),
+        title: 'Connections',
+        href: connections(),
     },
 ];
 

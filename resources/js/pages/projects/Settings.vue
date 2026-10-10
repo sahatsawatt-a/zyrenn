@@ -1,6 +1,12 @@
 <script setup lang="ts">
-import { Form, Head, router, setLayoutProps } from '@inertiajs/vue3';
-import { FolderKanban, LogOut, UserMinus } from '@lucide/vue';
+import { Form, Head, Link, router, setLayoutProps } from '@inertiajs/vue3';
+import {
+    ChevronRight,
+    FolderKanban,
+    LogOut,
+    Plug,
+    UserMinus,
+} from '@lucide/vue';
 import { computed, ref, watchEffect } from 'vue';
 import { toast } from 'vue-sonner';
 import DeleteDialog from '@/components/common/DeleteDialog.vue';
@@ -23,6 +29,7 @@ import { Label } from '@/components/ui/label';
 import { getInitials } from '@/composables/useInitials';
 import type { ProjectRole } from '@/lib/projects';
 import { destroy, edit, update } from '@/routes/projects';
+import { index as connectionsIndex } from '@/routes/projects/connections';
 import * as members from '@/routes/projects/members';
 
 type Member = {
@@ -266,6 +273,33 @@ const remove = () =>
                     }}</Badge>
                 </li>
             </ul>
+        </section>
+
+        <section class="flex flex-col gap-4">
+            <Heading
+                variant="small"
+                title="Connections"
+                description="Models, bots and API keys the project's workflows use. They belong to the project, so nobody's own key pays for shared work."
+            />
+            <Link
+                :href="connectionsIndex(settings.ref_id)"
+                class="hover:bg-muted/50 flex items-center gap-3 rounded-xl border p-4 transition-colors"
+                data-test="project-connections"
+            >
+                <span
+                    class="bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-lg"
+                >
+                    <Plug class="size-4.5" />
+                </span>
+                <span class="min-w-0 flex-1 text-sm">
+                    <span class="block font-medium">Manage connections</span>
+                    <span class="text-muted-foreground block text-xs"
+                        >What the project connects to, and whether each
+                        works.</span
+                    >
+                </span>
+                <ChevronRight class="text-muted-foreground size-4" />
+            </Link>
         </section>
 
         <section v-if="me" class="flex flex-col gap-4">

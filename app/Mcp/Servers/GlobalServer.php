@@ -40,6 +40,18 @@ use App\Mcp\Tools\Trips\ListTripFolders;
 use App\Mcp\Tools\Trips\ListTrips;
 use App\Mcp\Tools\Trips\UpdateTrip;
 use App\Mcp\Tools\Users\ListUsers;
+use App\Mcp\Tools\Workflows\CreateWorkflow;
+use App\Mcp\Tools\Workflows\DeleteWorkflow;
+use App\Mcp\Tools\Workflows\GetWorkflow;
+use App\Mcp\Tools\Workflows\GetWorkflowRun;
+use App\Mcp\Tools\Workflows\ListWorkflowFolders;
+use App\Mcp\Tools\Workflows\ListWorkflowRuns;
+use App\Mcp\Tools\Workflows\ListWorkflows;
+use App\Mcp\Tools\Workflows\ListWorkflowSteps;
+use App\Mcp\Tools\Workflows\PublishWorkflow;
+use App\Mcp\Tools\Workflows\RunWorkflow;
+use App\Mcp\Tools\Workflows\SwitchWorkflow;
+use App\Mcp\Tools\Workflows\UpdateWorkflow;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\Name;
@@ -103,6 +115,18 @@ title and picture, a ```link fence holding "url: " and "title: ".
 Saved places: pins kept on the map, each in a list such as "Want to go" (list-places, save-place,
 delete-place).
 
+Workflows: steps that run on their own (list-workflows, list-workflow-folders, get-workflow,
+list-workflow-steps, create-workflow, update-workflow, publish-workflow, switch-workflow, run-workflow,
+list-workflow-runs, get-workflow-run, delete-workflow). list-workflow-steps says what kinds of step
+there are, what each is set up with, and what settings may point at (connections, rooms, tables, by
+ref_id). create-workflow makes one -- empty, from a template, or built at once; update-workflow
+changes its draft by step key: add (placed and joined after another), change (settings merged),
+remove, join, unjoin. Steps read what came before in templates: {{ trigger.text }}, {{ input.x }},
+{{ node("key").field }}. publish-workflow publishes the draft, switch-workflow switches it on so its
+triggers (a schedule, a chat, a webhook, a bot) start runs by themselves; run-workflow runs it from its
+"Run by hand" trigger with data of your own; get-workflow-run reads how each step went. Steps that send
+messages or change tables do so for real when run.
+
 Drive: files (list-drive, get-file, upload-file, request-upload, update-file, delete-file) -- each user's private ones,
 or a project's, which its members can all open. Files are served from a URL like /drive/files/k3x9m2p7qa.
 
@@ -157,6 +181,18 @@ class GlobalServer extends Server
             new CreateTrip(global: true),
             new UpdateTrip(global: true),
             new DeleteTrip(global: true),
+            new ListWorkflows(global: true),
+            new GetWorkflow(global: true),
+            new ListWorkflowFolders(global: true),
+            new ListWorkflowSteps(global: true),
+            new CreateWorkflow(global: true),
+            new UpdateWorkflow(global: true),
+            new PublishWorkflow(global: true),
+            new DeleteWorkflow(global: true),
+            new RunWorkflow(global: true),
+            new SwitchWorkflow(global: true),
+            new ListWorkflowRuns(global: true),
+            new GetWorkflowRun(global: true),
             new SearchPlaces(global: true),
             new ListPlaces(global: true),
             new SavePlace(global: true),

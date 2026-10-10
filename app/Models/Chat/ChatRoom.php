@@ -3,8 +3,10 @@
 namespace App\Models\Chat;
 
 use App\Models\Concerns\HasRefId;
+use App\Models\Connection;
 use App\Models\Project;
 use App\Models\User;
+use App\Support\Connections\Services;
 use Database\Factories\Chat\ChatRoomFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -40,6 +42,8 @@ use Illuminate\Support\Facades\DB;
  * @property int|null $ai_connection_id
  * @property string|null $model
  * @property string|null $system_prompt
+ * @property string|null $external_key
+ * @property array{service: string, connection: string, chat: string}|null $link
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read int $unread from withUnreadFor()
@@ -66,6 +70,34 @@ class ChatRoom extends Model
         'kind' => self::PERSONAL,
         'title' => '',
     ];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return ['link' => 'array'];
+    }
+
+    /**
+     * What the room is linked to outside, as its page says it -- "Telegram ·
+     * Vertex_SKBot" -- or null for a room that isn't. Never the chat's id.
+     *
+     * @return array{service: string, through: string|null}|null
+     */
+    public function linkShown(): ?array
+    {
+        if ($this->link === null) {
+            return null;
+        }
+
+        $owner = $this->project_id !== null ? $this->project : $this->user;
+
+        return [
+            'service' => Services::get($this->link['service'])['label'] ?? $this->link['service'],
+            'through' => $owner?->connections()->where('ref_id', $this->link['connection'])->value('name'),
+        ];
+    }
 
     /**
      * The room two people talk in, made the first time either asks for it.
@@ -211,11 +243,11 @@ class ChatRoom extends Model
      * Get the connection its agent is reached through, if it has one. Not
      * called "connection": Eloquent keeps the database's name under that.
      *
-     * @return BelongsTo<AiConnection, $this>
+     * @return BelongsTo<Connection, $this>
      */
     public function aiConnection(): BelongsTo
     {
-        return $this->belongsTo(AiConnection::class, 'ai_connection_id');
+        return $this->belongsTo(Connection::class, 'ai_connection_id');
     }
 
     /**
@@ -306,15 +338,26 @@ class ChatRoom extends Model
      */
     public function agentModel(): ?string
     {
-        return $this->model ?: $this->aiConnection?->default_model;
+        return $this->model ?: $this->aiConnection?->setting('default_model');
     }
 
     /**
      * Whether something answers in this room. Only one's own room has an agent:
      * it answers with that person's key.
      */
+    /**
+     * Whether rooms may have agents at all (CHAT_AGENTS). Off, AI answers
+     * come from workflows; a room's connection, model and instructions are
+     * kept, unused, for when they are on again.
+     */
+    public static function agentsOn(): bool
+    {
+        return (bool) config('services.chat.agents', false);
+    }
+
     public function hasAgent(): bool
     {
-        return $this->kind === self::PERSONAL && $this->aiConnection !== null && $this->agentModel() !== null;
+        return self::agentsOn()
+            && $this->kind === self::PERSONAL && $this->aiConnection?->isAi() === true && $this->agentModel() !== null;
     }
 }

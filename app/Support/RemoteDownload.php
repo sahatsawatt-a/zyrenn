@@ -128,11 +128,15 @@ class RemoteDownload
     }
 
     /**
-     * The URL's host and port, and the public address it resolves to.
+     * The URL's host and port, and the public address it resolves to -- for
+     * anything else that must only reach the public internet, too (a
+     * workflow's HTTP step), pinning its connection to that address.
      *
      * @return array{string, int, string}
+     *
+     * @throws RemoteDownloadFailed
      */
-    private static function publicTarget(string $url): array
+    public static function publicTarget(string $url): array
     {
         $parts = parse_url($url);
         $scheme = strtolower($parts['scheme'] ?? '');

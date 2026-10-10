@@ -33,6 +33,7 @@ final class Functions
         'upper' => 'upper(text)',
         'lower' => 'lower(text)',
         'len' => 'len(text or list)',
+        'item' => 'item(list, n), counting from 1; from the end below 0',
         'date' => 'date("2026-12-03") or date(year, month, day)',
         'today' => 'today()',
         'year' => 'year(date)',
@@ -66,6 +67,7 @@ final class Functions
             'upper' => Evaluator::each(self::one($name, $args), fn ($value) => mb_strtoupper(Evaluator::text($value))),
             'lower' => Evaluator::each(self::one($name, $args), fn ($value) => mb_strtolower(Evaluator::text($value))),
             'len' => self::length(self::one($name, $args)),
+            'item' => self::item($args),
             'date' => self::date($args),
             'today' => Evaluator::date((new DateTimeImmutable('now', new DateTimeZone((string) config('app.timezone'))))->format('Y-m-d')),
             'year' => Evaluator::each(self::one($name, $args), fn ($value) => (float) Evaluator::date($value)->format('Y')),
@@ -224,6 +226,29 @@ final class Functions
     private static function length(mixed $value): float
     {
         return (float) (is_array($value) && array_is_list($value) ? count($value) : mb_strlen(Evaluator::text($value)));
+    }
+
+    /**
+     * One of a list: item(list, 1) is the first, item(list, -1) the last;
+     * nothing when there is no such one.
+     *
+     * @param  list<mixed>  $args
+     */
+    private static function item(array $args): mixed
+    {
+        if (count($args) !== 2) {
+            throw new FormulaError('item takes a list and which one, counting from 1: item(list, 1).');
+        }
+
+        [$list, $which] = $args;
+
+        if (! is_array($list) || ! array_is_list($list)) {
+            throw new FormulaError('item takes a list, but got '.Evaluator::kind($list).'.');
+        }
+
+        $n = (int) Evaluator::number($which);
+
+        return $list[$n > 0 ? $n - 1 : count($list) + $n] ?? null;
     }
 
     /**

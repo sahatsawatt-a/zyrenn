@@ -3,9 +3,9 @@
 namespace Tests\Feature;
 
 use App\Events\ChatMessagePosted;
-use App\Models\Chat\AiConnection;
 use App\Models\Chat\ChatMessage;
 use App\Models\Chat\ChatRoom;
+use App\Models\Connection;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Broadcasting\BroadcastEvent;
@@ -96,9 +96,9 @@ class PeopleChatTest extends TestCase
         $this->project($ada, $grace);
         $this->project($stranger);
 
-        $this->actingAs($ada)->get(route('messages.index'))
+        $this->actingAs($ada)->get(route('chats.index'))
             ->assertInertia(fn (Assert $page) => $page
-                ->component('messages/Index')
+                ->component('chats/Index')
                 ->has('people', 1)
                 ->where('people.0.id', $grace->id));
     }
@@ -234,7 +234,7 @@ class PeopleChatTest extends TestCase
         [$owner, $member] = User::factory()->count(2)->create();
         $project = $this->project($owner, $member);
         $room = $this->group($project, 'Old');
-        $connection = AiConnection::factory()->for($owner)->create();
+        $connection = Connection::factory()->for($owner)->create();
 
         $this->actingAs($member)->patch(route('chats.update', $room), ['title' => 'Mine'])->assertForbidden();
         $this->actingAs($member)->delete(route('chats.destroy', $room))->assertForbidden();
@@ -275,7 +275,7 @@ class PeopleChatTest extends TestCase
         $this->actingAs($member)->get(route('chats.show', $room))->assertForbidden();
         $this->actingAs($member)->post(route('chats.messages.store', $room), ['content' => 'still here?'])->assertForbidden();
         $this->assertSame(0, ChatRoom::unreadTotal($member));
-        $this->actingAs($member)->get(route('messages.index'))
+        $this->actingAs($member)->get(route('chats.index'))
             ->assertInertia(fn (Assert $page) => $page->has('groups', 0));
     }
 
@@ -283,7 +283,7 @@ class PeopleChatTest extends TestCase
     {
         [$ada, $grace] = User::factory()->count(2)->create();
         $project = $this->project($ada, $grace);
-        $connection = AiConnection::factory()->for($ada)->create();
+        $connection = Connection::factory()->for($ada)->create();
 
         foreach ([ChatRoom::between($ada, $grace)] as $room) {
             $this->actingAs($ada)->patch(route('chats.update', $room), ['title' => 'Mine'])->assertForbidden();
@@ -300,7 +300,7 @@ class PeopleChatTest extends TestCase
         [$ada, $grace] = User::factory()->count(2)->create();
         $this->project($ada, $grace);
         $room = ChatRoom::between($ada, $grace);
-        $room->forceFill(['ai_connection_id' => AiConnection::factory()->for($ada)->create()->id])->save();
+        $room->forceFill(['ai_connection_id' => Connection::factory()->for($ada)->create()->id])->save();
 
         $this->assertFalse($room->fresh()->hasAgent());
         $body = $this->say($ada, $room, 'Hello?');
@@ -379,7 +379,7 @@ class PeopleChatTest extends TestCase
         // Ada's one is the only thing Grace has yet to read
         $this->assertSame(1, ChatRoom::unreadTotal($grace));
 
-        $this->actingAs($ada)->get(route('messages.index'))
+        $this->actingAs($ada)->get(route('chats.index'))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('unreadChats', 3)
                 ->where('direct.0.unread', 2)
@@ -421,7 +421,7 @@ class PeopleChatTest extends TestCase
         $this->assertSame(0, ChatRoom::unreadTotal($user));
     }
 
-    public function test_messages_and_ones_own_ai_rooms_are_listed_apart()
+    public function test_messages_and_ones_own_rooms_are_listed_apart_on_one_page()
     {
         [$ada, $grace] = User::factory()->count(2)->create();
         $this->group($this->project($ada, $grace), 'One');
@@ -430,21 +430,14 @@ class PeopleChatTest extends TestCase
         ChatRoom::factory()->for($ada)->create(['title' => 'Ideas']);
         ChatRoom::factory()->create(['title' => 'Someone else']);
 
-        $this->actingAs($ada)->get(route('messages.index'))
-            ->assertInertia(fn (Assert $page) => $page
-                ->component('messages/Index')
-                ->has('direct', 1)
-                ->has('groups', 2)
-                ->has('projects', 2)
-                ->missing('rooms'));
-
         $this->actingAs($ada)->get(route('chats.index'))
             ->assertInertia(fn (Assert $page) => $page
                 ->component('chats/Index')
-                ->has('rooms', 1)
-                ->where('rooms.0.title', 'Ideas')
-                ->missing('direct')
-                ->missing('groups'));
+                ->has('direct', 1)
+                ->has('groups', 2)
+                ->has('projects', 2)
+                ->has('personal', 1)
+                ->where('personal.0.title', 'Ideas'));
     }
 
     public function test_a_long_room_opens_on_its_latest_and_scrolls_back_a_page_at_a_time()

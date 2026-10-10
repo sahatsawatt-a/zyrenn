@@ -3,8 +3,8 @@
 namespace App\Providers;
 
 use App\Models\Board\Board;
-use App\Models\Chat\AiConnection;
 use App\Models\Chat\ChatRoom;
+use App\Models\Connection;
 use App\Models\Drive\DriveFile;
 use App\Models\Folder;
 use App\Models\Map\Place;
@@ -13,6 +13,7 @@ use App\Models\Map\Trip;
 use App\Models\Note\Note;
 use App\Models\Project;
 use App\Models\Table\Table;
+use App\Models\Workflow\Workflow;
 use App\Policies\ChatPolicy;
 use App\Policies\ContentPolicy;
 use App\Support\Formula\Dependents;
@@ -51,12 +52,11 @@ class AppServiceProvider extends ServiceProvider
 
         // One policy for everything a user or a project owns; the Gate finds
         // Folder's for each kind of folder
-        foreach ([Note::class, Board::class, Table::class, Trip::class, PlaceList::class, Place::class, DriveFile::class, Folder::class] as $model) {
+        foreach ([Note::class, Board::class, Table::class, Trip::class, PlaceList::class, Place::class, DriveFile::class, Folder::class, Connection::class, Workflow::class] as $model) {
             Gate::policy($model, ContentPolicy::class);
         }
 
         Gate::policy(ChatRoom::class, ChatPolicy::class);
-        Gate::policy(AiConnection::class, ChatPolicy::class);
 
         $this->configureOwnedRoutes();
     }
@@ -94,6 +94,15 @@ class AppServiceProvider extends ServiceProvider
         // of a trip -- but most answers come from the cache, not the services
         RateLimiter::for('maps', fn (Request $request) => Limit::perMinute(240)
             ->by($request->user()?->id ?: $request->ip()));
+
+        // Telegram and LINE send every bot's messages from a few addresses of
+        // their own, so a hook is held back by itself -- one busy bot never
+        // slows another's -- with a far higher cap per address against a
+        // flood of made-up ones. Held back means 429, which senders retry.
+        RateLimiter::for('hooks', fn (Request $request) => [
+            Limit::perMinute(600)->by('hook:'.$request->path()),
+            Limit::perMinute(3000)->by('hooks-from:'.$request->ip()),
+        ]);
     }
 
     /**

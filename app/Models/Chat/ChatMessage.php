@@ -4,6 +4,7 @@ namespace App\Models\Chat;
 
 use App\Models\User;
 use App\Support\Chat\ChatMarkdown;
+use App\Support\Workflow\Inbound\ChatMessages;
 use Database\Factories\Chat\ChatMessageFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Touches;
@@ -36,6 +37,17 @@ class ChatMessage extends Model
     public const USER = 'user';
 
     public const ASSISTANT = 'assistant';
+
+    /** Written by a workflow: as itself, or carrying over someone outside's words. */
+    public const WORKFLOW = 'workflow';
+
+    /**
+     * A message said is heard by the workflows that listen in its room.
+     */
+    protected static function booted(): void
+    {
+        static::created(fn (ChatMessage $message) => ChatMessages::arrived($message));
+    }
 
     /**
      * @return array<string, string>
@@ -80,6 +92,13 @@ class ChatMessage extends Model
             'author' => $this->role !== self::USER ? null : [
                 'id' => $this->user_id,
                 'name' => $this->author->name ?? 'Deleted user',
+            ],
+            // A workflow's: shown under its name, or the outside sender's, naming who it acted as
+            'sender' => $this->role !== self::WORKFLOW ? null : [
+                'name' => $this->meta['name'] ?? 'Workflow',
+                'outside' => (bool) ($this->meta['outside'] ?? false),
+                'by' => $this->meta['by'] ?? null,
+                'workflow' => $this->meta['workflow'] ?? null,
             ],
             'content' => $this->content,
             'doc' => $this->role === self::ASSISTANT ? ChatMarkdown::toDoc($this->content) : null,

@@ -14,11 +14,13 @@ use App\Models\Note\Note;
 use App\Models\Note\NoteFolder;
 use App\Models\Table\Table;
 use App\Models\Table\TableFolder;
+use App\Models\Workflow\Workflow;
+use App\Models\Workflow\WorkflowFolder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Whoever notes, boards, tables, trips, saved places and Drive files belong to: a user, for their
+ * Whoever notes, boards, tables, trips, saved places, Drive files, connections and workflows belong to: a user, for their
  * own, or a project, for what its members share. Things go with their owner.
  *
  * @see Concerns\OwnsContent
@@ -99,4 +101,19 @@ interface Owner
      * @return HasMany<DriveFolder, covariant Model&Owner>
      */
     public function driveFolders(): HasMany;
+
+    /**
+     * @return HasMany<Connection, covariant Model&Owner>
+     */
+    public function connections(): HasMany;
+
+    /**
+     * @return HasMany<Workflow, covariant Model&Owner>
+     */
+    public function workflows(): HasMany;
+
+    /**
+     * @return HasMany<WorkflowFolder, covariant Model&Owner>
+     */
+    public function workflowFolders(): HasMany;
 }
