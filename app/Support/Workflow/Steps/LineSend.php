@@ -2,8 +2,6 @@
 
 namespace App\Support\Workflow\Steps;
 
-use App\Models\Drive\DriveFile;
-use App\Support\Workflow\References;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
@@ -12,16 +10,18 @@ use Illuminate\Support\Facades\Http;
 /**
  * Push on LINE: a message sent to someone first, by LINE's push call --
  * counted against the channel's monthly allowance. It carries a retry key
- * the same on every try, so LINE never delivers it twice. ("Reply on LINE"
- * is the other call: LineReply.)
+ * the same on every try, so LINE never delivers it twice.
  *
- * A message is words, a picture from the Drive, or both. LINE is not sent
- * the picture: it is given an address and fetches it, so the app has to be
- * reachable from outside, and the address is signed and lasts an hour.
+ * LINE's other calls that carry a message go out from here too, each a step
+ * of its own: reply (LineReply), with the token of the message answered;
+ * multicast, to several people at once; broadcast, to everyone who added
+ * the channel (LineCall). What a message is made of is the same for all
+ * four (LineApi::messages).
  */
 final class LineSend implements Step
 {
-    private const MAX_PICTURE_BYTES = 10 * 1024 * 1024;
+    /** How many people one multicast reaches. */
+    private const MOST_AT_ONCE = 500;
 
     public function run(StepContext $step): StepResult
     {
@@ -30,49 +30,19 @@ final class LineSend implements Step
     }
 
     /**
-     * Send the step's message by one of LINE's two calls: "reply", with the
-     * token of the message being answered, or "push", to someone.
+     * Send the step's message by one of LINE's calls: "reply", "push",
+     * "multicast" or "broadcast".
      *
      * @throws StepFailed
      */
     public static function message(StepContext $step, string $how): StepResult
     {
-        $channel = References::connectionFor($step->owner(), (string) $step->setting('connection'), ['line'], $step->run->trigger_data)
-            ?? throw new StepFailed($step->setting('connection') === References::LINKED
-                ? 'This run did not start from a chat linked to a LINE channel.'
-                : 'Its channel is gone, or is not this workflow\'s.');
-        $text = trim($step->text('text'));
-        $file = filled($step->setting('file')) ? DriveSteps::file($step) : null;
-
-        if ($text === '' && $file === null) {
-            throw new StepFailed('The message came to nothing.');
-        }
-
-        $messages = [
-            ...$file === null ? [] : [self::picture($file)],
-            ...$text === '' ? [] : [['type' => 'text', 'text' => mb_substr($text, 0, 5000)]],
-        ];
+        $channel = LineApi::channel($step);
+        $messages = LineApi::messages($step);
         $http = Http::timeout(20)->withToken((string) $channel->secret('channel_access_token'));
+        $key = $step->sendKey();
 
-        if ($how === 'push') {
-            $to = trim($step->text('to'));
-
-            if ($to === '') {
-                throw new StepFailed('There is no one to send to.');
-            }
-
-            $key = $step->sendKey();
-            $response = $step->deliver('line', $to, $key, fn () => self::send(
-                $http->withHeaders(['X-Line-Retry-Key' => $key]),
-                'push',
-                ['to' => $to, 'messages' => $messages],
-            ));
-
-            // Sent before, under this key: it went out
-            if ($response->status() === 409) {
-                return new StepResult(['to' => $to, 'sent' => true, 'repeat' => true]);
-            }
-        } else {
+        if ($how === 'reply') {
             // The token the step names; one set up before it could name any, the run's own
             $token = $step->setting('token') === null
                 ? ($step->run->trigger_data['reply']['token'] ?? null)
@@ -84,6 +54,24 @@ final class LineSend implements Step
 
             $to = (string) ($step->run->trigger_data['chat']['id'] ?? '');
             $response = $step->deliver('line', $to, null, fn () => self::send($http, 'reply', ['replyToken' => $token, 'messages' => $messages]));
+            $output = ['to' => $to, 'sent' => true];
+        } else {
+            [$target, $body, $output] = match ($how) {
+                'multicast' => self::toMany($step),
+                'broadcast' => ['everyone', [], ['to' => 'everyone', 'sent' => true]],
+                default => self::toOne($step),
+            };
+
+            $response = $step->deliver('line', $target, $key, fn () => self::send(
+                $http->withHeaders(['X-Line-Retry-Key' => $key]),
+                $how,
+                [...$body, 'messages' => $messages],
+            ));
+
+            // Sent before, under this key: it went out
+            if ($response->status() === 409) {
+                return new StepResult([...$output, 'repeat' => true]);
+            }
         }
 
         if ($response->status() === 429) {
@@ -92,36 +80,49 @@ final class LineSend implements Step
 
         if (! $response->successful()) {
             $why = $response->json('message') ?? "{$response->status()}.";
+            $detail = collect((array) $response->json('details'))->pluck('message')->filter()->implode(' ');
 
             throw new StepFailed(
-                str_contains(strtolower((string) $why), 'reply token') ? "LINE said: {$why} A reply must come soon after the message, and only once; \"Push on LINE\" writes to someone at any time." : "LINE said: {$why}",
+                str_contains(strtolower((string) $why), 'reply token')
+                    ? "LINE said: {$why} A reply must come soon after the message, and only once; \"Push on LINE\" writes to someone at any time."
+                    : trim("LINE said: {$why} {$detail}"),
                 retryable: $response->serverError(),
             );
         }
 
-        return new StepResult(['to' => $to, 'sent' => true]);
+        return new StepResult($output);
     }
 
     /**
-     * A picture as LINE takes one: an address for it, and one for the small
-     * version shown in the chat -- the same, there being no smaller one.
-     *
-     * @return array<string, string>
+     * @return array{0: string, 1: array<string, mixed>, 2: array<string, mixed>}
      */
-    private static function picture(DriveFile $file): array
+    private static function toOne(StepContext $step): array
     {
-        if (! in_array($file->mime, ['image/jpeg', 'image/png'], true)) {
-            throw new StepFailed("LINE takes only a JPEG or PNG picture this way, and \"{$file->name}\" is neither.");
+        $to = trim($step->text('to'));
+
+        if ($to === '') {
+            throw new StepFailed('There is no one to send to.');
         }
 
-        if ($file->size > self::MAX_PICTURE_BYTES) {
-            throw new StepFailed('LINE takes pictures of at most '.intdiv(self::MAX_PICTURE_BYTES, 1024 * 1024)." MB, and \"{$file->name}\" is larger.");
+        return [$to, ['to' => $to], ['to' => $to, 'sent' => true]];
+    }
+
+    /**
+     * Several people: a list, or their ids written out with commas between.
+     *
+     * @return array{0: string, 1: array<string, mixed>, 2: array<string, mixed>}
+     */
+    private static function toMany(StepContext $step): array
+    {
+        $given = $step->template('to');
+        $ids = is_array($given) ? $given : (preg_split('/[\s,]+/', (string) $given, -1, PREG_SPLIT_NO_EMPTY) ?: []);
+        $ids = array_values(array_unique(array_filter(array_map(fn ($id) => is_scalar($id) ? trim((string) $id) : '', $ids), fn (string $id) => $id !== '')));
+
+        if ($ids === [] || count($ids) > self::MOST_AT_ONCE) {
+            throw new StepFailed($ids === [] ? 'There is no one to send to.' : 'LINE sends to at most '.self::MOST_AT_ONCE.' people at once, and there are '.count($ids).'.');
         }
 
-        DriveSteps::path($file);
-        $url = DriveSteps::publicUrl($file);
-
-        return ['type' => 'image', 'originalContentUrl' => $url, 'previewImageUrl' => $url];
+        return [count($ids).' people', ['to' => $ids], ['to' => $ids, 'count' => count($ids), 'sent' => true]];
     }
 
     /**

@@ -33,9 +33,11 @@ use App\Models\Chat\ChatRoom;
  *   timezone  a time zone, e.g. Asia/Bangkok
  *
  * A "fields" setting with 'names' => 'columns' names each value by one of
- * the step's table's columns. A setting with 'when' => [other => value]
- * matters only while that other setting is so (or, given true, set at all),
- * and the editor shows it only then. A room setting with 'linked' also
+ * the step's table's columns; with 'labels', a name is any words -- what a
+ * button says -- rather than something a formula can read. A setting with
+ * 'when' => [other => value] matters only while that other setting is so
+ * (one of several, given a list; or, given true, set at all), and the
+ * editor shows it only then. A room setting with 'linked' also
  * offers "any chat linked to Telegram / LINE"; a connection setting with
  * 'linked', "the chat's own" -- the one the run's chat is linked through.
  * A folder setting left empty is the top of the Drive -- or, with
@@ -49,7 +51,10 @@ use App\Models\Chat\ChatRoom;
  * dies partway it may have gone out already, so it is not simply run again
  * (its "unsure" setting says what happens instead).
  *
- * @phpstan-type Setting array{name: string, label: string, type: string, required: bool, default?: mixed, help?: string, placeholder?: string, options?: array<string, string>, services?: list<string>, names?: string, when?: array<string, string|bool>, linked?: bool, ways?: bool, anywhere?: bool}
+ * Every call Telegram or LINE offers is a kind of its own, in that
+ * service's group; most of them are listed in ServiceKinds.
+ *
+ * @phpstan-type Setting array{name: string, label: string, type: string, required: bool, default?: mixed, help?: string, placeholder?: string, options?: array<string, string>, services?: list<string>, names?: string, when?: array<string, string|bool|list<string>>, linked?: bool, ways?: bool, anywhere?: bool, labels?: bool}
  * @phpstan-type NodeType array{type: string, version: int, label: string, group: string, icon: string, description: string, trigger: bool, inputs: list<string>, outputs: list<string>, config: list<Setting>, repeatable?: bool, oldest?: int, empty?: array<string, null>}
  */
 final class NodeTypes
@@ -335,12 +340,21 @@ final class NodeTypes
                 'label' => 'Chat message',
                 'group' => 'chat',
                 'icon' => 'message-square',
-                'description' => 'Starts a run when something is written in a chat room.',
+                'description' => 'Starts a run when something is written in a chat room -- or when someone reads what an outside chat sent there.',
                 'trigger' => true,
                 'inputs' => [],
                 'outputs' => [self::OUT],
                 'config' => [
-                    ['name' => 'room', 'label' => 'Room', 'type' => 'room', 'required' => true, 'linked' => true, 'help' => 'One chat, or every chat linked to a Telegram or LINE chat. Later steps read the message as trigger.text, its author as trigger.message.author, and a linked chat\'s other end as trigger.room.link.chat.'],
+                    ['name' => 'room', 'label' => 'Room', 'type' => 'room', 'required' => true, 'linked' => true, 'help' => 'One chat, or every chat linked to a Telegram or LINE chat. Later steps read the message as trigger.text, its author as trigger.message.author, a file sent with it in trigger.files, a place in trigger.location (trigger.kind says which it was: text, file or location), and a linked chat\'s other end as trigger.room.link.chat.'],
+                    [
+                        'name' => 'on',
+                        'label' => 'When',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'message',
+                        'options' => ['message' => 'Something is written', 'read' => 'Someone reads what an outside chat sent'],
+                        'help' => 'Read: once for each message a workflow carried in from outside, when someone here first sees it. trigger.reply.read is LINE\'s token for marking it read there.',
+                    ],
                     [
                         'name' => 'include',
                         'label' => 'Start for',
@@ -348,6 +362,7 @@ final class NodeTypes
                         'required' => true,
                         'default' => 'people',
                         'options' => ['people' => 'What people write', 'all' => 'Workflows\' messages too'],
+                        'when' => ['on' => 'message'],
                     ],
                     self::PER_CHAT,
                 ],
@@ -423,6 +438,25 @@ final class NodeTypes
                 'config' => [
                     ['name' => 'connection', 'label' => 'Bot', 'type' => 'connection', 'required' => true, 'services' => ['telegram']],
                     [
+                        'name' => 'on',
+                        'label' => 'When',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'message',
+                        'options' => [
+                            'message' => 'A message is sent, or a button pressed',
+                            'button' => 'A button is pressed',
+                            'channel' => 'Something is posted in a channel',
+                            'member' => 'Someone joins or leaves, or the bot is added',
+                            'reaction' => 'Someone reacts to a message',
+                            'poll' => 'Someone answers a poll',
+                            'inline' => 'Someone asks the bot inline (@bot …)',
+                            'payment' => 'A payment is about to be made, or has been',
+                            'any' => 'Any of these',
+                        ],
+                        'help' => 'A press reads as trigger.text and trigger.button; a place sent, trigger.location; who joined or left, trigger.member; a reaction, trigger.reaction; a payment, trigger.checkout then trigger.payment. trigger.type says which it was. A bot hears reactions only where it looks after the chat.',
+                    ],
+                    [
                         'name' => 'chats',
                         'label' => 'From',
                         'type' => 'choice',
@@ -447,6 +481,25 @@ final class NodeTypes
                 'config' => [
                     ['name' => 'connection', 'label' => 'Channel', 'type' => 'connection', 'required' => true, 'services' => ['line']],
                     [
+                        'name' => 'on',
+                        'label' => 'When',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'message',
+                        'options' => [
+                            'message' => 'A message is sent, or a button tapped',
+                            'button' => 'A button is tapped',
+                            'follow' => 'Someone adds the channel as a friend',
+                            'unfollow' => 'Someone blocks the channel',
+                            'join' => 'The channel is added to a group',
+                            'leave' => 'The channel is taken out of a group',
+                            'member' => 'Someone joins or leaves a group',
+                            'unsend' => 'A message is taken back',
+                            'any' => 'Any of these',
+                        ],
+                        'help' => 'A tapped button reads as trigger.text and trigger.button; a place sent, trigger.location; a sticker, trigger.sticker; who joined or left, trigger.members. trigger.type says which it was.',
+                    ],
+                    [
                         'name' => 'chats',
                         'label' => 'From',
                         'type' => 'choice',
@@ -465,7 +518,7 @@ final class NodeTypes
                 'label' => 'Find or make a room',
                 'group' => 'chat',
                 'icon' => 'messages-square',
-                'description' => 'The room for an outside conversation, made the first time: one room for each Telegram chat, say. Gives out room, its ref.',
+                'description' => 'The room for an outside conversation, made the first time: one room for each Telegram chat, say -- with a picture and details kept with it. Gives out room, its ref.',
                 'trigger' => false,
                 'inputs' => [self::IN],
                 'outputs' => [self::OUT],
@@ -474,6 +527,8 @@ final class NodeTypes
                     ['name' => 'title', 'label' => 'Title', 'type' => 'template', 'required' => true, 'default' => 'From a workflow', 'placeholder' => '{{ trigger.sender.name }} on Telegram'],
                     ['name' => 'link', 'label' => 'Link it to', 'type' => 'connection', 'required' => false, 'services' => ['telegram', 'line'], 'help' => 'A bot or channel: what is written in the room can then go back through it, to the chat below.'],
                     ['name' => 'link_chat', 'label' => 'Its chat there', 'type' => 'template', 'required' => false, 'default' => '{{ trigger.chat.id }}', 'when' => ['link' => true]],
+                    ['name' => 'picture', 'label' => 'Its picture', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("who").picture }}', 'help' => 'The address of a picture to show as the room\'s face, at its top and in the list of chats: whoever it is with, as "LINE: who wrote" gives their picture. Kept up to date each time the step runs.'],
+                    ['name' => 'details', 'label' => 'Details to keep', 'type' => 'fields', 'required' => false, 'default' => [], 'help' => 'Things known about the room, each by a name: language {{ node("who").language }}, line_id {{ trigger.sender.id }}. Shown in the room under "About this chat", and read by later runs as trigger.room.details.language. One that comes to nothing is left as it was.'],
                 ],
             ],
             [
@@ -488,8 +543,18 @@ final class NodeTypes
                 'outputs' => [self::OUT],
                 'config' => [
                     ['name' => 'room', 'label' => 'Room', 'type' => 'room', 'required' => true],
-                    ['name' => 'message', 'label' => 'Message', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.text }}', 'help' => 'Needed unless a file goes with it.'],
+                    ['name' => 'message', 'label' => 'Message', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.display }}', 'help' => 'Needed unless a file or a place goes with it. {{ trigger.display }} is a LINE or Telegram message\'s words with LINE\'s own emoji as pictures, where {{ trigger.text }} has their names.'],
                     ['name' => 'file', 'label' => 'With file', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'help' => 'A file in the Drive, by its ref_id, shown under the message: a picture or a video as one, anything else as a link.'],
+                    [
+                        'name' => 'shown',
+                        'label' => 'Shown as',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'file',
+                        'options' => ['file' => 'A picture, a video or a file', 'sticker' => 'A sticker: small, with nothing round it'],
+                        'when' => ['file' => true],
+                    ],
+                    ['name' => 'place', 'label' => 'With a place', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.location }}', 'help' => 'A place shown on a small map under the message: what a message that sent one gives as {{ trigger.location }} -- its lat and lng, and a title and address when it has them.'],
                     ['name' => 'sender', 'label' => 'Shown as', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.sender.name }} (Telegram)', 'help' => 'Left empty, the workflow\'s name.'],
                     // Only while rooms may have an agent of their own (CHAT_AGENTS)
                     ...ChatRoom::agentsOn() ? [[
@@ -572,6 +637,7 @@ final class NodeTypes
             [
                 'type' => 'drive.save',
                 'version' => 1,
+                'empty' => ['ref_id' => null, 'name' => null, 'url' => null, 'kind' => null, 'mime' => null, 'size' => null],
                 'label' => 'Save to Drive',
                 'group' => 'drive',
                 'icon' => 'hard-drive-download',
@@ -592,6 +658,16 @@ final class NodeTypes
                     ['name' => 'text', 'label' => 'Text', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("ask").text }}', 'when' => ['from' => 'text']],
                     ['name' => 'name', 'label' => 'Called', 'type' => 'template', 'required' => false, 'placeholder' => 'receipt-{{ trigger.id }}.jpg', 'help' => 'Left empty, the name it has at its address. Text needs a name, like notes.md.'],
                     ['name' => 'folder', 'label' => 'In folder', 'type' => 'folder', 'required' => false],
+                    [
+                        'name' => 'same',
+                        'label' => 'If a file called that is there already',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'new',
+                        'options' => ['new' => 'Keep both', 'reuse' => 'Use the one there'],
+                        'help' => 'Only when it is given a name: the one there is given out, and nothing is fetched.',
+                        'when' => ['name' => true],
+                    ],
                 ],
             ],
             [
@@ -630,6 +706,21 @@ final class NodeTypes
                 'outputs' => [self::OUT],
                 'config' => [
                     ['name' => 'file', 'label' => 'File', 'type' => 'template', 'required' => true, 'placeholder' => '{{ item(node("find").files, 1).ref_id }}', 'help' => 'A file\'s ref_id, as "Save to Drive", "Find files" and the "get the file" steps give it.'],
+                ],
+            ],
+            [
+                'type' => 'drive.link',
+                'version' => 1,
+                'label' => 'Make a link to a file',
+                'group' => 'drive',
+                'icon' => 'link',
+                'description' => 'Gives out an address, as url, that opens one of the Drive\'s files for anyone who has it, without signing in, until its time is up -- for sending a file where only words can go.',
+                'trigger' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'file', 'label' => 'File', 'type' => 'template', 'required' => true, 'placeholder' => '{{ item(trigger.files, 1) }}', 'help' => 'A file\'s ref_id.'],
+                    ['name' => 'hours', 'label' => 'Good for, in hours', 'type' => 'number', 'required' => true, 'default' => 24, 'help' => 'At most a week. The app has to be reachable from outside.'],
                 ],
             ],
 
@@ -736,7 +827,7 @@ final class NodeTypes
                 'label' => 'Send on Telegram',
                 'group' => 'telegram',
                 'icon' => 'send',
-                'description' => 'Sends a message from a bot to a chat.',
+                'description' => 'Sends a message from a bot to a chat, with buttons under it when any are named.',
                 'trigger' => false,
                 'repeatable' => false,
                 'inputs' => [self::IN],
@@ -745,6 +836,8 @@ final class NodeTypes
                     ['name' => 'connection', 'label' => 'Bot', 'type' => 'connection', 'required' => true, 'services' => ['telegram'], 'linked' => true],
                     ['name' => 'chat', 'label' => 'To chat', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.chat.id }}', 'help' => 'From a linked chat, its other end is {{ trigger.room.link.chat }}.'],
                     ['name' => 'text', 'label' => 'Message', 'type' => 'template', 'required' => true],
+                    ...ServiceKinds::telegramButtons(),
+                    ['name' => 'topic', 'label' => 'In topic', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.topic }}', 'help' => 'In a group with topics: the topic\'s id. Left empty, the general one.'],
                     [
                         'name' => 'format',
                         'label' => 'Written in',
@@ -769,7 +862,7 @@ final class NodeTypes
                 'label' => 'Send a file on Telegram',
                 'group' => 'telegram',
                 'icon' => 'file-up',
-                'description' => 'Sends a file from the Drive, from a bot to a chat: a picture or a video is shown as one, anything else goes as a document. At most 50 MB.',
+                'description' => 'Sends a file from the Drive, from a bot to a chat: a picture or a video is shown as one, a recording played, anything else goes as a document. At most 50 MB.',
                 'trigger' => false,
                 'repeatable' => false,
                 'inputs' => [self::IN],
@@ -779,6 +872,8 @@ final class NodeTypes
                     ['name' => 'chat', 'label' => 'To chat', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.chat.id }}', 'help' => 'From a linked chat, its other end is {{ trigger.room.link.chat }}.'],
                     ['name' => 'file', 'label' => 'File', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("save").ref_id }}', 'help' => 'A file in the Drive, by its ref_id.'],
                     ['name' => 'text', 'label' => 'Words under it', 'type' => 'template', 'required' => false],
+                    ...ServiceKinds::telegramButtons(),
+                    ['name' => 'topic', 'label' => 'In topic', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.topic }}', 'help' => 'In a group with topics: the topic\'s id. Left empty, the general one.'],
                     [
                         'name' => 'format',
                         'label' => 'Written in',
@@ -851,7 +946,7 @@ final class NodeTypes
                 'label' => 'Reply on LINE',
                 'group' => 'line',
                 'icon' => 'reply',
-                'description' => 'Answers a LINE message, by LINE\'s reply call: free, but only soon after the message and only once. Words, a picture from the Drive, or both.',
+                'description' => 'Answers a LINE message, by LINE\'s reply call: free, but only soon after the message and only once. Words, a picture, a sticker, a place, buttons to choose from, a card -- with quick replies under it.',
                 'trigger' => false,
                 'repeatable' => false,
                 'inputs' => [self::IN],
@@ -859,8 +954,7 @@ final class NodeTypes
                 'config' => [
                     ['name' => 'connection', 'label' => 'Channel', 'type' => 'connection', 'required' => true, 'services' => ['line'], 'linked' => true],
                     ['name' => 'token', 'label' => 'Reply token', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.reply.token }}', 'help' => 'What the LINE message came with: the message that started the run gives it as {{ trigger.reply.token }}.'],
-                    ['name' => 'text', 'label' => 'Message', 'type' => 'template', 'required' => false, 'help' => 'Needed unless a picture goes with it.'],
-                    ['name' => 'file', 'label' => 'Picture', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'help' => 'A JPEG or PNG in the Drive, by its ref_id, at most 10 MB. LINE fetches it from this app, which must be reachable from outside.'],
+                    ...ServiceKinds::lineMessage(),
                     [
                         'name' => 'unsure',
                         'label' => 'If it may not have gone out',
@@ -878,7 +972,7 @@ final class NodeTypes
                 'label' => 'Push on LINE',
                 'group' => 'line',
                 'icon' => 'message-circle',
-                'description' => 'Sends a message to someone on LINE first, by LINE\'s push call: at any time, but counted against the channel\'s monthly allowance. Words, a picture from the Drive, or both.',
+                'description' => 'Sends a message to someone on LINE first, by LINE\'s push call: at any time, but counted against the channel\'s monthly allowance. Words, a picture, a sticker, a place, buttons to choose from, a card -- with quick replies under it.',
                 'trigger' => false,
                 'repeatable' => false,
                 'inputs' => [self::IN],
@@ -886,8 +980,7 @@ final class NodeTypes
                 'config' => [
                     ['name' => 'connection', 'label' => 'Channel', 'type' => 'connection', 'required' => true, 'services' => ['line'], 'linked' => true],
                     ['name' => 'to', 'label' => 'To', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.chat.id }}', 'help' => 'A user, group or room id. From a linked chat, its other end is {{ trigger.room.link.chat }}.'],
-                    ['name' => 'text', 'label' => 'Message', 'type' => 'template', 'required' => false, 'help' => 'Needed unless a picture goes with it.'],
-                    ['name' => 'file', 'label' => 'Picture', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'help' => 'A JPEG or PNG in the Drive, by its ref_id, at most 10 MB. LINE fetches it from this app, which must be reachable from outside.'],
+                    ...ServiceKinds::lineMessage(),
                     [
                         'name' => 'unsure',
                         'label' => 'If it may not have gone out',
@@ -901,7 +994,7 @@ final class NodeTypes
             ],
         ];
 
-        return array_column($types, null, 'type');
+        return array_column([...$types, ...ServiceKinds::all()], null, 'type');
     }
 
     /**

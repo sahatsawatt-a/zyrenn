@@ -75,6 +75,8 @@ final class ChatRoomStep implements Step
      */
     private static function link(StepContext $step, ChatRoom $room): void
     {
+        self::note($step, $room);
+
         $through = trim((string) $step->setting('link'));
 
         if ($through === '') {
@@ -97,6 +99,25 @@ final class ChatRoomStep implements Step
     }
 
     /**
+     * Keep the room's picture and the details the step names, each worked
+     * out now: who it is with can change their name and their face.
+     */
+    private static function note(StepContext $step, ChatRoom $room): void
+    {
+        $details = [];
+
+        foreach ((array) $step->setting('details') as $field) {
+            $name = trim((string) ($field['name'] ?? ''));
+
+            if ($name !== '') {
+                $details[$name] = $step->text("details.{$name}", (string) ($field['value'] ?? ''));
+            }
+        }
+
+        $room->note($details, filled($step->setting('picture')) ? $step->text('picture') : null);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private static function describe(ChatRoom $room, bool $created): array
@@ -105,6 +126,8 @@ final class ChatRoomStep implements Step
             'room' => $room->ref_id,
             'title' => $room->title,
             'link' => $room->link,
+            'picture' => $room->picture,
+            'details' => $room->details ?? [],
             'url' => route('chats.show', $room),
             'created' => $created,
         ];

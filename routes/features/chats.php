@@ -23,4 +23,5 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('chats/{room}/messages', [ChatMessageController::class, 'store'])->name('chats.messages.store');
     Route::get('chats/{room}/messages', [ChatRoomController::class, 'earlier'])->name('chats.messages.index');
     Route::post('chats/{room}/read', [ChatRoomController::class, 'read'])->name('chats.read');
+    Route::get('chats/{room}/files', [ChatRoomController::class, 'files'])->name('chats.files');
 });

@@ -125,7 +125,8 @@ as its `ref_id`. Its bytes never pass through what a step gives out.
   the public internet, or for text written in the step. Each gives out the
   file: `ref_id`, `name`, `folder`, `mime`, `kind`, `size`, `url`, and for a
   picture or a video `markdown`, the line that shows it in a note.
-- **Around.** **Find files** lists a folder (or the whole Drive) newest
+- **Around.** **Make a link to a file** gives an address that opens one
+  file for anyone who has it, for up to a week. **Find files** lists a folder (or the whole Drive) newest
   first, by part of a name and by kind. **Read a file** gives one by ref_id,
   with a text file's first 64 KB as `text`.
 - **In a chat.** **Write in a room** takes a file, shown under the message:
@@ -139,13 +140,9 @@ as its `ref_id`. Its bytes never pass through what a step gives out.
   as part of their message. **Ask AI** takes up to four pictures for a model
   that can look at them.
 
-Each call a service offers is a step of its own, in that service's group,
-rather than a choice on a general step: for LINE, **LINE: who wrote**
-(profile), **LINE: get the file** (content), **Reply on LINE** (reply: free,
-with the token a message came with, soon after it and once) and **Push on
-LINE** (push: at any time, against the monthly allowance). A new call to
-Telegram or LINE gets a new step. A workflow published while one "Send on
-LINE" step chose between reply and push goes on doing what it was set to.
+A workflow published while one "Send on LINE" step chose between reply and
+push goes on doing what it was set to. The rest of what Telegram and LINE
+can do is under "Telegram and LINE" below.
 
 A message with no file fails a "get the file" step, so a workflow that hears every
 message puts an **If** on `len(trigger.files) > 0` before it (the "Files sent
@@ -165,6 +162,139 @@ address is `/hooks/files/…`, signed, good for an hour and for that one file
 webhook does. The same picture is given as its own preview (there is nothing
 here to shrink it with), and LINE may not show a preview of one over 1 MB
 until it is opened.
+
+## Telegram and LINE
+
+Each call a service offers is a step of its own, in that service's group.
+The settings a step asks for are that call's own; every one says in the
+editor what it is for.
+
+**What starts a run.** The "Telegram message" and "LINE message" triggers
+have a "When": a message or a button (the default, and what a trigger set up
+before there was a choice does), or one other kind of thing. `trigger.type`
+says which it was, and the trigger gives out the parts that kind brings.
+
+| When                                   | Telegram                                             | LINE                                  | Gives out                                                           |
+| -------------------------------------- | ---------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------- |
+| A message, or a button                 | `message`, `edited`, `button`                        | `message`, `postback`                 | `trigger.text`, `trigger.files`, `trigger.button`                   |
+| A place, a sticker, a contact          | in a message                                         | in a message                          | `trigger.location`, `trigger.sticker`, `trigger.contact` (Telegram) |
+| Someone joins or leaves                | `joined`, `left` (and the bot added or put out)      | `memberJoined`, `memberLeft`          | `trigger.member` (Telegram), `trigger.members` (LINE)               |
+| The channel added, blocked, in a group | --                                                   | `follow`, `unfollow`, `join`, `leave` | `trigger.sender`, `trigger.chat`                                    |
+| A post in a channel                    | `channel_post`                                       | --                                    | as a message                                                        |
+| A reaction                             | `reaction` (only where the bot looks after the chat) | --                                    | `trigger.reaction`                                                  |
+| A poll answered                        | `poll_answer`                                        | --                                    | `trigger.poll`                                                      |
+| An inline question (`@bot …`)          | `inline_query`                                       | --                                    | `trigger.inline`, `trigger.text`                                    |
+| A payment                              | `checkout`, then `payment`                           | --                                    | `trigger.checkout`, `trigger.payment`                               |
+| A message taken back                   | --                                                   | `unsend`                              | `trigger.unsent`                                                    |
+
+A bot is told of all of these once a workflow of its is published or
+switched on again: that is when Telegram is given the list
+(`Envelope::TELEGRAM_UPDATES`). A bot registered before only hears messages
+and button presses until then.
+
+**Telegram's steps.** Sending: a message (with buttons), a file, an album, a
+sticker, a location, a contact, a poll, an invoice; forwarding and copying a
+message; making a topic. On a message already there: edit it, change its
+buttons, delete, pin, unpin, react. Answering: a button press, an inline
+question, a checkout. Showing "typing…". Looking after a chat: ban, lift a
+ban, limit what someone may do, set the bot's commands. Asking: about a
+chat, about a member, how many members.
+
+**LINE's steps.** Reply, Push, "Send to many" (multicast) and "Send to
+everyone" (broadcast) carry the same message: words and a picture, a
+sticker, a place, a video, a recording, buttons to choose from, a yes-or-no
+question, or a Flex card -- with quick replies under it, and quoting a
+message. Also: show loading, mark as read, leave a group, set or take off
+someone's rich menu. Asking: who wrote, about a group, how many members,
+the rich menus, the monthly allowance and how much of it is used.
+
+**Buttons.** Wherever a step takes buttons, each is what it says and what
+tapping it does. An address opens. Otherwise it comes back to the workflow,
+to a trigger set to buttons, as `trigger.text`: on Telegram anything else
+does (at most 64 bytes); on LINE what follows `postback:` does, unseen, and
+anything else is said in the chat as the person's own message.
+
+**Payments on Telegram.** "Send an invoice" asks for Stars (XTR) with
+nothing more, or for money with a payment provider's token, kept as a
+"Webhook secret" connection. Telegram then asks the bot to agree and waits
+ten seconds: a workflow whose trigger is set to payments answers with
+"Answer a checkout" as its first step, and is started again when it is paid.
+
+**What a room keeps.** A room has a picture and details by name, set by
+"Find or make a room" ("Its picture", "Details to keep") and kept with the
+room itself -- not with each message. They are written only when something
+is different, so a step that runs for every message costs nothing when
+nothing changed; a detail that comes to nothing is left as it was. In the
+chat, the picture is the room's face (its title, the list of chats, and
+beside what the other side writes; pressed, it opens larger), and "About
+this chat" opens a panel beside the chat: what a workflow keeps -- shown
+and copied, but not changed there, since the workflow would set it back --
+and notes of one's own, which whoever may change the room adds and edits. A
+workflow reads them as `trigger.room.picture` and
+`trigger.room.details.<name>`. The bridge templates keep who an outside chat
+is with: their picture (one person's chat only; a group has many faces),
+name, id there, language and status.
+
+**Places in a chat.** A message can carry a place -- lat, lng, a title and
+an address -- drawn under it as a small map with its pin, the way there, the
+app's own map of it, and "Save" to keep it in a list of saved places; the
+map opens larger over the chat. "Write in a room" takes one as its "With a
+place" (`{{ trigger.location }}` from a Telegram or LINE message that sent
+one), and someone in a chat shares one from the attach menu: a saved place,
+anywhere searched for, or where they are. A "Chat message" trigger gives it
+as `trigger.location`, with `trigger.kind` saying "location"; the bridge
+templates send it on as a place (LINE's location message, Telegram's
+venue), with any words written beside it.
+
+**Files in a chat.** Someone in one's own chat or a project's can attach a
+file to what they write: from their device, when it is kept in a "Chats"
+folder of that chat's Drive -- one's own, or the project's -- or one
+already in that Drive, chosen there. A "Chat message" trigger gives its
+ref_id in `trigger.files`. The room-bridge templates send it on to the
+outside chat. A chat between two people has no Drive both can open, so no
+files.
+
+**A whole conversation.** The "LINE / Telegram chats in a room, both ways"
+templates are the full bridge between an outside chat and a room here:
+
+- _In_, a **Switch** goes by `trigger.kind`, which a message always has
+  (text, image, video, audio, file, sticker, location, contact; a tap is a
+  button). A picture or a file is fetched and shown in the room; a sticker
+  is shown as its picture (LINE's are fetched from LINE's own address for
+  them, once each: "Save to Drive" can use a file of the same name already
+  there), or just named when that fails; a place is written with a link to
+  a map; anything else is said as it was.
+- _Out_, what is written in the room goes to the outside chat, with a file
+  when one was attached: on Telegram by its own call for a file; on LINE as
+  a picture when it is a JPEG or PNG, else as a link made by **Make a link
+  to a file** -- an address that opens that one file for a day without
+  signing in.
+- On LINE, a **Chat message** trigger set to "Someone reads what an outside
+  chat sent" marks the message read there, once someone has seen it here.
+  LINE allows this only with **Chat switched on** for the channel (LINE
+  Official Account Manager, Response settings); without it the step says so
+  and the run carries on.
+- On LINE, someone who adds the channel as a friend gets their room at once.
+- A sticker that moves is shown moving: LINE's by its animated picture
+  (`trigger.sticker.url`, an animated PNG, which plays a few times and
+  stops, as it does on LINE -- a click in the chat plays it again); Telegram's video stickers play over and over,
+  and its drawn ones (.tgs), which nothing here can play, show as their
+  still picture (`trigger.sticker.picture`).
+- In the room, a sticker is drawn as one -- small, with nothing round it
+  ("Write in a room", shown as a sticker) -- and LINE's own emoji are drawn
+  where their names stand in the words: `trigger.display` is a message's
+  words with each such emoji written as a picture, where `trigger.text` has
+  only its name, like "(angel Moon)". A picture in a chat opens larger over
+  it when clicked.
+
+LINE keeps no copy of a picture or a video it is sent this way: each phone
+fetches it from this app when it shows the message, so its address is good
+for 30 days and the app has to stay reachable from outside for that long.
+
+Checked against the real services: a LINE picture and a sticker in, a
+picture out to a phone, the read receipt (refused, Chat being off), and a
+few read-only questions to both. Everything else has only been run against
+faked services.
 
 ## From an AI client (MCP)
 

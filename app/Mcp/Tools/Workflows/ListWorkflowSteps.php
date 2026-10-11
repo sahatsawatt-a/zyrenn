@@ -19,7 +19,9 @@ The kinds of step a workflow can have, to build one with create-workflow and upd
 With "type": that kind in full -- each setting's name, kind (text, template with {{ formulas }},
 formula without them, choice with its options, connection of the services listed, room, table,
 column, folder as a Drive path like "Receipts/2026", fields as a list of {name, value}, number, cron,
-model, timezone, workflow), whether it is needed, its default, and when it applies.
+model, timezone, workflow), whether it is needed, its default, and when it applies ("when": another
+setting's value, or any of a list of them). "labels" on a fields setting: its names are any words,
+such as what a button says.
 
 Also "choices": what settings may point at, by ref_id -- the owner's connections (name and service,
 never a secret), chat rooms, tables with their columns, and the workflows a "For each" may run -- and
@@ -60,6 +62,7 @@ class ListWorkflowSteps extends WorkflowTool
                     'options' => $setting['options'] ?? null,
                     'services' => $setting['services'] ?? null,
                     'when' => $setting['when'] ?? null,
+                    'labels' => $setting['labels'] ?? null,
                     'help' => $setting['help'] ?? null,
                     'linked' => ($setting['linked'] ?? false) ? 'Also "*linked": the chat the run started from\'s own (room: "*linked:telegram" / "*linked:line").' : null,
                 ], fn ($value) => $value !== null), $type['config']),

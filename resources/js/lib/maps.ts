@@ -166,6 +166,15 @@ const query = (params: Record<string, string | number>) =>
 
 // ---- saved places ----
 
+/** The lists places are saved in, in their order: to choose one to save in. */
+export const listPlaceLists = async () =>
+    (
+        await send<{ lists: PlaceList[] }>(
+            owned(placeListRoutes.index, projectPlaceListRoutes.index).url(),
+            'GET',
+        )
+    ).lists;
+
 export const createList = (name: string) =>
     send<{ list: PlaceList }>(
         owned(placeListRoutes.store, projectPlaceListRoutes.store).url(),

@@ -395,7 +395,7 @@ final class Definition
     /**
      * What is wrong with one filled-in setting, in its own terms.
      *
-     * @param  array{type: string, ways?: bool}  $setting
+     * @param  array{type: string, ways?: bool, labels?: bool}  $setting
      * @param  array<string, true>|null  $before  the ids of the steps before this one; null when that can't be known
      * @param  array<string, string>  $byKey  step id by key
      * @return list<string>
@@ -439,7 +439,7 @@ final class Definition
                             $messages[] = 'every value needs a name.';
                         } elseif (isset($names[$field['name']])) {
                             $messages[] = "\"{$field['name']}\" is named twice.";
-                        } elseif (! preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $field['name'])) {
+                        } elseif (! ($setting['labels'] ?? false) && ! preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $field['name'])) {
                             $messages[] = "\"{$field['name']}\" can only have letters, digits and _, so a formula can read it.";
                         }
 

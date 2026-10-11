@@ -62,8 +62,11 @@ class HookController extends Controller
                 $chats = $listener->settings['chats'] ?? 'any';
                 $command = trim((string) ($listener->settings['command'] ?? ''));
 
-                return ($chats === 'any' || $chats === $envelope['chat']['kind'])
-                    && ($command === '' || preg_match('/^'.preg_quote($command, '/').'(@\w+)?(\s|$)/i', $envelope['text']) === 1);
+                return Envelope::wanted('telegram', $listener->settings['on'] ?? null, $envelope['type'])
+                    && ($chats === 'any' || $chats === $envelope['chat']['kind'])
+                    // A command is something written: a press or a join has none to match
+                    && ($command === '' || ! in_array($envelope['type'], ['message', 'edited', 'channel_post'], true)
+                        || preg_match('/^'.preg_quote($command, '/').'(@\w+)?(\s|$)/i', $envelope['text']) === 1);
             },
         );
     }
@@ -94,7 +97,8 @@ class HookController extends Controller
                 $envelope['id'] ?: hash('sha256', json_encode($event) ?: ''),
                 $envelope,
                 Listeners::for('line', $channel->ref_id),
-                fn (WorkflowListener $listener) => in_array($listener->settings['chats'] ?? 'any', ['any', $envelope['chat']['kind']], true),
+                fn (WorkflowListener $listener) => Envelope::wanted('line', $listener->settings['on'] ?? null, $envelope['type'])
+                    && in_array($listener->settings['chats'] ?? 'any', ['any', $envelope['chat']['kind']], true),
             );
         }
 

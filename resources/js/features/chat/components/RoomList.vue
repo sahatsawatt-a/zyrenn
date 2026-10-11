@@ -11,6 +11,12 @@ export type ListedRoom = {
     detail: string;
     updated_at: string;
     unread?: number;
+    // What was said last, and by whom: shown in place of the detail
+    last?: string | null;
+    // The service a room is linked to a chat on: "line", "telegram"
+    linked?: string | null;
+    // Its face, when it keeps one: who an outside chat is with
+    picture?: string | null;
     // False for a group one may see but is not in: it is joined, not opened
     open?: boolean;
 };
@@ -33,19 +39,46 @@ defineProps<{ rooms: ListedRoom[]; icon: Component }>();
                 class="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 transition-colors"
                 :class="{ 'hover:bg-accent/50': room.open !== false }"
             >
+                <img
+                    v-if="room.picture"
+                    :src="room.picture"
+                    alt=""
+                    class="-mx-2 size-8 shrink-0 rounded-full object-cover"
+                    referrerpolicy="no-referrer"
+                    loading="lazy"
+                    data-room-face
+                />
                 <component
                     :is="icon"
+                    v-else
                     class="text-muted-foreground size-4 shrink-0"
                 />
                 <div class="min-w-0 flex-1">
-                    <p
-                        class="truncate"
-                        :class="room.unread ? 'font-semibold' : 'font-medium'"
-                    >
-                        {{ room.title || 'New chat' }}
+                    <p class="flex min-w-0 items-center gap-2">
+                        <span
+                            class="truncate"
+                            :class="
+                                room.unread ? 'font-semibold' : 'font-medium'
+                            "
+                            >{{ room.title || 'New chat' }}</span
+                        >
+                        <span
+                            v-if="room.linked"
+                            class="shrink-0 rounded-full bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 uppercase dark:text-sky-400"
+                            data-room-linked
+                            >{{ room.linked }}</span
+                        >
                     </p>
-                    <p class="text-muted-foreground truncate text-xs">
-                        {{ room.detail }}
+                    <p
+                        class="truncate text-xs"
+                        :class="
+                            room.unread
+                                ? 'text-foreground'
+                                : 'text-muted-foreground'
+                        "
+                        data-room-last
+                    >
+                        {{ room.last || room.detail }}
                     </p>
                 </div>
                 <span

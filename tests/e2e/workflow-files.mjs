@@ -51,7 +51,7 @@ await runBoard(
         );
         check(
             "the Drive's steps are a group of their own",
-            kinds.join() === 'drive.save,drive.find,drive.read',
+            kinds.join() === 'drive.save,drive.find,drive.read,drive.link',
             kinds.join(),
         );
 
@@ -89,6 +89,45 @@ await runBoard(
                 (await settings
                     .locator('#setting-connection')
                     .getAttribute('data-pick-one')) !== null,
+        );
+        await settings.locator('[data-remove-step]').click();
+
+        // --- a LINE message: what it is made of follows its kind ---
+        await page.locator('[data-palette-step="line.reply"]').click();
+        await step('reply_on_line').waitFor();
+        check(
+            'a reply is words and a picture until another kind is chosen',
+            (await shown('text')) &&
+                (await shown('file')) &&
+                !(await shown('choices')) &&
+                !(await shown('package')),
+        );
+        await pick(settings.locator('#setting-kind'), 'Buttons to choose from');
+        const buttons = settings
+            .locator('div', { has: page.getByText('Buttons', { exact: true }) })
+            .last();
+        await buttons.locator('[data-add-field]').click();
+        await buttons.getByLabel('Name').first().fill('Yes, send it');
+        check(
+            'buttons are named in any words, and the picture gives way to them',
+            (await shown('text')) &&
+                !(await shown('file')) &&
+                (await buttons.getByLabel('Name').first().inputValue()) ===
+                    'Yes, send it' &&
+                (await buttons
+                    .getByLabel('Name')
+                    .first()
+                    .getAttribute('placeholder')) === 'what it says',
+        );
+        await page
+            .locator('[data-save-status]', { hasText: /^\s*Saved\s*$/ })
+            .waitFor({ timeout: 10000 });
+        check(
+            'a button named in words is kept',
+            !(await page.locator('[data-problems]').innerText()).includes(
+                'letters, digits',
+            ),
+            await page.locator('[data-problems]').innerText(),
         );
         await settings.locator('[data-remove-step]').click();
 
@@ -173,7 +212,16 @@ await runBoard(
             .locator('[data-run-status]', { hasText: 'Succeeded' })
             .waitFor({ timeout: 30000 });
         await page.locator('[data-run-step="read_a_file"]').click();
-        const output = await page.locator('[data-run-output]').innerText();
+        // What the step gave is drawn a moment after it is opened
+        const given = page.locator('[data-run-output]', { hasText: NAME });
+        await given
+            .first()
+            .waitFor({ timeout: 10000 })
+            .catch(() => {});
+        const output = await page
+            .locator('[data-run-output]')
+            .first()
+            .innerText();
         check(
             'run, the file is saved and read back by a later step',
             output.includes('kept by a workflow') && output.includes(NAME),
@@ -194,19 +242,19 @@ await runBoard(
         const PNG =
             'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
         const roomRef = tinker(
-            `$u = ${user}; $t = tempnam(sys_get_temp_dir(), 'e2e'); file_put_contents($t, base64_decode('${PNG}')); $f = App\\Models\\Drive\\DriveFile::keep($t, '${NAME}.png', $u); unlink($t); $r = new App\\Models\\Chat\\ChatRoom; $r->kind = 'personal'; $r->user_id = $u->id; $r->title = '${TITLE}'; $r->save(); $r->messages()->create(['role' => 'workflow', 'content' => '', 'meta' => ['name' => 'Ada (LINE)', 'outside' => true, 'file' => $f->ref_id]]); echo $r->ref_id;`,
+            `$u = ${user}; $t = tempnam(sys_get_temp_dir(), 'e2e'); file_put_contents($t, base64_decode('${PNG}')); $f = App\\Models\\Drive\\DriveFile::keep($t, '${NAME}.png', $u); unlink($t); $r = new App\\Models\\Chat\\ChatRoom; $r->kind = 'personal'; $r->user_id = $u->id; $r->title = '${TITLE}'; $r->save(); $r->messages()->create(['role' => 'workflow', 'content' => '', 'meta' => ['name' => 'Ada (LINE)', 'outside' => true, 'file' => $f->ref_id]]); $r->messages()->create(['role' => 'workflow', 'content' => '', 'meta' => ['name' => 'Ada (LINE)', 'outside' => true, 'file' => $f->ref_id, 'sticker' => true]]); $r->messages()->create(['role' => 'workflow', 'content' => 'hi (moon) there', 'meta' => ['name' => 'Ada (LINE)', 'outside' => true, 'emojis' => [['index' => 3, 'length' => 6, 'url' => $f->url()]]]]); $r->note(['name' => 'Ada', 'line_id' => 'U1', 'language' => 'th'], 'https://stickershop.line-scdn.net/stickershop/v1/sticker/52002734/android/sticker.png'); $r->messages()->create(['role' => 'workflow', 'content' => 'me too', 'meta' => ['name' => 'Bo (LINE)', 'outside' => true]]); $r->messages()->create(['role' => 'workflow', 'content' => '', 'meta' => ['name' => 'Ada (LINE)', 'outside' => true, 'place' => ['lat' => 13.7563, 'lng' => 100.5018, 'title' => 'Palace ${RUN}', 'address' => 'Na Phra Lan Rd']]]); $l = (new App\\Models\\Map\\PlaceList)->ownedBy($u, $u); $l->fill(['name' => 'e2e list ${RUN}', 'color' => '#ef4444', 'icon' => 'bookmark', 'sort_order' => 99])->save(); $p = (new App\\Models\\Map\\Place)->ownedBy($u, $u); $p->list_id = $l->id; $p->fill(['name' => 'Harbour ${RUN}', 'address' => '1 Quay', 'kind' => 'place', 'lat' => 13.70, 'lng' => 100.50])->save(); echo $r->ref_id;`,
         );
         afterwards(() =>
             tinker(
-                `$u = ${user}; App\\Models\\Chat\\ChatRoom::where('ref_id', '${roomRef}')->delete(); $u->driveFiles()->where('name', '${NAME}.png')->get()->each->delete();`,
+                `$u = ${user}; App\\Models\\Chat\\ChatRoom::where('ref_id', '${roomRef}')->delete(); $u->driveFiles()->where('name', '${NAME}.png')->get()->each->delete(); $l = $u->placeLists()->where('name', 'e2e list ${RUN}')->first(); if ($l) { $l->places()->delete(); $l->delete(); }`,
             ),
         );
         await page.goto(new URL(`/chats/${roomRef}`, page.url()).href, {
             waitUntil: 'networkidle',
         });
-        const picture = page.locator(
-            '[data-chat-workflow] [data-chat-file] img',
-        );
+        const picture = page
+            .locator('[data-chat-workflow] button[data-chat-file] img')
+            .first();
         await picture.waitFor({ timeout: 10000 });
         check(
             'a file a workflow wrote in a chat is shown under its sender, a picture as a picture',
@@ -214,8 +262,418 @@ await runBoard(
                 (img) => img.complete && img.naturalWidth > 0,
             )) &&
                 (
-                    await page.locator('[data-chat-workflow]').innerText()
+                    await page
+                        .locator('[data-chat-workflow]')
+                        .first()
+                        .innerText()
                 ).includes('Ada (LINE)'),
+        );
+
+        // The conversation reads as one: a day over it, one name over each run
+        // of messages from the same sender, the time under the last of them --
+        // here Ada's three, then Bo's one, then Ada again
+        const names = await page
+            .locator('[data-chat-workflow] [data-chat-author]')
+            .allInnerTexts();
+        const times = await page
+            .locator('[data-chat-workflow] [data-chat-time]')
+            .count();
+        check(
+            'messages are set out by day and by who is speaking, with the time under each turn',
+            (
+                await page.locator('[data-chat-day]').first().innerText()
+            ).trim() === 'Today' &&
+                names.map((name) => name.trim()).join() ===
+                    'Ada (LINE),Bo (LINE),Ada (LINE)' &&
+                times === 3 &&
+                (await page.locator('[data-chat-latest]').count()) === 0,
+            `${names.join()} · ${times} times`,
+        );
+
+        // A picture opens larger over the chat; a sticker is small and bare; an emoji sits among the words
+        await picture.click();
+        const larger = page.locator('[data-chat-picture]');
+        await larger.waitFor();
+        check(
+            'a picture opens larger in a modal, with its name and a way to keep it',
+            (await larger.innerText()).includes(`${NAME}.png`) &&
+                (await larger
+                    .getByRole('link', { name: 'Download' })
+                    .count()) === 1,
+        );
+        await page.keyboard.press('Escape');
+        await larger.waitFor({ state: 'detached' });
+        const sticker = page.locator('[data-chat-sticker]');
+        check(
+            'a sticker is drawn small with nothing round it, and does not open',
+            (await sticker.count()) === 1 &&
+                (await sticker.evaluate(
+                    (img) =>
+                        img.tagName === 'IMG' &&
+                        !img.closest('button') &&
+                        getComputedStyle(img).borderTopWidth === '0px' &&
+                        img.getBoundingClientRect().width <= 120,
+                )),
+        );
+        // A sticker that has stopped moving plays again on a click: the same
+        // picture under a new address, which is what starts it over
+        const first = await sticker.getAttribute('src');
+        await sticker.click();
+        await page.waitForFunction(
+            () =>
+                document
+                    .querySelector('[data-chat-sticker]')
+                    ?.getAttribute('src')
+                    ?.startsWith('blob:'),
+            null,
+            { timeout: 5000 },
+        );
+        const again = await sticker.getAttribute('src');
+        await sticker.click();
+        await page.waitForFunction(
+            (before) =>
+                document
+                    .querySelector('[data-chat-sticker]')
+                    ?.getAttribute('src') !== before,
+            again,
+            { timeout: 5000 },
+        );
+        // The new picture is drawn a moment after it is named
+        const drawn = await page
+            .waitForFunction(
+                () => {
+                    const img = document.querySelector('[data-chat-sticker]');
+
+                    return (
+                        img instanceof HTMLImageElement &&
+                        img.complete &&
+                        img.naturalWidth > 0
+                    );
+                },
+                null,
+                { timeout: 5000 },
+            )
+            .then(() => true)
+            .catch(() => false);
+        check(
+            'a click plays a sticker again, each time, without it opening or breaking',
+            !first?.startsWith('blob:') &&
+                drawn &&
+                (await page.locator('[data-chat-picture]').count()) === 0,
+            `first ${first?.slice(0, 20)}, drawn ${drawn}`,
+        );
+        const worded = page.locator('[data-chat-workflow]', {
+            has: page.locator('[data-chat-emoji]'),
+        });
+        check(
+            "an outside chat's own emoji is drawn where its name was, among the words",
+            (await worded.locator('[data-chat-emoji]').getAttribute('alt')) ===
+                '(moon)' &&
+                (await worded.locator('p').last().innerText())
+                    .replace(/\s+/g, ' ')
+                    .trim() === 'hi there',
+            (await worded.locator('p').last().innerText()).replace(/\s+/g, ' '),
+        );
+        await page.screenshot({
+            path: `${SHOTS}/workflow-files-chat-shown.png`,
+        });
+
+        // --- about the room: its face, what a workflow keeps of it, and notes of one's own ---
+        check(
+            'a room that keeps a picture shows it beside its title',
+            (await page.locator('[data-chat-room-face]').count()) === 1,
+        );
+        await page.locator('[data-chat-room-face]').click();
+        const largerFace = page.locator('[data-chat-face-larger]');
+        await largerFace.waitFor();
+        check(
+            "the room's picture opens larger when pressed",
+            (await largerFace.locator('img').getAttribute('src')) ===
+                (await page
+                    .locator('[data-chat-room-face]')
+                    .getAttribute('src')),
+        );
+        await page.keyboard.press('Escape');
+        await largerFace.waitFor({ state: 'detached' });
+
+        await page.locator('[data-chat-about-toggle]').click();
+        const aboutRoom = page.locator('[data-chat-about]');
+        await aboutRoom.waitFor();
+        const keptText = (
+            await aboutRoom.locator('[data-chat-kept] dl').innerText()
+        )
+            .replace(/\s+/g, ' ')
+            .trim();
+        check(
+            'what a workflow keeps about a room is shown beside it, each by a name a person can read',
+            keptText === 'Name Ada Language Thai (th) Line id U1',
+            keptText,
+        );
+        // Its picture, pressed in the panel, opens over the panel -- not under it
+        await aboutRoom.locator('[data-chat-about-picture]').click();
+        const overPanel = page.locator('[data-chat-face-larger]');
+        await overPanel.waitFor();
+        await page.waitForTimeout(400);
+        const onTop = await overPanel.locator('img').evaluate((img) => {
+            const box = img.getBoundingClientRect();
+            const at = document.elementFromPoint(
+                box.left + box.width / 2,
+                box.top + box.height / 2,
+            );
+
+            return at === img;
+        });
+        check(
+            'the picture pressed in the panel about a chat comes up over the panel',
+            onTop,
+        );
+        await page.keyboard.press('Escape');
+        await overPanel.waitFor({ state: 'detached' });
+        check(
+            'and closing it leaves the panel open',
+            (await aboutRoom.count()) === 1,
+        );
+
+        await aboutRoom.locator('[data-chat-detail-add]').click();
+        const form = aboutRoom.locator('[data-chat-details-form]');
+        await form.getByLabel('Name').last().fill('VIP tier');
+        await form.getByLabel('Value').last().fill('gold');
+        check(
+            "what the workflow keeps -- their id there -- is not offered to be changed, only one's own notes",
+            (
+                await form
+                    .locator('input')
+                    .evaluateAll((boxes) => boxes.map((box) => box.value))
+            ).join() === 'VIP tier,gold' &&
+                (await aboutRoom.locator('[data-chat-kept] input').count()) ===
+                    0,
+        );
+        await form.locator('[data-chat-details-save]').click();
+        await aboutRoom
+            .locator('[data-chat-details]', { hasText: 'gold' })
+            .waitFor({ timeout: 10000 });
+        check(
+            'a note added by hand is kept with the room, under a name a workflow can read',
+            tinker(
+                `$r = App\\Models\\Chat\\ChatRoom::where('ref_id', '${roomRef}')->first(); echo ($r->details['vip_tier'] ?? 'none').' '.($r->details['line_id'] ?? 'none');`,
+            ) === 'gold U1' &&
+                (
+                    await aboutRoom.locator('[data-chat-details]').innerText()
+                ).includes('Vip tier'),
+        );
+        await page.keyboard.press('Escape');
+        await aboutRoom.waitFor({ state: 'detached' });
+
+        // --- who wrote: shown by the room's own picture, kept once with the room ---
+        const faces = page.locator('[data-chat-workflow] [data-chat-face]');
+        // (only the last of a turn shows its face; the rest keep its place)
+        await faces.first().waitFor({ state: 'attached', timeout: 10000 });
+        const shownFaces = await faces.evaluateAll((imgs) =>
+            imgs.map((img) => img.getAttribute('src')),
+        );
+        const roomsFace = await page
+            .locator('[data-chat-room-face]')
+            .getAttribute('src');
+        check(
+            "someone outside is shown by the room's picture, with none kept in the messages themselves",
+            shownFaces.length >= 3 &&
+                new Set(shownFaces).size === 1 &&
+                shownFaces[0] === roomsFace,
+            `${shownFaces.length} faces, ${new Set(shownFaces).size} different`,
+        );
+
+        // --- a place someone shared: on a map, opened larger, kept among one's own ---
+        const card = page.locator('[data-chat-workflow] [data-chat-place]');
+        await card.locator('canvas').first().waitFor({ timeout: 20000 });
+        check(
+            'a place shared in a chat is shown on a small map, named, with the way there',
+            (await card.innerText()).includes(`Palace ${RUN}`) &&
+                (await card.innerText()).includes('Na Phra Lan Rd') &&
+                (
+                    (await card
+                        .getByRole('link', { name: 'Directions' })
+                        .getAttribute('href')) ?? ''
+                ).includes('destination=13.7563,100.5018') &&
+                (
+                    (await card
+                        .locator('[data-chat-place-open]')
+                        .getAttribute('href')) ?? ''
+                ).includes('#map=15/13.75630/100.50180'),
+            (await card.innerText()).replace(/\s+/g, ' '),
+        );
+        const inMaps =
+            (await card
+                .locator('[data-chat-place-open]')
+                .getAttribute('href')) ?? '';
+        await card.getByRole('button', { name: /Open the map/ }).click();
+        const map = page.locator('[data-chat-place-larger]');
+        await map.locator('canvas').first().waitFor({ timeout: 20000 });
+        check(
+            'its map opens larger over the chat',
+            (await map.innerText()).includes(`Palace ${RUN}`),
+        );
+        await page.keyboard.press('Escape');
+        await map.waitFor({ state: 'detached' });
+        await card.locator('[data-chat-place-save]').click();
+        await page.getByRole('menuitem', { name: `e2e list ${RUN}` }).click();
+        await card.locator('[data-chat-place-saved]').waitFor();
+        check(
+            "it is kept among one's saved places, in the list chosen",
+            tinker(
+                `$l = ${user}->placeLists()->where('name', 'e2e list ${RUN}')->first(); echo $l->places()->where('name', 'Palace ${RUN}')->count();`,
+            ) === '1' &&
+                (
+                    await card.locator('[data-chat-place-saved]').innerText()
+                ).includes(`e2e list ${RUN}`),
+        );
+
+        // --- and a place of one's own is shared the same way ---
+        await page.locator('[data-chat-attach]').click();
+        await page.getByRole('menuitem', { name: 'A place' }).click();
+        const sharing = page.locator('[data-chat-place-dialog]');
+        await sharing
+            .locator('[data-test="place-search"]')
+            .fill(`Harbour ${RUN}`);
+        await sharing
+            .locator('[data-test="place-suggestions"]')
+            .getByText(`Harbour ${RUN}`)
+            .first()
+            .click();
+        await sharing.locator('canvas').first().waitFor({ timeout: 20000 });
+        await sharing.locator('[data-chat-place-share]').click();
+        await page
+            .locator('[data-chat-placed]', { hasText: `Harbour ${RUN}` })
+            .waitFor();
+        await page.locator('[data-chat-input]').fill('meet here');
+        await page.locator('[data-chat-input]').press('Enter');
+        const shared = page.locator('[data-chat-mine]', {
+            has: page.locator('[data-chat-place]'),
+        });
+        await shared.waitFor({ timeout: 15000 });
+        check(
+            'a saved place is found, looked at and shared with what one writes',
+            (await shared.innerText()).includes('meet here') &&
+                (await shared.innerText()).includes(`Harbour ${RUN}`) &&
+                (await page.locator('[data-chat-placed]').count()) === 0,
+            (await shared.innerText()).replace(/\s+/g, ' '),
+        );
+        // (a moment for the map's own pictures to arrive)
+        await page.waitForTimeout(1500);
+        await page.screenshot({ path: `${SHOTS}/workflow-files-place.png` });
+
+        // --- and a file of one's own goes with what one writes ---
+        await page.locator('[data-chat-file-input]').setInputFiles({
+            name: `${NAME}.txt`,
+            mimeType: 'text/plain',
+            buffer: Buffer.from('sent from the chat'),
+        });
+        await page
+            .locator('[data-chat-attached]', { hasText: `${NAME}.txt` })
+            .waitFor();
+        await page.locator('[data-chat-input]').fill('with a file');
+        await page.locator('[data-chat-input]').press('Enter');
+        const mine = page.locator('[data-chat-mine]', {
+            has: page.locator('[data-chat-file]'),
+        });
+        await mine.waitFor({ timeout: 15000 });
+        check(
+            'a file attached in a chat is sent with the words, and shown under them',
+            (await mine.innerText()).includes('with a file') &&
+                (await mine.innerText()).includes(`${NAME}.txt`) &&
+                (await page.locator('[data-chat-attached]').count()) === 0,
+            (await mine.innerText()).replace(/\s+/g, ' '),
+        );
+        // --- or one already in the Drive, chosen rather than uploaded again ---
+        await page.locator('[data-chat-attach]').click();
+        await page.getByRole('menuitem', { name: 'From the Drive' }).click();
+        const fromDrive = page.locator('[data-chat-drive]');
+        await fromDrive.getByPlaceholder('Search by name').fill(`${NAME}.png`);
+        await fromDrive.locator(`[data-drive-file="${NAME}.png"]`).click();
+        await page
+            .locator('[data-chat-attached]', { hasText: `${NAME}.png` })
+            .waitFor();
+        await page.getByRole('button', { name: 'Send' }).click();
+        await page
+            .locator('[data-chat-mine] button[data-chat-file]')
+            .waitFor({ timeout: 15000 });
+        check(
+            'a file already in the Drive is chosen and sent without uploading it again',
+            Number(
+                tinker(
+                    `echo ${user}->driveFiles()->where('name', '${NAME}.png')->count();`,
+                ),
+            ) === 1,
+        );
+
+        // --- deleting a chat asks in the app's own way ---
+        let asked = false;
+        page.on('dialog', (dialog) => {
+            asked = true;
+            void dialog.dismiss();
+        });
+        await page.getByRole('button', { name: 'Delete chat' }).click();
+        const sure = page.getByRole('dialog');
+        await sure.waitFor();
+        check(
+            "deleting a chat is asked in the app's own dialog, not the browser's",
+            !asked &&
+                (await sure.innerText()).includes(TITLE) &&
+                (await sure.getByRole('button', { name: 'Cancel' }).count()) ===
+                    1,
+            await sure.innerText(),
+        );
+        await sure.getByRole('button', { name: 'Delete', exact: true }).click();
+        await page.waitForURL(/\/chats\/?$/, { timeout: 10000 });
+        check(
+            'and deletes it once agreed to',
+            tinker(
+                `echo App\\Models\\Chat\\ChatRoom::where('ref_id', '${roomRef}')->exists() ? 'there' : 'gone';`,
+            ) === 'gone',
+        );
+
+        // --- "Open in Maps" on a place's card: the map opens on it, pinned ---
+        await page.goto(new URL(inMaps, page.url()).href, {
+            waitUntil: 'networkidle',
+        });
+        const placeCard = page.locator('[data-test="place-card"]');
+        await placeCard.waitFor({ timeout: 20000 });
+        const pinned = await page.evaluate(() => {
+            const map = window.__maps?.map();
+            const pin = document.querySelector('.maplibregl-marker');
+            const at = map?.getCenter();
+
+            return {
+                pin: !!pin,
+                lat: at ? Number(at.lat.toFixed(3)) : null,
+                lng: at ? Number(at.lng.toFixed(3)) : null,
+            };
+        });
+        check(
+            'a place opened in Maps from a chat is pinned there, with its card to save it from',
+            // Saved from the chat a moment ago, so it opens as that saved place
+            (await placeCard.innerText()).includes(`e2e list ${RUN}`) &&
+                // Its name is there to be changed, so it is a box's value, not words on the page
+                (await page.evaluate(
+                    (name) =>
+                        [
+                            ...document.querySelectorAll('input, h1, h2, h3'),
+                        ].some(
+                            (el) =>
+                                (el.value ?? el.textContent ?? '').trim() ===
+                                name,
+                        ),
+                    `Palace ${RUN}`,
+                )) &&
+                pinned.pin &&
+                pinned.lat === 13.756 &&
+                pinned.lng === 100.502,
+            `${JSON.stringify(pinned)} ${(await placeCard.innerText()).replace(/\s+/g, ' ').slice(0, 80)}`,
+        );
+        await page.screenshot({ path: `${SHOTS}/workflow-files-maps.png` });
+        afterwards(() =>
+            tinker(
+                `${user}->driveFiles()->where('name', '${NAME}.txt')->get()->each->delete();`,
+            ),
         );
         await page.screenshot({ path: `${SHOTS}/workflow-files-chat.png` });
     },

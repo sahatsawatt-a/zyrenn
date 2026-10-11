@@ -16,6 +16,7 @@ use App\Support\Workflow\References;
 use App\Support\Workflow\RunStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -213,7 +214,10 @@ class WorkflowFilesTest extends TestCase
         $path = substr($url, strlen('https://hooks.example.test'));
         $this->get($path)->assertOk()->assertHeader('Content-Type', 'image/png');
         $this->get(str_replace($picture->ref_id, $report->ref_id, $path))->assertForbidden();
-        $this->travel(2)->hours();
+        // LINE keeps no copy: each phone fetches it when it shows the message, so the link lasts
+        $this->travel(2)->days();
+        $this->get($path)->assertOk();
+        $this->travel(30)->days();
         $this->get($path)->assertForbidden();
     }
 
@@ -295,6 +299,180 @@ class WorkflowFilesTest extends TestCase
         // Taken out of the Drive since, the message stands without it
         $file->delete();
         $this->assertNull(ChatRoom::sole()->messages()->where('content', '')->sole()->toChat()['file']);
+    }
+
+    public function test_a_file_sent_in_a_chat_is_kept_in_the_drive_and_goes_out_through_the_bridge()
+    {
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 9]])]);
+        $user = User::factory()->create();
+        $bot = $this->bot($user);
+
+        $this->actingAs($user)->post(route('workflows.store'), ['template' => 'telegram-room', 'connections' => ['telegram' => $bot->ref_id]])->assertRedirect();
+        $workflow = $user->workflows()->sole();
+        $this->assertSame([], References::allProblems($workflow));
+        $this->actingAs($user)->postJson(route('workflows.publish', $workflow), ['revision' => $workflow->revision])->assertOk();
+        $this->actingAs($user)->patchJson(route('workflows.enable', $workflow), ['enabled' => true])->assertOk();
+
+        // Someone writes to the bot: their chat gets a room here
+        $this->postJson("/hooks/telegram/{$bot->ref_id}", ['update_id' => 700, 'message' => ['message_id' => 1, 'text' => 'hi', 'chat' => ['id' => 77, 'type' => 'private'], 'from' => ['id' => 77, 'first_name' => 'Ada']]], ['X-Telegram-Bot-Api-Secret-Token' => 'shh'])->assertOk();
+        $this->work();
+        $room = ChatRoom::sole();
+
+        // A picture sent in the room, with a word: kept in one's own Drive, shown under the word
+        $this->actingAs($user)->post(route('chats.messages.store', $room), ['content' => 'Here it is', 'upload' => UploadedFile::fake()->createWithContent('map.png', base64_decode(self::PNG))])->assertOk();
+        $file = $user->driveFiles()->sole();
+        $this->assertSame(['map.png', 'Chats'], [$file->name, $file->folder->name]);
+        $said = $room->messages()->where('role', 'user')->sole()->toChat();
+        $this->assertSame(['Here it is', $file->ref_id, true], [$said['content'], $said['file']['ref_id'], $said['file']['is_image']]);
+
+        // A file needs no words -- and the bridge sends both on, each by its own call
+        $this->actingAs($user)->post(route('chats.messages.store', $room), ['upload' => UploadedFile::fake()->create('notes.pdf', 12, 'application/pdf')])->assertOk();
+        $this->actingAs($user)->postJson(route('chats.messages.store', $room), ['content' => 'And a word'])->assertOk();
+        $this->work();
+
+        $this->assertSame([], $workflow->runs()->where('status', '!=', RunStatus::Succeeded->value)->pluck('error')->all());
+        Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/sendPhoto') && $request->hasFile('photo', null, 'map.png')
+            && collect($request->data())->firstWhere('name', 'caption')['contents'] === 'Here it is'
+            && collect($request->data())->firstWhere('name', 'chat_id')['contents'] === '77');
+        Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/sendDocument') && $request->hasFile('document', null, 'notes.pdf'));
+        Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/sendMessage') && $request['text'] === 'And a word');
+
+        // A contact shared with the bot is written in the room as who it is
+        $this->postJson("/hooks/telegram/{$bot->ref_id}", ['update_id' => 701, 'message' => ['message_id' => 2, 'chat' => ['id' => 77, 'type' => 'private'], 'from' => ['id' => 77, 'first_name' => 'Ada'], 'contact' => ['phone_number' => '+6620000000', 'first_name' => 'Bo', 'last_name' => 'Lee']]], ['X-Telegram-Bot-Api-Secret-Token' => 'shh'])->assertOk();
+        $this->work();
+        $this->assertSame("👤 Bo Lee\n+6620000000", $room->messages()->where('role', 'workflow')->reorder('id', 'desc')->first()->content);
+
+        // A place goes out by Telegram's own call for one, and any words with it follow
+        $this->actingAs($user)->postJson(route('chats.messages.store', $room), ['content' => 'Meet here', 'place' => ['lat' => 13.7563, 'lng' => 100.5018, 'title' => 'Grand Palace']])->assertOk();
+        $this->work();
+        $this->assertSame([], $workflow->runs()->where('status', '!=', RunStatus::Succeeded->value)->pluck('error')->all());
+        Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/sendVenue') && $request['title'] === 'Grand Palace' && $request['latitude'] === 13.7563 && $request['chat_id'] === '77');
+        Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/sendMessage') && $request['text'] === 'Meet here');
+
+        // One already in the Drive is sent by naming it: the chat offers its own Drive's, and takes no one else's
+        $this->actingAs($user)->getJson(route('chats.files', ['room' => $room, 'q' => 'map']))->assertOk()->assertJsonPath('files.0.ref_id', $file->ref_id)->assertJsonCount(1, 'files');
+        $this->actingAs($user)->postJson(route('chats.messages.store', $room), ['file' => $file->ref_id])->assertOk();
+        $this->assertSame($file->ref_id, $room->messages()->reorder('id', 'desc')->first()->toChat()['file']['ref_id']);
+        $theirs = $this->picture(User::factory()->create(), 'theirs.png');
+        $this->actingAs($user)->postJson(route('chats.messages.store', $room), ['file' => $theirs->ref_id])->assertStatus(422)->assertJsonValidationErrors('file');
+        $this->assertSame(2, $user->driveFiles()->count());
+        $this->work();
+
+        // Neither words nor a file is nothing to send; and two people's own chat has no Drive both can open
+        $this->actingAs($user)->postJson(route('chats.messages.store', $room), [])->assertStatus(422);
+        $other = User::factory()->create();
+        $direct = ChatRoom::between($user, $other);
+        $this->actingAs($user)->post(route('chats.messages.store', $direct), ['upload' => UploadedFile::fake()->createWithContent('x.png', base64_decode(self::PNG))], ['Accept' => 'application/json'])->assertStatus(422);
+    }
+
+    public function test_a_line_chat_and_its_room_are_one_conversation_whatever_is_sent_and_read()
+    {
+        Http::fake([
+            'api-data.line.me/v2/bot/message/m1/content' => Http::response(base64_decode(self::PNG), 200, ['Content-Type' => 'image/png']),
+            'stickershop.line-scdn.net/*' => Http::response(base64_decode(self::PNG), 200, ['Content-Type' => 'image/png']),
+            'api.line.me/v2/bot/profile/*' => Http::response(['displayName' => 'Ada', 'pictureUrl' => 'https://sprofile.line-scdn.net/ada']),
+            'api.line.me/*' => Http::response([]),
+        ]);
+        $user = User::factory()->create();
+        $channel = $this->channel($user);
+
+        $this->actingAs($user)->post(route('workflows.store'), ['template' => 'line-room', 'connections' => ['line' => $channel->ref_id]])->assertRedirect();
+        $workflow = $user->workflows()->sole();
+        $this->assertSame([], References::allProblems($workflow));
+        $this->actingAs($user)->postJson(route('workflows.publish', $workflow), ['revision' => $workflow->revision])->assertOk();
+        $this->actingAs($user)->patchJson(route('workflows.enable', $workflow), ['enabled' => true])->assertOk();
+
+        $from = ['source' => ['type' => 'user', 'userId' => 'U1']];
+        $said = fn () => ChatRoom::sole()->messages()->orderBy('id')->get()->map->toChat();
+        $pushed = fn () => Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/message/push'))->map(fn (array $pair) => $pair[0])->values();
+
+        // Someone adds the channel: their room is there before they write
+        $this->lineSends($channel, [...$from, 'type' => 'follow', 'webhookEventId' => 'ev0']);
+        $this->work();
+        $this->assertSame(['Ada on LINE', 'Added the channel as a friend.'], [ChatRoom::sole()->title, $said()->sole()['content']]);
+
+        // In: a picture, a sticker, a place -- each as what it is, all in the one room
+        $this->lineSends($channel, [...$from, 'type' => 'message', 'webhookEventId' => 'ev1', 'message' => ['type' => 'image', 'id' => 'm1', 'contentProvider' => ['type' => 'line']]]);
+        $this->lineSends($channel, [...$from, 'type' => 'message', 'webhookEventId' => 'ev2', 'message' => ['type' => 'sticker', 'id' => 'm2', 'packageId' => '446', 'stickerId' => '1988']]);
+        $this->lineSends($channel, [...$from, 'type' => 'message', 'webhookEventId' => 'ev3', 'message' => ['type' => 'location', 'id' => 'm3', 'title' => 'Office', 'address' => '1 Road', 'latitude' => 13.75, 'longitude' => 100.5]]);
+        $this->work();
+        // Words with one of LINE's own emoji among them: its name in the text, and where it is
+        $this->lineSends($channel, [...$from, 'type' => 'message', 'webhookEventId' => 'ev4', 'message' => [
+            'type' => 'text', 'id' => 'm4', 'text' => 'hello 😀 (angel Moon)!', 'markAsReadToken' => 'read-4',
+            'emojis' => [['index' => 9, 'length' => 12, 'productId' => '670e0cce840a8236ddd4ee4c', 'emojiId' => '003']],
+        ]]);
+        $this->work();
+
+        $this->assertSame([], $workflow->runs()->where('status', '!=', RunStatus::Succeeded->value)->pluck('error')->all());
+        $this->assertTrue($said()->contains(fn (array $message) => $message['content'] === '' && ($message['file']['is_image'] ?? false)));
+        // A sticker is drawn as one, small and bare -- or only named, when its picture could not be had
+        $this->assertTrue($said()->contains(fn (array $message) => ($message['sticker'] && $message['content'] === '') || $message['content'] === 'Sticker'));
+        // A place is kept as a place, to be drawn on a map: not as words about one
+        $this->assertTrue($said()->contains(fn (array $message) => $message['content'] === '' && $message['place'] === ['lat' => 13.75, 'lng' => 100.5, 'title' => 'Office', 'address' => '1 Road']));
+        // The words stay words; the emoji's picture goes where its name is, counted as the page counts
+        $hello = $said()->last();
+        $this->assertSame('hello 😀 (angel Moon)!', $hello['content']);
+        $this->assertSame([['index' => 9, 'length' => 12, 'url' => 'https://stickershop.line-scdn.net/sticonshop/v1/sticon/670e0cce840a8236ddd4ee4c/android/003.png']], $hello['emojis']);
+        $this->assertSame(['Ada (LINE)'], $said()->pluck('sender.name')->unique()->values()->all());
+        // Their picture is kept once, with the room -- not written into every message
+        $this->assertSame([null], $said()->map(fn (array $message) => $message['sender']['picture'] ?? null)->unique()->values()->all());
+
+        // Who it is with is kept with the room: their face, and what LINE says of them by name
+        $room = ChatRoom::sole();
+        $this->assertSame('https://sprofile.line-scdn.net/ada', $room->picture);
+        $this->assertSame(['name' => 'Ada', 'line_id' => 'U1'], $room->details);
+        $this->actingAs($user)->get(route('chats.show', $room))->assertInertia(fn ($page) => $page
+            ->where('room.picture', 'https://sprofile.line-scdn.net/ada')
+            ->where('room.details.line_id', 'U1'));
+        $this->actingAs($user)->get(route('chats.index'))->assertInertia(fn ($page) => $page->where('personal.0.picture', 'https://sprofile.line-scdn.net/ada'));
+
+        // Its owner notes more by hand, by names a workflow can read; and a later run reads them
+        $this->actingAs($user)->patch(route('chats.update', $room), ['details' => [...$room->details, 'tier' => 'gold']])->assertRedirect();
+        $this->actingAs($user)->patch(route('chats.update', $room), ['details' => ['not a name' => 'x']])->assertSessionHasErrors('details');
+        $this->assertSame(['name' => 'Ada', 'line_id' => 'U1', 'tier' => 'gold'], $room->fresh()->details);
+
+        // What the workflow keeps -- who they are on LINE -- is not theirs to change or take away
+        $this->actingAs($user)->patch(route('chats.update', $room), ['details' => ['line_id' => 'U-someone-else', 'tier' => 'silver']])->assertRedirect();
+        $this->assertSame(['name' => 'Ada', 'line_id' => 'U1', 'tier' => 'silver'], $room->fresh()->details);
+        $this->actingAs($user)->get(route('chats.show', $room))->assertInertia(fn ($page) => $page->where('room.kept', ['name', 'line_id']));
+        $this->actingAs($user)->patch(route('chats.update', $room), ['details' => ['tier' => 'gold']])->assertRedirect();
+
+        // Read here, read there -- once, with the token the last thing they sent came with
+        $this->actingAs($user)->postJson(route('chats.read', $room), ['message' => $room->messages()->max('id')])->assertOk();
+        $this->actingAs($user)->postJson(route('chats.read', $room), ['message' => $room->messages()->max('id')])->assertOk();
+        $this->work();
+        $this->assertSame(['read-4'], Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/chat/markAsRead'))->map(fn (array $pair) => $pair[0]['markAsReadToken'])->values()->all());
+
+        // Out: words; a picture as a picture; any other file as a link that opens it
+        $this->actingAs($user)->postJson(route('chats.messages.store', $room), ['content' => 'On my way'])->assertOk();
+        $this->work();
+        $this->actingAs($user)->post(route('chats.messages.store', $room), ['content' => 'Look', 'upload' => UploadedFile::fake()->createWithContent('map.png', base64_decode(self::PNG))])->assertOk();
+        $this->work();
+        $this->actingAs($user)->post(route('chats.messages.store', $room), ['upload' => UploadedFile::fake()->create('notes.pdf', 12, 'application/pdf')])->assertOk();
+        $this->work();
+
+        // A place shared in the room goes out as a place, with what was written beside it
+        $this->actingAs($user)->postJson(route('chats.messages.store', $room), ['content' => 'Meet here', 'place' => ['lat' => 13.7563, 'lng' => 100.5018, 'title' => 'Grand Palace', 'address' => 'Na Phra Lan Rd']])->assertOk();
+        $this->work();
+        $this->actingAs($user)->postJson(route('chats.messages.store', $room), ['place' => ['lat' => 200, 'lng' => 100]])->assertStatus(422);
+
+        $this->assertSame([], $workflow->runs()->where('status', '!=', RunStatus::Succeeded->value)->pluck('error')->all());
+        [$words, $picture, $link, $where] = $pushed()->all();
+        // What a workflow hears of a room includes what is kept with it: here, what was noted by hand
+        $this->assertSame('gold', $workflow->runs()->where('trigger', 'chat')->latest('id')->first()->trigger_data['room']['details']['tier']);
+        $this->assertSame(['type' => 'location', 'title' => 'Grand Palace', 'address' => 'Na Phra Lan Rd', 'latitude' => 13.7563, 'longitude' => 100.5018], $where['messages'][0]);
+        $this->assertSame('Meet here', $where['messages'][1]['text']);
+        $this->assertSame(['Meet here', 'Grand Palace'], [($shared = $room->messages()->reorder('id', 'desc')->first()->toChat())['content'], $shared['place']['title']]);
+        $this->assertSame(['U1', [['type' => 'text', 'text' => 'On my way']]], [$words['to'], $words['messages']]);
+        $this->assertSame(['image', 'Look'], [$picture['messages'][0]['type'], $picture['messages'][1]['text']]);
+        $pdf = $user->driveFiles()->where('name', 'notes.pdf')->sole();
+        $this->assertStringContainsString("📎 notes.pdf\nhttps://hooks.example.test/hooks/files/{$pdf->ref_id}?", $link['messages'][0]['text']);
+
+        // The link opens the file for whoever has it, and nothing else
+        preg_match('#https://hooks\.example\.test(/hooks/files/\S+)#', $link['messages'][0]['text'], $found);
+        $this->get($found[1])->assertOk();
+        $this->travel(25)->hours();
+        $this->get($found[1])->assertForbidden();
     }
 
     // --- around: the Drive itself ---

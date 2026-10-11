@@ -38,6 +38,9 @@ type Room = {
     project?: string | null;
     agent?: string | null;
     unread?: number;
+    last?: string | null;
+    linked?: string | null;
+    picture?: string | null;
 };
 
 const props = defineProps<{

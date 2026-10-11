@@ -18,12 +18,14 @@ use App\Support\Workflow\Steps\ChatRoomStep;
 use App\Support\Workflow\Steps\ChatSend;
 use App\Support\Workflow\Steps\Delay;
 use App\Support\Workflow\Steps\DriveFind;
+use App\Support\Workflow\Steps\DriveLink;
 use App\Support\Workflow\Steps\DriveRead;
 use App\Support\Workflow\Steps\DriveSave;
 use App\Support\Workflow\Steps\ForEachStep;
 use App\Support\Workflow\Steps\GivenTrigger;
 use App\Support\Workflow\Steps\HttpRequest;
 use App\Support\Workflow\Steps\IfCondition;
+use App\Support\Workflow\Steps\LineCall;
 use App\Support\Workflow\Steps\LineFile;
 use App\Support\Workflow\Steps\LineProfile;
 use App\Support\Workflow\Steps\LineReply;
@@ -40,6 +42,7 @@ use App\Support\Workflow\Steps\SwitchStep;
 use App\Support\Workflow\Steps\TableAdd;
 use App\Support\Workflow\Steps\TableFind;
 use App\Support\Workflow\Steps\TableUpdate;
+use App\Support\Workflow\Steps\TelegramCall;
 use App\Support\Workflow\Steps\TelegramFile;
 use App\Support\Workflow\Steps\TelegramSend;
 use App\Support\Workflow\Steps\TelegramSendFile;
@@ -118,12 +121,52 @@ final class Engine
         'drive.save' => DriveSave::class,
         'drive.find' => DriveFind::class,
         'drive.read' => DriveRead::class,
+        'drive.link' => DriveLink::class,
         'ai.chat' => AskAi::class,
         'http.request' => HttpRequest::class,
         'telegram.send' => TelegramSend::class,
         'telegram.send_file' => TelegramSendFile::class,
         'line.send' => LineSend::class,
         'line.reply' => LineReply::class,
+        // One call to a service each (ServiceKinds)
+        'telegram.album' => TelegramCall::class,
+        'telegram.sticker' => TelegramCall::class,
+        'telegram.location' => TelegramCall::class,
+        'telegram.contact' => TelegramCall::class,
+        'telegram.poll' => TelegramCall::class,
+        'telegram.forward' => TelegramCall::class,
+        'telegram.copy' => TelegramCall::class,
+        'telegram.invoice' => TelegramCall::class,
+        'telegram.topic' => TelegramCall::class,
+        'telegram.action' => TelegramCall::class,
+        'telegram.edit' => TelegramCall::class,
+        'telegram.edit_buttons' => TelegramCall::class,
+        'telegram.delete' => TelegramCall::class,
+        'telegram.pin' => TelegramCall::class,
+        'telegram.unpin' => TelegramCall::class,
+        'telegram.react' => TelegramCall::class,
+        'telegram.answer_button' => TelegramCall::class,
+        'telegram.commands' => TelegramCall::class,
+        'telegram.ban' => TelegramCall::class,
+        'telegram.unban' => TelegramCall::class,
+        'telegram.restrict' => TelegramCall::class,
+        'telegram.answer_inline' => TelegramCall::class,
+        'telegram.answer_checkout' => TelegramCall::class,
+        'telegram.chat' => TelegramCall::class,
+        'telegram.member' => TelegramCall::class,
+        'telegram.member_count' => TelegramCall::class,
+        'line.multicast' => LineCall::class,
+        'line.broadcast' => LineCall::class,
+        'line.loading' => LineCall::class,
+        'line.read' => LineCall::class,
+        'line.leave' => LineCall::class,
+        'line.richmenu' => LineCall::class,
+        'line.richmenu_off' => LineCall::class,
+        'line.richmenus' => LineCall::class,
+        'line.quota' => LineCall::class,
+        'line.consumption' => LineCall::class,
+        'line.group' => LineCall::class,
+        'line.group_count' => LineCall::class,
         'data.set' => SetData::class,
         'logic.if' => IfCondition::class,
         'logic.switch' => SwitchStep::class,

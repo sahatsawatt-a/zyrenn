@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
 /**
- * The lists saved places are kept in, changed from the map page with fetch.
+ * The lists saved places are kept in, read and changed from a page with fetch.
  */
 class PlaceListController extends Controller
 {
@@ -21,6 +21,18 @@ class PlaceListController extends Controller
 
     /** An icon by its name in the app's icon set, which the page draws. */
     private const ICON = ['string', 'max:40', 'regex:/^[a-z0-9-]+$/'];
+
+    /**
+     * The lists, in their order, for choosing one to save a place in from
+     * somewhere other than the map page -- a place shared in a chat.
+     */
+    public function index(Request $request): JsonResponse
+    {
+        return response()->json([
+            'lists' => $this->owner($request)->placeLists()->orderBy('sort_order')->orderBy('id')->get()
+                ->map(fn (PlaceList $list) => $list->toMap()),
+        ]);
+    }
 
     public function store(Request $request): JsonResponse
     {

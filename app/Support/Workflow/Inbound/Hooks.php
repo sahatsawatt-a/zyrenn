@@ -83,7 +83,7 @@ final class Hooks
         Http::timeout(10)->post("https://api.telegram.org/bot{$token}/setWebhook", [
             'url' => $url,
             'secret_token' => $secret,
-            'allowed_updates' => ['message', 'edited_message', 'callback_query'],
+            'allowed_updates' => Envelope::TELEGRAM_UPDATES,
         ])->throw();
     }
 

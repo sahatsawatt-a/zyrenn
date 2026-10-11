@@ -13,6 +13,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Your own at /maps and /trips, a project's at /p/{project}/maps and /p/{project}/trips
     Route::owned(function () {
         Route::get('maps', [MapController::class, 'index'])->name('maps.index');
+        Route::get('place-lists', [PlaceListController::class, 'index'])->name('place-lists.index');
         Route::post('place-lists', [PlaceListController::class, 'store'])->name('place-lists.store');
         Route::get('places/pick', [PlaceController::class, 'pick'])->name('places.pick');
         Route::post('places', [PlaceController::class, 'store'])->name('places.store');

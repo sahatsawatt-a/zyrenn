@@ -191,6 +191,33 @@ const closeCard = () => {
     panel.value = 'places';
 };
 
+/**
+ * The place a link names in its address: ?pin=lat,lng, with a name and an
+ * address when the link knows them.
+ */
+const placeLinkedTo = (): Candidate | null => {
+    const asked = new URLSearchParams(location.search);
+    const [lat, lng] = (asked.get('pin') ?? '').split(',').map(Number);
+
+    if (
+        !asked.get('pin') ||
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lng) ||
+        Math.abs(lat) > 90 ||
+        Math.abs(lng) > 180
+    ) {
+        return null;
+    }
+
+    return {
+        name: asked.get('name')?.trim() || 'Dropped pin',
+        address: asked.get('address')?.trim() ?? '',
+        kind: '',
+        lat,
+        lng,
+    };
+};
+
 // A shop or landmark the map labels has its name in the tile itself
 const POI_LAYERS = new Set(['poi', 'aerodrome_label']);
 const fromFeature = (
@@ -310,6 +337,34 @@ watch(map, (made) => {
     // Open on the saved places, unless a shared link says where to look
     if (!location.hash.includes('map=') && store.places.value.length) {
         made.once('load', () => frame(store.places.value, 14));
+    }
+
+    // A link to one place -- a chat's card of a place someone shared -- opens
+    // on it, pinned: as the saved place it is, when it has been saved
+    const linked = placeLinkedTo();
+
+    // Shown at once -- its pin and its card -- not when the map has drawn:
+    // the map's own pictures can be slow to come
+    if (linked) {
+        const saved = store.places.value.find(
+            (place) =>
+                Math.abs(place.lat - linked.lat) < 0.00002 &&
+                Math.abs(place.lng - linked.lng) < 0.00002,
+        );
+
+        if (saved) {
+            openSaved(saved);
+        } else {
+            show(linked);
+
+            if (!linked.address) {
+                void fillAddress(linked, (filled) => {
+                    if (toRaw(current.value) === linked) {
+                        current.value = filled;
+                    }
+                });
+            }
+        }
     }
 
     // For the e2e suite to read the map with

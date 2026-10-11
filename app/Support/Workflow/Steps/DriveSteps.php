@@ -44,6 +44,28 @@ final class DriveSteps
     }
 
     /**
+     * The file a setting names, or none when the setting is left empty or
+     * comes to nothing -- for a file that only sometimes goes with something.
+     *
+     * @throws StepFailed when it names one the workflow's owner doesn't have
+     */
+    public static function fileIfAny(StepContext $step, string $setting = 'file'): ?DriveFile
+    {
+        if (! filled($step->setting($setting))) {
+            return null;
+        }
+
+        $named = $step->template($setting);
+
+        if ($named === null || (is_string($named) && trim($named) === '')) {
+            return null;
+        }
+
+        return self::find($step, $named)
+            ?? throw new StepFailed('Its file is gone, or is not in this workflow\'s Drive.');
+    }
+
+    /**
      * Every file a setting names: a list of them, or several ref_ids
      * written out with commas or spaces between.
      *
@@ -169,12 +191,13 @@ final class DriveSteps
     }
 
     /**
-     * An address a service outside can fetch the file from, for an hour: it
-     * is signed, so it gives away that one file and nothing else.
+     * An address anyone outside can fetch the file from, for an hour unless
+     * told how long: it is signed, so it gives away that one file and
+     * nothing else.
      *
      * @throws StepFailed when the app has no public address
      */
-    public static function publicUrl(DriveFile $file): string
+    public static function publicUrl(DriveFile $file, ?int $minutes = null): string
     {
         $base = Hooks::url('');
 
@@ -182,7 +205,7 @@ final class DriveSteps
             throw new StepFailed('This is fetched from the app by the service it is sent through, which needs the app\'s public address (WORKFLOWS_PUBLIC_URL).');
         }
 
-        $link = URL::temporarySignedRoute('hooks.file', now()->addMinutes(self::LINK_MINUTES), ['file' => $file], absolute: false);
+        $link = URL::temporarySignedRoute('hooks.file', now()->addMinutes($minutes ?? self::LINK_MINUTES), ['file' => $file], absolute: false);
 
         // The route is /hooks/files/…, and the base already ends in /hooks/
         return substr($base, 0, -strlen('/hooks/')).$link;

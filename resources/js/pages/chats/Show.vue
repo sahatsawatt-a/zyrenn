@@ -2,16 +2,38 @@
 import { Head, Link, router, setLayoutProps, usePage } from '@inertiajs/vue3';
 import type { JSONContent } from '@tiptap/vue-3';
 import {
+    ArrowDown,
     Link2,
+    HardDrive,
+    Info,
     LogOut,
+    MapPin,
     Paperclip,
     Send,
     Settings2,
     Square,
     Trash2,
+    Upload,
+    X,
     Zap,
 } from '@lucide/vue';
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import {
+    computed,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
+    reactive,
+    ref,
+    shallowRef,
+    watch,
+} from 'vue';
+import FaceViewer from '@/features/chat/components/FaceViewer.vue';
+import MessageFile from '@/features/chat/components/MessageFile.vue';
+import MessagePlace from '@/features/chat/components/MessagePlace.vue';
+import type { ChatPlace } from '@/features/chat/components/MessagePlace.vue';
+import PlaceDialog from '@/features/chat/components/PlaceDialog.vue';
+import RoomAbout from '@/features/chat/components/RoomAbout.vue';
+import MessageText from '@/features/chat/components/MessageText.vue';
 import ModelPicker from '@/features/chat/components/ModelPicker.vue';
 import PresenceAvatars from '@/components/common/PresenceAvatars.vue';
 import TiptapEditor from '@/features/notes/components/TiptapEditor.vue';
@@ -20,6 +42,7 @@ import {
     Dialog,
     DialogContent,
     DialogDescription,
+    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
@@ -46,6 +69,15 @@ import {
     read as markRead,
     update,
 } from '@/routes/chats';
+import DeleteDialog from '@/components/common/DeleteDialog.vue';
+import DriveFileDialog from '@/features/chat/components/DriveFileDialog.vue';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import type { DriveFile } from '@/lib/drive';
 import {
     index as earlierMessages,
     store as sendMessage,
@@ -57,6 +89,7 @@ type Message = {
     id: number;
     role: 'user' | 'assistant' | 'workflow';
     content: string;
+    created_at: string | null;
     // An agent's words as the note editor's document, so they are drawn as a note is
     doc: JSONContent | null;
     // Why an answer stopped short, when it did
@@ -71,10 +104,18 @@ type Message = {
         is_image: boolean;
         is_video: boolean;
     } | null;
+    // A place shown on a small map under the words
+    place?: ChatPlace | null;
+    // Drawn as a sticker is: small, with nothing round it
+    sticker?: boolean;
+    // Pictures that stand for some of the words: an outside chat's own emoji
+    emojis?: { index: number; length: number; url: string }[];
     // A workflow's: under its name, or the outside sender's it carried over
     sender?: {
         name: string;
         outside: boolean;
+        // Their face: a picture's address, when a workflow looked one up
+        picture?: string | null;
         by: string | null;
         workflow: string | null;
     } | null;
@@ -98,6 +139,14 @@ type Room = {
     ready: boolean;
     // Linked to a chat outside: a workflow may send what is written here there
     link: { service: string; through: string | null } | null;
+    // Its face, and what is known about it by name: kept by a workflow, or noted by hand
+    picture?: string | null;
+    details?: Record<string, string>;
+    // The names among the details a workflow keeps, which are not changed by hand
+    kept?: string[];
+    // How many messages it holds in all
+    messages?: number;
+    created_at?: string | null;
 };
 
 type Connection = {
@@ -146,11 +195,163 @@ const hasEarlier = ref(props.hasEarlier);
 const isMine = (message: Message) =>
     message.role === 'user' && (!shared || message.author?.id === me);
 
-// A name over the others' words where it is not obvious who they are: in a group
-const showName = (message: Message, at: number) =>
-    props.room.kind === 'group' &&
-    !isMine(message) &&
-    list.value[at - 1]?.author?.id !== message.author?.id;
+// --- how the conversation is laid out ---
+// Who said a message, so several from one person in a row read as one turn
+const speakerOf = (message: Message) =>
+    message.role === 'user'
+        ? `person:${message.author?.id}`
+        : message.role === 'workflow'
+          ? `workflow:${message.sender?.outside ? 'outside' : 'own'}:${message.sender?.name}`
+          : 'agent';
+
+const dayOf = (message: Message) =>
+    message.created_at ? new Date(message.created_at).toDateString() : '';
+
+// A turn goes on while the same one speaks, on the same day, without a long gap
+const TURN_MINUTES = 10;
+
+const sameTurn = (a: Message | undefined, b: Message | undefined) =>
+    !!a &&
+    !!b &&
+    speakerOf(a) === speakerOf(b) &&
+    dayOf(a) === dayOf(b) &&
+    Math.abs(
+        new Date(b.created_at ?? 0).getTime() -
+            new Date(a.created_at ?? 0).getTime(),
+    ) <=
+        TURN_MINUTES * 60_000;
+
+const clock = new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+});
+const dayThisYear = new Intl.DateTimeFormat(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+});
+const dayAnyYear = new Intl.DateTimeFormat(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+});
+const whole = new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'full',
+    timeStyle: 'short',
+});
+
+const timeOf = (message: Message) =>
+    message.created_at ? clock.format(new Date(message.created_at)) : '';
+const whenOf = (message: Message) =>
+    message.created_at ? whole.format(new Date(message.created_at)) : '';
+
+function dayLabel(message: Message) {
+    const day = new Date(message.created_at ?? Date.now());
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+
+    if (day.toDateString() === today.toDateString()) {
+        return 'Today';
+    }
+
+    if (day.toDateString() === yesterday.toDateString()) {
+        return 'Yesterday';
+    }
+
+    return (
+        day.getFullYear() === today.getFullYear() ? dayThisYear : dayAnyYear
+    ).format(day);
+}
+
+// Each message with where it stands: the first of a day, and the first and
+// last of its speaker's turn -- a name goes over the first, a face and the
+// time by the last
+const shown = computed(() =>
+    list.value.map((message, at) => ({
+        message,
+        day:
+            dayOf(list.value[at - 1] ?? message) !== dayOf(message) || at === 0
+                ? dayLabel(message)
+                : null,
+        first: !sameTurn(list.value[at - 1], message),
+        last: !sameTurn(message, list.value[at + 1]),
+    })),
+);
+
+// Someone outside whose words a workflow carried in is drawn as a person;
+// a workflow speaking for itself, as a workflow
+const fromOutside = (message: Message) =>
+    message.role === 'workflow' && !!message.sender?.outside;
+
+// The name over a turn: always for what a workflow wrote, and in a group
+// for the others in it
+const nameOver = (message: Message) =>
+    message.role === 'workflow'
+        ? (message.sender?.name ?? 'Workflow')
+        : props.room.kind === 'group'
+          ? (message.author?.name ?? '')
+          : '';
+
+// Faces that would not load -- an address gone stale -- fall back to initials
+const broken = reactive(new Set<string>());
+
+// The face of whoever a linked chat is with, for the top of the room: the
+// latest one a message came with
+const face = computed(() => {
+    for (let at = list.value.length - 1; at >= 0; at--) {
+        const picture = list.value[at].sender?.picture;
+
+        if (picture && !broken.has(picture)) {
+            return picture;
+        }
+    }
+
+    return null;
+});
+
+// The room's own face, when a workflow keeps one with it; else that of
+// whoever wrote last
+const roomFace = computed(() =>
+    props.room.picture && !broken.has(props.room.picture)
+        ? props.room.picture
+        : props.room.link
+          ? face.value
+          : null,
+);
+
+// The face beside what someone outside wrote: the room's own -- kept once
+// with the room, by the workflow that looks them up -- or one an older
+// message came with
+const faceOf = (message: Message) => {
+    const picture = fromOutside(message)
+        ? message.sender?.picture || props.room.picture
+        : null;
+
+    return picture && !broken.has(picture) ? picture : null;
+};
+
+// What is known about the room, opened beside it
+const about = ref(false);
+
+// A face being looked at larger
+const viewing = ref<{ src: string; name: string } | null>(null);
+
+// "Ada (LINE)" is Ada: what is in brackets says where from, not who
+const initialsOf = (name: string) =>
+    getInitials(name.replace(/\s*\(.*\)\s*$/, '') || name);
+
+const colourOf = (message: Message) =>
+    message.role === 'user'
+        ? message.author?.id != null
+            ? colourFor(message.author.id)
+            : '#9ca3af'
+        : colourFor(
+              [...(message.sender?.name ?? '')].reduce(
+                  (sum, letter) => (sum * 31 + letter.charCodeAt(0)) | 0,
+                  7,
+              ),
+          );
 
 const add = (message: Message) => {
     if (!list.value.some((item) => item.id === message.id)) {
@@ -228,10 +429,11 @@ async function loadEarlier() {
     }
 }
 
+// Asked in the app's own way before anything that can't be taken back lightly
+const leaving = ref(false);
+
 function leave() {
-    if (confirm('Leave this group? You can join it again from the project.')) {
-        router.post(leaveRoom(props.room.ref_id).url);
-    }
+    router.post(leaveRoom(props.room.ref_id).url);
 }
 const title = ref(props.room.title);
 const draft = ref('');
@@ -249,11 +451,84 @@ const toBottom = () =>
         if (scroller.value) {
             scroller.value.scrollTop = scroller.value.scrollHeight;
         }
+
+        // Taken there on purpose: there, whatever a scroll says a moment later
+        atLatest.value = true;
+        fresh.value = false;
     });
 
-onMounted(toBottom);
-// Down to what is new as it comes, but not when earlier messages come in at the top
-watch(() => [list.value[list.value.length - 1]?.id, streaming.value], toBottom);
+// Whether the latest is in view: while it is, the page stays with it as
+// messages come and pictures find their size; scrolled back, it stays put
+const atLatest = ref(true);
+// Something came while scrolled back
+const fresh = ref(false);
+
+// How large the room was when last looked at: a scroll that comes of it
+// changing size -- the window, a phone's keyboard -- is not someone scrolling
+let box = { width: 0, height: 0 };
+
+function onScroll() {
+    const here = scroller.value;
+
+    if (
+        here &&
+        here.clientWidth === box.width &&
+        here.clientHeight === box.height
+    ) {
+        atLatest.value =
+            here.scrollHeight - here.scrollTop - here.clientHeight < 120;
+
+        if (atLatest.value) {
+            fresh.value = false;
+        }
+    }
+}
+
+// A picture or a film that has just found its size pushes what is under it down
+function settle() {
+    if (atLatest.value) {
+        void toBottom();
+    }
+}
+
+// The window, or the keyboard on a phone, changing the room's height
+let sized: ResizeObserver | null = null;
+
+onMounted(() => {
+    void toBottom();
+
+    if (scroller.value && typeof ResizeObserver !== 'undefined') {
+        sized = new ResizeObserver(() => {
+            const here = scroller.value;
+
+            if (here) {
+                box = { width: here.clientWidth, height: here.clientHeight };
+            }
+
+            settle();
+        });
+        sized.observe(scroller.value);
+    }
+});
+onBeforeUnmount(() => sized?.disconnect());
+// Down to what is new as it comes -- one's own always, others' only when the
+// latest was in view -- and never when earlier messages come in at the top
+watch(
+    () => [list.value[list.value.length - 1]?.id, streaming.value],
+    () => {
+        const latest = list.value[list.value.length - 1];
+
+        if (
+            atLatest.value ||
+            streaming.value !== null ||
+            (latest && isMine(latest))
+        ) {
+            void toBottom();
+        } else {
+            fresh.value = true;
+        }
+    },
+);
 
 // The room's own title is saved as it is left
 function saveTitle() {
@@ -266,14 +541,89 @@ function saveTitle() {
     }
 }
 
+// A file to go with the next message: kept in the Drive of whoever's chat
+// this is. Two people's own chat has no Drive both can open.
+const attachable = props.room.kind !== 'direct';
+const picker = ref<HTMLInputElement | null>(null);
+// Chosen from this device, to be uploaded -- or one in the Drive already
+const attached = shallowRef<File | DriveFile | null>(null);
+const choosing = ref(false);
+
+// Or a place, in place of a file: chosen from the saved ones, a search, or where one is
+const placed = shallowRef<ChatPlace | null>(null);
+const placing = ref(false);
+
+function attachPlace(place: ChatPlace) {
+    placed.value = place;
+    attached.value = null;
+    input.value?.focus();
+}
+
+function attach(event: Event) {
+    const chosen = (event.target as HTMLInputElement).files?.[0] ?? null;
+
+    attached.value = chosen;
+    placed.value = null;
+    (event.target as HTMLInputElement).value = '';
+    input.value?.focus();
+}
+
+function attachFromDrive(file: DriveFile) {
+    attached.value = file;
+    placed.value = null;
+    input.value?.focus();
+}
+
+// Pasted from the clipboard or dropped on the box: the first file is attached
+function take(files: FileList | undefined | null, event: Event) {
+    if (attachable && files?.length) {
+        event.preventDefault();
+        attached.value = files[0];
+        placed.value = null;
+        input.value?.focus();
+    }
+}
+
+const dropping = ref(false);
+
+// A look at a picture before it is sent
+const preview = ref<string | null>(null);
+
+watch(attached, (file, before) => {
+    if (before instanceof File && preview.value) {
+        URL.revokeObjectURL(preview.value);
+    }
+
+    preview.value = !file
+        ? null
+        : file instanceof File
+          ? file.type.startsWith('image/')
+              ? URL.createObjectURL(file)
+              : null
+          : file.is_image
+            ? file.url
+            : null;
+});
+
 async function send() {
     const content = draft.value.trim();
+    const file = attached.value;
+    const place = placed.value;
 
-    if (!content || sending.value) {
+    if ((!content && !file && !place) || sending.value) {
         return;
     }
 
+    // A file from this device goes with the words as a form; one in the
+    // Drive already is only named
+    const form = file instanceof File ? new FormData() : null;
+    form?.append('content', content);
+    form?.append('upload', file as File);
+    const named = file && 'ref_id' in file ? file.ref_id : undefined;
+
     draft.value = '';
+    attached.value = null;
+    placed.value = null;
     failure.value = null;
     sending.value = true;
     abort = new AbortController();
@@ -283,22 +633,32 @@ async function send() {
             method: 'POST',
             signal: abort.signal,
             headers: {
-                'Content-Type': 'application/json',
+                ...(form ? {} : { 'Content-Type': 'application/json' }),
                 Accept: 'text/event-stream',
                 'X-Requested-With': 'XMLHttpRequest',
                 'X-XSRF-TOKEN': xsrfToken(),
                 // So the others hear it, and this page does not hear it twice
                 ...socketHeaders(),
             },
-            body: JSON.stringify({ content }),
+            body:
+                form ??
+                JSON.stringify({
+                    content,
+                    file: named,
+                    place: place ?? undefined,
+                }),
         });
 
         if (!response.ok || !response.body) {
             draft.value = content;
+            attached.value = file;
+            placed.value = place;
             failure.value =
                 response.status === 422
-                    ? 'That message cannot be sent: it is empty or too long.'
-                    : 'Could not send that.';
+                    ? 'That message cannot be sent: it is empty or too long, or its file is too large.'
+                    : response.status === 413
+                      ? 'That file is too large to send.'
+                      : 'Could not send that.';
 
             return;
         }
@@ -388,10 +748,10 @@ function onKey(event: KeyboardEvent) {
     }
 }
 
+const removing = ref(false);
+
 function remove() {
-    if (confirm('Delete this chat and everything said in it?')) {
-        router.delete(destroy(props.room.ref_id).url);
-    }
+    router.delete(destroy(props.room.ref_id).url);
 }
 
 // --- the room's agent: a connection, a model, and instructions ---
@@ -474,7 +834,23 @@ function saveSettings() {
     <Head :title="title || 'New chat'" />
 
     <div class="mx-auto flex h-[calc(100svh-4rem)] w-full max-w-3xl flex-col">
-        <header class="flex items-center gap-2 px-4 py-3">
+        <header class="flex items-center gap-2 border-b px-4 py-2.5">
+            <button
+                v-if="roomFace"
+                type="button"
+                class="shrink-0 cursor-zoom-in rounded-full"
+                aria-label="Open the picture"
+                @click="viewing = { src: roomFace, name: room.title }"
+            >
+                <img
+                    :src="roomFace"
+                    alt=""
+                    class="size-8 rounded-full object-cover"
+                    referrerpolicy="no-referrer"
+                    data-chat-room-face
+                    @error="broken.add(roomFace)"
+                />
+            </button>
             <Input
                 v-if="room.manage"
                 v-model="title"
@@ -517,6 +893,17 @@ function saveSettings() {
             >
                 {{ people.length }} people
             </p>
+            <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="About this chat"
+                title="About this chat"
+                :aria-expanded="about"
+                data-chat-about-toggle
+                @click="about = !about"
+            >
+                <Info />
+            </Button>
             <PresenceAvatars :others="others" />
             <Button
                 v-if="room.mine && agents"
@@ -534,7 +921,7 @@ function saveSettings() {
                 variant="ghost"
                 size="sm"
                 data-leave
-                @click="leave"
+                @click="leaving = true"
             >
                 <LogOut />
                 <span class="hidden sm:inline">Leave</span>
@@ -544,16 +931,29 @@ function saveSettings() {
                 variant="ghost"
                 size="icon-sm"
                 aria-label="Delete chat"
-                @click="remove"
+                @click="removing = true"
             >
                 <Trash2 />
             </Button>
         </header>
 
+        <RoomAbout v-model:open="about" :room="room" :face="roomFace" />
+
+        <!-- A face, larger: the room's, or whoever wrote -->
+        <FaceViewer
+            :open="viewing !== null"
+            :src="viewing?.src ?? null"
+            :name="viewing?.name ?? ''"
+            @update:open="$event || (viewing = null)"
+        />
+
         <div
             ref="scroller"
-            class="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4"
+            class="min-h-0 flex-1 overflow-y-auto px-4 pb-4"
             data-chat-messages
+            @scroll.passive="onScroll"
+            @load.capture="settle"
+            @loadedmetadata.capture="settle"
         >
             <div v-if="hasEarlier" class="flex justify-center">
                 <Button
@@ -589,131 +989,180 @@ function saveSettings() {
                 Say something to begin.
             </p>
 
-            <template v-for="(message, at) in list" :key="message.id">
+            <template
+                v-for="{ message, day, first, last } in shown"
+                :key="message.id"
+            >
+                <p
+                    v-if="day"
+                    class="text-muted-foreground flex items-center gap-3 pt-5 pb-1 text-xs select-none"
+                    data-chat-day
+                >
+                    <span class="bg-border h-px flex-1" />
+                    {{ day }}
+                    <span class="bg-border h-px flex-1" />
+                </p>
+
+                <!-- One's own, on the right -->
                 <div
                     v-if="isMine(message)"
-                    class="flex justify-end"
+                    class="flex flex-col items-end"
+                    :class="first ? 'mt-3' : 'mt-0.5'"
                     data-chat-user
                     data-chat-mine
                 >
-                    <p
-                        class="bg-primary text-primary-foreground max-w-[85%] rounded-2xl rounded-br-md px-4 py-2 text-sm whitespace-pre-wrap"
+                    <div
+                        class="flex max-w-[85%] min-w-0 flex-col items-end sm:max-w-[70%]"
                     >
-                        {{ message.content }}
-                    </p>
-                </div>
-                <div
-                    v-else-if="message.role === 'user'"
-                    class="flex items-end gap-2"
-                    data-chat-user
-                    data-chat-theirs
-                >
-                    <span
-                        class="flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
-                        :class="{
-                            invisible:
-                                list[at + 1]?.author?.id === message.author?.id,
-                        }"
-                        :style="{
-                            backgroundColor:
-                                message.author?.id != null
-                                    ? colourFor(message.author.id)
-                                    : '#9ca3af',
-                        }"
-                        :title="message.author?.name"
-                    >
-                        {{ getInitials(message.author?.name ?? '?') }}
-                    </span>
-                    <div class="max-w-[85%] min-w-0">
                         <p
-                            v-if="showName(message, at)"
-                            class="text-muted-foreground mb-0.5 px-1 text-xs"
-                            data-chat-author
+                            v-if="message.content"
+                            class="bg-primary text-primary-foreground rounded-2xl px-3.5 py-2 text-sm [overflow-wrap:anywhere] whitespace-pre-wrap"
+                            :class="{ 'rounded-br-md': last }"
                         >
-                            {{ message.author?.name }}
+                            <MessageText
+                                :content="message.content"
+                                :emojis="message.emojis"
+                            />
                         </p>
-                        <p
-                            class="bg-muted rounded-2xl rounded-bl-md px-4 py-2 text-sm whitespace-pre-wrap"
-                        >
-                            {{ message.content }}
-                        </p>
+                        <MessageFile
+                            v-if="message.file"
+                            :file="message.file"
+                            :sticker="message.sticker"
+                        />
+                        <MessagePlace
+                            v-if="message.place"
+                            :place="message.place"
+                        />
                     </div>
+                    <time
+                        v-if="last && message.created_at"
+                        class="text-muted-foreground mt-0.5 px-1 text-[11px] tabular-nums"
+                        :datetime="message.created_at"
+                        :title="whenOf(message)"
+                        data-chat-time
+                    >
+                        {{ timeOf(message) }}
+                    </time>
                 </div>
+
+                <!-- Someone else's: a person here, someone outside whose words
+                     a workflow carried in, or a workflow speaking for itself -->
                 <div
-                    v-else-if="message.role === 'workflow'"
+                    v-else-if="message.role !== 'assistant'"
                     class="flex items-end gap-2"
-                    data-chat-workflow
+                    :class="first ? 'mt-3' : 'mt-0.5'"
+                    :data-chat-user="message.role === 'user' ? '' : undefined"
+                    :data-chat-theirs="message.role === 'user' ? '' : undefined"
+                    :data-chat-workflow="
+                        message.role === 'workflow' ? '' : undefined
+                    "
                 >
                     <span
-                        class="flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                        :title="message.sender?.name"
+                        v-if="
+                            message.role === 'workflow' && !fromOutside(message)
+                        "
+                        class="mb-4 flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                        :class="{ invisible: !last }"
+                        :title="`${nameOver(message)}, a workflow`"
                     >
                         <Zap class="size-3.5" />
                     </span>
-                    <div class="max-w-[85%] min-w-0">
+                    <img
+                        v-else-if="faceOf(message)"
+                        :src="faceOf(message) as string"
+                        :alt="message.sender?.name"
+                        :title="`${message.sender?.name}: written outside, carried in by a workflow`"
+                        class="mb-4 size-7 shrink-0 cursor-zoom-in rounded-full object-cover"
+                        :class="{ invisible: !last }"
+                        referrerpolicy="no-referrer"
+                        loading="lazy"
+                        data-chat-face
+                        @error="broken.add(faceOf(message) as string)"
+                        @click="
+                            viewing = {
+                                src: faceOf(message) as string,
+                                name: message.sender?.name ?? room.title,
+                            }
+                        "
+                    />
+                    <span
+                        v-else
+                        class="mb-4 flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
+                        :class="{ invisible: !last }"
+                        :style="{ backgroundColor: colourOf(message) }"
+                        :title="
+                            message.role === 'user'
+                                ? message.author?.name
+                                : `${message.sender?.name}: written outside, carried in by a workflow`
+                        "
+                    >
+                        {{
+                            initialsOf(
+                                message.author?.name ??
+                                    message.sender?.name ??
+                                    '?',
+                            )
+                        }}
+                    </span>
+                    <div class="max-w-[85%] min-w-0 sm:max-w-[70%]">
                         <p
+                            v-if="first && nameOver(message)"
                             class="text-muted-foreground mb-0.5 px-1 text-xs"
                             data-chat-author
                         >
-                            {{ message.sender?.name ?? 'Workflow' }}
-                            <template
+                            {{ nameOver(message)
+                            }}<template
                                 v-if="
-                                    !message.sender?.outside &&
+                                    message.role === 'workflow' &&
+                                    !fromOutside(message) &&
                                     message.sender?.by
                                 "
                             >
                                 · for {{ message.sender.by }}</template
                             >
-                            <template v-else-if="message.sender?.outside">
-                                · by a workflow</template
-                            >
                         </p>
                         <p
                             v-if="message.content"
-                            class="rounded-2xl rounded-bl-md border border-amber-500/20 bg-amber-500/5 px-4 py-2 text-sm whitespace-pre-wrap"
+                            class="w-fit rounded-2xl px-3.5 py-2 text-sm [overflow-wrap:anywhere] whitespace-pre-wrap"
+                            :class="[
+                                message.role === 'workflow' &&
+                                !fromOutside(message)
+                                    ? 'border border-amber-500/20 bg-amber-500/5'
+                                    : 'bg-muted',
+                                { 'rounded-bl-md': last },
+                            ]"
                         >
-                            {{ message.content }}
-                        </p>
-                        <!-- What it carried: a picture or a video shown, anything else to open -->
-                        <a
-                            v-if="message.file?.is_image"
-                            :href="message.file.url"
-                            target="_blank"
-                            rel="noopener"
-                            class="mt-1 block"
-                            data-chat-file
-                        >
-                            <img
-                                :src="message.file.url"
-                                :alt="message.file.name"
-                                loading="lazy"
-                                class="max-h-80 max-w-full rounded-2xl border border-amber-500/20"
+                            <MessageText
+                                :content="message.content"
+                                :emojis="message.emojis"
                             />
-                        </a>
-                        <video
-                            v-else-if="message.file?.is_video"
-                            :src="message.file.url"
-                            controls
-                            preload="metadata"
-                            class="mt-1 max-h-80 max-w-full rounded-2xl border border-amber-500/20"
-                            data-chat-file
+                        </p>
+                        <MessageFile
+                            v-if="message.file"
+                            :file="message.file"
+                            :sticker="message.sticker"
                         />
-                        <a
-                            v-else-if="message.file"
-                            :href="message.file.url"
-                            target="_blank"
-                            rel="noopener"
-                            class="mt-1 inline-flex max-w-full items-center gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-2 text-sm underline-offset-2 hover:underline"
-                            data-chat-file
+                        <MessagePlace
+                            v-if="message.place"
+                            :place="message.place"
+                        />
+                        <time
+                            v-if="last && message.created_at"
+                            class="text-muted-foreground mt-0.5 block h-4 px-1 text-[11px] tabular-nums"
+                            :datetime="message.created_at"
+                            :title="whenOf(message)"
+                            data-chat-time
                         >
-                            <Paperclip class="size-3.5 shrink-0" />
-                            <span class="truncate">{{
-                                message.file.name
-                            }}</span>
-                        </a>
+                            {{ timeOf(message) }}
+                        </time>
                     </div>
                 </div>
-                <div v-else class="max-w-full" data-chat-assistant>
+                <div
+                    v-else
+                    class="max-w-full"
+                    :class="first ? 'mt-3' : 'mt-1'"
+                    data-chat-assistant
+                >
                     <!-- The same editor and Markdown as a note, only for reading -->
                     <TiptapEditor
                         :content="message.doc"
@@ -731,7 +1180,7 @@ function saveSettings() {
             </template>
 
             <!-- Still being written: plain until it is whole, then drawn as a note -->
-            <div v-if="streaming !== null" data-chat-streaming>
+            <div v-if="streaming !== null" class="mt-3" data-chat-streaming>
                 <p v-if="streaming" class="text-sm whitespace-pre-wrap">
                     {{ streaming }}
                 </p>
@@ -740,7 +1189,7 @@ function saveSettings() {
 
             <p
                 v-if="failure"
-                class="text-destructive text-sm"
+                class="text-destructive mt-3 text-sm"
                 role="alert"
                 data-chat-error
             >
@@ -748,18 +1197,140 @@ function saveSettings() {
             </p>
         </div>
 
-        <form class="px-4 pt-2 pb-4" @submit.prevent="send">
-            <div
-                class="focus-within:ring-ring/40 flex items-end gap-2 rounded-2xl border p-2 focus-within:ring-[3px]"
+        <form class="relative px-4 pt-2 pb-3" @submit.prevent="send">
+            <!-- Scrolled back: a way down to the latest, saying when there is more -->
+            <button
+                v-if="!atLatest"
+                type="button"
+                class="bg-background hover:bg-accent absolute -top-10 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-md"
+                data-chat-latest
+                @click="toBottom"
             >
+                <ArrowDown class="size-3.5" />
+                {{ fresh ? 'New messages' : 'Latest' }}
+            </button>
+            <div
+                v-if="placed"
+                class="bg-muted/50 mb-2 flex w-fit max-w-full items-center gap-2.5 rounded-xl border p-1.5 pr-3"
+                data-chat-placed
+            >
+                <span
+                    class="bg-background flex size-10 shrink-0 items-center justify-center rounded-lg border text-red-500"
+                >
+                    <MapPin class="size-4" />
+                </span>
+                <span class="min-w-0">
+                    <span class="block truncate text-sm">{{
+                        placed.title || 'A place'
+                    }}</span>
+                    <span
+                        v-if="placed.address"
+                        class="text-muted-foreground block truncate text-xs"
+                        >{{ placed.address }}</span
+                    >
+                </span>
+                <button
+                    type="button"
+                    class="text-muted-foreground hover:text-foreground shrink-0 rounded-full p-0.5"
+                    aria-label="Remove the place"
+                    @click="placed = null"
+                >
+                    <X class="size-4" />
+                </button>
+            </div>
+            <!-- What goes with the next message, to look at or take back -->
+            <div
+                v-if="attached"
+                class="bg-muted/50 mb-2 flex w-fit max-w-full items-center gap-2.5 rounded-xl border p-1.5 pr-3"
+                data-chat-attached
+            >
+                <img
+                    v-if="preview"
+                    :src="preview"
+                    alt=""
+                    class="size-10 shrink-0 rounded-lg object-cover"
+                />
+                <span
+                    v-else
+                    class="bg-background text-muted-foreground flex size-10 shrink-0 items-center justify-center rounded-lg border"
+                >
+                    <Paperclip class="size-4" />
+                </span>
+                <span class="min-w-0 truncate text-sm">{{
+                    attached.name
+                }}</span>
+                <button
+                    type="button"
+                    class="text-muted-foreground hover:text-foreground shrink-0 rounded-full p-0.5"
+                    aria-label="Remove the file"
+                    @click="attached = null"
+                >
+                    <X class="size-4" />
+                </button>
+            </div>
+            <div
+                class="focus-within:ring-ring/40 bg-background flex items-end gap-1.5 rounded-2xl border p-1.5 shadow-xs transition-shadow focus-within:ring-[3px]"
+                :class="{ 'ring-primary/40 ring-[3px]': dropping }"
+                @dragover.prevent="dropping = attachable"
+                @dragleave="dropping = false"
+                @drop="
+                    dropping = false;
+                    take($event.dataTransfer?.files, $event);
+                "
+            >
+                <template v-if="attachable">
+                    <input
+                        ref="picker"
+                        type="file"
+                        class="hidden"
+                        data-chat-file-input
+                        @change="attach"
+                    />
+                    <DropdownMenu>
+                        <DropdownMenuTrigger as-child>
+                            <Button
+                                type="button"
+                                size="icon-sm"
+                                variant="ghost"
+                                aria-label="Attach a file or a place"
+                                title="Attach a file or a place"
+                                :disabled="sending"
+                                data-chat-attach
+                            >
+                                <Paperclip />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" side="top">
+                            <DropdownMenuItem @select="picker?.click()">
+                                <Upload />
+                                From this device
+                            </DropdownMenuItem>
+                            <DropdownMenuItem @select="choosing = true">
+                                <HardDrive />
+                                From the Drive
+                            </DropdownMenuItem>
+                            <DropdownMenuItem @select="placing = true">
+                                <MapPin />
+                                A place
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                    <DriveFileDialog
+                        v-model:open="choosing"
+                        :room="room.ref_id"
+                        @pick="attachFromDrive"
+                    />
+                    <PlaceDialog v-model:open="placing" @pick="attachPlace" />
+                </template>
                 <textarea
                     ref="input"
                     v-model="draft"
                     rows="1"
                     class="field-sizing-content max-h-48 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none"
-                    placeholder="Write a message…  (Enter sends, Shift+Enter for a new line)"
+                    placeholder="Write a message…"
                     data-chat-input
                     @keydown="onKey"
+                    @paste="take($event.clipboardData?.files, $event)"
                 />
                 <Button
                     v-if="sending"
@@ -775,12 +1346,48 @@ function saveSettings() {
                     type="submit"
                     size="icon-sm"
                     aria-label="Send"
-                    :disabled="!draft.trim()"
+                    :disabled="!draft.trim() && !attached && !placed"
                 >
                     <Send />
                 </Button>
             </div>
+            <p
+                class="text-muted-foreground mt-1.5 hidden px-2 text-[11px] sm:block"
+            >
+                Enter sends · Shift+Enter starts a new line<template
+                    v-if="attachable"
+                >
+                    · a file can be pasted or dropped here</template
+                >
+            </p>
         </form>
+
+        <DeleteDialog
+            v-model:open="removing"
+            :name="room.title || 'this chat'"
+            description="Everything said in it goes with it. Files sent in it stay in the Drive."
+            @confirm="remove"
+        />
+
+        <Dialog v-model:open="leaving">
+            <DialogContent class="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>Leave “{{ room.title }}”?</DialogTitle>
+                    <DialogDescription>
+                        You can join it again from the project.
+                    </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                    <Button
+                        type="button"
+                        variant="secondary"
+                        @click="leaving = false"
+                        >Stay</Button
+                    >
+                    <Button type="button" @click="leave">Leave</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
 
         <Dialog v-if="agents" v-model:open="settingsOpen">
             <DialogContent class="sm:max-w-lg">

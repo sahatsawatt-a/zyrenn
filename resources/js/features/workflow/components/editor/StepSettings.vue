@@ -182,8 +182,16 @@ const shown = (setting: Setting) =>
     Object.entries(setting.when ?? {}).every(([other, wanted]) => {
         const now = props.step.config[other];
 
+        if (Array.isArray(wanted)) {
+            return wanted.includes(String(now ?? ''));
+        }
+
         return wanted === true
-            ? now !== null && now !== undefined && now !== '' && now !== 'none'
+            ? now !== null &&
+                  now !== undefined &&
+                  now !== '' &&
+                  now !== 'none' &&
+                  !(Array.isArray(now) && now.length === 0)
             : now === wanted;
     });
 
@@ -453,8 +461,15 @@ async function copyHook(token: unknown) {
                         <Input
                             v-else
                             :model-value="field.name"
-                            :placeholder="setting.ways ? 'way' : 'name'"
-                            class="h-8 w-28 shrink-0 font-mono text-xs"
+                            :placeholder="
+                                setting.ways
+                                    ? 'way'
+                                    : setting.labels
+                                      ? 'what it says'
+                                      : 'name'
+                            "
+                            class="h-8 w-28 shrink-0 text-xs"
+                            :class="{ 'font-mono': !setting.labels }"
                             :disabled="!editable"
                             aria-label="Name"
                             @update:model-value="
@@ -468,7 +483,9 @@ async function copyHook(token: unknown) {
                             :placeholder="
                                 setting.ways
                                     ? 'input.total > 100'
-                                    : '{{ input.total }}'
+                                    : setting.labels
+                                      ? 'what it does'
+                                      : '{{ input.total }}'
                             "
                             class="h-8 min-w-0 flex-1 font-mono text-xs"
                             :disabled="!editable"
@@ -507,7 +524,13 @@ async function copyHook(token: unknown) {
                         @click="addField(setting)"
                     >
                         <Plus />
-                        {{ setting.ways ? 'Add a way' : 'Add a value' }}
+                        {{
+                            setting.ways
+                                ? 'Add a way'
+                                : setting.labels
+                                  ? 'Add one'
+                                  : 'Add a value'
+                        }}
                     </Button>
                     <p
                         v-if="setting.ways && fields(setting).length"

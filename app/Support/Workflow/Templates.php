@@ -27,37 +27,15 @@ final class Templates
         return [
             'telegram-room' => [
                 'title' => 'Telegram chats in a room, both ways',
-                'description' => 'Each Telegram chat with your bot gets a chat of its own here: what is sent to the bot is written in it -- a picture or a file kept in the Drive and shown -- and what you write in it goes back to Telegram.',
+                'description' => 'Each Telegram chat with your bot gets a chat of its own here: what is sent to the bot is written in it, and what you write in it goes back to Telegram -- pictures, files, stickers and places too, kept in the Drive on the way.',
                 'needs' => ['telegram' => 'Bot'],
-                'definition' => self::carryingFiles('telegram', $telegram, 'Telegram', self::chains([
-                    [
-                        ['heard', 'trigger.telegram', ['connection' => $telegram]],
-                        ['room', 'chat.room', ['key' => 'telegram:{{ trigger.chat.id }}', 'title' => '{{ coalesce(trigger.chat.title, trigger.sender.name, "Someone") }} on Telegram', 'link' => $telegram, 'link_chat' => '{{ trigger.chat.id }}']],
-                        ['say', 'chat.send', ['room' => '{{ node("room").room }}', 'message' => '{{ trigger.text }}', 'sender' => '{{ trigger.sender.name }} (Telegram)']],
-                    ],
-                    [
-                        ['written', 'trigger.chat', ['room' => References::LINKED.':telegram']],
-                        ['back', 'telegram.send', ['connection' => References::LINKED, 'chat' => '{{ trigger.room.link.chat }}', 'text' => '{{ trigger.text }}']],
-                    ],
-                ])),
+                'definition' => self::bridge('telegram', $telegram),
             ],
             'line-room' => [
                 'title' => 'LINE chats in a room, both ways',
-                'description' => 'Each LINE chat with your channel gets a chat of its own here: what is sent to it is written in it -- a picture or a file kept in the Drive and shown -- and what you write in it goes back to LINE (counted against the channel\'s monthly allowance).',
+                'description' => 'Each LINE chat with your channel gets a chat of its own here: what is sent to it is written in it, and what you write in it goes back to LINE (counted against the channel\'s monthly allowance) -- pictures, files, stickers and places too, kept in the Drive on the way.',
                 'needs' => ['line' => 'Channel'],
-                'definition' => self::carryingFiles('line', $line, 'LINE', self::chains([
-                    [
-                        ['heard', 'trigger.line', ['connection' => $line]],
-                        // Who wrote: when LINE won't say, the message is still written, from "Someone"
-                        ['who', 'line.profile', ['connection' => $line, 'user' => '{{ trigger.sender.id }}', 'chat' => '{{ trigger.chat.id }}'], 'continue'],
-                        ['room', 'chat.room', ['key' => 'line:{{ trigger.chat.id }}', 'title' => '{{ coalesce(node("who").group, node("who").name, "Someone") }} on LINE', 'link' => $line, 'link_chat' => '{{ trigger.chat.id }}']],
-                        ['say', 'chat.send', ['room' => '{{ node("room").room }}', 'message' => '{{ trigger.text }}', 'sender' => '{{ coalesce(node("who").name, "Someone") }} (LINE)']],
-                    ],
-                    [
-                        ['written', 'trigger.chat', ['room' => References::LINKED.':line']],
-                        ['back', 'line.send', ['connection' => References::LINKED, 'to' => '{{ trigger.room.link.chat }}', 'text' => '{{ trigger.text }}']],
-                    ],
-                ])),
+                'definition' => self::bridge('line', $line),
             ],
             'telegram-ai' => [
                 'title' => 'AI answers on Telegram',
@@ -116,39 +94,169 @@ final class Templates
     }
 
     /**
-     * A room bridge that carries files too: before "say", a message is asked
-     * whether it brought a file. One that did has it fetched by the service's
-     * own "get the file" step, into a Drive folder named for the service, and shown in the room with whatever
-     * was written beside it; one that didn't is said as it was.
+     * An outside chat and a room of its own here, both ways, with whatever
+     * the service carries.
      *
-     * @param  array{nodes: list<array<string, mixed>>, edges: list<array<string, mixed>>}  $definition
+     * Coming in, a message goes by its kind: one that brought a picture or a
+     * file has it fetched by the service's own "get the file" step, into a
+     * Drive folder named for the service, and shown in the room with what
+     * was written beside it; a sticker is shown as its picture, or named
+     * when that can't be had; a place is shown on a small map; a contact
+     * shared on Telegram is written as its name and number; anything else
+     * is said as it was.
+     *
+     * Going out, what is written in the room goes to the outside chat, and
+     * a file sent there goes with it: by Telegram's own call for a file; on
+     * LINE as a picture when it is one LINE takes, else as a link that
+     * opens it for a day. A place shared there goes out as a place. On LINE, too: a message is marked read there once
+     * someone has seen it here, and someone who adds the channel has a room
+     * before they write.
+     *
      * @return array{nodes: list<array<string, mixed>>, edges: list<array<string, mixed>>}
      */
-    private static function carryingFiles(string $service, string $connection, string $folder, array $definition): array
+    private static function bridge(string $service, string $connection): array
     {
-        $say = collect($definition['nodes'])->firstWhere('key', 'say');
-        ['x' => $x, 'y' => $y] = $say['position'];
-        $step = fn (string $key, string $type, int $right, int $down, array $config) => [
-            'id' => $key, 'key' => $key, 'type' => $type,
-            'position' => ['x' => $x + $right * 320, 'y' => $y + $down * 80],
-            'config' => array_filter($config, fn ($value) => $value !== ''),
+        $line = $service === 'line';
+        $named = $line ? 'LINE' : 'Telegram';
+        $sender = $line ? '{{ coalesce(node("who").name, "Someone") }} (LINE)' : '{{ trigger.sender.name }} (Telegram)';
+        $room = ['room' => '{{ node("room").room }}', 'sender' => $sender];
+        $out = $line
+            ? ['connection' => References::LINKED, 'to' => '{{ trigger.room.link.chat }}']
+            : ['connection' => References::LINKED, 'chat' => '{{ trigger.room.link.chat }}'];
+        $send = "{$service}.send";
+        // Where the question of its kind stands: LINE asks who wrote first
+        $at = $line ? 3 : 2;
+
+        /** @var list<array{0: int, 1: int, 2: string, 3: string, 4: array<string, mixed>, 5?: string}> $steps */
+        $steps = [
+            // In: column, row, key, kind, settings, and what a failure does when not stopping
+            [0, 0, 'heard', "trigger.{$service}", ['connection' => $connection]],
+            ...$line ? [[1, 0, 'who', 'line.profile', ['connection' => $connection, 'user' => '{{ trigger.sender.id }}', 'chat' => '{{ trigger.chat.id }}'], 'continue']] : [],
+            [$at - 1, 0, 'room', 'chat.room', [
+                'key' => "{$service}:{{ trigger.chat.id }}",
+                'title' => $line
+                    ? '{{ coalesce(node("who").group, node("who").name, "Someone") }} on LINE'
+                    : '{{ coalesce(trigger.chat.title, trigger.sender.name, "Someone") }} on Telegram',
+                'link' => $connection,
+                'link_chat' => '{{ trigger.chat.id }}',
+                // Who it is with, kept with the room: their face, and what the service says of them
+                ...$line ? [
+                    // The face of the one person a chat is with; a group has many, and keeps none
+                    'picture' => '{{ if(trigger.chat.kind = "private", coalesce(node("who").picture, ""), "") }}',
+                    'details' => [
+                        ['name' => 'name', 'value' => '{{ coalesce(node("who").name, "") }}'],
+                        ['name' => 'line_id', 'value' => '{{ trigger.sender.id }}'],
+                        ['name' => 'language', 'value' => '{{ coalesce(node("who").language, "") }}'],
+                        ['name' => 'status', 'value' => '{{ coalesce(node("who").status, "") }}'],
+                    ],
+                ] : [
+                    'details' => [
+                        ['name' => 'name', 'value' => '{{ coalesce(trigger.sender.name, "") }}'],
+                        ['name' => 'telegram_id', 'value' => '{{ trigger.sender.id }}'],
+                        ['name' => 'username', 'value' => '{{ coalesce(trigger.sender.username, "") }}'],
+                    ],
+                ],
+            ]],
+            [$at, 0, 'kind', 'logic.switch', ['ways' => [
+                ['name' => 'file', 'value' => 'len(trigger.files) > 0'],
+                ['name' => 'sticker', 'value' => 'trigger.kind = "sticker"'],
+                ['name' => 'place', 'value' => 'trigger.kind = "location"'],
+                // LINE tells a channel nothing of a profile shared with it; Telegram sends the contact
+                ...$line ? [] : [['name' => 'contact', 'value' => 'trigger.kind = "contact"']],
+            ]]],
+            ...$line ? [] : [[$at + 1, 2, 'saywho', 'chat.send', [...$room, 'message' => "👤 {{ trigger.contact.name }}\n{{ coalesce(trigger.contact.phone, \"\") }}"]]],
+            [$at + 1, -2, 'save', "{$service}.file", ['connection' => $connection, 'folder' => $named]],
+            [$at + 2, -2, 'show', 'chat.send', [...$room, 'message' => '{{ trigger.display }}', 'file' => '{{ node("save").ref_id }}']],
+            // A sticker's picture, moving when the sticker does: LINE's are at an address of their own;
+            // Telegram's is a file like any other
+            $line
+                ? [$at + 1, -1, 'sticker', 'drive.save', ['from' => 'url', 'url' => '{{ trigger.sticker.url }}', 'name' => 'sticker-{{ trigger.sticker.id }}{{ if(trigger.sticker.animated, "-animated", "") }}.png', 'folder' => 'LINE/Stickers', 'same' => 'reuse'], 'continue']
+                : [$at + 1, -1, 'sticker', 'telegram.file', ['connection' => $connection, 'file' => '{{ trigger.sticker.picture }}', 'folder' => 'Telegram/Stickers'], 'continue'],
+            // Named only when its picture could not be had
+            [$at + 2, -1, 'showsticker', 'chat.send', [...$room, 'message' => $line ? '{{ if(node("sticker").ref_id, "", "Sticker") }}' : '{{ if(node("sticker").ref_id, "", coalesce(trigger.sticker.emoji, "Sticker")) }}', 'file' => '{{ node("sticker").ref_id }}', 'shown' => 'sticker']],
+            [$at + 1, 0, 'saywhere', 'chat.send', [...$room, 'message' => '{{ trigger.display }}', 'place' => '{{ trigger.location }}']],
+            [$at + 1, 1, 'say', 'chat.send', [...$room, 'message' => '{{ trigger.display }}']],
+
+            // Out
+            [0, 4, 'written', 'trigger.chat', ['room' => References::LINKED.":{$service}"]],
+            [1, 4, 'out', 'logic.switch', ['ways' => [
+                ['name' => 'file', 'value' => 'len(trigger.files) > 0'],
+                ['name' => 'place', 'value' => 'trigger.kind = "location"'],
+            ]]],
+            // A place shared in the room goes out as one, by the service's own call for it
+            $line
+                ? [2, 6, 'backplace', $send, [...$out, 'kind' => 'location', 'title' => '{{ coalesce(trigger.location.title, "A place") }}', 'address' => '{{ coalesce(trigger.location.address, "") }}', 'lat' => '{{ trigger.location.lat }}', 'lng' => '{{ trigger.location.lng }}', 'text' => '{{ trigger.text }}']]
+                : [2, 6, 'backplace', 'telegram.location', [...$out, 'lat' => '{{ trigger.location.lat }}', 'lng' => '{{ trigger.location.lng }}', 'title' => '{{ coalesce(trigger.location.title, "") }}', 'address' => '{{ coalesce(trigger.location.address, "") }}']],
+            // Telegram's place carries no words, so any written with it follow it
+            ...$line ? [] : [
+                [3, 6, 'worded', 'logic.if', ['condition' => 'trigger.text']],
+                [4, 6, 'backwords', $send, [...$out, 'text' => '{{ trigger.text }}']],
+            ],
+            [2, 5, 'back', $send, [...$out, 'text' => '{{ trigger.text }}']],
+            ...$line ? [
+                [2, 3, 'file', 'drive.read', ['file' => '{{ item(trigger.files, 1) }}']],
+                // LINE is sent a picture only as a JPEG or a PNG; anything else goes as a link to it
+                [3, 3, 'picture', 'logic.if', ['condition' => 'node("file").mime = "image/jpeg" or node("file").mime = "image/png"']],
+                [4, 2, 'backpicture', $send, [...$out, 'text' => '{{ trigger.text }}', 'file' => '{{ node("file").ref_id }}']],
+                [4, 4, 'link', 'drive.link', ['file' => '{{ node("file").ref_id }}', 'hours' => 24]],
+                [5, 4, 'backlink', $send, [...$out, 'text' => "{{ trigger.text }}\n📎 {{ node(\"file\").name }}\n{{ node(\"link\").url }}"]],
+
+                // Read here, read there: LINE shows "Read" once someone has seen it in the room
+                [0, 7, 'read', 'trigger.chat', ['room' => References::LINKED.':line', 'on' => 'read']],
+                [1, 7, 'marked', 'logic.if', ['condition' => 'trigger.reply.read']],
+                [2, 7, 'seen', 'line.read', ['connection' => References::LINKED, 'token' => '{{ trigger.reply.read }}'], 'continue'],
+
+                // Someone adds the channel: their room is there before they write
+                [0, 9, 'friend', 'trigger.line', ['connection' => $connection, 'on' => 'follow']],
+                [1, 9, 'whonew', 'line.profile', ['connection' => $connection, 'user' => '{{ trigger.sender.id }}', 'chat' => '{{ trigger.chat.id }}'], 'continue'],
+                [2, 9, 'roomnew', 'chat.room', [
+                    'key' => 'line:{{ trigger.chat.id }}',
+                    'title' => '{{ coalesce(node("whonew").name, "Someone") }} on LINE',
+                    'link' => $connection,
+                    'link_chat' => '{{ trigger.chat.id }}',
+                    'picture' => '{{ coalesce(node("whonew").picture, "") }}',
+                    'details' => [
+                        ['name' => 'name', 'value' => '{{ coalesce(node("whonew").name, "") }}'],
+                        ['name' => 'line_id', 'value' => '{{ trigger.sender.id }}'],
+                        ['name' => 'language', 'value' => '{{ coalesce(node("whonew").language, "") }}'],
+                        ['name' => 'status', 'value' => '{{ coalesce(node("whonew").status, "") }}'],
+                    ],
+                ]],
+                [3, 9, 'saynew', 'chat.send', ['room' => '{{ node("roomnew").room }}', 'message' => 'Added the channel as a friend.', 'sender' => '{{ coalesce(node("whonew").name, "Someone") }} (LINE)']],
+            ] : [
+                [2, 3, 'backfile', 'telegram.send_file', [...$out, 'text' => '{{ trigger.text }}', 'file' => '{{ item(trigger.files, 1) }}']],
+            ],
         ];
-        $edge = fn (string $from, string $way, string $to) => ['id' => "{$from}.{$way}.{$to}", 'source' => $from, 'sourceHandle' => $way, 'target' => $to];
+
+        $joins = [
+            ...$line ? [['heard', 'out', 'who'], ['who', 'out', 'room']] : [['heard', 'out', 'room']],
+            ['room', 'out', 'kind'],
+            ['kind', 'file', 'save'], ['save', 'out', 'show'],
+            ['kind', 'sticker', 'sticker'], ['sticker', 'out', 'showsticker'],
+            ['kind', 'place', 'saywhere'],
+            ...$line ? [] : [['kind', 'contact', 'saywho']],
+            ['kind', NodeTypes::OTHERWISE, 'say'],
+            ['written', 'out', 'out'],
+            ['out', NodeTypes::OTHERWISE, 'back'],
+            ['out', 'place', 'backplace'],
+            ...$line ? [] : [['backplace', 'out', 'worded'], ['worded', 'true', 'backwords']],
+            ...$line
+                ? [
+                    ['out', 'file', 'file'], ['file', 'out', 'picture'], ['picture', 'true', 'backpicture'], ['picture', 'false', 'link'], ['link', 'out', 'backlink'],
+                    ['read', 'out', 'marked'], ['marked', 'true', 'seen'],
+                    ['friend', 'out', 'whonew'], ['whonew', 'out', 'roomnew'], ['roomnew', 'out', 'saynew'],
+                ]
+                : [['out', 'file', 'backfile']],
+        ];
 
         return [
-            'nodes' => [
-                ...array_map(fn (array $node) => $node['key'] === 'say' ? [...$node, 'position' => ['x' => $x + 320, 'y' => $y + 80]] : $node, $definition['nodes']),
-                $step('has', 'logic.if', 0, 0, ['condition' => 'len(trigger.files) > 0']),
-                $step('save', "{$service}.file", 1, -1, ['connection' => $connection, 'folder' => $folder]),
-                $step('show', 'chat.send', 2, -1, [...$say['config'], 'file' => '{{ node("save").ref_id }}']),
-            ],
-            'edges' => [
-                // What led to "say" now leads to the question
-                ...array_map(fn (array $join) => $join['target'] === 'say' ? $edge($join['source'], $join['sourceHandle'], 'has') : $join, $definition['edges']),
-                $edge('has', 'false', 'say'),
-                $edge('has', 'true', 'save'),
-                $edge('save', 'out', 'show'),
-            ],
+            'nodes' => array_map(fn (array $step) => [
+                'id' => $step[2], 'key' => $step[2], 'type' => $step[3],
+                'position' => ['x' => $step[0] * 320, 'y' => $step[1] * 130],
+                'config' => $step[4],
+                ...isset($step[5]) ? ['onError' => $step[5]] : [],
+            ], $steps),
+            'edges' => array_values(array_map(fn (array $join) => ['id' => implode('.', $join), 'source' => $join[0], 'sourceHandle' => $join[1], 'target' => $join[2]], $joins)),
         ];
     }
 

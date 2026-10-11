@@ -4,9 +4,11 @@ namespace App\Models\Chat;
 
 use App\Models\Concerns\HasRefId;
 use App\Models\Connection;
+use App\Models\Owner;
 use App\Models\Project;
 use App\Models\User;
 use App\Support\Connections\Services;
+use App\Support\Workflow\Inbound\ChatMessages;
 use Database\Factories\Chat\ChatRoomFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -15,6 +17,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -44,6 +47,9 @@ use Illuminate\Support\Facades\DB;
  * @property string|null $system_prompt
  * @property string|null $external_key
  * @property array{service: string, connection: string, chat: string}|null $link
+ * @property string|null $picture
+ * @property array<string, string>|null $details
+ * @property list<string>|null $details_kept
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read int $unread from withUnreadFor()
@@ -63,6 +69,9 @@ class ChatRoom extends Model
 
     public const GROUP = 'group';
 
+    /** The Drive folder files sent in chats are kept in. */
+    public const DRIVE_FOLDER = 'Chats';
+
     /**
      * @var array<string, mixed>
      */
@@ -76,7 +85,7 @@ class ChatRoom extends Model
      */
     protected function casts(): array
     {
-        return ['link' => 'array'];
+        return ['link' => 'array', 'details' => 'array', 'details_kept' => 'array'];
     }
 
     /**
@@ -260,6 +269,109 @@ class ChatRoom extends Model
         return $this->hasMany(ChatMessage::class)->orderBy('id');
     }
 
+    /** How many details a room keeps, and how long a name and a value may be. */
+    public const MAX_DETAILS = 40;
+
+    public const DETAIL_NAME = '/^[A-Za-z_][A-Za-z0-9_]{0,39}$/';
+
+    public const MAX_DETAIL = 500;
+
+    /**
+     * A picture's address as a room may show it: a web address over https,
+     * and nothing else -- it is drawn by everyone who opens the room.
+     */
+    public static function pictureAt(?string $url): ?string
+    {
+        $url = trim((string) $url);
+
+        return mb_strlen($url) <= 1000 && str_starts_with($url, 'https://') && filter_var($url, FILTER_VALIDATE_URL) !== false
+            ? $url
+            : null;
+    }
+
+    /**
+     * Keep things about the room, by name, over what is kept already: a
+     * name given again is set to what it is now, one given empty is left as
+     * it was -- so a detail that could not be found this time is not lost.
+     * What is kept this way is a workflow's to set: it is marked, and is
+     * not changed by hand (noteByHand).
+     *
+     * @param  array<string, mixed>  $given
+     * @return bool whether anything changed
+     */
+    public function note(array $given, ?string $picture = null): bool
+    {
+        $details = $this->details ?? [];
+        $kept = $this->details_kept ?? [];
+
+        foreach ($given as $name => $value) {
+            $value = is_scalar($value) ? trim((string) $value) : '';
+
+            if ($value !== '' && preg_match(self::DETAIL_NAME, (string) $name) === 1 && (isset($details[$name]) || count($details) < self::MAX_DETAILS)) {
+                $details[$name] = mb_substr($value, 0, self::MAX_DETAIL);
+                $kept[] = (string) $name;
+            }
+        }
+
+        $kept = array_values(array_unique($kept));
+        $picture = self::pictureAt($picture) ?? $this->picture;
+
+        if ($details === ($this->details ?? []) && $kept === ($this->details_kept ?? []) && $picture === $this->picture) {
+            return false;
+        }
+
+        $this->forceFill(['details' => $details ?: null, 'details_kept' => $kept ?: null, 'picture' => $picture])->save();
+
+        return true;
+    }
+
+    /**
+     * The details as someone has set them by hand: the whole list of what
+     * is theirs to set. What a workflow keeps stays as the workflow has it,
+     * whatever the list says of it.
+     *
+     * @param  array<string, mixed>  $noted
+     */
+    public function noteByHand(array $noted): void
+    {
+        $kept = array_intersect_key($this->details ?? [], array_flip($this->details_kept ?? []));
+        $own = [];
+
+        foreach ($noted as $name => $value) {
+            $value = is_scalar($value) ? trim((string) $value) : '';
+
+            if ($value !== '' && ! isset($kept[$name])) {
+                $own[(string) $name] = mb_substr($value, 0, self::MAX_DETAIL);
+            }
+        }
+
+        $this->forceFill(['details' => [...$kept, ...$own] ?: null])->save();
+    }
+
+    /**
+     * Get what was said last.
+     *
+     * @return HasOne<ChatMessage, $this>
+     */
+    public function latestMessage(): HasOne
+    {
+        return $this->hasOne(ChatMessage::class)->latestOfMany();
+    }
+
+    /**
+     * Whose Drive a file sent here is kept in, so everyone in the room can
+     * open it: one's own for one's own chat, the project's for a group.
+     * Two people's own chat has no Drive both can open.
+     */
+    public function driveOwner(): ?Owner
+    {
+        return match ($this->kind) {
+            self::PERSONAL => $this->user,
+            self::GROUP => $this->project,
+            default => null,
+        };
+    }
+
     /**
      * Whether the user is in the room.
      */
@@ -331,6 +443,9 @@ class ChatRoom extends Model
                 'updated_at' => now(),
             ],
         );
+
+        // Workflows set to hear a room being read: a linked chat's other end can be told
+        ChatMessages::read($this, $user, $messageId);
     }
 
     /**

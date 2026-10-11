@@ -8,16 +8,79 @@ use Illuminate\Http\Request;
  * What came in, in one shape whichever service sent it, so a workflow reads
  * trigger.text and trigger.chat.id the same way from Telegram and from LINE:
  *
- *     { service, type, id, chat: { id, kind, title }, sender: { id, name },
- *       text, files, reply: { token, to }, raw }
+ *     { service, type, kind, id, chat: { id, kind, title }, sender: { id, name },
+ *       text, display, files, reply: { token, to }, raw }
+ *
+ * "type" is what happened (a message, a button, someone joining); "kind"
+ * is what a message was -- text, image, video, audio, file, sticker,
+ * location, contact -- always there, so a Switch can go by it.
+ *
+ * and, only when it has them, the parts each service's own kinds of thing
+ * bring: a button pressed, a place, a sticker, who joined.
  *
  * A file comes as its id only; a step fetches it ("Save to Drive"), never
  * the hook.
  */
 final class Envelope
 {
+    /** Where LINE keeps a sticker's picture: …{sticker}/android/sticker.png, or sticker_animation.png for one that moves */
+    public const LINE_STICKER = 'https://stickershop.line-scdn.net/stickershop/v1/sticker/';
+
+    /** Where LINE keeps the pictures of its own emoji: …{product}/android/{emoji}.png */
+    public const LINE_EMOJI = 'https://stickershop.line-scdn.net/sticonshop/v1/sticon/';
+
+    /** Everything a bot is told of; reactions have to be asked for by name. */
+    public const TELEGRAM_UPDATES = ['message', 'edited_message', 'channel_post', 'callback_query', 'inline_query', 'poll_answer', 'my_chat_member', 'message_reaction', 'pre_checkout_query'];
+
+    /**
+     * What a trigger's "When" takes, by the envelope's type: its choice => the types.
+     *
+     * @var array<string, array<string, list<string>>>
+     */
+    public const KINDS = [
+        'telegram' => [
+            'message' => ['message', 'edited', 'button'],
+            'button' => ['button'],
+            'channel' => ['channel_post'],
+            'member' => ['joined', 'left'],
+            'reaction' => ['reaction'],
+            'poll' => ['poll_answer'],
+            'inline' => ['inline_query'],
+            'payment' => ['checkout', 'payment'],
+        ],
+        'line' => [
+            'message' => ['message', 'postback'],
+            'button' => ['postback'],
+            'follow' => ['follow'],
+            'unfollow' => ['unfollow'],
+            'join' => ['join'],
+            'leave' => ['leave'],
+            'member' => ['memberJoined', 'memberLeft'],
+            'unsend' => ['unsend'],
+        ],
+    ];
+
+    /**
+     * Whether a trigger set to start on $on takes an envelope of this type.
+     * A trigger set up before it could choose starts on messages, as it did.
+     */
+    public static function wanted(string $service, ?string $on, string $type): bool
+    {
+        $on = $on ?: 'message';
+
+        return $on === 'any' || in_array($type, self::KINDS[$service][$on] ?? [], true);
+    }
+
     /**
      * A Telegram update, or null for a kind no trigger takes.
+     *
+     * Beside the common shape: button { id, data } for a press; location
+     * { lat, lng, title, address }; contact { name, phone }; sticker
+     * { id, emoji, animated, picture }; member { id, name, bot } for who joined or left;
+     * reaction { message, emoji }; poll { id, chosen }; inline { id };
+     * checkout { id, currency, amount, payload } before a payment and
+     * payment { currency, amount, payload, charge } after; topic, in a group
+     * that has them.
      *
      * @param  array<string, mixed>  $update
      * @return array<string, mixed>|null
@@ -25,10 +88,10 @@ final class Envelope
     public static function telegram(array $update): ?array
     {
         $button = $update['callback_query'] ?? null;
-        $message = $update['message'] ?? $update['edited_message'] ?? ($button['message'] ?? null);
+        $message = $update['message'] ?? $update['edited_message'] ?? $update['channel_post'] ?? ($button['message'] ?? null);
 
         if (! is_array($message)) {
-            return null;
+            return self::telegramOther($update);
         }
 
         $from = $button['from'] ?? $message['from'] ?? [];
@@ -42,30 +105,193 @@ final class Envelope
             $message['video']['file_id'] ?? null,
             $message['video_note']['file_id'] ?? null,
         ])));
+        $place = $message['venue']['location'] ?? $message['location'] ?? null;
+        // Someone coming or going is told as a message with nothing said
+        $came = $message['new_chat_members'][0] ?? null;
+        $went = $message['left_chat_member'] ?? null;
+        $paid = $message['successful_payment'] ?? null;
 
         return [
             'service' => 'telegram',
-            'type' => $button !== null ? 'button' : (isset($update['edited_message']) ? 'edited' : 'message'),
+            'type' => match (true) {
+                $button !== null => 'button',
+                isset($update['edited_message']) => 'edited',
+                isset($update['channel_post']) => 'channel_post',
+                $came !== null => 'joined',
+                $went !== null => 'left',
+                $paid !== null => 'payment',
+                default => 'message',
+            },
+            // What was sent, whatever the service calls it
+            'kind' => match (true) {
+                $button !== null => 'button',
+                isset($message['photo']) => 'image',
+                isset($message['video']) || isset($message['video_note']) => 'video',
+                isset($message['voice']) || isset($message['audio']) => 'audio',
+                isset($message['sticker']) => 'sticker',
+                isset($message['document']) => 'file',
+                is_array($place) => 'location',
+                isset($message['contact']) => 'contact',
+                isset($message['text']) => 'text',
+                default => 'other',
+            },
             'id' => (string) ($update['update_id'] ?? ''),
-            'chat' => [
-                'id' => (string) ($chat['id'] ?? ''),
-                'kind' => ($chat['type'] ?? 'private') === 'private' ? 'private' : 'group',
-                'title' => $chat['title'] ?? null,
-            ],
-            'sender' => [
-                'id' => (string) ($from['id'] ?? ''),
-                'name' => trim(($from['first_name'] ?? '').' '.($from['last_name'] ?? '')) ?: ($from['username'] ?? null),
-                'username' => $from['username'] ?? null,
-            ],
+            'chat' => self::telegramChat($chat),
+            'sender' => self::telegramPerson($from),
             'text' => (string) ($button['data'] ?? $message['text'] ?? $message['caption'] ?? ''),
-            'files' => $files,
+            // As LINE's envelope has it, so a bridge is written the same for both
+            'display' => (string) ($button['data'] ?? $message['text'] ?? $message['caption'] ?? ''),
+            'files' => $button !== null ? [] : $files,
             'reply' => ['token' => null, 'to' => $message['message_id'] ?? null],
+            ...array_filter([
+                'topic' => $message['message_thread_id'] ?? null,
+                'button' => $button === null ? null : ['id' => (string) ($button['id'] ?? ''), 'data' => (string) ($button['data'] ?? '')],
+                'location' => ! is_array($place) ? null : [
+                    'lat' => $place['latitude'] ?? null,
+                    'lng' => $place['longitude'] ?? null,
+                    'title' => $message['venue']['title'] ?? null,
+                    'address' => $message['venue']['address'] ?? null,
+                ],
+                'contact' => ! isset($message['contact']) ? null : [
+                    'name' => trim(($message['contact']['first_name'] ?? '').' '.($message['contact']['last_name'] ?? '')),
+                    'phone' => $message['contact']['phone_number'] ?? null,
+                ],
+                'sticker' => ! isset($message['sticker']) ? null : [
+                    'id' => $message['sticker']['file_id'] ?? null,
+                    'emoji' => $message['sticker']['emoji'] ?? null,
+                    'animated' => (bool) (($message['sticker']['is_animated'] ?? false) || ($message['sticker']['is_video'] ?? false)),
+                    // The file to show it by: a moving one that is a video plays as it is; one drawn
+                    // from instructions (.tgs) nothing here can play, so its still picture stands for it
+                    'picture' => ($message['sticker']['is_animated'] ?? false)
+                        ? ($message['sticker']['thumbnail']['file_id'] ?? $message['sticker']['file_id'] ?? null)
+                        : ($message['sticker']['file_id'] ?? null),
+                ],
+                'member' => ($who = $came ?? $went) === null ? null : [...self::telegramPerson($who), 'bot' => (bool) ($who['is_bot'] ?? false)],
+                'payment' => $paid === null ? null : [
+                    'currency' => $paid['currency'] ?? null,
+                    'amount' => $paid['total_amount'] ?? null,
+                    'payload' => $paid['invoice_payload'] ?? null,
+                    'charge' => $paid['telegram_payment_charge_id'] ?? null,
+                ],
+            ], fn ($part) => $part !== null),
             'raw' => $update,
         ];
     }
 
     /**
+     * An update that is not a message: the bot added to or put out of a
+     * chat, a reaction, a poll's answer, an inline question, a checkout.
+     *
+     * @param  array<string, mixed>  $update
+     * @return array<string, mixed>|null
+     */
+    private static function telegramOther(array $update): ?array
+    {
+        [$type, $from, $chat, $text, $more] = match (true) {
+            isset($update['my_chat_member']) => [
+                in_array($update['my_chat_member']['new_chat_member']['status'] ?? '', ['left', 'kicked'], true) ? 'left' : 'joined',
+                $update['my_chat_member']['from'] ?? [],
+                $update['my_chat_member']['chat'] ?? [],
+                '',
+                ['member' => [...self::telegramPerson($update['my_chat_member']['new_chat_member']['user'] ?? []), 'bot' => true, 'self' => true]],
+            ],
+            isset($update['message_reaction']) => [
+                'reaction',
+                $update['message_reaction']['user'] ?? [],
+                $update['message_reaction']['chat'] ?? [],
+                implode('', array_column($update['message_reaction']['new_reaction'] ?? [], 'emoji')),
+                ['reaction' => [
+                    'message' => $update['message_reaction']['message_id'] ?? null,
+                    'emoji' => array_column($update['message_reaction']['new_reaction'] ?? [], 'emoji'),
+                ]],
+            ],
+            isset($update['poll_answer']) => [
+                'poll_answer',
+                $update['poll_answer']['user'] ?? [],
+                [],
+                '',
+                ['poll' => ['id' => (string) ($update['poll_answer']['poll_id'] ?? ''), 'chosen' => array_values($update['poll_answer']['option_ids'] ?? [])]],
+            ],
+            isset($update['inline_query']) => [
+                'inline_query',
+                $update['inline_query']['from'] ?? [],
+                [],
+                (string) ($update['inline_query']['query'] ?? ''),
+                ['inline' => ['id' => (string) ($update['inline_query']['id'] ?? '')]],
+            ],
+            isset($update['pre_checkout_query']) => [
+                'checkout',
+                $update['pre_checkout_query']['from'] ?? [],
+                [],
+                (string) ($update['pre_checkout_query']['invoice_payload'] ?? ''),
+                ['checkout' => [
+                    'id' => (string) ($update['pre_checkout_query']['id'] ?? ''),
+                    'currency' => $update['pre_checkout_query']['currency'] ?? null,
+                    'amount' => $update['pre_checkout_query']['total_amount'] ?? null,
+                    'payload' => $update['pre_checkout_query']['invoice_payload'] ?? null,
+                ]],
+            ],
+            default => [null, [], [], '', []],
+        };
+
+        if ($type === null) {
+            return null;
+        }
+
+        $sender = self::telegramPerson($from);
+
+        return [
+            'service' => 'telegram',
+            'type' => $type,
+            'kind' => 'other',
+            'id' => (string) ($update['update_id'] ?? ''),
+            // Outside any chat, it is between the bot and whoever did it
+            'chat' => $chat !== [] ? self::telegramChat($chat) : ['id' => $sender['id'], 'kind' => 'private', 'title' => null],
+            'sender' => $sender,
+            'text' => $text,
+            'display' => $text,
+            'files' => [],
+            'reply' => ['token' => null, 'to' => null],
+            ...$more,
+            'raw' => $update,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $chat
+     * @return array{id: string, kind: string, title: string|null}
+     */
+    private static function telegramChat(array $chat): array
+    {
+        return [
+            'id' => (string) ($chat['id'] ?? ''),
+            'kind' => ($chat['type'] ?? 'private') === 'private' ? 'private' : 'group',
+            'title' => $chat['title'] ?? null,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $from
+     * @return array{id: string, name: string|null, username: string|null}
+     */
+    private static function telegramPerson(array $from): array
+    {
+        return [
+            'id' => (string) ($from['id'] ?? ''),
+            'name' => trim(($from['first_name'] ?? '').' '.($from['last_name'] ?? '')) ?: ($from['username'] ?? null),
+            'username' => $from['username'] ?? null,
+        ];
+    }
+
+    /**
      * One LINE webhook event.
+     *
+     * Beside the common shape: reply.quote and reply.read, the tokens to
+     * quote the message or mark it read by; button { data } for a postback;
+     * location { lat, lng, title, address }; sticker { id, package,
+     * animated, url };
+     * members, the ids of who joined or left a group; unsent, the id of a
+     * message taken back.
      *
      * @param  array<string, mixed>  $event
      * @return array<string, mixed>
@@ -74,10 +300,18 @@ final class Envelope
     {
         $source = $event['source'] ?? [];
         $message = $event['message'] ?? [];
+        $kind = $message['type'] ?? 'text';
+        $members = $event['joined']['members'] ?? $event['left']['members'] ?? null;
 
         return [
             'service' => 'line',
             'type' => (string) ($event['type'] ?? 'message'),
+            // What was sent: text, image, video, audio, file, sticker or location; a tap is a button
+            'kind' => match (true) {
+                isset($event['postback']) => 'button',
+                isset($event['message']) => (string) $kind,
+                default => 'other',
+            },
             'id' => (string) ($event['webhookEventId'] ?? ''),
             'chat' => [
                 'id' => (string) ($source['groupId'] ?? $source['roomId'] ?? $source['userId'] ?? ''),
@@ -86,10 +320,90 @@ final class Envelope
             ],
             'sender' => ['id' => (string) ($source['userId'] ?? ''), 'name' => null],
             'text' => (string) ($message['text'] ?? $event['postback']['data'] ?? ''),
-            'files' => ($message['type'] ?? 'text') !== 'text' && isset($message['id']) ? [(string) $message['id']] : [],
-            'reply' => ['token' => $event['replyToken'] ?? null, 'to' => $message['id'] ?? null],
+            // The same words for showing: LINE's own emoji as their pictures, where text has only their names
+            'display' => self::lineShown((string) ($message['text'] ?? $event['postback']['data'] ?? ''), (array) ($message['emojis'] ?? [])),
+            // What LINE holds to be fetched: a picture, a video, a recording, a file
+            'files' => in_array($kind, ['image', 'video', 'audio', 'file'], true) && isset($message['id']) ? [(string) $message['id']] : [],
+            'reply' => [
+                'token' => $event['replyToken'] ?? null,
+                'to' => $message['id'] ?? null,
+                'quote' => $message['quoteToken'] ?? null,
+                'read' => $message['markAsReadToken'] ?? null,
+            ],
+            ...array_filter([
+                'button' => ! isset($event['postback']) ? null : ['data' => (string) ($event['postback']['data'] ?? ''), 'params' => $event['postback']['params'] ?? null],
+                'location' => $kind !== 'location' ? null : [
+                    'lat' => $message['latitude'] ?? null,
+                    'lng' => $message['longitude'] ?? null,
+                    'title' => $message['title'] ?? null,
+                    'address' => $message['address'] ?? null,
+                ],
+                'sticker' => $kind !== 'sticker' ? null : self::lineSticker($message),
+                'members' => ! is_array($members) ? null : array_values(array_filter(array_column($members, 'userId'))),
+                'unsent' => $event['unsend']['messageId'] ?? null,
+            ], fn ($part) => $part !== null),
             'raw' => $event,
         ];
+    }
+
+    /**
+     * A LINE sticker: which it is, whether it moves, and the address of its
+     * picture -- for one that moves, the moving picture (an animated PNG,
+     * which a browser plays as it is).
+     *
+     * @param  array<string, mixed>  $message
+     * @return array{id: string, package: string, animated: bool, url: string}
+     */
+    private static function lineSticker(array $message): array
+    {
+        $id = preg_replace('/\\D/', '', (string) ($message['stickerId'] ?? '')) ?? '';
+        $animated = in_array($message['stickerResourceType'] ?? 'STATIC', ['ANIMATION', 'ANIMATION_SOUND'], true);
+
+        return [
+            'id' => $id,
+            'package' => (string) ($message['packageId'] ?? ''),
+            'animated' => $animated,
+            'url' => self::LINE_STICKER."{$id}/android/".($animated ? 'sticker_animation.png' : 'sticker.png'),
+        ];
+    }
+
+    /**
+     * A LINE message's words with each of LINE's own emoji written as a
+     * picture -- ![(its name)](its address) -- for a chat here to draw. LINE
+     * says where each is by counting as JavaScript does, in UTF-16 units.
+     *
+     * @param  array<int, mixed>  $emojis
+     */
+    private static function lineShown(string $text, array $emojis): string
+    {
+        $emojis = array_values(array_filter($emojis, fn ($emoji) => is_array($emoji)
+            && preg_match('/^[A-Za-z0-9]+$/', (string) ($emoji['productId'] ?? '')) === 1
+            && preg_match('/^[A-Za-z0-9]+$/', (string) ($emoji['emojiId'] ?? '')) === 1));
+
+        if ($emojis === []) {
+            return $text;
+        }
+
+        usort($emojis, fn (array $a, array $b) => ($a['index'] ?? 0) <=> ($b['index'] ?? 0));
+        $units = mb_convert_encoding($text, 'UTF-16LE', 'UTF-8');
+        $part = fn (int $from, ?int $length = null) => mb_convert_encoding(substr($units, $from * 2, $length === null ? null : $length * 2), 'UTF-8', 'UTF-16LE');
+        $shown = '';
+        $at = 0;
+
+        foreach ($emojis as $emoji) {
+            $index = (int) ($emoji['index'] ?? -1);
+            $length = (int) ($emoji['length'] ?? 0);
+
+            if ($index < $at || $length < 1) {
+                continue;
+            }
+
+            $shown .= $part($at, $index - $at)
+                .'!['.str_replace(['[', ']'], '', $part($index, $length)).']('.self::LINE_EMOJI."{$emoji['productId']}/android/{$emoji['emojiId']}.png)";
+            $at = $index + $length;
+        }
+
+        return $shown.$part($at);
     }
 
     /**

@@ -47,7 +47,7 @@ final class TelegramPoll
         $response = Http::timeout(15)->get('https://api.telegram.org/bot'.$bot->secret('bot_token').'/getUpdates', [
             'offset' => $offset ?: null,
             'timeout' => 0,
-            'allowed_updates' => json_encode(['message', 'edited_message', 'callback_query']),
+            'allowed_updates' => json_encode(Envelope::TELEGRAM_UPDATES),
         ]);
 
         $updates = $response->json('result');

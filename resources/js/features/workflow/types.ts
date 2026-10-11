@@ -33,8 +33,11 @@ export type Setting = {
     services?: string[];
     // For named values: what names them ("columns": the step's table's)
     names?: 'columns';
-    // Shown only while another setting is so ("true": set to anything but none)
-    when?: Record<string, string | boolean>;
+    // Shown only while another setting is so: one value, any of a list, or
+    // ("true") set to anything but none
+    when?: Record<string, string | boolean | string[]>;
+    // Named values whose names are any words: what a button says
+    labels?: boolean;
     // A room: "any chat linked to …" too; a connection: "the chat's own" too
     linked?: boolean;
     // A Switch's ways: each named value a formula, each name a way out

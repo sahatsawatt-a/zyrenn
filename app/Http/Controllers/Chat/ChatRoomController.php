@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Chat\ChatMessage;
 use App\Models\Chat\ChatRoom;
 use App\Models\Connection;
+use App\Models\Drive\DriveFile;
 use App\Models\Project;
 use App\Models\User;
 use App\Support\Connections\Services;
@@ -16,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -189,6 +191,13 @@ class ChatRoomController extends Controller
                 'project' => $room->kind === ChatRoom::GROUP ? $room->project?->only(['ref_id', 'name']) : null,
                 // What it is linked to outside: what is written in it may go back there
                 'link' => $room->linkShown(),
+                // Its face and what is known about it: kept by a workflow, or noted by hand
+                'picture' => $room->picture,
+                'details' => (object) ($room->details ?? []),
+                // The names among them a workflow keeps, which are not changed by hand
+                'kept' => $room->details_kept ?? [],
+                'messages' => $room->messages()->count(),
+                'created_at' => $room->created_at,
             ],
             'messages' => $shown->map(fn (ChatMessage $message) => $message->toChat()),
             'hasEarlier' => $latest->count() > self::PAGE,
@@ -244,11 +253,51 @@ class ChatRoomController extends Controller
     }
 
     /**
+     * The files that can be sent in the room without uploading them again:
+     * those in the Drive the room's files are kept in -- one's own for one's
+     * own chat, the project's for a project's -- newest first, by name.
+     */
+    public function files(Request $request, ChatRoom $room): JsonResponse
+    {
+        Gate::authorize('post', $room);
+
+        $validated = $request->validate(['q' => ['nullable', 'string', 'max:255']]);
+
+        $files = $room->driveOwner()?->driveFiles()
+            ->when(filled($validated['q'] ?? null), fn ($query) => $query->whereLike('name', '%'.addcslashes((string) $validated['q'], '%_\\').'%'))
+            ->latest()
+            ->latest('id')
+            ->limit(60)
+            ->get();
+
+        return response()->json(['files' => ($files ?? collect())->map(fn (DriveFile $file) => $file->card())->values()]);
+    }
+
+    /**
      * Rename a room, or change the agent that answers in one's own.
      */
     public function update(Request $request, ChatRoom $room): RedirectResponse
     {
         Gate::authorize('update', $room);
+
+        // What is known about the room, noted by hand: the whole list as it now stands
+        if ($request->has('details')) {
+            $noted = $request->validate([
+                'details' => ['present', 'array', 'max:'.ChatRoom::MAX_DETAILS],
+                'details.*' => ['nullable', 'string', 'max:'.ChatRoom::MAX_DETAIL],
+            ])['details'];
+
+            foreach (array_keys($noted) as $name) {
+                if (preg_match(ChatRoom::DETAIL_NAME, (string) $name) !== 1) {
+                    throw ValidationException::withMessages(['details' => __('A detail\'s name can only have letters, digits and _, so a workflow can read it.')]);
+                }
+            }
+
+            // What a workflow keeps is not theirs to change: only the rest is taken from what was sent
+            $room->noteByHand($noted);
+
+            return back();
+        }
 
         // A group is only ever renamed: no agent answers among people
         if ($room->kind === ChatRoom::GROUP) {
@@ -310,7 +359,7 @@ class ChatRoomController extends Controller
     private function listed(User $user, Builder $rooms): array
     {
         return $rooms
-            ->with(['aiConnection:id,name,service,settings', 'members:id,name', 'project:id,name'])
+            ->with(['aiConnection:id,name,service,settings', 'members:id,name', 'project:id,name', 'latestMessage.author:id,name'])
             ->withCount('messages')
             ->withUnreadFor($user)
             ->latest('updated_at')
@@ -323,7 +372,12 @@ class ChatRoomController extends Controller
                 'project' => $room->project?->name,
                 'updated_at' => $room->updated_at,
                 'messages' => $room->messages_count,
-                'unread' => $room->kind === ChatRoom::PERSONAL ? 0 : $room->unread,
+                // One's own room is read as it is written -- unless it is linked to a
+                // chat outside, where someone else writes too
+                'unread' => $room->kind === ChatRoom::PERSONAL && $room->link === null ? 0 : $room->unread,
+                'last' => $room->latestMessage?->preview($user),
+                'picture' => $room->picture,
+                'linked' => $room->link['service'] ?? null,
                 'agent' => $room->hasAgent() ? $room->aiConnection->name.' · '.$room->agentModel() : null,
             ])
             ->values()
