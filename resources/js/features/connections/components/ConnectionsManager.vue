@@ -275,7 +275,7 @@ function remove() {
                         </p>
                         <div
                             v-if="connection.hook"
-                            class="mt-1.5 grid gap-1"
+                            class="mt-1.5 grid grid-cols-1 gap-1"
                             data-connection-hook
                         >
                             <div

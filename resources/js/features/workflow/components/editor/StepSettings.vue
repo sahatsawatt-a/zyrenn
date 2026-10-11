@@ -389,7 +389,7 @@ async function copyHook(token: unknown) {
             </Button>
         </div>
 
-        <div class="flex-1 space-y-5 overflow-y-auto p-4">
+        <div class="flex-1 space-y-5 overflow-x-hidden overflow-y-auto p-4">
             <ul
                 v-if="problems.length"
                 class="border-destructive/30 bg-destructive/5 text-destructive space-y-1 rounded-lg border p-3 text-xs"
@@ -405,7 +405,7 @@ async function copyHook(token: unknown) {
                 </li>
             </ul>
 
-            <div class="grid gap-2">
+            <div class="grid grid-cols-1 gap-2">
                 <Label for="step-label">Name</Label>
                 <Input
                     id="step-label"
@@ -423,7 +423,10 @@ async function copyHook(token: unknown) {
                 :key="setting.name"
             >
                 <!-- Named values -->
-                <div v-if="setting.type === 'fields'" class="grid gap-2">
+                <div
+                    v-if="setting.type === 'fields'"
+                    class="grid grid-cols-1 gap-2"
+                >
                     <Label>{{ setting.label }}</Label>
                     <div
                         v-for="(field, index) in fields(setting)"
@@ -525,7 +528,7 @@ async function copyHook(token: unknown) {
                             'workflow',
                         ].includes(setting.type)
                     "
-                    class="grid gap-2"
+                    class="grid grid-cols-1 gap-2"
                 >
                     <Label :for="`setting-${setting.name}`">{{
                         setting.label
@@ -577,7 +580,10 @@ async function copyHook(token: unknown) {
                 </div>
 
                 <!-- A chat: chosen, or worked out while it runs -->
-                <div v-else-if="setting.type === 'room'" class="grid gap-2">
+                <div
+                    v-else-if="setting.type === 'room'"
+                    class="grid grid-cols-1 gap-2"
+                >
                     <Label :for="`setting-${setting.name}`">{{
                         setting.label
                     }}</Label>
@@ -602,7 +608,10 @@ async function copyHook(token: unknown) {
                 </div>
 
                 <!-- A Drive folder: chosen, or a path written out -->
-                <div v-else-if="setting.type === 'folder'" class="grid gap-2">
+                <div
+                    v-else-if="setting.type === 'folder'"
+                    class="grid grid-cols-1 gap-2"
+                >
                     <Label :for="`setting-${setting.name}`">{{
                         setting.label
                     }}</Label>
@@ -640,7 +649,10 @@ async function copyHook(token: unknown) {
                 </div>
 
                 <!-- When: a usual time, or a cron line -->
-                <div v-else-if="setting.type === 'cron'" class="grid gap-2">
+                <div
+                    v-else-if="setting.type === 'cron'"
+                    class="grid grid-cols-1 gap-2"
+                >
                     <Label :for="`setting-${setting.name}`">{{
                         setting.label
                     }}</Label>
@@ -668,7 +680,7 @@ async function copyHook(token: unknown) {
                 <!-- A model, or a time zone: long lists, searched -->
                 <div
                     v-else-if="['model', 'timezone'].includes(setting.type)"
-                    class="grid gap-2"
+                    class="grid grid-cols-1 gap-2"
                 >
                     <Label>{{ setting.label }}</Label>
                     <ModelPicker
@@ -687,7 +699,10 @@ async function copyHook(token: unknown) {
                 </div>
 
                 <!-- A webhook's address -->
-                <div v-else-if="setting.type === 'token'" class="grid gap-2">
+                <div
+                    v-else-if="setting.type === 'token'"
+                    class="grid grid-cols-1 gap-2"
+                >
                     <Label>{{ setting.label }}</Label>
                     <div class="flex items-center gap-1.5">
                         <code
@@ -715,7 +730,10 @@ async function copyHook(token: unknown) {
                 </div>
 
                 <!-- A whole number -->
-                <div v-else-if="setting.type === 'number'" class="grid gap-2">
+                <div
+                    v-else-if="setting.type === 'number'"
+                    class="grid grid-cols-1 gap-2"
+                >
                     <Label :for="`setting-${setting.name}`">{{
                         setting.label
                     }}</Label>
@@ -735,7 +753,7 @@ async function copyHook(token: unknown) {
                 <!-- A formula, or plain text, on one line -->
                 <div
                     v-else-if="['formula', 'text'].includes(setting.type)"
-                    class="grid gap-2"
+                    class="grid grid-cols-1 gap-2"
                 >
                     <Label :for="`setting-${setting.name}`">{{
                         setting.label
@@ -755,7 +773,7 @@ async function copyHook(token: unknown) {
                 </div>
 
                 <!-- A template, or JSON -->
-                <div v-else class="grid gap-2">
+                <div v-else class="grid grid-cols-1 gap-2">
                     <Label :for="`setting-${setting.name}`">{{
                         setting.label
                     }}</Label>
@@ -811,7 +829,7 @@ async function copyHook(token: unknown) {
                 </button>
 
                 <div v-if="more || keyProblem" class="mt-4 space-y-5">
-                    <div class="grid gap-2">
+                    <div class="grid grid-cols-1 gap-2">
                         <Label for="step-key">Key</Label>
                         <Input
                             id="step-key"
@@ -832,7 +850,7 @@ async function copyHook(token: unknown) {
                         </p>
                     </div>
 
-                    <div v-if="!type?.trigger" class="grid gap-2">
+                    <div v-if="!type?.trigger" class="grid grid-cols-1 gap-2">
                         <Label for="step-on-error">If it fails</Label>
                         <PickOne
                             id="step-on-error"
