@@ -15,6 +15,8 @@ export type Sample = {
     value: unknown;
     // Whether that run got as far
     reached: boolean;
+    // The step whose output it is, when it is one's
+    id?: string;
 };
 
 const FINAL = ['succeeded', 'failed', 'cancelled'];
@@ -111,6 +113,7 @@ export function useTestData(
         const found: Sample[] = [
             {
                 name: 'trigger',
+                id: started?.node_id,
                 ...(started ? gave(started.node_id) : gave('')),
             },
         ];
@@ -133,6 +136,7 @@ export function useTestData(
             ...found,
             ...before.map((step) => ({
                 name: `node("${step.key}")`,
+                id: step.id,
                 ...gave(step.id),
             })),
         ];

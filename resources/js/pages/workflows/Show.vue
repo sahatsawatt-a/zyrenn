@@ -6,12 +6,14 @@ import {
     CloudUpload,
     History,
     Loader2,
+    LogIn,
     Play,
     Plus,
     Rocket,
     Target,
     Unlink,
     X,
+    Zap,
 } from '@lucide/vue';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
@@ -63,8 +65,10 @@ import type { SavedCopy } from '@/features/workflow/composables/useWorkflowSave'
 import {
     copyConfig,
     edgeId,
+    iconOf,
     newStep,
     outputsOf,
+    toneOf,
 } from '@/features/workflow/steps';
 import type {
     Definition,
@@ -831,8 +835,22 @@ watch(selectedId, (id) => {
     }
 });
 
+// A step's name, icon and colour, for the card of what it gave
+function lookOf(id?: string) {
+    const node = nodes.value.find((one) => one.id === id);
+    const type = node && types[node.data!.step.type];
+
+    return node
+        ? {
+              title: node.data!.step.label,
+              icon: iconOf(type),
+              tile: toneOf(type).tile,
+          }
+        : null;
+}
+
 const samples = computed(() =>
-    selected.value
+    (selected.value
         ? testData.samples(
               selected.value.id,
               !!types[selected.value.data!.step.type]?.trigger,
@@ -841,7 +859,21 @@ const samples = computed(() =>
                   .filter((edge) => edge.target === selected.value!.id)
                   .map((edge) => edge.source),
           )
-        : [],
+        : []
+    ).map((sample) => ({
+        ...sample,
+        ...(sample.name === 'input'
+            ? { title: 'What came in', icon: LogIn }
+            : sample.name === 'trigger'
+              ? // The step that began the run; before any run, the one that would
+                (lookOf(
+                    sample.id ??
+                        nodes.value.find(
+                            (one) => types[one.data!.step.type]?.trigger,
+                        )?.id,
+                ) ?? { title: 'Trigger', icon: Zap })
+              : lookOf(sample.id)),
+    })),
 );
 
 const running = computed(
