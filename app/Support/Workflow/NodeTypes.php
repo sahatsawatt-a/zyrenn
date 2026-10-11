@@ -27,6 +27,7 @@ use App\Models\Chat\ChatRoom;
  *   connection  one of the owner's connections, of the services listed
  *   room      a chat room: chosen, or a template naming one ({{ node("find").room }})
  *   table     one of the owner's tables
+ *   folder    a folder of the owner's Drive, by its path; a template too, and made when not there
  *   column    a column of the step's table
  *   model     a model the step's AI connection offers (any other may be typed)
  *   timezone  a time zone, e.g. Asia/Bangkok
@@ -37,6 +38,8 @@ use App\Models\Chat\ChatRoom;
  * and the editor shows it only then. A room setting with 'linked' also
  * offers "any chat linked to Telegram / LINE"; a connection setting with
  * 'linked', "the chat's own" -- the one the run's chat is linked through.
+ * A folder setting left empty is the top of the Drive -- or, with
+ * 'anywhere', every folder.
  *
  * A step whose output later steps read by part may say what it gives out
  * when empty ('empty'): failing with "carry on", it gives that, with its
@@ -46,7 +49,7 @@ use App\Models\Chat\ChatRoom;
  * dies partway it may have gone out already, so it is not simply run again
  * (its "unsure" setting says what happens instead).
  *
- * @phpstan-type Setting array{name: string, label: string, type: string, required: bool, default?: mixed, help?: string, placeholder?: string, options?: array<string, string>, services?: list<string>, names?: string, when?: array<string, string|bool>, linked?: bool, ways?: bool}
+ * @phpstan-type Setting array{name: string, label: string, type: string, required: bool, default?: mixed, help?: string, placeholder?: string, options?: array<string, string>, services?: list<string>, names?: string, when?: array<string, string|bool>, linked?: bool, ways?: bool, anywhere?: bool}
  * @phpstan-type NodeType array{type: string, version: int, label: string, group: string, icon: string, description: string, trigger: bool, inputs: list<string>, outputs: list<string>, config: list<Setting>, repeatable?: bool, oldest?: int, empty?: array<string, null>}
  */
 final class NodeTypes
@@ -413,7 +416,7 @@ final class NodeTypes
                 'label' => 'Telegram message',
                 'group' => 'telegram',
                 'icon' => 'send',
-                'description' => 'Starts a run when the bot is sent a message. Later steps read trigger.text, trigger.chat.id and trigger.sender.name.',
+                'description' => 'Starts a run when the bot is sent a message. Later steps read trigger.text, trigger.chat.id and trigger.sender.name; a picture or file it carried is in trigger.files, for "Telegram: get the file".',
                 'trigger' => true,
                 'inputs' => [],
                 'outputs' => [self::OUT],
@@ -437,7 +440,7 @@ final class NodeTypes
                 'label' => 'LINE message',
                 'group' => 'line',
                 'icon' => 'message-circle',
-                'description' => 'Starts a run when the LINE channel is sent a message. Later steps read trigger.text, trigger.chat.id and trigger.sender.id; "LINE: who wrote" finds their name.',
+                'description' => 'Starts a run when the LINE channel is sent a message. Later steps read trigger.text, trigger.chat.id and trigger.sender.id; "LINE: who wrote" finds their name, and "LINE: get the file" fetches a picture or file it carried (trigger.files).',
                 'trigger' => true,
                 'inputs' => [],
                 'outputs' => [self::OUT],
@@ -479,13 +482,14 @@ final class NodeTypes
                 'label' => 'Write in a room',
                 'group' => 'chat',
                 'icon' => 'message-square-plus',
-                'description' => 'Writes a message in a chat room, as the workflow. Can ask the room\'s AI and wait for its answer.',
+                'description' => 'Writes a message in a chat room, as the workflow, with a file from the Drive when one is named. Can ask the room\'s AI and wait for its answer.',
                 'trigger' => false,
                 'inputs' => [self::IN],
                 'outputs' => [self::OUT],
                 'config' => [
                     ['name' => 'room', 'label' => 'Room', 'type' => 'room', 'required' => true],
-                    ['name' => 'message', 'label' => 'Message', 'type' => 'template', 'required' => true, 'placeholder' => '{{ trigger.text }}'],
+                    ['name' => 'message', 'label' => 'Message', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.text }}', 'help' => 'Needed unless a file goes with it.'],
+                    ['name' => 'file', 'label' => 'With file', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'help' => 'A file in the Drive, by its ref_id, shown under the message: a picture or a video as one, anything else as a link.'],
                     ['name' => 'sender', 'label' => 'Shown as', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.sender.name }} (Telegram)', 'help' => 'Left empty, the workflow\'s name.'],
                     // Only while rooms may have an agent of their own (CHAT_AGENTS)
                     ...ChatRoom::agentsOn() ? [[
@@ -564,6 +568,71 @@ final class NodeTypes
                 ],
             ],
 
+            // --- Drive ---
+            [
+                'type' => 'drive.save',
+                'version' => 1,
+                'label' => 'Save to Drive',
+                'group' => 'drive',
+                'icon' => 'hard-drive-download',
+                'description' => 'Keeps a file in the Drive: one at an address on the internet, or text written here. Gives out the file: its ref_id, name, kind, size, url and, for a picture, the markdown that shows it. (One sent to a bot or a channel: "Telegram: get the file", "LINE: get the file".)',
+                'trigger' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    [
+                        'name' => 'from',
+                        'label' => 'The file is',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'url',
+                        'options' => ['url' => 'At an address on the internet', 'text' => 'Text written here'],
+                    ],
+                    ['name' => 'url', 'label' => 'Address', 'type' => 'template', 'required' => false, 'placeholder' => 'https://example.com/report.pdf', 'when' => ['from' => 'url']],
+                    ['name' => 'text', 'label' => 'Text', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("ask").text }}', 'when' => ['from' => 'text']],
+                    ['name' => 'name', 'label' => 'Called', 'type' => 'template', 'required' => false, 'placeholder' => 'receipt-{{ trigger.id }}.jpg', 'help' => 'Left empty, the name it has at its address. Text needs a name, like notes.md.'],
+                    ['name' => 'folder', 'label' => 'In folder', 'type' => 'folder', 'required' => false],
+                ],
+            ],
+            [
+                'type' => 'drive.find',
+                'version' => 1,
+                'label' => 'Find files',
+                'group' => 'drive',
+                'icon' => 'folder-search',
+                'description' => 'Gives out what is in the Drive, newest first, as files: in one folder or anywhere, by part of a name, of one kind.',
+                'trigger' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'folder', 'label' => 'In folder', 'type' => 'folder', 'required' => false, 'anywhere' => true],
+                    ['name' => 'name', 'label' => 'Name has', 'type' => 'template', 'required' => false, 'placeholder' => 'receipt'],
+                    [
+                        'name' => 'kind',
+                        'label' => 'Kind',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'any',
+                        'options' => ['any' => 'Any', 'image' => 'Pictures', 'video' => 'Videos', 'audio' => 'Sound', 'pdf' => 'PDFs', 'doc' => 'Documents', 'archive' => 'Archives', 'other' => 'Anything else'],
+                    ],
+                    ['name' => 'limit', 'label' => 'At most', 'type' => 'number', 'required' => true, 'default' => 20],
+                ],
+            ],
+            [
+                'type' => 'drive.read',
+                'version' => 1,
+                'label' => 'Read a file',
+                'group' => 'drive',
+                'icon' => 'file-text',
+                'description' => 'Gives out one of the Drive\'s files -- its name, kind, size and url -- and, for a text file, what it says as text (the first 64 KB).',
+                'trigger' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'file', 'label' => 'File', 'type' => 'template', 'required' => true, 'placeholder' => '{{ item(node("find").files, 1).ref_id }}', 'help' => 'A file\'s ref_id, as "Save to Drive", "Find files" and the "get the file" steps give it.'],
+                ],
+            ],
+
             // --- AI ---
             [
                 'type' => 'ai.chat',
@@ -580,6 +649,7 @@ final class NodeTypes
                     ['name' => 'model', 'label' => 'Model', 'type' => 'model', 'required' => false, 'help' => 'Left empty, the connection\'s usual one.'],
                     ['name' => 'system', 'label' => 'Instructions', 'type' => 'template', 'required' => false, 'placeholder' => 'You sort support messages. Answer with one word.'],
                     ['name' => 'prompt', 'label' => 'Ask', 'type' => 'template', 'required' => true, 'placeholder' => '{{ trigger.text }}'],
+                    ['name' => 'pictures', 'label' => 'With pictures', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'help' => 'Pictures in the Drive for the model to look at, by ref_id: one, or a few with commas between. The model has to be one that takes pictures.'],
                     [
                         'name' => 'answer',
                         'label' => 'Answer as',
@@ -644,6 +714,23 @@ final class NodeTypes
                 ],
             ],
             [
+                'type' => 'telegram.file',
+                'version' => 1,
+                'label' => 'Telegram: get the file',
+                'group' => 'telegram',
+                'icon' => 'file-down',
+                'description' => 'Fetches a picture, a document, a video or a recording sent to the bot, and keeps it in the Drive. A Telegram message carries only the file\'s id. Gives out the file: its ref_id, name, kind, size, url and, for a picture, the markdown that shows it.',
+                'trigger' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'connection', 'label' => 'Bot', 'type' => 'connection', 'required' => true, 'services' => ['telegram'], 'help' => 'The one the message was sent to: it is asked for the file.'],
+                    ['name' => 'file', 'label' => 'Which file', 'type' => 'template', 'required' => false, 'placeholder' => '{{ item(trigger.files, 2) }}', 'help' => 'Left empty, the first the message carried. A message lists them as trigger.files; one without any fails this step, so put an If on len(trigger.files) > 0 before it.'],
+                    ['name' => 'name', 'label' => 'Called', 'type' => 'template', 'required' => false, 'placeholder' => 'receipt-{{ trigger.id }}.jpg', 'help' => 'Left empty, what it was sent as; a photo, which has no name, is named for when it came.'],
+                    ['name' => 'folder', 'label' => 'Keep it in', 'type' => 'folder', 'required' => false, 'help' => 'A Drive folder. Telegram hands a bot files of at most 20 MB.'],
+                ],
+            ],
+            [
                 'type' => 'telegram.send',
                 'version' => 1,
                 'label' => 'Send on Telegram',
@@ -658,6 +745,40 @@ final class NodeTypes
                     ['name' => 'connection', 'label' => 'Bot', 'type' => 'connection', 'required' => true, 'services' => ['telegram'], 'linked' => true],
                     ['name' => 'chat', 'label' => 'To chat', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.chat.id }}', 'help' => 'From a linked chat, its other end is {{ trigger.room.link.chat }}.'],
                     ['name' => 'text', 'label' => 'Message', 'type' => 'template', 'required' => true],
+                    [
+                        'name' => 'format',
+                        'label' => 'Written in',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'plain',
+                        'options' => ['plain' => 'Plain text', 'markdown' => 'Markdown', 'html' => 'HTML'],
+                    ],
+                    [
+                        'name' => 'unsure',
+                        'label' => 'If it may not have gone out',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'ask',
+                        'options' => ['ask' => 'Ask me', 'retry' => 'Send it again', 'never' => 'Don\'t send it again'],
+                    ],
+                ],
+            ],
+            [
+                'type' => 'telegram.send_file',
+                'version' => 1,
+                'label' => 'Send a file on Telegram',
+                'group' => 'telegram',
+                'icon' => 'file-up',
+                'description' => 'Sends a file from the Drive, from a bot to a chat: a picture or a video is shown as one, anything else goes as a document. At most 50 MB.',
+                'trigger' => false,
+                'repeatable' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'connection', 'label' => 'Bot', 'type' => 'connection', 'required' => true, 'services' => ['telegram'], 'linked' => true],
+                    ['name' => 'chat', 'label' => 'To chat', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.chat.id }}', 'help' => 'From a linked chat, its other end is {{ trigger.room.link.chat }}.'],
+                    ['name' => 'file', 'label' => 'File', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("save").ref_id }}', 'help' => 'A file in the Drive, by its ref_id.'],
+                    ['name' => 'text', 'label' => 'Words under it', 'type' => 'template', 'required' => false],
                     [
                         'name' => 'format',
                         'label' => 'Written in',
@@ -708,29 +829,38 @@ final class NodeTypes
                 ],
             ],
             [
-                'type' => 'line.send',
+                'type' => 'line.file',
                 'version' => 1,
-                'label' => 'Send on LINE',
+                'label' => 'LINE: get the file',
                 'group' => 'line',
-                'icon' => 'message-circle',
-                'description' => 'Answers a LINE message, or sends one to someone first.',
+                'icon' => 'file-down',
+                'description' => 'Fetches a picture, a video, a recording or a file sent to the channel, and keeps it in the Drive. A LINE message carries only its id, and LINE keeps what it was sent only for a while. Gives out the file: its ref_id, name, kind, size, url and, for a picture, the markdown that shows it.',
+                'trigger' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'connection', 'label' => 'Channel', 'type' => 'connection', 'required' => true, 'services' => ['line'], 'help' => 'The one the message was sent to: it is asked for the file.'],
+                    ['name' => 'file', 'label' => 'Which file', 'type' => 'template', 'required' => false, 'placeholder' => '{{ item(trigger.files, 2) }}', 'help' => 'Left empty, the first the message carried. A message lists them as trigger.files; one without any fails this step, so put an If on len(trigger.files) > 0 before it.'],
+                    ['name' => 'name', 'label' => 'Called', 'type' => 'template', 'required' => false, 'placeholder' => 'receipt-{{ trigger.id }}.jpg', 'help' => 'Left empty, what it was sent as; a photo, which has no name, is named for when it came.'],
+                    ['name' => 'folder', 'label' => 'Keep it in', 'type' => 'folder', 'required' => false, 'help' => 'A Drive folder.'],
+                ],
+            ],
+            [
+                'type' => 'line.reply',
+                'version' => 1,
+                'label' => 'Reply on LINE',
+                'group' => 'line',
+                'icon' => 'reply',
+                'description' => 'Answers a LINE message, by LINE\'s reply call: free, but only soon after the message and only once. Words, a picture from the Drive, or both.',
                 'trigger' => false,
                 'repeatable' => false,
                 'inputs' => [self::IN],
                 'outputs' => [self::OUT],
                 'config' => [
                     ['name' => 'connection', 'label' => 'Channel', 'type' => 'connection', 'required' => true, 'services' => ['line'], 'linked' => true],
-                    [
-                        'name' => 'mode',
-                        'label' => 'How',
-                        'type' => 'choice',
-                        'required' => true,
-                        'default' => 'reply',
-                        'options' => ['reply' => 'Answer the message that started the run', 'push' => 'Send to someone'],
-                        'help' => 'An answer is free but must come soon after; sending counts against the channel\'s monthly allowance.',
-                    ],
-                    ['name' => 'to', 'label' => 'To', 'type' => 'template', 'required' => false, 'default' => '{{ trigger.chat.id }}', 'help' => 'A user, group or room id.', 'when' => ['mode' => 'push']],
-                    ['name' => 'text', 'label' => 'Message', 'type' => 'template', 'required' => true],
+                    ['name' => 'token', 'label' => 'Reply token', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.reply.token }}', 'help' => 'What the LINE message came with: the message that started the run gives it as {{ trigger.reply.token }}.'],
+                    ['name' => 'text', 'label' => 'Message', 'type' => 'template', 'required' => false, 'help' => 'Needed unless a picture goes with it.'],
+                    ['name' => 'file', 'label' => 'Picture', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'help' => 'A JPEG or PNG in the Drive, by its ref_id, at most 10 MB. LINE fetches it from this app, which must be reachable from outside.'],
                     [
                         'name' => 'unsure',
                         'label' => 'If it may not have gone out',
@@ -738,7 +868,34 @@ final class NodeTypes
                         'required' => true,
                         'default' => 'ask',
                         'options' => ['ask' => 'Ask me', 'retry' => 'Send it again', 'never' => 'Don\'t send it again'],
-                        'help' => 'Sending never goes out twice (LINE is given a key for it); answering can.',
+                        'help' => 'LINE takes a reply token once, so a reply sent again is refused rather than doubled.',
+                    ],
+                ],
+            ],
+            [
+                'type' => 'line.send',
+                'version' => 1,
+                'label' => 'Push on LINE',
+                'group' => 'line',
+                'icon' => 'message-circle',
+                'description' => 'Sends a message to someone on LINE first, by LINE\'s push call: at any time, but counted against the channel\'s monthly allowance. Words, a picture from the Drive, or both.',
+                'trigger' => false,
+                'repeatable' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'connection', 'label' => 'Channel', 'type' => 'connection', 'required' => true, 'services' => ['line'], 'linked' => true],
+                    ['name' => 'to', 'label' => 'To', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.chat.id }}', 'help' => 'A user, group or room id. From a linked chat, its other end is {{ trigger.room.link.chat }}.'],
+                    ['name' => 'text', 'label' => 'Message', 'type' => 'template', 'required' => false, 'help' => 'Needed unless a picture goes with it.'],
+                    ['name' => 'file', 'label' => 'Picture', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'help' => 'A JPEG or PNG in the Drive, by its ref_id, at most 10 MB. LINE fetches it from this app, which must be reachable from outside.'],
+                    [
+                        'name' => 'unsure',
+                        'label' => 'If it may not have gone out',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'ask',
+                        'options' => ['ask' => 'Ask me', 'retry' => 'Send it again', 'never' => 'Don\'t send it again'],
+                        'help' => 'It never goes out twice: LINE is given a key for it.',
                     ],
                 ],
             ],
@@ -791,6 +948,7 @@ final class NodeTypes
             'data' => 'Data',
             'chat' => 'Chat',
             'table' => 'Tables',
+            'drive' => 'Drive',
             'ai' => 'AI',
             'web' => 'Web',
             'telegram' => 'Telegram',

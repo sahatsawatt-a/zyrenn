@@ -11,7 +11,8 @@ use Illuminate\Http\Request;
  *     { service, type, id, chat: { id, kind, title }, sender: { id, name },
  *       text, files, reply: { token, to }, raw }
  *
- * A file comes as its id only; a step fetches it, never the hook.
+ * A file comes as its id only; a step fetches it ("Save to Drive"), never
+ * the hook.
  */
 final class Envelope
 {
@@ -32,12 +33,15 @@ final class Envelope
 
         $from = $button['from'] ?? $message['from'] ?? [];
         $chat = $message['chat'] ?? [];
-        $files = array_values(array_filter([
+        // A photo comes in several sizes, the largest last; an animation as a document too
+        $files = array_values(array_unique(array_filter([
             ...array_map(fn (array $size) => $size['file_id'] ?? null, array_slice($message['photo'] ?? [], -1)),
             $message['document']['file_id'] ?? null,
             $message['voice']['file_id'] ?? null,
+            $message['audio']['file_id'] ?? null,
             $message['video']['file_id'] ?? null,
-        ]));
+            $message['video_note']['file_id'] ?? null,
+        ])));
 
         return [
             'service' => 'telegram',

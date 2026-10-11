@@ -13,8 +13,9 @@ use App\Support\Workflow\References;
 /**
  * Write in a room, as the workflow: shown under the workflow's name (or the
  * outside sender's, for a message carried over from Telegram), naming who
- * it acts as. Said once, however often the step is tried. It can then ask
- * the room's AI and wait for the answer.
+ * it acts as, with a file from the Drive under it when one is named. Said
+ * once, however often the step is tried. It can then ask the room's AI and
+ * wait for the answer.
  */
 final class ChatSend implements Step
 {
@@ -24,8 +25,9 @@ final class ChatSend implements Step
     {
         $room = self::room($step, $step->text('room'));
         $content = trim($step->text('message'));
+        $file = filled($step->setting('file')) ? DriveSteps::file($step) : null;
 
-        if ($content === '') {
+        if ($content === '' && $file === null) {
             throw new StepFailed('The message came to nothing.');
         }
 
@@ -45,6 +47,8 @@ final class ChatSend implements Step
                     'outside' => $sender !== '',
                     'by' => $step->run->actor()?->name,
                     'run' => $step->run->ref_id,
+                    // Shown under the words: the room's people may open what is in its owner's Drive
+                    'file' => $file?->ref_id,
                 ], fn ($value) => $value !== null),
             ]);
             $said->forceFill(['workflow_node_run_id' => $step->nodeRun->id])->save();
@@ -53,7 +57,7 @@ final class ChatSend implements Step
             Live::tellEveryone(new ChatMessagePosted($room, $said));
         }
 
-        $output = ['room' => $room->ref_id, 'message' => ['id' => $said->id, 'content' => $said->content]];
+        $output = ['room' => $room->ref_id, 'message' => ['id' => $said->id, 'content' => $said->content, ...$file === null ? [] : ['file' => $file->ref_id]]];
 
         if ($step->setting('ask') !== 'agent') {
             return new StepResult($output);

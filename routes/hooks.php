@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Drive\DriveFileController;
 use App\Http\Controllers\Workflow\HookController;
 use Illuminate\Support\Facades\Route;
 
@@ -11,4 +12,10 @@ Route::prefix('hooks')->name('hooks.')->middleware('throttle:hooks')->group(func
     Route::match(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], 'w/{token}', [HookController::class, 'webhook'])
         ->where('token', '[A-Za-z0-9]{20,64}')
         ->name('webhook');
+
+    // One Drive file, for a service a step sends it through (LINE fetches a
+    // picture rather than being sent it): only by a signed link that runs out
+    Route::get('files/{file}', [DriveFileController::class, 'signed'])
+        ->middleware('signed:relative')
+        ->name('file');
 });

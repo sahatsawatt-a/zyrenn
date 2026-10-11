@@ -4,6 +4,9 @@ namespace App\Support;
 
 use App\Models\Folder;
 use App\Models\Owner;
+use App\Models\User;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
@@ -96,6 +99,86 @@ final class Folders
                 ...($searching ? ['path' => $paths[$folder->id]] : []),
             ])
             ->values();
+    }
+
+    /**
+     * The folder at a path like "KT Plan/Lakeshore" among an owner's ("" is
+     * the top level, returned as null). `false` when no such folder exists.
+     *
+     * @template TFolder of Model
+     *
+     * @param  HasMany<TFolder, covariant Model&Owner>  $folders
+     * @return TFolder|false|null
+     */
+    public static function at(HasMany $folders, string $path): Model|false|null
+    {
+        $folder = null;
+
+        foreach (self::pathNames($path) as $name) {
+            $folder = self::child($folders, $folder, $name);
+
+            if (! $folder) {
+                return false;
+            }
+        }
+
+        return $folder;
+    }
+
+    /**
+     * The same, making every missing folder along the way, like `mkdir -p`,
+     * as made by $by.
+     *
+     * @template TFolder of Model
+     *
+     * @param  HasMany<TFolder, covariant Model&Owner>  $folders
+     * @return TFolder|null
+     */
+    public static function ensure(HasMany $folders, string $path, ?User $by): ?Model
+    {
+        $folder = null;
+
+        foreach (self::pathNames($path) as $name) {
+            $parent = $folder;
+            $folder = self::child($folders, $parent, $name);
+
+            if ($folder === null) {
+                $folder = $folders->make(['name' => mb_substr($name, 0, 255), 'parent_id' => $parent?->getKey()]);
+                $folder->setAttribute('created_by', $by?->id);
+                $folder->save();
+            }
+        }
+
+        return $folder;
+    }
+
+    /**
+     * @template TFolder of Model
+     *
+     * @param  HasMany<TFolder, covariant Model&Owner>  $folders
+     * @param  TFolder|null  $parent
+     * @return TFolder|null
+     */
+    private static function child(HasMany $folders, ?Model $parent, string $name): ?Model
+    {
+        $siblings = fn () => (clone $folders)->getQuery()->where('parent_id', $parent?->getKey());
+
+        return $siblings()->where('name', $name)->first()
+            // A wrong capital shouldn't create a near-duplicate folder
+            ?? $siblings()->whereLike('name', $name)->first();
+    }
+
+    /**
+     * The folder names in a path, ignoring blanks from "a//b" or a trailing "/".
+     *
+     * @return list<string>
+     */
+    private static function pathNames(string $path): array
+    {
+        return array_values(array_filter(
+            array_map('trim', explode('/', $path)),
+            fn (string $name) => $name !== '',
+        ));
     }
 
     /**

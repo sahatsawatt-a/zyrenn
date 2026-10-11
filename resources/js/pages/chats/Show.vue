@@ -4,6 +4,7 @@ import type { JSONContent } from '@tiptap/vue-3';
 import {
     Link2,
     LogOut,
+    Paperclip,
     Send,
     Settings2,
     Square,
@@ -62,6 +63,14 @@ type Message = {
     error: string | null;
     // Who said it, when a person did; id is null for someone since gone
     author: { id: number | null; name: string } | null;
+    // A file a workflow put under its words, from the Drive
+    file?: {
+        ref_id: string;
+        name: string;
+        url: string;
+        is_image: boolean;
+        is_video: boolean;
+    } | null;
     // A workflow's: under its name, or the outside sender's it carried over
     sender?: {
         name: string;
@@ -660,10 +669,48 @@ function saveSettings() {
                             >
                         </p>
                         <p
+                            v-if="message.content"
                             class="rounded-2xl rounded-bl-md border border-amber-500/20 bg-amber-500/5 px-4 py-2 text-sm whitespace-pre-wrap"
                         >
                             {{ message.content }}
                         </p>
+                        <!-- What it carried: a picture or a video shown, anything else to open -->
+                        <a
+                            v-if="message.file?.is_image"
+                            :href="message.file.url"
+                            target="_blank"
+                            rel="noopener"
+                            class="mt-1 block"
+                            data-chat-file
+                        >
+                            <img
+                                :src="message.file.url"
+                                :alt="message.file.name"
+                                loading="lazy"
+                                class="max-h-80 max-w-full rounded-2xl border border-amber-500/20"
+                            />
+                        </a>
+                        <video
+                            v-else-if="message.file?.is_video"
+                            :src="message.file.url"
+                            controls
+                            preload="metadata"
+                            class="mt-1 max-h-80 max-w-full rounded-2xl border border-amber-500/20"
+                            data-chat-file
+                        />
+                        <a
+                            v-else-if="message.file"
+                            :href="message.file.url"
+                            target="_blank"
+                            rel="noopener"
+                            class="mt-1 inline-flex max-w-full items-center gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-2 text-sm underline-offset-2 hover:underline"
+                            data-chat-file
+                        >
+                            <Paperclip class="size-3.5 shrink-0" />
+                            <span class="truncate">{{
+                                message.file.name
+                            }}</span>
+                        </a>
                     </div>
                 </div>
                 <div v-else class="max-w-full" data-chat-assistant>

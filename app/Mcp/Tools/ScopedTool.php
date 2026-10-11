@@ -5,6 +5,7 @@ namespace App\Mcp\Tools;
 use App\Models\Owner;
 use App\Models\Project;
 use App\Models\User;
+use App\Support\Folders;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -110,17 +111,7 @@ abstract class ScopedTool extends UserTool
      */
     protected function folderAt(Owner $owner, string $path): Model|false|null
     {
-        $folder = null;
-
-        foreach ($this->pathNames($path) as $name) {
-            $folder = $this->childFolder($owner, $folder, $name);
-
-            if (! $folder) {
-                return false;
-            }
-        }
-
-        return $folder;
+        return Folders::at($this->folders($owner), $path);
     }
 
     /**
@@ -130,54 +121,6 @@ abstract class ScopedTool extends UserTool
      */
     protected function ensureFolderAt(Owner $owner, string $path, User $by): ?Model
     {
-        $folder = null;
-
-        foreach ($this->pathNames($path) as $name) {
-            $folder = $this->childFolder($owner, $folder, $name) ?? $this->newFolder($owner, $folder, $name, $by);
-        }
-
-        return $folder;
-    }
-
-    /**
-     * @param  TFolder|null  $parent
-     * @return TFolder
-     */
-    private function newFolder(Owner $owner, ?Model $parent, string $name, User $by): Model
-    {
-        $folder = $this->folders($owner)->make([
-            'name' => mb_substr($name, 0, 255),
-            'parent_id' => $parent?->getKey(),
-        ]);
-        $folder->setAttribute('created_by', $by->id);
-        $folder->save();
-
-        return $folder;
-    }
-
-    /**
-     * @param  TFolder|null  $parent
-     * @return TFolder|null
-     */
-    private function childFolder(Owner $owner, ?Model $parent, string $name): ?Model
-    {
-        $siblings = fn () => $this->folders($owner)->getQuery()->where('parent_id', $parent?->getKey());
-
-        return $siblings()->where('name', $name)->first()
-            // A wrong capital shouldn't create a near-duplicate folder
-            ?? $siblings()->whereLike('name', $name)->first();
-    }
-
-    /**
-     * The folder names in a path, ignoring blanks from "a//b" or a trailing "/".
-     *
-     * @return list<string>
-     */
-    private function pathNames(string $path): array
-    {
-        return array_values(array_filter(
-            array_map('trim', explode('/', $path)),
-            fn (string $name) => $name !== '',
-        ));
+        return Folders::ensure($this->folders($owner), $path, $by);
     }
 }

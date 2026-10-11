@@ -2,6 +2,7 @@
 
 namespace App\Models\Chat;
 
+use App\Models\Drive\DriveFile;
 use App\Models\User;
 use App\Support\Chat\ChatMarkdown;
 use App\Support\Workflow\Inbound\ChatMessages;
@@ -101,6 +102,8 @@ class ChatMessage extends Model
                 'workflow' => $this->meta['workflow'] ?? null,
             ],
             'content' => $this->content,
+            // A file a workflow put under its words, while it is still in the Drive
+            'file' => isset($this->meta['file']) ? DriveFile::where('ref_id', $this->meta['file'])->first()?->card() : null,
             'doc' => $this->role === self::ASSISTANT ? ChatMarkdown::toDoc($this->content) : null,
             'error' => $this->meta['error'] ?? null,
             'created_at' => $this->created_at,

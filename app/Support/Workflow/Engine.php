@@ -17,11 +17,16 @@ use App\Support\Workflow\Steps\ChatFetch;
 use App\Support\Workflow\Steps\ChatRoomStep;
 use App\Support\Workflow\Steps\ChatSend;
 use App\Support\Workflow\Steps\Delay;
+use App\Support\Workflow\Steps\DriveFind;
+use App\Support\Workflow\Steps\DriveRead;
+use App\Support\Workflow\Steps\DriveSave;
 use App\Support\Workflow\Steps\ForEachStep;
 use App\Support\Workflow\Steps\GivenTrigger;
 use App\Support\Workflow\Steps\HttpRequest;
 use App\Support\Workflow\Steps\IfCondition;
+use App\Support\Workflow\Steps\LineFile;
 use App\Support\Workflow\Steps\LineProfile;
+use App\Support\Workflow\Steps\LineReply;
 use App\Support\Workflow\Steps\LineSend;
 use App\Support\Workflow\Steps\Log;
 use App\Support\Workflow\Steps\ManualTrigger;
@@ -35,7 +40,9 @@ use App\Support\Workflow\Steps\SwitchStep;
 use App\Support\Workflow\Steps\TableAdd;
 use App\Support\Workflow\Steps\TableFind;
 use App\Support\Workflow\Steps\TableUpdate;
+use App\Support\Workflow\Steps\TelegramFile;
 use App\Support\Workflow\Steps\TelegramSend;
+use App\Support\Workflow\Steps\TelegramSendFile;
 use DomainException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -100,16 +107,23 @@ final class Engine
         'trigger.telegram' => GivenTrigger::class,
         'trigger.line' => GivenTrigger::class,
         'line.profile' => LineProfile::class,
+        'line.file' => LineFile::class,
+        'telegram.file' => TelegramFile::class,
         'chat.room' => ChatRoomStep::class,
         'chat.send' => ChatSend::class,
         'chat.fetch' => ChatFetch::class,
         'table.find' => TableFind::class,
         'table.add' => TableAdd::class,
         'table.update' => TableUpdate::class,
+        'drive.save' => DriveSave::class,
+        'drive.find' => DriveFind::class,
+        'drive.read' => DriveRead::class,
         'ai.chat' => AskAi::class,
         'http.request' => HttpRequest::class,
         'telegram.send' => TelegramSend::class,
+        'telegram.send_file' => TelegramSendFile::class,
         'line.send' => LineSend::class,
+        'line.reply' => LineReply::class,
         'data.set' => SetData::class,
         'logic.if' => IfCondition::class,
         'logic.switch' => SwitchStep::class,

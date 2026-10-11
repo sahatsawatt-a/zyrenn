@@ -18,11 +18,14 @@ The kinds of step a workflow can have, to build one with create-workflow and upd
 "type": every kind -- its type, name, group, whether it starts a run, its ways out, and what it does.
 With "type": that kind in full -- each setting's name, kind (text, template with {{ formulas }},
 formula without them, choice with its options, connection of the services listed, room, table,
-column, fields as a list of {name, value}, number, cron, model, timezone, workflow), whether it is
-needed, its default, and when it applies.
+column, folder as a Drive path like "Receipts/2026", fields as a list of {name, value}, number, cron,
+model, timezone, workflow), whether it is needed, its default, and when it applies.
 
 Also "choices": what settings may point at, by ref_id -- the owner's connections (name and service,
-never a secret), chat rooms, tables with their columns, and the workflows a "For each" may run.
+never a secret), chat rooms, tables with their columns, and the workflows a "For each" may run -- and
+the Drive's folders by path. A file goes from step to step as its Drive ref_id: "Telegram: get the
+file" (telegram.file) and "LINE: get the file" (line.file) fetch one sent to a bot or a channel into
+the Drive, and the send, chat and AI steps take one by {{ node("save").ref_id }}.
 A step reads what came before as trigger.…, input.… and node("key").… in its templates and formulas.
 TEXT)]
 class ListWorkflowSteps extends WorkflowTool

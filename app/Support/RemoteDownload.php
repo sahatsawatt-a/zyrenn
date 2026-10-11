@@ -28,14 +28,29 @@ class RemoteDownload
     private const CHUNK_BYTES = 1024 * 1024;
 
     /**
-     * @return array{path: string, name: string} a temporary file the caller deletes, and a name for it
+     * @param  array<string, string>  $headers  sent to the URL itself, never on to where it redirects
+     * @return array{path: string, name: string, type: string} a temporary file the caller deletes, a name for it, and its Content-Type
      *
      * @throws RemoteDownloadFailed
      */
-    public static function fetch(string $url, int $maxBytes): array
+    public static function fetch(string $url, int $maxBytes, int $timeout = 300, array $headers = []): array
     {
-        [$response, $url] = self::start($url);
+        [$response, $url] = self::start($url, $timeout, $headers);
 
+        return self::keep($response, $url, $maxBytes);
+    }
+
+    /**
+     * An answer still arriving (asked for with 'stream'), copied into a
+     * temporary file: for a download from an address already known to be
+     * public, such as a service's own API.
+     *
+     * @return array{path: string, name: string, type: string} a temporary file the caller deletes, a name for it, and its Content-Type
+     *
+     * @throws RemoteDownloadFailed
+     */
+    public static function keep(Response $response, string $url, int $maxBytes): array
+    {
         if ((int) $response->header('Content-Length') > $maxBytes) {
             throw new RemoteDownloadFailed(self::tooBig($maxBytes));
         }
@@ -43,6 +58,7 @@ class RemoteDownload
         return [
             'path' => self::save($response->toPsrResponse()->getBody(), $maxBytes),
             'name' => self::nameFor($url, $response->header('Content-Type')),
+            'type' => strtolower(trim(explode(';', $response->header('Content-Type'))[0])),
         ];
     }
 
@@ -81,11 +97,12 @@ class RemoteDownload
      * A successful answer from a public address, after following redirects
      * by hand, and the URL it came from in the end; its body not yet read.
      *
+     * @param  array<string, string>  $headers  sent to the URL itself, never on to where it redirects
      * @return array{Response, string}
      *
      * @throws RemoteDownloadFailed
      */
-    public static function start(string $url, int $timeout = 300): array
+    public static function start(string $url, int $timeout = 300, array $headers = []): array
     {
         for ($hop = 0; $hop <= self::MAX_REDIRECTS; $hop++) {
             [$host, $port, $ip] = self::publicTarget($url);
@@ -95,6 +112,7 @@ class RemoteDownload
                     ->connectTimeout(min(10, $timeout))
                     ->timeout($timeout)
                     ->withUserAgent('Zyrenn')
+                    ->withHeaders($hop === 0 ? $headers : [])
                     ->withOptions([
                         'stream' => true,
                         // An IPv6 literal is already the address to connect to

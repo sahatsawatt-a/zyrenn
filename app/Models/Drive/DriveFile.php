@@ -133,6 +133,27 @@ class DriveFile extends Model
     }
 
     /**
+     * Store bytes already on this machine -- fetched, or written here, not
+     * sent as a PHP upload -- under a name. The caller deletes $path after.
+     */
+    public static function keep(string $path, string $name, Owner $owner, ?DriveFolder $folder = null, ?User $by = null): self
+    {
+        // test: true -- these bytes never came through PHP's upload handling
+        return self::store(new UploadedFile($path, $name, mime_content_type($path) ?: null, null, true), $owner, $folder, $by);
+    }
+
+    /**
+     * Only the file name itself, so nothing can aim a file at a path of its
+     * choosing; "" when what is left is not a usable name.
+     */
+    public static function nameOnly(string $name): string
+    {
+        $name = mb_substr(basename(str_replace('\\', '/', trim($name))), 0, 255);
+
+        return in_array($name, ['.', '..'], true) ? '' : $name;
+    }
+
+    /**
      * Bucket a file by its mime type (preferred) or extension.
      */
     public static function kindFor(?string $mime, ?string $ext): string

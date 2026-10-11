@@ -9,7 +9,6 @@ use App\Models\User;
 use App\Support\RemoteDownload;
 use App\Support\RemoteDownloadFailed;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
-use Illuminate\Http\UploadedFile;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
@@ -78,16 +77,13 @@ class UploadFile extends DriveTool
     {
         // Only the file name itself: a client should not be able to aim the
         // upload at a path of its choosing
-        $name = basename(str_replace('\\', '/', trim($name)));
+        $name = DriveFile::nameOnly($name);
 
-        if ($name === '' || $name === '.' || $name === '..') {
+        if ($name === '') {
             return Response::error('That name is not a usable file name.');
         }
 
-        $folder = $this->ensureFolderAt($owner, $folder, $user);
-
-        // test: true -- these bytes were fetched or written here, not sent as a PHP upload
-        $file = DriveFile::store(new UploadedFile($temp, $name, mime_content_type($temp) ?: null, null, true), $owner, $folder, $user);
+        $file = DriveFile::keep($temp, $name, $owner, $this->ensureFolderAt($owner, $folder, $user), $user);
 
         return Response::structured($this->summary($file));
     }

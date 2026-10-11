@@ -478,7 +478,7 @@ class WorkflowWorldTest extends TestCase
         $user = User::factory()->create();
         $channel = Connection::factory()->for($user)->create(['name' => 'Shop', 'service' => 'line', 'settings' => [], 'secrets' => ['channel_access_token' => 'tok', 'channel_secret' => 'line-secret']]);
         $workflow = $this->listening($user, $this->node('heard', 'trigger.line', ['connection' => $channel->ref_id]), [
-            $this->node('answer', 'line.send', ['connection' => $channel->ref_id, 'mode' => 'reply', 'text' => 'Got "{{ trigger.text }}"']),
+            $this->node('answer', 'line.reply', ['connection' => $channel->ref_id, 'text' => 'Got "{{ trigger.text }}"']),
         ]);
         $body = json_encode(['events' => [[
             'type' => 'message', 'webhookEventId' => 'ev1', 'replyToken' => 'rt-1',
@@ -493,6 +493,52 @@ class WorkflowWorldTest extends TestCase
 
         $this->assertSame(1, $workflow->runs()->count());
         Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/message/reply') && $request['replyToken'] === 'rt-1' && $request['messages'][0]['text'] === 'Got "hi"');
+    }
+
+    public function test_replying_and_pushing_are_lines_two_calls_each_a_step_of_its_own()
+    {
+        Http::fake(['api.line.me/*' => Http::response([])]);
+        $user = User::factory()->create();
+        $channel = Connection::factory()->for($user)->create(['name' => 'Shop', 'service' => 'line', 'settings' => [], 'secrets' => ['channel_access_token' => 'tok', 'channel_secret' => 'line-secret']]);
+        $heard = ['service' => 'line', 'chat' => ['id' => 'U9'], 'sender' => ['id' => 'U9'], 'text' => 'hi', 'reply' => ['token' => 'rt-9', 'to' => null]];
+        $start = function (array $steps) use ($user, $channel, $heard): WorkflowRun {
+            $nodes = [$this->node('heard', 'trigger.line', ['connection' => $channel->ref_id]), ...$steps];
+            $workflow = Workflow::factory()->for($user)->steps($nodes, array_map(fn (array $step) => $this->edge('heard', $step['id']), $steps))->create();
+            $run = Engine::start($workflow, $workflow->freeze(WorkflowVersion::PUBLISHED, $user), null, 'line', 'heard', $heard);
+            $this->work();
+
+            return $run->fresh();
+        };
+
+        $run = $start([
+            $this->node('answer', 'line.reply', ['connection' => $channel->ref_id, 'token' => '{{ trigger.reply.token }}', 'text' => 'Hello']),
+            $this->node('later', 'line.send', ['connection' => $channel->ref_id, 'to' => '{{ trigger.chat.id }}', 'text' => 'And again']),
+        ]);
+
+        $this->assertSame(RunStatus::Succeeded, $run->status, (string) $run->error);
+        Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/message/reply') && $request['replyToken'] === 'rt-9' && $request['messages'][0]['text'] === 'Hello');
+        Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/message/push') && $request['to'] === 'U9' && $request->hasHeader('X-Line-Retry-Key'));
+
+        // A reply needs the token a LINE message came with
+        $run = $start([$this->node('answer', 'line.reply', ['connection' => $channel->ref_id, 'token' => '{{ trigger.reply.to }}', 'text' => 'Hello'])]);
+        $this->assertStringContainsString('There is no reply token', $this->step($run, 'answer')->error['message']);
+
+        // One published while "Send on LINE" still chose between the two goes on answering
+        Http::fake(['api.line.me/*' => Http::response([])]);
+        $workflow = Workflow::factory()->for($user)->steps([
+            $this->node('heard', 'trigger.line', ['connection' => $channel->ref_id]),
+            $this->node('old', 'line.send', ['connection' => $channel->ref_id, 'text' => 'As before']),
+        ], [$this->edge('heard', 'old')])->create();
+        $version = $workflow->freeze(WorkflowVersion::PUBLISHED, $user);
+        $frozen = $version->definition;
+        $frozen['nodes'][1]['config']['mode'] = 'reply';
+        // A version is never changed once written, so as it was written then
+        DB::table('workflow_versions')->where('id', $version->id)->update(['definition' => json_encode($frozen)]);
+        $run = Engine::start($workflow, $version->fresh(), null, 'line', 'heard', $heard);
+        $this->work();
+
+        $this->assertSame(RunStatus::Succeeded, $run->fresh()->status, (string) $run->fresh()->error);
+        Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/message/reply') && $request['messages'][0]['text'] === 'As before');
     }
 
     // --- webhooks and schedules ---

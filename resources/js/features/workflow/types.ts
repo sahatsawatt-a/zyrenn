@@ -14,6 +14,7 @@ export type SettingType =
     | 'connection'
     | 'room'
     | 'table'
+    | 'folder'
     | 'column'
     | 'model'
     | 'timezone'
@@ -38,6 +39,8 @@ export type Setting = {
     linked?: boolean;
     // A Switch's ways: each named value a formula, each name a way out
     ways?: boolean;
+    // A folder: left empty, every folder rather than the top of the Drive
+    anywhere?: boolean;
 };
 
 // What a workflow's steps may choose from: its owner's connections, chats
@@ -56,6 +59,8 @@ export type Options = {
         title: string;
         columns: { name: string; label: string; type: string }[];
     }[];
+    // Its owner's Drive folders, each by its path: "Receipts/2026"
+    folders: string[];
     hooks: string | null;
     timezone: string;
     // Its owner's workflows another may run ("When run by another workflow")

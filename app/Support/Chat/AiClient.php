@@ -84,7 +84,7 @@ class AiClient
     /**
      * Ask for an answer to a conversation and hand it over as it arrives.
      *
-     * @param  list<array{role: string, content: string}>  $messages
+     * @param  list<array{role: string, content: string|list<array<string, mixed>>}>  $messages  content in parts when pictures go with it
      * @return Generator<int, string>
      *
      * @throws AiFailed

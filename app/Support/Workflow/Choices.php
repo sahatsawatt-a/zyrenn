@@ -4,6 +4,7 @@ namespace App\Support\Workflow;
 
 use App\Models\Chat\ChatRoom;
 use App\Models\Connection;
+use App\Models\Drive\DriveFolder;
 use App\Models\Owner;
 use App\Models\Table\Table;
 use App\Models\Table\TableColumn;
@@ -39,6 +40,9 @@ final class Choices
                     'columns' => $table->columns->reject(fn (TableColumn $column) => $column->is_primary)
                         ->map(fn (TableColumn $column) => $column->only(['name', 'label', 'type']))->values(),
                 ])->values(),
+            // The Drive's folders, each by its path
+            'folders' => collect(DriveFolder::pathsById($owner->driveFolders()->get(['id', 'parent_id', 'name']), '/'))
+                ->sort(SORT_NATURAL | SORT_FLAG_CASE)->values(),
             // What a "For each" may run: published, started "When run by another workflow"
             'workflows' => $owner->workflows()->when($except, fn ($q) => $q->whereKeyNot($except->id))
                 ->whereNotNull('published_version_id')

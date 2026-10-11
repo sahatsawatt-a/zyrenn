@@ -412,6 +412,7 @@ final class Definition
 
                 case 'template':
                 case 'room':
+                case 'folder':
                     $trees = Template::parse((string) $value);
                     break;
 

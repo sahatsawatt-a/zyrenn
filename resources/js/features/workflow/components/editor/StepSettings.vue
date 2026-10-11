@@ -206,6 +206,36 @@ function pickRoom(setting: Setting, picked: string | null) {
     set(setting, picked === FORMULA ? '{{ node("").room }}' : picked);
 }
 
+// A Drive folder: one there already, by its path, or a path of one's own --
+// which can be worked out, and is made the first time it is needed
+const OWN_FOLDER = '__own__';
+const folderTyped = ref<Record<string, boolean>>({});
+
+const folderOptions = computed(() => [
+    ...(props.options.folders ?? []).map((path) => ({
+        value: path,
+        label: path,
+    })),
+    { value: OWN_FOLDER, label: 'Another, by its path…' },
+]);
+
+const folderMode = (setting: Setting) => {
+    const now = String(value(setting) ?? '');
+
+    return folderTyped.value[setting.name] ||
+        (now !== '' && !(props.options.folders ?? []).includes(now))
+        ? OWN_FOLDER
+        : now || null;
+};
+
+function pickFolder(setting: Setting, picked: string | null) {
+    folderTyped.value[setting.name] = picked === OWN_FOLDER;
+
+    if (picked !== OWN_FOLDER) {
+        set(setting, picked);
+    }
+}
+
 // When it runs: a usual time, or a cron line of one's own
 const CRONS = [
     { value: '*/5 * * * *', label: 'Every 5 minutes' },
@@ -555,6 +585,44 @@ const readable = computed(() => [
                         data-takes-data="template"
                         @update:model-value="set(setting, String($event))"
                     />
+                </div>
+
+                <!-- A Drive folder: chosen, or a path written out -->
+                <div v-else-if="setting.type === 'folder'" class="grid gap-2">
+                    <Label :for="`setting-${setting.name}`">{{
+                        setting.label
+                    }}</Label>
+                    <PickOne
+                        :id="`setting-${setting.name}`"
+                        :model-value="folderMode(setting)"
+                        :options="folderOptions"
+                        :none="
+                            setting.anywhere
+                                ? 'Anywhere in the Drive'
+                                : 'The top of the Drive'
+                        "
+                        :disabled="!editable"
+                        @update:model-value="pickFolder(setting, $event)"
+                    />
+                    <Input
+                        v-if="folderMode(setting) === OWN_FOLDER"
+                        :model-value="String(value(setting) ?? '')"
+                        class="font-mono text-xs"
+                        placeholder="Receipts/{{ trigger.sender.name }}"
+                        :disabled="!editable"
+                        aria-label="Folder, by its path"
+                        data-takes-data="template"
+                        @update:model-value="set(setting, String($event))"
+                    />
+                    <p
+                        v-if="
+                            folderMode(setting) === OWN_FOLDER &&
+                            !setting.anywhere
+                        "
+                        class="text-muted-foreground text-xs"
+                    >
+                        Folders not there yet are made.
+                    </p>
                 </div>
 
                 <!-- When: a usual time, or a cron line -->
