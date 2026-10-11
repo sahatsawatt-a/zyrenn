@@ -139,10 +139,23 @@ await runBoard(
         await settings
             .locator('#setting-message')
             .fill('Big order from {{ trigger.name }}');
+        const readable = await page.locator('[data-test-data]').innerText();
         check(
-            'a step names what it can read: the trigger, its input, and the steps before it',
-            (await settings.innerText()).includes('node("if")') &&
-                (await settings.innerText()).includes('node("start")'),
+            'beside a step is what it can read: the trigger, its input, and the steps before it',
+            ['trigger', 'input', 'node("if")', 'node("start")'].every((name) =>
+                readable.includes(name),
+            ),
+            readable,
+        );
+        check(
+            'its key and what a failure does are kept under "More"',
+            (await settings.locator('#step-key').count()) === 0,
+        );
+        await settings.locator('[data-more-settings]').click();
+        check(
+            'where the key later steps read it by can be changed',
+            (await settings.locator('#step-key').inputValue()) === 'log' &&
+                (await settings.locator('#step-on-error').count()) === 1,
         );
 
         await open('log_2');
@@ -234,15 +247,57 @@ await runBoard(
 
         await page.locator('[data-run-step="if"]').click();
         await settings.waitFor();
+        const flat = async (locator) =>
+            (await locator.innerText()).replace(/\s+/g, ' ');
+        const given = page.locator('[data-run-panel] [data-run-input]');
+        const gave = page.locator('[data-run-panel] [data-run-output]');
         check(
-            'choosing a step shows what it was given and gave out',
-            (await page.locator('[data-run-input]').innerText()).includes(
-                '"total": 150',
+            'each step says in a line what it gave, or which way it went',
+            (await flat(page.locator('[data-run-step="if"]'))).includes(
+                'went "true"',
             ) &&
-                (await page.locator('[data-run-panel]').innerText()).includes(
-                    'went "true"',
+                (await flat(page.locator('[data-run-step="start"]'))).includes(
+                    'total: 150',
+                ) &&
+                (await flat(page.locator('[data-run-step="log"]'))).includes(
+                    'Big order from Ada!',
                 ),
+            await flat(page.locator('[data-run-step="start"]')),
         );
+        const [left, right] = [
+            await given.boundingBox(),
+            await gave.boundingBox(),
+        ];
+        check(
+            'a step opened shows what it was given beside what it gave, part by part',
+            (await flat(given)).includes('total 150') &&
+                (await flat(gave)).includes('name Ada') &&
+                Math.abs(left.y - right.y) < 2 &&
+                left.x + left.width <= right.x,
+            await flat(given),
+        );
+
+        await page.locator('[data-run-expand]').click();
+        const modal = page.locator('[data-run-modal]');
+        await modal.waitFor();
+        const large = await modal.locator('[data-run-output]').boundingBox();
+        check(
+            'and opens larger over the page, the two still side by side',
+            large.width > right.width &&
+                (await flat(modal.locator('[data-run-input]'))).includes(
+                    'total 150',
+                ),
+            `${Math.round(right.width)} wide, then ${Math.round(large.width)}`,
+        );
+        await modal.locator('[data-run-raw]').click();
+        check(
+            'where it can be read as it is kept, to copy out',
+            (await modal.locator('[data-run-output]').innerText()).includes(
+                '"total": 150',
+            ),
+        );
+        await page.keyboard.press('Escape');
+        await modal.waitFor({ state: 'detached' });
         await page.screenshot({ path: `${SHOTS}/workflow-run.png` });
 
         // A formula that can't be worked out fails the run, and says where

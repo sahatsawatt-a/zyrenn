@@ -22,7 +22,8 @@ defineProps<{ icon: Component; title: string; description: string }>();
                 </p>
             </div>
         </div>
-        <div class="flex gap-2">
+        <!-- Onto a row or two of their own where the title leaves no room -->
+        <div class="flex flex-wrap gap-2">
             <slot />
         </div>
     </div>

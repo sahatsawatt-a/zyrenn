@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { Braces, Check, CircleAlert, Copy, Plus, Trash2, X } from '@lucide/vue';
+import {
+    Braces,
+    Check,
+    ChevronRight,
+    CircleAlert,
+    Copy,
+    Plus,
+    Trash2,
+    X,
+} from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,8 +31,9 @@ import {
 } from '@/routes/connections';
 import { index as projectConnections } from '@/routes/projects/connections';
 
-// One step's settings, beside the canvas: its name, the key formulas know it
-// by, and whatever its kind is set up with.
+// One step's settings, beside the canvas: its name and whatever its kind is
+// set up with. What is seldom changed -- the key formulas know it by, what a
+// failure does -- is under "More".
 
 const props = defineProps<{
     step: StepNode;
@@ -32,13 +42,13 @@ const props = defineProps<{
     editable: boolean;
     // Keys of the other steps, which this one's can't be
     takenKeys: Set<string>;
-    // Keys of the steps before it, whose output it can read
-    before: string[];
     // What its settings may choose from
     options: Options;
     // The test data beside it, and whether a part of it is being dragged
     dataShown: boolean;
     dragging: boolean;
+    // One of two tabs over the canvas, on a narrow screen
+    compact?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -66,6 +76,12 @@ const keyProblem = computed(() => {
 
     return props.takenKeys.has(key.value) ? 'Another step has this key.' : '';
 });
+
+// What its kind does can run to a paragraph
+const wholeDescription = ref(false);
+
+// Seldom changed, so folded away -- unless it already says something unusual
+const more = ref(props.step.onError === 'continue');
 
 function changeKey(value: string) {
     key.value = value;
@@ -317,18 +333,15 @@ async function copyHook(token: unknown) {
     copied.value = true;
     setTimeout(() => (copied.value = false), 1500);
 }
-
-const readable = computed(() => [
-    'trigger',
-    ...(props.type?.trigger ? [] : ['input']),
-    ...props.before.map((key) => `node("${key}")`),
-]);
 </script>
 
 <template>
     <aside
-        class="bg-background flex w-80 shrink-0 flex-col border-l"
-        :class="{ 'taking-data': dragging }"
+        class="bg-background flex min-h-0 flex-col"
+        :class="[
+            compact ? 'flex-1' : 'w-80 shrink-0 border-l',
+            { 'taking-data': dragging },
+        ]"
         data-step-settings
     >
         <div class="flex items-start gap-3 border-b p-4">
@@ -342,11 +355,31 @@ const readable = computed(() => [
                 <p class="text-sm font-medium">
                     {{ type?.label ?? step.type }}
                 </p>
-                <p class="text-muted-foreground text-xs leading-relaxed">
+                <!-- In two lines; all of it when asked -->
+                <p
+                    class="text-muted-foreground cursor-pointer text-xs leading-relaxed"
+                    :class="{ 'line-clamp-2': !wholeDescription }"
+                    :title="wholeDescription ? undefined : type?.description"
+                    data-step-description
+                    @click="wholeDescription = !wholeDescription"
+                >
                     {{ type?.description }}
                 </p>
             </div>
             <Button
+                v-if="!dataShown"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Show the test data"
+                title="Test data: what a run gave, to set this up from"
+                data-show-test-data
+                @click="emit('showData')"
+            >
+                <Braces />
+            </Button>
+            <!-- Over the canvas, its tabs close it -->
+            <Button
+                v-if="!compact"
                 size="icon-sm"
                 variant="ghost"
                 aria-label="Close"
@@ -383,25 +416,6 @@ const readable = computed(() => [
                         emit('update', { label: String($event) })
                     "
                 />
-            </div>
-
-            <div class="grid gap-2">
-                <Label for="step-key">Key</Label>
-                <Input
-                    id="step-key"
-                    :model-value="key"
-                    class="font-mono text-xs"
-                    :disabled="!editable"
-                    maxlength="40"
-                    @update:model-value="changeKey(String($event))"
-                />
-                <p v-if="keyProblem" class="text-destructive text-xs">
-                    {{ keyProblem }}
-                </p>
-                <p v-else class="text-muted-foreground text-xs">
-                    Later steps read its output as
-                    <code class="text-foreground">node("{{ key }}")</code>.
-                </p>
             </div>
 
             <template
@@ -780,49 +794,67 @@ const readable = computed(() => [
                 </p>
             </template>
 
-            <div v-if="!type?.trigger" class="grid gap-2">
-                <Label for="step-on-error">If it fails</Label>
-                <PickOne
-                    id="step-on-error"
-                    :model-value="step.onError"
-                    :options="[
-                        { value: 'stop', label: 'Stop the run' },
-                        {
-                            value: 'continue',
-                            label: 'Carry on, passing on what went wrong',
-                        },
-                    ]"
-                    :disabled="!editable"
-                    @update:model-value="
-                        emit('update', {
-                            onError:
-                                $event === 'continue' ? 'continue' : 'stop',
-                        })
-                    "
-                />
-            </div>
+            <div class="border-t pt-3">
+                <button
+                    type="button"
+                    class="text-muted-foreground hover:text-foreground flex w-full items-center gap-1 text-xs font-medium"
+                    :aria-expanded="more"
+                    data-more-settings
+                    @click="more = !more"
+                >
+                    <ChevronRight
+                        class="size-3.5 transition-transform"
+                        :class="{ 'rotate-90': more }"
+                    />
+                    More
+                    <code class="ml-auto font-normal">{{ key }}</code>
+                </button>
 
-            <div class="bg-muted/30 rounded-lg border p-3">
-                <div class="mb-1.5 flex items-center gap-2">
-                    <p class="flex-1 text-xs font-medium">It can read</p>
-                    <Button
-                        v-if="!dataShown"
-                        size="sm"
-                        variant="outline"
-                        class="h-6 px-2 text-[11px]"
-                        data-show-test-data
-                        @click="emit('showData')"
-                    >
-                        <Braces class="size-3" /> Test data
-                    </Button>
-                </div>
-                <div class="flex flex-wrap gap-1">
-                    <code
-                        v-for="name in readable"
-                        :key="name"
-                        class="bg-background rounded border px-1.5 py-0.5 text-[11px]"
-                        >{{ name }}</code
-                    >
+                <div v-if="more || keyProblem" class="mt-4 space-y-5">
+                    <div class="grid gap-2">
+                        <Label for="step-key">Key</Label>
+                        <Input
+                            id="step-key"
+                            :model-value="key"
+                            class="font-mono text-xs"
+                            :disabled="!editable"
+                            maxlength="40"
+                            @update:model-value="changeKey(String($event))"
+                        />
+                        <p v-if="keyProblem" class="text-destructive text-xs">
+                            {{ keyProblem }}
+                        </p>
+                        <p v-else class="text-muted-foreground text-xs">
+                            Later steps read its output as
+                            <code class="text-foreground"
+                                >node("{{ key }}")</code
+                            >.
+                        </p>
+                    </div>
+
+                    <div v-if="!type?.trigger" class="grid gap-2">
+                        <Label for="step-on-error">If it fails</Label>
+                        <PickOne
+                            id="step-on-error"
+                            :model-value="step.onError"
+                            :options="[
+                                { value: 'stop', label: 'Stop the run' },
+                                {
+                                    value: 'continue',
+                                    label: 'Carry on, passing on what went wrong',
+                                },
+                            ]"
+                            :disabled="!editable"
+                            @update:model-value="
+                                emit('update', {
+                                    onError:
+                                        $event === 'continue'
+                                            ? 'continue'
+                                            : 'stop',
+                                })
+                            "
+                        />
+                    </div>
                 </div>
             </div>
         </div>

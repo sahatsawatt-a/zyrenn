@@ -1,18 +1,29 @@
 <script setup lang="ts">
-import { Search } from '@lucide/vue';
+import { PanelLeftClose, Search, X, Zap } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import { Button } from '@/components/ui/button';
 import { iconOf, toneOf } from '@/features/workflow/steps';
 import type { NodeType } from '@/features/workflow/types';
 
 // The kinds of step, by group: dragged onto the canvas, or clicked to add
-// one beside the last.
+// one beside the last -- or after the step whose "+" was pressed. Each is
+// its name alone; what it does is said when it is pointed at, and beside
+// the canvas once it is there.
 
 const props = defineProps<{
     types: NodeType[];
     groups: Record<string, string>;
+    // The step the next one is joined to, and by which way out
+    after?: { label: string; way: string } | null;
+    // Over the canvas rather than beside it, on a narrow screen
+    compact?: boolean;
 }>();
 
-const emit = defineEmits<{ add: [type: NodeType] }>();
+const emit = defineEmits<{
+    add: [type: NodeType];
+    close: [];
+    forget: [];
+}>();
 
 const query = ref('');
 
@@ -26,6 +37,8 @@ const shown = computed(() =>
                 .filter(
                     (type) =>
                         type.group === key &&
+                        // Nothing leads into what starts a run
+                        !(props.after && type.trigger) &&
                         `${type.label} ${type.description} ${title}`
                             .toLowerCase()
                             .includes(query.value.trim().toLowerCase()),
@@ -46,11 +59,12 @@ function drag(event: DragEvent, type: NodeType) {
 
 <template>
     <aside
-        class="bg-background flex w-60 shrink-0 flex-col border-r"
+        class="bg-background flex flex-col"
+        :class="compact ? 'absolute inset-0 z-20' : 'w-52 shrink-0 border-r'"
         data-step-palette
     >
-        <div class="border-b p-3">
-            <div class="relative">
+        <div class="flex items-center gap-1.5 border-b p-2">
+            <div class="relative min-w-0 flex-1">
                 <Search
                     class="text-muted-foreground absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2"
                 />
@@ -62,12 +76,42 @@ function drag(event: DragEvent, type: NodeType) {
                     class="bg-muted/40 focus-visible:ring-ring/50 h-8 w-full rounded-md border pr-2 pl-8 text-sm outline-none focus-visible:ring-[3px]"
                 />
             </div>
+            <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Hide the steps"
+                data-palette-close
+                @click="emit('close')"
+            >
+                <X v-if="compact" />
+                <PanelLeftClose v-else />
+            </Button>
         </div>
 
-        <div class="flex-1 space-y-4 overflow-y-auto p-3">
+        <p
+            v-if="after"
+            class="bg-primary/5 flex items-center gap-1.5 border-b py-1.5 pr-1.5 pl-3 text-xs"
+            data-palette-after
+        >
+            <span class="min-w-0 flex-1 truncate">
+                Next after <b class="font-medium">{{ after.label }}</b>
+                <template v-if="after.way"> · {{ after.way }}</template>
+            </span>
+            <Button
+                size="icon-sm"
+                variant="ghost"
+                class="size-6"
+                aria-label="Add it on its own instead"
+                @click="emit('forget')"
+            >
+                <X />
+            </Button>
+        </p>
+
+        <div class="flex-1 space-y-3 overflow-y-auto p-2">
             <section v-for="group in shown" :key="group.key">
                 <h3
-                    class="text-muted-foreground mb-1.5 px-1 text-[11px] font-medium tracking-wide uppercase"
+                    class="text-muted-foreground mb-1 px-1.5 text-[11px] font-medium tracking-wide uppercase"
                 >
                     {{ group.title }}
                 </h3>
@@ -76,43 +120,40 @@ function drag(event: DragEvent, type: NodeType) {
                     :key="type.type"
                     type="button"
                     draggable="true"
-                    class="hover:bg-muted/60 group flex w-full cursor-grab items-start gap-2.5 rounded-lg p-2 text-left transition-colors active:cursor-grabbing"
+                    class="hover:bg-muted/60 flex w-full cursor-grab items-center gap-2 rounded-md px-1.5 text-left transition-colors active:cursor-grabbing"
+                    :class="compact ? 'py-2' : 'py-1'"
                     :title="type.description"
                     :data-palette-step="type.type"
                     @dragstart="drag($event, type)"
                     @click="emit('add', type)"
                 >
                     <span
-                        class="flex size-7 shrink-0 items-center justify-center rounded-md"
+                        class="flex size-6 shrink-0 items-center justify-center rounded-md"
                         :class="toneOf(type).tile"
                     >
                         <component :is="iconOf(type)" class="size-3.5" />
                     </span>
-                    <span class="min-w-0">
+                    <span class="min-w-0 flex-1">
+                        <span class="block text-sm leading-tight">{{
+                            type.label
+                        }}</span>
+                        <!-- Nothing to point with on a phone: what it does, in a line -->
                         <span
-                            class="flex items-center gap-1.5 text-sm font-medium"
-                            >{{ type.label }}
-                            <span
-                                v-if="type.trigger"
-                                class="rounded bg-emerald-500/10 px-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-400"
-                                >starts a run</span
-                            ></span
-                        >
-                        <span
-                            class="text-muted-foreground line-clamp-2 block text-xs"
+                            v-if="compact"
+                            class="text-muted-foreground line-clamp-1 text-xs"
                             >{{ type.description }}</span
                         >
                     </span>
+                    <Zap
+                        v-if="type.trigger"
+                        class="size-3 shrink-0 text-emerald-600 dark:text-emerald-400"
+                        aria-label="Starts a run"
+                    />
                 </button>
             </section>
             <p v-if="!shown.length" class="text-muted-foreground px-1 text-sm">
                 No step matches.
             </p>
         </div>
-
-        <p class="text-muted-foreground border-t p-3 text-xs">
-            Drag a step onto the canvas, or click to add it. More kinds come
-            with chat, tables, AI and the outside world.
-        </p>
     </aside>
 </template>

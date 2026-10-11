@@ -139,12 +139,14 @@ await runBoard(
             .locator('[data-run-status]', { hasText: 'Succeeded' })
             .waitFor({ timeout: 60000 });
         await page.locator('[data-run-step="each"]').click();
-        const output = await page.locator('[data-run-output]').innerText();
+        const output = (
+            await page.locator('[data-run-output]').innerText()
+        ).replace(/\s+/g, ' ');
         check(
             'For each runs the other workflow per item and gathers what each gave',
-            output.includes('"doubled": 2') &&
-                output.includes('"doubled": 6') &&
-                output.includes('"succeeded": 3'),
+            output.includes('doubled 2') &&
+                output.includes('doubled 6') &&
+                output.includes('succeeded 3'),
             output.replace(/\s+/g, ' ').slice(0, 160),
         );
         check(

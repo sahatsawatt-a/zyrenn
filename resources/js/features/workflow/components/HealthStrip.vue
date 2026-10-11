@@ -73,12 +73,15 @@ const ms = (value: number | null) => (value === null ? '–' : duration(value));
                 >{{ health.runs.going }} going ·
                 {{ health.runs.waiting }} waiting</span
             >
+            <!-- How fast, where there is room to say it -->
             <span
+                class="max-sm:hidden"
                 title="Half of runs took less, and 95 in 100 less than the second"
                 >Run time {{ ms(health.duration_ms.p50) }} /
                 {{ ms(health.duration_ms.p95) }}</span
             >
             <span
+                class="max-sm:hidden"
                 title="How long a step waited for a worker: half, and 95 in 100, waited less"
                 >Wait {{ ms(health.queue_ms.p50) }} /
                 {{ ms(health.queue_ms.p95) }}</span
