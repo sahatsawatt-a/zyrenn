@@ -4,7 +4,7 @@
 //
 // A model answering in a room is a workflow's: tests/e2e/workflow-steps.mjs
 // (a chat answered by a workflow) and tests/e2e/workflow-ai.mjs (Ask AI).
-import { runBoard, tinker } from './harness.mjs';
+import { SHOTS, runBoard, tinker } from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);
 const SAID = `Note to self ${RUN}: buy coffee`;
@@ -59,6 +59,78 @@ await runBoard(
                 `Note to self ${RUN}`,
             ),
         );
+
+        // --- emoji: chosen from a list, put where the cursor was ---
+        const input = page.locator('[data-chat-input]');
+        const picker = page.locator('[data-chat-emoji-picker]');
+        await page.evaluate(() => localStorage.removeItem('chat.emoji.recent'));
+        await input.fill('Well done');
+        await input.evaluate((box) => box.setSelectionRange(4, 4));
+        await page.locator('[data-chat-emoji]').click();
+        await picker.waitFor();
+        await picker.locator('[data-emoji="😀"]').click();
+        await picker.getByRole('tab', { name: 'People' }).click();
+        await picker.locator('[data-emoji="👍"]').click();
+        check(
+            'emoji chosen go where the cursor was, one after another, the list still open',
+            (await input.inputValue()) === 'Well😀👍 done' &&
+                (await picker.count()) === 1,
+            await input.inputValue(),
+        );
+        await page.keyboard.press('Escape');
+        await picker.waitFor({ state: 'detached' });
+        await page.keyboard.type('!');
+        check(
+            'the list closed, writing carries on after them',
+            (await input.inputValue()) === 'Well😀👍! done' &&
+                (await picker.count()) === 0,
+            await input.inputValue(),
+        );
+        await input.press('Enter');
+        await page
+            .locator('[data-chat-user]', { hasText: 'Well😀👍! done' })
+            .waitFor();
+
+        await page.locator('[data-chat-emoji]').click();
+        const lately = await picker
+            .locator('[role="tabpanel"] [data-emoji]')
+            .evaluateAll((all) => all.map((one) => one.dataset.emoji).join(''));
+        check(
+            'the ones used lately are offered first, the last first',
+            lately === '👍😀' &&
+                (await picker
+                    .getByRole('tab', { name: 'Lately' })
+                    .getAttribute('aria-selected')) === 'true',
+            lately,
+        );
+        await picker.locator('[data-emoji="👍"]').click();
+        await page.keyboard.press('Escape');
+        await picker.waitFor({ state: 'detached' });
+        await input.press('Enter');
+        const large = page.locator('[data-chat-emoji-only]');
+        await large.waitFor();
+        const sizes = await page.evaluate(() => ({
+            emoji: parseFloat(
+                getComputedStyle(
+                    document.querySelector('[data-chat-emoji-only]'),
+                ).fontSize,
+            ),
+            words: parseFloat(
+                getComputedStyle(
+                    document.querySelector(
+                        '[data-chat-user] p:not([data-chat-emoji-only])',
+                    ),
+                ).fontSize,
+            ),
+        }));
+        check(
+            'a message that is only an emoji is drawn large, with nothing round it',
+            (await large.count()) === 1 &&
+                (await large.innerText()).trim() === '👍' &&
+                sizes.emoji > sizes.words * 2,
+            JSON.stringify(sizes),
+        );
+        await page.screenshot({ path: `${SHOTS}/chat-emoji.png` });
 
         const chatLink = page
             .locator('[data-sidebar="menu"]')

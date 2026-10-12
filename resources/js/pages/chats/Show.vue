@@ -27,6 +27,7 @@ import {
     shallowRef,
     watch,
 } from 'vue';
+import EmojiPicker from '@/features/chat/components/EmojiPicker.vue';
 import FaceViewer from '@/features/chat/components/FaceViewer.vue';
 import MessageFile from '@/features/chat/components/MessageFile.vue';
 import MessagePlace from '@/features/chat/components/MessagePlace.vue';
@@ -194,6 +195,26 @@ const hasEarlier = ref(props.hasEarlier);
 // One's own words sit on the right; in one's own room, every person's words are
 const isMine = (message: Message) =>
     message.role === 'user' && (!shared || message.author?.id === me);
+
+// Only emoji, and few: drawn large, with nothing round them, as a sticker is
+const EMOJI_ONLY =
+    /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Regional_Indicator}|\u200d|\ufe0f|\s)+$/u;
+const segmenter =
+    typeof Intl.Segmenter === 'function'
+        ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+        : null;
+
+const onlyEmoji = (message: Message) => {
+    const said = message.content.trim();
+
+    return (
+        said !== '' &&
+        !message.emojis?.length &&
+        /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(said) &&
+        EMOJI_ONLY.test(said) &&
+        [...(segmenter?.segment(said.replace(/\s+/g, '')) ?? said)].length <= 3
+    );
+};
 
 // --- how the conversation is laid out ---
 // Who said a message, so several from one person in a row read as one turn
@@ -741,6 +762,29 @@ function handle(
 
 const stop = () => abort?.abort();
 
+// An emoji goes where the cursor was when the message was left for the
+// picker, and the next after it; the picker closed, writing carries on there
+const caret = ref<number | null>(null);
+
+function addEmoji(emoji: string) {
+    const at = Math.min(caret.value ?? draft.value.length, draft.value.length);
+
+    draft.value = draft.value.slice(0, at) + emoji + draft.value.slice(at);
+    caret.value = at + emoji.length;
+}
+
+function backToWriting() {
+    const at = caret.value;
+
+    nextTick(() => {
+        input.value?.focus();
+
+        if (at !== null) {
+            input.value?.setSelectionRange(at, at);
+        }
+    });
+}
+
 function onKey(event: KeyboardEvent) {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
         event.preventDefault();
@@ -1015,7 +1059,14 @@ function saveSettings() {
                         class="flex max-w-[85%] min-w-0 flex-col items-end sm:max-w-[70%]"
                     >
                         <p
-                            v-if="message.content"
+                            v-if="message.content && onlyEmoji(message)"
+                            class="px-1 text-5xl leading-tight"
+                            data-chat-emoji-only
+                        >
+                            {{ message.content.trim() }}
+                        </p>
+                        <p
+                            v-else-if="message.content"
                             class="bg-primary text-primary-foreground rounded-2xl px-3.5 py-2 text-sm [overflow-wrap:anywhere] whitespace-pre-wrap"
                             :class="{ 'rounded-br-md': last }"
                         >
@@ -1122,7 +1173,14 @@ function saveSettings() {
                             >
                         </p>
                         <p
-                            v-if="message.content"
+                            v-if="message.content && onlyEmoji(message)"
+                            class="px-1 text-5xl leading-tight"
+                            data-chat-emoji-only
+                        >
+                            {{ message.content.trim() }}
+                        </p>
+                        <p
+                            v-else-if="message.content"
                             class="w-fit rounded-2xl px-3.5 py-2 text-sm [overflow-wrap:anywhere] whitespace-pre-wrap"
                             :class="[
                                 message.role === 'workflow' &&
@@ -1322,6 +1380,11 @@ function saveSettings() {
                     />
                     <PlaceDialog v-model:open="placing" @pick="attachPlace" />
                 </template>
+                <EmojiPicker
+                    :disabled="sending"
+                    @pick="addEmoji"
+                    @closed="backToWriting"
+                />
                 <textarea
                     ref="input"
                     v-model="draft"
@@ -1329,6 +1392,7 @@ function saveSettings() {
                     class="field-sizing-content max-h-48 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none"
                     placeholder="Write a message…"
                     data-chat-input
+                    @blur="caret = input?.selectionStart ?? null"
                     @keydown="onKey"
                     @paste="take($event.clipboardData?.files, $event)"
                 />
