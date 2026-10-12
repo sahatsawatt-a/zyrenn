@@ -38,15 +38,18 @@ async function signedIn(
     path,
     viewport,
     watch = () => {},
+    // Pixels drawn for each one of the page's: 2 for a picture worth keeping
+    deviceScaleFactor = 1,
 ) {
     mkdirSync(SHOTS, { recursive: true });
     const kept = `${SHOTS}/.session-${email}.json`;
+    const screen = { viewport, deviceScaleFactor };
     let context;
 
     try {
-        context = await browser.newContext({ viewport, storageState: kept });
+        context = await browser.newContext({ ...screen, storageState: kept });
     } catch {
-        context = await browser.newContext({ viewport });
+        context = await browser.newContext(screen);
     }
 
     const page = await context.newPage();
@@ -102,6 +105,7 @@ export async function openBoard(path = '/demo/konva', size = {}) {
                 problems.push(`pageerror: ${error.message.slice(0, 160)}`),
             );
         },
+        size.scale,
     );
 
     const check = (label, passed, detail = '') => {

@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/sidebar';
 import {
     dashboard,
+    guide,
     template_sample,
     tiptap_demo,
     konva_demo,
@@ -169,11 +170,11 @@ const footerNavItems: NavItem[] = [
         href: 'https://github.com/sahatsawatt-a/zyrenn',
         icon: FolderGit2,
     },
-    // {
-    //     title: 'Documentation',
-    //     href: '',
-    //     icon: BookOpen,
-    // },
+    {
+        title: 'Guide',
+        href: guide(),
+        icon: BookOpen,
+    },
 ];
 </script>
 

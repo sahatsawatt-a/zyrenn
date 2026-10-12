@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Link } from '@inertiajs/vue3';
 import {
     SidebarGroup,
     SidebarGroupContent,
@@ -15,6 +16,9 @@ type Props = {
 };
 
 defineProps<Props>();
+
+// Another site opens beside the app; a page of the app's own opens in it
+const outside = (item: NavItem) => toUrl(item.href).startsWith('http');
 </script>
 
 <template>
@@ -28,14 +32,21 @@ defineProps<Props>();
                         class="text-neutral-600 hover:text-neutral-800 dark:text-neutral-300 dark:hover:text-neutral-100"
                         as-child
                     >
-                        <a
+                        <component
+                            :is="outside(item) ? 'a' : Link"
                             :href="toUrl(item.href)"
-                            target="_blank"
-                            rel="noopener noreferrer"
+                            v-bind="
+                                outside(item)
+                                    ? {
+                                          target: '_blank',
+                                          rel: 'noopener noreferrer',
+                                      }
+                                    : {}
+                            "
                         >
                             <component :is="item.icon" />
                             <span>{{ item.title }}</span>
-                        </a>
+                        </component>
                     </SidebarMenuButton>
                 </SidebarMenuItem>
             </SidebarMenu>

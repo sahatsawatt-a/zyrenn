@@ -28,7 +28,8 @@ const ALONE = ['workflow-workers', 'workflow-load'];
 // before until it is fixed. note-links: the "Show as" menu of a pasted link
 // closes at once when the paste comes quickly after the card before it.
 const STEADY = { 'note-links': 40 };
-const NOT_SUITES = ['harness', 'run'];
+// guide-shots takes the guide's pictures: it checks nothing, and is run by hand
+const NOT_SUITES = ['harness', 'run', 'guide-shots'];
 
 const args = process.argv.slice(2);
 const headed = args.includes('--headed');

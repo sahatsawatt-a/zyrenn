@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CollabController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\GuideController;
 use App\Http\Middleware\VerifyCollabSecret;
 use Illuminate\Support\Facades\Route;
 
@@ -12,6 +13,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::owned(function () {
         Route::get('dashboard', DashboardController::class)->name('dashboard');
     });
+
+    // How the app is used, a topic a page
+    Route::get('guide/{topic?}', GuideController::class)->name('guide');
 
     // The collaboration server asks, with the browser's own cookie, who may open a shared note or board
     Route::get('collab/auth', [CollabController::class, 'auth'])->name('collab.auth');
