@@ -11,8 +11,9 @@ use Illuminate\Support\Facades\Http;
 /**
  * Whether a connection works, asked of the service itself in the cheapest
  * way it offers: the models a host lists, the bot Telegram says a token is,
- * the channel LINE says a token opens. A failure is an answer too, so it
- * comes back as ok: false rather than as an error. A token is never repeated
+ * the channel LINE says a token opens, what is left of a search key's
+ * allowance. A failure is an answer too, so it comes back as ok: false
+ * rather than as an error. A token is never repeated
  * in what comes back, even when the service says it.
  */
 class ConnectionCheck
@@ -31,6 +32,8 @@ class ConnectionCheck
         return match ($connection->service) {
             Services::TELEGRAM => $this->telegram($connection),
             Services::LINE => $this->line($connection),
+            Services::SERPAPI => $this->serpapi($connection),
+            Services::TAVILY => $this->tavily($connection),
             default => ['ok' => true, 'message' => 'Nothing to try ahead: it is checked when it is used.'],
         };
     }
@@ -102,5 +105,52 @@ class ConnectionCheck
         return ['ok' => false, 'message' => $response->status() === 401
             ? 'LINE refused the channel access token.'
             : "LINE answered with {$response->status()}."];
+    }
+
+    /**
+     * Asking of its account is free, and says how many searches are left.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    private function serpapi(Connection $connection): array
+    {
+        try {
+            $response = Http::timeout(10)->acceptJson()->get('https://serpapi.com/account.json', ['api_key' => $connection->secret('api_key') ?? '']);
+        } catch (ConnectionException) {
+            return ['ok' => false, 'message' => 'Could not reach SerpApi.'];
+        }
+
+        if (! $response->successful()) {
+            return ['ok' => false, 'message' => $response->status() === 401 ? 'SerpApi does not know this key.' : "SerpApi answered with {$response->status()}."];
+        }
+
+        $left = $response->json('total_searches_left');
+        $plan = $response->json('plan_name');
+
+        return ['ok' => true, 'message' => 'Works'.(is_numeric($left) ? ': '.number_format((int) $left).((int) $left === 1 ? ' search' : ' searches').' left'.(is_string($plan) && $plan !== '' ? " ({$plan})" : '') : '').'.'];
+    }
+
+    /**
+     * Asking what it has used is free, and says what is left of its credits.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    private function tavily(Connection $connection): array
+    {
+        try {
+            $response = Http::timeout(10)->acceptJson()->withToken($connection->secret('api_key') ?? '')->get('https://api.tavily.com/usage');
+        } catch (ConnectionException) {
+            return ['ok' => false, 'message' => 'Could not reach Tavily.'];
+        }
+
+        if (! $response->successful()) {
+            return ['ok' => false, 'message' => $response->status() === 401 ? 'Tavily does not know this key.' : "Tavily answered with {$response->status()}."];
+        }
+
+        $used = $response->json('account.plan_usage');
+        $limit = $response->json('account.plan_limit');
+        $plan = $response->json('account.current_plan');
+
+        return ['ok' => true, 'message' => 'Works'.(is_numeric($used) && is_numeric($limit) ? ': '.number_format((int) $used).' of '.number_format((int) $limit).' credits used'.(is_string($plan) && $plan !== '' ? " ({$plan})" : '') : '').'.'];
     }
 }

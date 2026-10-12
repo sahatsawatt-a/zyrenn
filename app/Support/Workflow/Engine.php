@@ -34,6 +34,7 @@ use App\Support\Workflow\Steps\LineSend;
 use App\Support\Workflow\Steps\Log;
 use App\Support\Workflow\Steps\ManualTrigger;
 use App\Support\Workflow\Steps\MergeStep;
+use App\Support\Workflow\Steps\SerpApiCall;
 use App\Support\Workflow\Steps\SetData;
 use App\Support\Workflow\Steps\Step;
 use App\Support\Workflow\Steps\StepContext;
@@ -43,6 +44,7 @@ use App\Support\Workflow\Steps\SwitchStep;
 use App\Support\Workflow\Steps\TableAdd;
 use App\Support\Workflow\Steps\TableFind;
 use App\Support\Workflow\Steps\TableUpdate;
+use App\Support\Workflow\Steps\TavilyCall;
 use App\Support\Workflow\Steps\TelegramCall;
 use App\Support\Workflow\Steps\TelegramFile;
 use App\Support\Workflow\Steps\TelegramSend;
@@ -125,6 +127,19 @@ final class Engine
         'drive.link' => DriveLink::class,
         'ai.chat' => AskAi::class,
         'http.request' => HttpRequest::class,
+        'serpapi.google' => SerpApiCall::class,
+        'serpapi.news' => SerpApiCall::class,
+        'serpapi.images' => SerpApiCall::class,
+        'serpapi.maps' => SerpApiCall::class,
+        'serpapi.youtube' => SerpApiCall::class,
+        'serpapi.search' => SerpApiCall::class,
+        'serpapi.locations' => SerpApiCall::class,
+        'serpapi.account' => SerpApiCall::class,
+        'tavily.search' => TavilyCall::class,
+        'tavily.extract' => TavilyCall::class,
+        'tavily.crawl' => TavilyCall::class,
+        'tavily.map' => TavilyCall::class,
+        'tavily.usage' => TavilyCall::class,
         'telegram.send' => TelegramSend::class,
         'telegram.send_file' => TelegramSendFile::class,
         'line.send' => LineSend::class,

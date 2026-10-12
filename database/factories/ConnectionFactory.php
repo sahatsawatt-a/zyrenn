@@ -49,6 +49,22 @@ class ConnectionFactory extends Factory
     }
 
     /**
+     * A SerpApi key.
+     */
+    public function serpapi(): static
+    {
+        return $this->state(['name' => 'Search', 'service' => Services::SERPAPI, 'settings' => [], 'secrets' => ['api_key' => 'serp-key']]);
+    }
+
+    /**
+     * A Tavily key.
+     */
+    public function tavily(): static
+    {
+        return $this->state(['name' => 'Web', 'service' => Services::TAVILY, 'settings' => [], 'secrets' => ['api_key' => 'tvly-key']]);
+    }
+
+    /**
      * A project's, made by $by (a new member, unless given).
      */
     public function forProject(Project $project, ?User $by = null): static

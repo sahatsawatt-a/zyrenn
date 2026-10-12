@@ -25,6 +25,8 @@ final class Services
 
     public const HTTP = 'http';
 
+    public const SEARCH = 'search';
+
     /** A model run on a machine of the user's own. */
     public const OLLAMA = 'ollama';
 
@@ -37,6 +39,12 @@ final class Services
     public const TELEGRAM = 'telegram';
 
     public const LINE = 'line';
+
+    /** Search engines' results as data, by a key (serpapi.com). */
+    public const SERPAPI = 'serpapi';
+
+    /** Search made for a model to read, and pages read whole, by a key (tavily.com). */
+    public const TAVILY = 'tavily';
 
     /** A header sent with requests to one address: an API's key or bearer token. */
     public const HTTP_HEADER = 'http_header';
@@ -162,6 +170,28 @@ final class Services
             'secrets' => [
                 ['name' => 'channel_access_token', 'label' => 'Channel access token', 'type' => 'secret', 'required' => true],
                 ['name' => 'channel_secret', 'label' => 'Channel secret', 'type' => 'secret', 'required' => true],
+            ],
+        ];
+
+        $services[self::SERPAPI] = [
+            'label' => 'SerpApi',
+            'group' => self::SEARCH,
+            'hint' => 'What Google, Google News, Google Maps, YouTube and other search engines find, as data. The key is at serpapi.com/manage-api-key. Each search counts against the plan\'s month; one made again within the hour is free.',
+            'testable' => true,
+            'settings' => [],
+            'secrets' => [
+                ['name' => 'api_key', 'label' => 'API key', 'type' => 'secret', 'required' => true],
+            ],
+        ];
+
+        $services[self::TAVILY] = [
+            'label' => 'Tavily',
+            'group' => self::SEARCH,
+            'hint' => 'A search of the web made for a model to read, and pages read whole. The key is at app.tavily.com. Each call spends the plan\'s credits.',
+            'testable' => true,
+            'settings' => [],
+            'secrets' => [
+                ['name' => 'api_key', 'label' => 'API key', 'type' => 'secret', 'required' => true, 'placeholder' => 'tvly-…'],
             ],
         ];
 

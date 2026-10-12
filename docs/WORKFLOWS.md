@@ -332,6 +332,67 @@ picture out to a phone, the read receipt (refused, Chat being off), and a
 few read-only questions to both. Everything else has only been run against
 faked services.
 
+## SerpApi and Tavily
+
+Two ways to search the web from a workflow, each a connection under
+**Search** that is a key alone, and each call a step of its own in its
+service's group. Testing a connection is free with both, and says what is
+left of the key. Nothing here changes anything outside, so a step is simply
+run again when its worker dies.
+
+**SerpApi** (serpapi.com) gives what a search engine itself shows, as data.
+Its key is at serpapi.com/manage-api-key. A search counts as one against
+the plan's month; the same one asked again within the hour is answered from
+SerpApi's cache for nothing.
+
+- **Search Google**, **Search Google News**, **Search Google Images**,
+  **Search Google Maps** and **Search YouTube** each give out `results`,
+  with the parts of each worth having: a web result's `title`, `link` and
+  `snippet`; a place's `title`, `address`, `lat`, `lng` and `rating` -- so
+  a result as it is can go with a chat message as its place; a picture's
+  own address as `image`. Google's also gives `answer`, `knowledge`,
+  `questions` and `related`. Google, News and YouTube give `text` too: the
+  results as words for a model to read, for **Ask AI**'s prompt.
+- **SerpApi: any engine** asks any other one -- Google Shopping, Scholar,
+  Trends, Flights, Hotels, Bing, DuckDuckGo, Amazon -- by its name and what
+  its page on serpapi.com says it takes, and gives out the answer whole as
+  `body`. A step gives out at most 256 KB; SerpApi's `json_restrictor`
+  keeps an answer to the parts named.
+- **SerpApi: find a place** gives the names a search can be made "from"
+  (free, with no key), and **SerpApi: searches left** the plan's month.
+- Every search step has **More**: anything else its engine takes, by the
+  name SerpApi gives it. What the step's own settings say goes over it.
+- A search that finds nothing is not a failure: it gives out no results.
+
+The app's own `SERPAPI_KEY` is another thing: it fills in opening hours on
+the Maps demo, and no workflow uses it.
+
+**Tavily** (tavily.com) searches for a model to read: it gives the part of
+each page that answers, and reads pages whole. Its key (`tvly-…`) is at
+app.tavily.com, and each call spends credits.
+
+- **Search with Tavily** gives out `results` (`title`, `url`, `content`,
+  `score`), an `answer` written from them when asked for one, and `text`,
+  the results as words for a model. Each page whole is `text` on each
+  result, when asked for.
+- **Tavily: read pages** reads up to 20 pages by their addresses: `text`
+  is one page's words, or every page's each under its address; `results`
+  has each apart, and `failed` the ones that could not be read. It fails
+  only when none could.
+- **Tavily: crawl a site** follows a site's links and reads what it finds;
+  **Tavily: list a site's pages** only lists them. Both are told to stop
+  after two minutes with what they have, since a step is stopped at 150
+  seconds.
+- **Tavily: credits used** gives what the key and its plan have spent.
+- Pages' text is cut short where together it is more than a step may give
+  out (about 100 KB of it), and `cut` says so.
+- A call that never reached Tavily is made again; one that was not
+  answered in time is not, since it may have been paid for.
+
+Not done: Tavily's research call, which answers later rather than at once,
+and SerpApi's archive of past searches. Checked against faked services
+only -- neither has been asked for real from a workflow yet.
+
 ## From an AI client (MCP)
 
 Reading and running: `list-workflows`, `list-workflow-folders`, `get-workflow`

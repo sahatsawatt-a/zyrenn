@@ -588,4 +588,35 @@ class ConnectionTest extends TestCase
         $this->actingAs($user)->get(route('connections.index'))->assertInertia(fn (Assert $page) => $page
             ->where('connections.0.hook', ['url' => null, 'set' => 'by_hand']));
     }
+
+    public function test_a_search_key_is_tried_for_nothing_and_says_what_is_left_of_it()
+    {
+        Http::preventStrayRequests();
+        Http::fake([
+            'serpapi.com/account.json*' => Http::sequence()
+                ->push(['api_key' => 'serp-key', 'plan_name' => 'Free Plan', 'total_searches_left' => 240])
+                ->push(['error' => 'Invalid API key. Your API key should be here: https://serpapi.com/manage-api-key'], 401),
+            'api.tavily.com/usage' => Http::sequence()
+                ->push(['key' => ['usage' => 150, 'limit' => null], 'account' => ['current_plan' => 'Researcher', 'plan_usage' => 150, 'plan_limit' => 1000]])
+                ->push(['detail' => ['error' => 'Unauthorized: missing or invalid API key.']], 401),
+        ]);
+        $user = User::factory()->create();
+        $try = fn (string $service, string $key) => $this->actingAs($user)->postJson(route('connections.check'), ['service' => $service, 'secrets' => ['api_key' => $key]]);
+
+        $try('serpapi', 'serp-key')->assertExactJson(['ok' => true, 'message' => 'Works: 240 searches left (Free Plan).']);
+        $try('serpapi', 'not-a-key')->assertExactJson(['ok' => false, 'message' => 'SerpApi does not know this key.']);
+        $try('tavily', 'tvly-key')->assertExactJson(['ok' => true, 'message' => 'Works: 150 of 1,000 credits used (Researcher).']);
+        $try('tavily', 'not-a-key')->assertExactJson(['ok' => false, 'message' => 'Tavily does not know this key.']);
+        Http::assertSent(fn (Request $request) => $request->hasHeader('Authorization', 'Bearer tvly-key'));
+
+        // Kept under Search, with a key that is needed and never shown again
+        $this->actingAs($user)->post(route('connections.store'), ['name' => 'Search', 'service' => 'serpapi', 'secrets' => ['api_key' => '']])->assertSessionHasErrors('secrets.api_key');
+        Connection::factory()->tavily()->for($user)->create();
+
+        $this->actingAs($user)->get(route('connections.index'))->assertInertia(fn (Assert $page) => $page
+            ->where('services.serpapi.group', 'search')
+            ->where('services.tavily.group', 'search')
+            ->where('connections.0.saved_secrets', ['api_key'])
+            ->where('connections.0.hook', null));
+    }
 }

@@ -51,8 +51,9 @@ use App\Models\Chat\ChatRoom;
  * dies partway it may have gone out already, so it is not simply run again
  * (its "unsure" setting says what happens instead).
  *
- * Every call Telegram or LINE offers is a kind of its own, in that
- * service's group; most of them are listed in ServiceKinds.
+ * Every call a service offers -- SerpApi, Tavily, Telegram, LINE -- is a
+ * kind of its own, in that service's group; most of them are listed in
+ * ServiceKinds.
  *
  * @phpstan-type Setting array{name: string, label: string, type: string, required: bool, default?: mixed, help?: string, placeholder?: string, options?: array<string, string>, services?: list<string>, names?: string, when?: array<string, string|bool|list<string>>, linked?: bool, ways?: bool, anywhere?: bool, labels?: bool, drive?: string, does?: list<array<string, string>>, places?: array{by: string, picture: string, layouts: array<string, list<array{int, int, int, int}>>}}
  * @phpstan-type NodeType array{type: string, version: int, label: string, group: string, icon: string, description: string, trigger: bool, inputs: list<string>, outputs: list<string>, config: list<Setting>, repeatable?: bool, oldest?: int, empty?: array<string, null>}
@@ -1048,6 +1049,8 @@ final class NodeTypes
             'drive' => 'Drive',
             'ai' => 'AI',
             'web' => 'Web',
+            'serpapi' => 'SerpApi',
+            'tavily' => 'Tavily',
             'telegram' => 'Telegram',
             'line' => 'LINE',
         ];
@@ -1063,6 +1066,15 @@ final class NodeTypes
     public static function sections(): array
     {
         return [
+            'serpapi' => [
+                'Searches' => ['serpapi.google', 'serpapi.news', 'serpapi.images', 'serpapi.maps', 'serpapi.youtube', 'serpapi.search'],
+                'Places and allowance' => ['serpapi.locations', 'serpapi.account'],
+            ],
+            'tavily' => [
+                'Search and read' => ['tavily.search', 'tavily.extract'],
+                'A whole site' => ['tavily.crawl', 'tavily.map'],
+                'Allowance' => ['tavily.usage'],
+            ],
             'telegram' => [
                 'Messages' => ['trigger.telegram', 'telegram.send', 'telegram.send_file', 'telegram.album', 'telegram.sticker', 'telegram.location', 'telegram.contact', 'telegram.poll', 'telegram.forward', 'telegram.copy', 'telegram.action', 'telegram.file'],
                 'A message sent' => ['telegram.edit', 'telegram.edit_buttons', 'telegram.delete', 'telegram.pin', 'telegram.unpin', 'telegram.react'],

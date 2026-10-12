@@ -2,6 +2,8 @@ import {
     Cpu,
     KeyRound,
     MessageCircle,
+    Radar,
+    Search,
     Send,
     Server,
     ShieldCheck,
@@ -21,7 +23,7 @@ export type Field = {
     default?: string;
 };
 
-export type ServiceGroup = 'ai' | 'messaging' | 'http';
+export type ServiceGroup = 'ai' | 'messaging' | 'search' | 'http';
 
 export type Service = {
     label: string;
@@ -72,6 +74,11 @@ export const GROUPS: {
         description: 'Bots that workflows hear from and send through.',
     },
     {
+        key: 'search',
+        title: 'Search',
+        description: 'Keys for searching the web, and reading its pages.',
+    },
+    {
         key: 'http',
         title: 'HTTP & webhooks',
         description:
@@ -86,6 +93,8 @@ const TONES = {
     sky: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
     green: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
     amber: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    cyan: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
+    rose: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
     slate: 'bg-slate-500/10 text-slate-600 dark:text-slate-300',
 };
 
@@ -101,6 +110,10 @@ export function lookOf(service: string, group?: ServiceGroup): Look {
             return { icon: Send, tone: TONES.sky };
         case 'line':
             return { icon: MessageCircle, tone: TONES.green };
+        case 'serpapi':
+            return { icon: Search, tone: TONES.cyan };
+        case 'tavily':
+            return { icon: Radar, tone: TONES.rose };
         case 'http_header':
             return { icon: KeyRound, tone: TONES.amber };
         case 'webhook_secret':
@@ -136,6 +149,10 @@ export function detailOf(
             }
 
             return 'Messaging API channel';
+        case 'search':
+            return connection.service === 'tavily'
+                ? 'Searches the web and reads pages, by its key'
+                : 'Searches Google and other engines, by its key';
         default:
             if (connection.service === 'http_header') {
                 return `${s.header_name ?? 'Authorization'} header, only for ${host(s.base_url)}`;

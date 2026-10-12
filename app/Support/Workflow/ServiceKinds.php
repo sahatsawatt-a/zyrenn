@@ -3,9 +3,10 @@
 namespace App\Support\Workflow;
 
 /**
- * The kinds of step that are one call to Telegram or to LINE each, beside
- * the ones NodeTypes lists itself: every call a service offers is a step of
- * its own, in that service's group. Run by TelegramCall and LineCall.
+ * The kinds of step that are one call to a service each -- SerpApi, Tavily,
+ * Telegram, LINE -- beside the ones NodeTypes lists itself: every call a
+ * service offers is a step of its own, in that service's group. Run by that
+ * service's ...Call class.
  *
  * @phpstan-import-type Setting from NodeTypes
  * @phpstan-import-type NodeType from NodeTypes
@@ -27,7 +28,143 @@ final class ServiceKinds
      */
     public static function all(): array
     {
-        return [...self::telegram(), ...self::line()];
+        return [...self::serpapi(), ...self::tavily(), ...self::telegram(), ...self::line()];
+    }
+
+    // --- SerpApi ---
+
+    /**
+     * @return list<NodeType>
+     */
+    private static function serpapi(): array
+    {
+        $key = ['name' => 'connection', 'label' => 'Key', 'type' => 'connection', 'required' => true, 'services' => ['serpapi']];
+        $for = ['name' => 'q', 'label' => 'Search for', 'type' => 'template', 'required' => true, 'placeholder' => '{{ trigger.text }}'];
+        $country = ['name' => 'gl', 'label' => 'Country', 'type' => 'template', 'required' => false, 'placeholder' => 'th', 'help' => 'Two letters: th, us, jp.'];
+        $language = ['name' => 'hl', 'label' => 'Language', 'type' => 'template', 'required' => false, 'placeholder' => 'th', 'help' => 'Two letters: th, en, ja.'];
+        $most = ['name' => 'count', 'label' => 'At most', 'type' => 'number', 'required' => false, 'default' => 20, 'help' => 'At most 100.'];
+        $page = ['name' => 'page', 'label' => 'Page', 'type' => 'number', 'required' => false, 'default' => 1];
+        $more = ['name' => 'more', 'label' => 'More', 'type' => 'fields', 'required' => false, 'default' => [], 'help' => 'Anything else the engine takes, named as its page on serpapi.com names it: safe active, no_cache true.'];
+        $costs = ' A search counts as one against the key\'s month; the same one asked again within the hour is free.';
+
+        return [
+            self::kind('serpapi.google', 'Search Google', 'search', 'Searches Google, through SerpApi. Gives out results -- each with its title, link, snippet, source and date -- with Google\'s own answer when it gives one, what it knows of the thing searched for as knowledge, questions people also ask, related searches, and text: the results as words for a model to read.'.$costs, [
+                $key,
+                $for,
+                ['name' => 'location', 'label' => 'From', 'type' => 'template', 'required' => false, 'placeholder' => 'Bangkok, Thailand', 'help' => 'Where the search is made from: a place as "SerpApi: find a place" names it. Left empty, wherever SerpApi asks from.'],
+                $country,
+                $language,
+                ['name' => 'period', 'label' => 'From the last', 'type' => 'choice', 'required' => true, 'default' => 'any', 'options' => ['any' => 'Any time', 'hour' => 'Hour', 'day' => 'Day', 'week' => 'Week', 'month' => 'Month', 'year' => 'Year']],
+                [...$page, 'help' => 'Ten results to a page.'],
+                $more,
+            ]),
+            self::kind('serpapi.news', 'Search Google News', 'newspaper', 'Searches Google News, through SerpApi. Gives out results -- each with its title, link, source, date and thumbnail -- and text: them as words for a model to read.'.$costs, [
+                $key,
+                [...$for, 'required' => false, 'help' => 'Left empty, the top stories. As Google News reads it: site:bbc.com, when:7d.'],
+                $country,
+                $language,
+                ['name' => 'sort', 'label' => 'First', 'type' => 'choice', 'required' => true, 'default' => 'relevance', 'options' => ['relevance' => 'What fits best', 'date' => 'The newest']],
+                $most,
+                [...$more, 'help' => 'Anything else the engine takes, named as its page on serpapi.com names it: a topic_token, a publication_token.'],
+            ]),
+            self::kind('serpapi.images', 'Search Google Images', 'image', 'Searches Google Images, through SerpApi. Gives out results: each with its title, the picture\'s own address as image, its width and height, a thumbnail, and the link and source of the page it is on. "Save to Drive" keeps one.'.$costs, [
+                $key,
+                $for,
+                $country,
+                $language,
+                ['name' => 'kind', 'label' => 'Kind', 'type' => 'choice', 'required' => true, 'default' => 'any', 'options' => ['any' => 'Any', 'photo' => 'Photos', 'face' => 'Faces', 'clipart' => 'Clip art', 'lineart' => 'Line drawings', 'animated' => 'Animated']],
+                $most,
+                [...$page, 'help' => 'A hundred pictures to a page.'],
+                [...$more, 'help' => 'Anything else the engine takes, named as its page on serpapi.com names it: imgsz l, licenses fc, safe active.'],
+            ]),
+            self::kind('serpapi.maps', 'Search Google Maps', 'map-pinned', 'Searches Google Maps for places, through SerpApi. Gives out results: each with its title, address, lat and lng, rating, reviews, type, price, phone, website and whether it is open -- a result as it is can go with a chat message as its place.'.$costs, [
+                $key,
+                [...$for, 'placeholder' => 'coffee near Ari'],
+                ['name' => 'around', 'label' => 'Around', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.location }}', 'help' => 'The place searched around: its latitude and longitude, like 13.7563, 100.5018, or what a message that sent a place gives. Left empty, Google goes by the words.'],
+                ['name' => 'zoom', 'label' => 'How close', 'type' => 'number', 'required' => false, 'default' => 14, 'help' => 'From 3, the whole world, to 21, one street. Only with a place to search around.', 'when' => ['around' => true]],
+                $language,
+                [...$page, 'help' => 'Twenty places to a page. A later page needs a place to search around.'],
+                [...$more, 'help' => 'Anything else the engine takes, named as its page on serpapi.com names it: open_state now, min_rating 4.'],
+            ]),
+            self::kind('serpapi.youtube', 'Search YouTube', 'square-play', 'Searches YouTube, through SerpApi. Gives out results -- each with its title, link, id, channel, when it was published, views, length, description and thumbnail -- and text: them as words for a model to read.'.$costs, [
+                $key,
+                $for,
+                $country,
+                $language,
+                $most,
+                [...$more, 'help' => 'Anything else the engine takes, named as its page on serpapi.com names it: sp, YouTube\'s own mark for a filter or a later page.'],
+            ]),
+            self::kind('serpapi.search', 'SerpApi: any engine', 'text-search', 'Asks any other engine SerpApi has -- Google Shopping, Scholar, Trends, Flights, Hotels, Bing, DuckDuckGo, Amazon and the rest -- and gives out its answer whole, as body: each engine has its own things to ask and its own shape of answer, set out on its page on serpapi.com.'.$costs, [
+                $key,
+                ['name' => 'engine', 'label' => 'Engine', 'type' => 'template', 'required' => true, 'placeholder' => 'google_shopping', 'help' => 'Its name as SerpApi writes it: google_shopping, google_scholar, google_trends, bing, duckduckgo, amazon.'],
+                ['name' => 'params', 'label' => 'What it is asked', 'type' => 'fields', 'required' => false, 'default' => [], 'help' => 'Each named as the engine\'s page names it: q running shoes, gl th. A step gives out at most 256 KB: json_restrictor keeps only the parts named, like shopping_results[].{title,price,link}.'],
+            ]),
+            self::kind('serpapi.locations', 'SerpApi: find a place', 'locate', 'Finds the places a search can be made from, by part of a name. Gives out places -- each with its name as a search takes it, country, kind, lat and lng -- and name, the first of them. Free, and asks with no key.', [
+                ['name' => 'q', 'label' => 'Place', 'type' => 'template', 'required' => true, 'placeholder' => 'Chiang Mai'],
+                ['name' => 'count', 'label' => 'At most', 'type' => 'number', 'required' => false, 'default' => 5, 'help' => 'At most 10.'],
+            ]),
+            self::kind('serpapi.account', 'SerpApi: searches left', 'gauge', 'Asks SerpApi about the key\'s plan. Gives out plan, left, used and per_month -- searches this month -- with this_hour and per_hour, and when it renews. Free.', [$key]),
+        ];
+    }
+
+    // --- Tavily ---
+
+    /**
+     * @return list<NodeType>
+     */
+    private static function tavily(): array
+    {
+        $key = ['name' => 'connection', 'label' => 'Key', 'type' => 'connection', 'required' => true, 'services' => ['tavily']];
+        $depth = ['name' => 'depth', 'label' => 'Read', 'type' => 'choice', 'required' => true, 'default' => 'basic', 'options' => ['basic' => 'The page\'s words', 'advanced' => 'Tables and what is set into it too (slower, twice the credits)']];
+        $format = ['name' => 'format', 'label' => 'As', 'type' => 'choice', 'required' => true, 'default' => 'markdown', 'options' => ['markdown' => 'Markdown', 'text' => 'Plain text']];
+        $more = ['name' => 'more', 'label' => 'More', 'type' => 'fields', 'required' => false, 'default' => [], 'help' => 'Anything else the call takes, named as Tavily\'s docs name it. A value written as yes or no, a number or a list is sent as one: include_images true.'];
+        $long = ' The pages\' text is cut short where it is more than a step may give out, and cut says so.';
+        $site = fn (int $limit, int $most) => [
+            ['name' => 'url', 'label' => 'Site', 'type' => 'template', 'required' => true, 'placeholder' => 'https://docs.example.com'],
+            ['name' => 'instructions', 'label' => 'Looking for', 'type' => 'template', 'required' => false, 'placeholder' => 'Pages about pricing', 'help' => 'In plain words, which pages matter. Costs twice the credits.'],
+            ['name' => 'max_depth', 'label' => 'How many links deep', 'type' => 'number', 'required' => false, 'default' => 1, 'help' => 'From 1 to 5.'],
+            ['name' => 'limit', 'label' => 'At most', 'type' => 'number', 'required' => false, 'default' => $limit, 'help' => "Pages, at most {$most}. It stops after two minutes with what it has."],
+            ['name' => 'select_paths', 'label' => 'Only paths', 'type' => 'template', 'required' => false, 'placeholder' => '/docs/.*', 'help' => 'Patterns a page\'s path has to match, one on a line.'],
+            ['name' => 'exclude_paths', 'label' => 'Not paths', 'type' => 'template', 'required' => false, 'placeholder' => '/blog/.*', 'help' => 'Patterns a page\'s path must not match, one on a line.'],
+            ['name' => 'external', 'label' => 'Other sites it links to', 'type' => 'choice', 'required' => true, 'default' => 'no', 'options' => ['no' => 'Left out', 'yes' => 'Kept']],
+        ];
+
+        return [
+            self::kind('tavily.search', 'Search with Tavily', 'search', 'Searches the web with Tavily, which reads what it finds and gives the part that answers. Gives out results -- each with its title, url, content and score -- an answer written from them when asked for one, and text: the results as words for a model to read. One credit, two when thorough.', [
+                $key,
+                ['name' => 'query', 'label' => 'Search for', 'type' => 'template', 'required' => true, 'placeholder' => '{{ trigger.text }}'],
+                ['name' => 'topic', 'label' => 'Among', 'type' => 'choice', 'required' => true, 'default' => 'general', 'options' => ['general' => 'The whole web', 'news' => 'The news', 'finance' => 'Finance']],
+                ['name' => 'depth', 'label' => 'How', 'type' => 'choice', 'required' => true, 'default' => 'basic', 'options' => ['basic' => 'The usual way', 'advanced' => 'Thorough: the parts of each page that fit best (two credits)', 'fast' => 'Fast', 'ultra-fast' => 'Fastest: a line on each page']],
+                ['name' => 'count', 'label' => 'At most', 'type' => 'number', 'required' => false, 'default' => 5, 'help' => 'At most 20.'],
+                ['name' => 'period', 'label' => 'From the last', 'type' => 'choice', 'required' => true, 'default' => 'any', 'options' => ['any' => 'Any time', 'day' => 'Day', 'week' => 'Week', 'month' => 'Month', 'year' => 'Year']],
+                ['name' => 'answer', 'label' => 'Write an answer', 'type' => 'choice', 'required' => true, 'default' => 'no', 'options' => ['no' => 'No', 'basic' => 'A short one', 'advanced' => 'A fuller one']],
+                ['name' => 'raw', 'label' => 'Each page whole', 'type' => 'choice', 'required' => true, 'default' => 'no', 'options' => ['no' => 'No, only the part that answers', 'markdown' => 'As Markdown, in each result\'s text', 'text' => 'As plain text, in each result\'s text'], 'help' => 'Cut short where it is more than a step may give out; cut says so.'],
+                ['name' => 'only', 'label' => 'Only from', 'type' => 'template', 'required' => false, 'placeholder' => 'wikipedia.org, bbc.com', 'help' => 'Sites to keep to, with commas between or one on a line.'],
+                ['name' => 'not', 'label' => 'Not from', 'type' => 'template', 'required' => false, 'placeholder' => 'pinterest.com', 'help' => 'Sites to leave out.'],
+                [...$more, 'help' => 'Anything else the call takes, named as Tavily\'s docs name it. A value written as yes or no, a number or a list is sent as one: country thailand, include_images true, start_date 2026-01-01.'],
+            ]),
+            self::kind('tavily.extract', 'Tavily: read pages', 'book-open-text', 'Reads pages whole, by their addresses: up to 20 at once. Gives out text -- one page\'s words, or every page\'s each under its address -- results, each with its url and text, and failed, the ones that could not be read and why. A credit for every five pages.'.$long, [
+                $key,
+                ['name' => 'urls', 'label' => 'Pages', 'type' => 'template', 'required' => true, 'placeholder' => '{{ item(node("search").results, 1).url }}', 'help' => 'Their addresses: one, several with commas between or one on a line, or a list.'],
+                $depth,
+                $format,
+                ['name' => 'about', 'label' => 'Only what bears on', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.text }}', 'help' => 'Left empty, the whole page. With words here, the parts of each page that fit them best.'],
+                $more,
+            ]),
+            self::kind('tavily.crawl', 'Tavily: crawl a site', 'network', 'Follows a site\'s links from a page and reads what it finds. Gives out results -- each page with its url and text -- count, and text: every page\'s words, each under its address. Credits by the page.'.$long, [
+                $key,
+                ...$site(20, 100),
+                $depth,
+                $format,
+                $more,
+            ]),
+            self::kind('tavily.map', 'Tavily: list a site\'s pages', 'list-tree', 'Follows a site\'s links from a page and lists what it finds, without reading it. Gives out urls and count. A credit for every ten pages.', [
+                $key,
+                ...$site(50, 500),
+                $more,
+            ]),
+            self::kind('tavily.usage', 'Tavily: credits used', 'gauge', 'Asks Tavily what the key has used. Gives out used and limit for the key, left, and the plan with plan_used and plan_limit. Free.', [$key]),
+        ];
     }
 
     // --- Telegram ---

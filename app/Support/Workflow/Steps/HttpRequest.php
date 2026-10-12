@@ -26,7 +26,7 @@ final class HttpRequest implements Step
     {
         $method = strtoupper((string) $step->setting('method'));
         $url = trim($step->text('url'));
-        $query = self::fields($step, 'query');
+        $query = $step->fields('query');
 
         if ($query !== []) {
             $url .= (str_contains($url, '?') ? '&' : '?').http_build_query($query);
@@ -38,7 +38,7 @@ final class HttpRequest implements Step
             throw new StepFailed($e->getMessage());
         }
 
-        $headers = array_map(fn ($value) => Template::text($value), self::fields($step, 'headers'));
+        $headers = array_map(fn ($value) => Template::text($value), $step->fields('headers'));
 
         if (filled($step->setting('auth'))) {
             $key = References::connection($step->owner(), (string) $step->setting('auth'), ['http_header'])
@@ -104,24 +104,6 @@ final class HttpRequest implements Step
             'headers' => array_map(fn (array $values) => count($values) === 1 ? $values[0] : $values, $response->headers()),
             'body' => $json !== null || trim($body) === 'null' ? $json : $body,
         ]);
-    }
-
-    /**
-     * Named values worked out, without the ones left nameless.
-     *
-     * @return array<string, mixed>
-     */
-    private static function fields(StepContext $step, string $name): array
-    {
-        $values = [];
-
-        foreach ((array) $step->setting($name) as $field) {
-            if ($field['name'] !== '') {
-                $values[$field['name']] = $step->template("{$name}.{$field['name']}", $field['value']);
-            }
-        }
-
-        return $values;
     }
 
     /**

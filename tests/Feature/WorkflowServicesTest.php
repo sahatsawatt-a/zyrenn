@@ -636,4 +636,224 @@ class WorkflowServicesTest extends TestCase
         $filmed = Envelope::telegram(['update_id' => 2, 'message' => ['message_id' => 2, 'chat' => $chat, 'from' => $from, 'sticker' => ['file_id' => 'webm-1', 'is_video' => true, 'emoji' => '🎉']]])['sticker'];
         $this->assertSame([true, 'thumb-1', true, 'webm-1'], [$drawn['animated'], $drawn['picture'], $filmed['animated'], $filmed['picture']]);
     }
+
+    // --- SerpApi and Tavily ---
+
+    public function test_each_serpapi_call_is_a_step_that_asks_its_engine_and_gives_out_what_it_found()
+    {
+        Http::fake(fn (Request $request) => Http::response(match (true) {
+            str_contains($request->url(), '/locations.json') => [['id' => '585069bdee19ad271e9bc072', 'name' => 'Chiang Mai', 'canonical_name' => 'Chiang Mai,Chiang Mai,Thailand', 'country_code' => 'TH', 'target_type' => 'City', 'reach' => 1410000, 'gps' => [98.9853, 18.7883]]],
+            str_contains($request->url(), '/account.json') => ['api_key' => 'serp-key', 'account_email' => 'ada@example.com', 'plan_name' => 'Free Plan', 'searches_per_month' => 250, 'total_searches_left' => 240, 'this_month_usage' => 10, 'this_hour_searches' => 2, 'account_rate_limit_per_hour' => 50, 'plan_renewal_date' => null],
+            default => ['search_metadata' => ['id' => 'search-1', 'status' => 'Success'], ...match ($request->data()['engine']) {
+                'google' => [
+                    'search_information' => ['total_results' => 1200],
+                    'answer_box' => ['type' => 'organic_result', 'snippet' => 'Khao soi is a noodle soup.'],
+                    'knowledge_graph' => ['title' => 'Khao soi', 'type' => 'Dish', 'description' => 'A soup of the north.', 'header_images' => [['image' => 'https://img.example/1.jpg']]],
+                    'organic_results' => [
+                        ['position' => 1, 'title' => 'Khao soi', 'link' => 'https://en.example.org/khao-soi', 'snippet' => 'A curry noodle soup.', 'source' => 'Example', 'sitelinks' => ['inline' => []]],
+                        ['position' => 2, 'title' => 'Where to eat it', 'link' => 'https://eat.example.com', 'snippet' => 'Ten shops.', 'date' => 'Oct 1, 2026'],
+                    ],
+                    'related_questions' => [['question' => 'Is khao soi spicy?', 'snippet' => 'Mildly.', 'link' => 'https://q.example.com']],
+                    'related_searches' => [['query' => 'khao soi recipe', 'link' => 'https://www.google.com/search?q=khao+soi+recipe']],
+                ],
+                // Several papers on one story come as the story
+                'google_news' => ['news_results' => [
+                    ['position' => 1, 'title' => 'Flood warning', 'link' => 'https://news.example.com/flood', 'source' => ['name' => 'The Post', 'icon' => 'https://news.example.com/i.png'], 'date' => '10/12/2026, 08:00 AM, +0700 +07', 'iso_date' => '2026-10-12T01:00:00Z'],
+                    ['position' => 2, 'title' => 'Election', 'stories' => [['title' => 'Votes counted', 'link' => 'https://news.example.com/votes', 'source' => ['name' => 'The Times'], 'iso_date' => '2026-10-11T01:00:00Z']]],
+                    ['position' => 3, 'title' => 'Third', 'link' => 'https://news.example.com/third'],
+                ]],
+                'google_images' => ['images_results' => [['position' => 1, 'title' => 'A bowl', 'original' => 'https://img.example/bowl.jpg', 'original_width' => 1200, 'original_height' => 800, 'thumbnail' => 'https://img.example/t.jpg', 'link' => 'https://eat.example.com/bowl', 'source' => 'Eat', 'is_product' => false]]],
+                'google_maps' => ['local_results' => [['position' => 1, 'title' => 'Khao Soi Mae Sai', 'address' => '29/1 Ratchaphuek Alley', 'gps_coordinates' => ['latitude' => 18.7986, 'longitude' => 98.9753], 'rating' => 4.5, 'reviews' => 3100, 'type' => 'Noodle shop', 'open_state' => 'Open', 'place_id' => 'ChIJ1', 'photos_link' => 'https://serpapi.com/x']]],
+                'youtube' => ['video_results' => [['position_on_page' => 1, 'title' => 'Making khao soi', 'link' => 'https://www.youtube.com/watch?v=abc', 'video_id' => 'abc', 'channel' => ['name' => 'Cook', 'link' => 'https://www.youtube.com/@cook'], 'published_date' => '1 day ago', 'views' => 5300, 'length' => '12:08', 'description' => 'Step by step.', 'thumbnail' => ['static' => 'https://i.example/abc.jpg', 'rich' => 'https://i.example/abc.webp']]]],
+                default => ['search_parameters' => ['engine' => 'google_shopping', 'q' => 'wok', 'api_key' => 'serp-key'], 'shopping_results' => [['title' => 'Wok', 'price' => '฿590']]],
+            }],
+        }));
+        $user = User::factory()->create();
+        $on = fn (array $settings = []) => ['connection' => Connection::factory()->serpapi()->for($user)->create()->ref_id, ...$settings];
+
+        $run = $this->runChain($user, [
+            $this->node('where', 'serpapi.locations', ['q' => '{{ trigger.city }}']),
+            $this->node('web', 'serpapi.google', $on(['q' => '{{ trigger.dish }}', 'location' => '{{ node("where").name }}', 'gl' => 'TH', 'hl' => 'th', 'period' => 'week', 'page' => 3, 'more' => [['name' => 'safe', 'value' => 'active'], ['name' => 'engine', 'value' => 'bing'], ['name' => 'async', 'value' => 'true']]])),
+            $this->node('news', 'serpapi.news', $on(['sort' => 'date', 'count' => 2])),
+            $this->node('pictures', 'serpapi.images', $on(['q' => 'khao soi', 'kind' => 'photo', 'page' => 2])),
+            $this->node('shops', 'serpapi.maps', $on(['q' => 'khao soi', 'around' => '{{ trigger.place }}', 'zoom' => 15])),
+            $this->node('near', 'serpapi.maps', $on(['q' => 'khao soi', 'around' => '18.79, 98.98', 'page' => 2])),
+            $this->node('videos', 'serpapi.youtube', $on(['q' => 'khao soi'])),
+            $this->node('buy', 'serpapi.search', $on(['engine' => 'Google_Shopping', 'params' => [['name' => 'q', 'value' => 'wok'], ['name' => 'gl', 'value' => 'th']]])),
+            $this->node('left', 'serpapi.account', $on()),
+        ], ['city' => 'Chiang Mai', 'dish' => 'khao soi', 'place' => ['lat' => 18.7883, 'lng' => 98.9853, 'title' => 'Old city']]);
+
+        $this->assertAllWentThrough($run);
+        $asked = Http::recorded()->map(fn (array $pair) => [basename((string) parse_url($pair[0]->url(), PHP_URL_PATH)), collect($pair[0]->data())->except('api_key')->all(), $pair[0]->data()['api_key'] ?? null])->all();
+
+        // Asking for places takes no key; everything else carries it
+        $this->assertSame(['locations.json', ['q' => 'Chiang Mai', 'limit' => 5], null], $asked[0]);
+        $this->assertSame(array_fill(0, 8, 'serp-key'), array_column(array_slice($asked, 1), 2));
+        // What a step is set to goes over anything else it is told, and it is always the step's own engine, waited for
+        $this->assertSame(['search.json', ['safe' => 'active', 'q' => 'khao soi', 'location' => 'Chiang Mai,Chiang Mai,Thailand', 'gl' => 'th', 'hl' => 'th', 'tbs' => 'qdr:w', 'start' => 20, 'engine' => 'google']], array_slice($asked[1], 0, 2));
+        $this->assertSame(['so' => 1, 'engine' => 'google_news'], $asked[2][1]);
+        $this->assertSame(['q' => 'khao soi', 'image_type' => 'photo', 'ijn' => 1, 'engine' => 'google_images'], $asked[3][1]);
+        // A place sent in a message, or two numbers, is where the map is searched around
+        $this->assertSame(['q' => 'khao soi', 'type' => 'search', 'll' => '@18.7883,98.9853,15z', 'engine' => 'google_maps'], $asked[4][1]);
+        $this->assertSame(['q' => 'khao soi', 'type' => 'search', 'll' => '@18.79,98.98,14z', 'start' => 20, 'engine' => 'google_maps'], $asked[5][1]);
+        $this->assertSame(['search_query' => 'khao soi', 'engine' => 'youtube'], $asked[6][1]);
+        $this->assertSame(['q' => 'wok', 'gl' => 'th', 'engine' => 'google_shopping'], $asked[7][1]);
+        $this->assertSame('account.json', $asked[8][0]);
+
+        $this->assertSame(['name' => 'Chiang Mai,Chiang Mai,Thailand', 'short' => 'Chiang Mai', 'country' => 'TH', 'kind' => 'City', 'lat' => 18.7883, 'lng' => 98.9853, 'reach' => 1410000], $this->step($run, 'where')->output['places'][0]);
+        $web = $this->step($run, 'web')->output;
+        $this->assertSame(['position' => 2, 'title' => 'Where to eat it', 'link' => 'https://eat.example.com', 'snippet' => 'Ten shops.', 'source' => null, 'date' => 'Oct 1, 2026'], $web['results'][1]);
+        $this->assertSame(['Khao soi is a noodle soup.', ['title' => 'Khao soi', 'type' => 'Dish', 'description' => 'A soup of the north.', 'website' => null], ['khao soi recipe'], 1200, 'search-1'], [$web['answer'], $web['knowledge'], $web['related'], $web['total'], $web['id']]);
+        $this->assertSame(['question' => 'Is khao soi spicy?', 'snippet' => 'Mildly.', 'link' => 'https://q.example.com'], $web['questions'][0]);
+        $this->assertSame("1. Khao soi\nhttps://en.example.org/khao-soi\nA curry noodle soup.\n\n2. Where to eat it\nhttps://eat.example.com\nTen shops.", $web['text']);
+
+        $news = $this->step($run, 'news')->output['results'];
+        $this->assertSame([['position' => 1, 'title' => 'Flood warning', 'link' => 'https://news.example.com/flood', 'source' => 'The Post', 'date' => '2026-10-12T01:00:00Z', 'thumbnail' => null], ['https://news.example.com/votes', 'The Times']], [$news[0], [$news[1]['link'], $news[1]['source']]]);
+        $this->assertCount(2, $news);
+        $this->assertSame(['position' => 1, 'title' => 'A bowl', 'image' => 'https://img.example/bowl.jpg', 'width' => 1200, 'height' => 800, 'thumbnail' => 'https://img.example/t.jpg', 'link' => 'https://eat.example.com/bowl', 'source' => 'Eat'], $this->step($run, 'pictures')->output['results'][0]);
+        $shop = $this->step($run, 'shops')->output['results'][0];
+        $this->assertSame(['Khao Soi Mae Sai', '29/1 Ratchaphuek Alley', 18.7986, 98.9753, 4.5, 'Open'], [$shop['title'], $shop['address'], $shop['lat'], $shop['lng'], $shop['rating'], $shop['open']]);
+        $video = $this->step($run, 'videos')->output['results'][0];
+        $this->assertSame(['abc', 'Cook', 'https://i.example/abc.jpg'], [$video['id'], $video['channel'], $video['thumbnail']]);
+        $this->assertSame([['title' => 'Wok', 'price' => '฿590']], $this->step($run, 'buy')->output['body']['shopping_results']);
+        $this->assertSame(['plan' => 'Free Plan', 'left' => 240, 'used' => 10, 'per_month' => 250, 'this_hour' => 2, 'per_hour' => 50, 'renews' => null], $this->step($run, 'left')->output);
+
+        // The key is asked with, and kept nowhere a run can be read
+        $this->assertStringNotContainsString('serp-key', (string) json_encode($run->steps()->get()->map->only(['input', 'output', 'config', 'error'])));
+    }
+
+    public function test_a_serpapi_search_that_finds_nothing_gives_out_nothing_and_a_refusal_says_why()
+    {
+        $answers = [
+            // Nothing found is an answer, with SerpApi saying so
+            Http::response(['search_metadata' => ['id' => 's', 'status' => 'Success'], 'search_information' => ['organic_results_state' => 'Fully empty'], 'error' => 'Google hasn\'t returned any results for this query.']),
+            Http::response(['error' => 'Invalid API key. Your API key should be here: https://serpapi.com/manage-api-key'], 401),
+            Http::response(['error' => 'Your account has run out of searches.'], 429),
+            Http::response(['error' => 'Unsupported `engine` parameter.'], 400),
+        ];
+        Http::fake(function () use (&$answers) {
+            return array_shift($answers);
+        });
+        $user = User::factory()->create();
+        $key = Connection::factory()->serpapi()->for($user)->create()->ref_id;
+        $run = fn (string $type, array $settings) => $this->step($this->runChain($user, [$this->node('it', $type, ['connection' => $key, ...$settings])], ['none' => '']), 'it');
+
+        $none = $run('serpapi.google', ['q' => 'zxqv']);
+        $this->assertSame([NodeStatus::Succeeded, [], null, ''], [$none->status, $none->output['results'], $none->output['answer'], $none->output['text']]);
+        $this->assertStringContainsString('refused the key', $run('serpapi.google', ['q' => 'khao soi'])->error['message']);
+        $this->assertStringContainsString('run out of searches', $run('serpapi.news', [])->error['message']);
+        $this->assertStringContainsString('Unsupported `engine`', $run('serpapi.search', ['engine' => 'nope'])->error['message']);
+        Http::assertSentCount(4);
+
+        // What is plainly wrong is said before SerpApi is asked
+        $this->assertStringContainsString('not an engine\'s name', $run('serpapi.search', ['engine' => 'google shopping'])->error['message']);
+        $this->assertStringContainsString('two numbers', $run('serpapi.maps', ['q' => 'coffee', 'around' => 'somewhere near'])->error['message']);
+        $this->assertStringContainsString('nothing to search for', $run('serpapi.google', ['q' => '{{ trigger.none }}'])->error['message']);
+        Http::assertSentCount(4);
+    }
+
+    public function test_each_tavily_call_is_a_step_that_asks_as_tavily_reads_it_and_gives_out_what_came_back()
+    {
+        Http::fake(fn (Request $request) => Http::response(match (basename((string) parse_url($request->url(), PHP_URL_PATH))) {
+            'search' => [
+                'query' => 'khao soi',
+                'answer' => 'A curry noodle soup of the north.',
+                'images' => [['url' => 'https://img.example/bowl.jpg', 'description' => 'A bowl'], 'https://img.example/2.jpg'],
+                'results' => [
+                    ['title' => 'Khao soi', 'url' => 'https://en.example.org/khao-soi', 'content' => 'A curry noodle soup.', 'score' => 0.91, 'raw_content' => '# Khao soi', 'published_date' => '2026-10-01'],
+                    ['title' => 'Where to eat it', 'url' => 'https://eat.example.com', 'content' => 'Ten shops.', 'score' => 0.72, 'raw_content' => null],
+                ],
+                'response_time' => 1.2,
+                'usage' => ['credits' => 2],
+                'request_id' => 'req-1',
+            ],
+            'extract' => [
+                'results' => [['url' => 'https://en.example.org/khao-soi', 'raw_content' => '# Khao soi', 'images' => []], ['url' => 'https://eat.example.com', 'raw_content' => 'Ten shops.']],
+                'failed_results' => [['url' => 'https://gone.example.com', 'error' => 'Page not found']],
+                'usage' => ['credits' => 1],
+                'request_id' => 'req-2',
+            ],
+            'crawl' => ['base_url' => 'docs.example.com', 'results' => [['url' => 'https://docs.example.com/a', 'raw_content' => 'A']], 'usage' => ['credits' => 1], 'request_id' => 'req-3'],
+            'map' => ['base_url' => 'docs.example.com', 'results' => ['https://docs.example.com/a', 'https://docs.example.com/b'], 'usage' => ['credits' => 1], 'request_id' => 'req-4'],
+            default => ['key' => ['usage' => 150, 'limit' => 500, 'search_usage' => 100], 'account' => ['current_plan' => 'Researcher', 'plan_usage' => 800, 'plan_limit' => 1000, 'paygo_usage' => 0, 'paygo_limit' => 0]],
+        }));
+        $user = User::factory()->create();
+        $on = fn (array $settings = []) => ['connection' => Connection::factory()->tavily()->for($user)->create()->ref_id, ...$settings];
+
+        $run = $this->runChain($user, [
+            $this->node('find', 'tavily.search', $on(['query' => '{{ trigger.dish }}', 'topic' => 'news', 'depth' => 'advanced', 'count' => 40, 'period' => 'week', 'answer' => 'basic', 'raw' => 'markdown', 'only' => "https://www.Wikipedia.org/wiki, bbc.com\nexample.org", 'more' => [['name' => 'country', 'value' => 'thailand'], ['name' => 'include_images', 'value' => 'true'], ['name' => 'chunks_per_source', 'value' => '2']]])),
+            $this->node('plain', 'tavily.search', $on(['query' => 'khao soi'])),
+            $this->node('read', 'tavily.extract', $on(['urls' => "{{ item(node(\"find\").results, 1).url }}\nhttps://eat.example.com, https://gone.example.com", 'depth' => 'advanced', 'format' => 'text', 'about' => 'ingredients'])),
+            $this->node('all', 'tavily.crawl', $on(['url' => 'https://docs.example.com', 'instructions' => 'Pricing', 'max_depth' => 9, 'limit' => 500, 'select_paths' => "/docs/.*\n/guide/(a|b),c", 'external' => 'yes'])),
+            $this->node('pages', 'tavily.map', $on(['url' => 'https://docs.example.com'])),
+            $this->node('spent', 'tavily.usage', $on()),
+        ], ['dish' => 'khao soi']);
+
+        $this->assertAllWentThrough($run);
+        $asked = Http::recorded()->map(fn (array $pair) => [$pair[0]->method().' '.str_replace('https://api.tavily.com', '', $pair[0]->url()), $pair[0]->data(), $pair[0]->hasHeader('Authorization', 'Bearer tvly-key')])->all();
+
+        $this->assertSame(array_fill(0, 6, true), array_column($asked, 2));
+        // Yes, a number and a list are sent as themselves; a site is named without its address's ends
+        $this->assertSame(['POST /search', [
+            'country' => 'thailand', 'include_images' => true, 'chunks_per_source' => 2,
+            'query' => 'khao soi', 'topic' => 'news', 'search_depth' => 'advanced', 'max_results' => 20, 'time_range' => 'week',
+            'include_answer' => 'basic', 'include_raw_content' => 'markdown', 'include_domains' => ['wikipedia.org', 'bbc.com', 'example.org'], 'include_usage' => true,
+        ]], array_slice($asked[0], 0, 2));
+        $this->assertSame(['query' => 'khao soi', 'topic' => 'general', 'search_depth' => 'basic', 'max_results' => 5, 'include_usage' => true], $asked[1][1]);
+        $this->assertSame(['POST /extract', ['urls' => ['https://en.example.org/khao-soi', 'https://eat.example.com', 'https://gone.example.com'], 'extract_depth' => 'advanced', 'format' => 'text', 'query' => 'ingredients', 'include_usage' => true]], array_slice($asked[2], 0, 2));
+        // A crawl is told to stop before the step would be; a pattern keeps its comma
+        $this->assertSame(['POST /crawl', ['url' => 'https://docs.example.com', 'instructions' => 'Pricing', 'max_depth' => 5, 'limit' => 100, 'select_paths' => ['/docs/.*', '/guide/(a|b),c'], 'allow_external' => true, 'timeout' => 120, 'extract_depth' => 'basic', 'format' => 'markdown', 'include_usage' => true]], array_slice($asked[3], 0, 2));
+        $this->assertSame(['POST /map', ['url' => 'https://docs.example.com', 'max_depth' => 1, 'limit' => 50, 'allow_external' => false, 'timeout' => 120, 'include_usage' => true]], array_slice($asked[4], 0, 2));
+        $this->assertSame('GET /usage', $asked[5][0]);
+
+        $found = $this->step($run, 'find')->output;
+        $this->assertSame(['title' => 'Khao soi', 'url' => 'https://en.example.org/khao-soi', 'content' => 'A curry noodle soup.', 'score' => 0.91, 'date' => '2026-10-01', 'text' => '# Khao soi'], $found['results'][0]);
+        $this->assertSame(['A curry noodle soup of the north.', ['https://img.example/bowl.jpg', 'https://img.example/2.jpg'], false, 2, 'req-1'], [$found['answer'], $found['images'], $found['cut'], $found['credits'], $found['id']]);
+        $this->assertSame("1. Khao soi\nhttps://en.example.org/khao-soi\nA curry noodle soup.\n\n2. Where to eat it\nhttps://eat.example.com\nTen shops.", $found['text']);
+        // Without each page whole, a result has no text of its own
+        $this->assertSame(['title', 'url', 'content', 'score', 'date'], array_keys($this->step($run, 'plain')->output['results'][0]));
+
+        $read = $this->step($run, 'read')->output;
+        $this->assertSame("https://en.example.org/khao-soi\n\n# Khao soi\n\n---\n\nhttps://eat.example.com\n\nTen shops.", $read['text']);
+        $this->assertSame([[['url' => 'https://en.example.org/khao-soi', 'text' => '# Khao soi'], ['url' => 'https://eat.example.com', 'text' => 'Ten shops.']], [['url' => 'https://gone.example.com', 'error' => 'Page not found']], false, 1], [$read['results'], $read['failed'], $read['cut'], $read['credits']]);
+        $this->assertSame(['site' => 'docs.example.com', 'results' => [['url' => 'https://docs.example.com/a', 'text' => 'A']], 'count' => 1, 'text' => 'A', 'cut' => false, 'credits' => 1, 'id' => 'req-3'], $this->step($run, 'all')->output);
+        $this->assertSame(['site' => 'docs.example.com', 'urls' => ['https://docs.example.com/a', 'https://docs.example.com/b'], 'count' => 2, 'credits' => 1, 'id' => 'req-4'], $this->step($run, 'pages')->output);
+        // What is left is the less of what the key and the plan may still spend
+        $this->assertSame(['used' => 150, 'limit' => 500, 'left' => 200, 'plan' => 'Researcher', 'plan_used' => 800, 'plan_limit' => 1000], $this->step($run, 'spent')->output);
+        $this->assertStringNotContainsString('tvly-key', (string) json_encode($run->steps()->get()->toArray()));
+    }
+
+    public function test_tavily_cuts_long_pages_to_what_a_step_may_give_out_and_says_what_it_refused()
+    {
+        $long = str_repeat('ข้าวซอย ', 20000);
+        $answers = [
+            Http::response(['results' => [['url' => 'https://a.example.com', 'raw_content' => $long], ['url' => 'https://b.example.com', 'raw_content' => 'Short.']], 'failed_results' => []]),
+            Http::response(['results' => [], 'failed_results' => [['url' => 'https://gone.example.com', 'error' => 'Page not found']]]),
+            Http::response(['detail' => ['error' => 'Unauthorized: missing or invalid API key.']], 401),
+            Http::response(['detail' => ['error' => 'This request exceeds your plan\'s set usage limit.']], 432),
+            Http::response(['detail' => [['type' => 'enum', 'loc' => ['body', 'topic'], 'msg' => 'Input should be \'general\', \'news\' or \'finance\'', 'input' => 'sport']]], 422),
+        ];
+        Http::fake(function () use (&$answers) {
+            return array_shift($answers);
+        });
+        $user = User::factory()->create();
+        $key = Connection::factory()->tavily()->for($user)->create()->ref_id;
+        $run = fn (string $type, array $settings) => $this->step($this->runChain($user, [$this->node('it', $type, ['connection' => $key, ...$settings])], ['none' => '']), 'it');
+
+        $read = $run('tavily.extract', ['urls' => 'https://a.example.com, https://b.example.com']);
+        $this->assertSame([NodeStatus::Succeeded, true, 'Short.'], [$read->status, $read->output['cut'], $read->output['results'][1]['text']]);
+        $this->assertStringEndsWith('…', $read->output['results'][0]['text']);
+        $this->assertLessThan(Engine::MAX_OUTPUT_BYTES, strlen((string) json_encode($read->output)));
+
+        $this->assertSame('Tavily could not read https://gone.example.com: Page not found', $run('tavily.extract', ['urls' => 'https://gone.example.com'])->error['message']);
+        $this->assertStringContainsString('refused the key', $run('tavily.search', ['query' => 'khao soi'])->error['message']);
+        $this->assertStringContainsString('credits are used up', $run('tavily.search', ['query' => 'khao soi'])->error['message']);
+        $this->assertSame('Tavily said: topic: Input should be \'general\', \'news\' or \'finance\'', $run('tavily.search', ['query' => 'khao soi', 'more' => [['name' => 'topic', 'value' => 'sport']]])->error['message']);
+        Http::assertSentCount(5);
+
+        // What is plainly wrong is said before Tavily is asked
+        $this->assertStringContainsString('at most 20 pages', $run('tavily.extract', ['urls' => implode("\n", array_map(fn (int $n) => "https://example.com/{$n}", range(1, 21)))])->error['message']);
+        $this->assertStringContainsString('no site to start from', $run('tavily.map', ['url' => '{{ trigger.none }}'])->error['message']);
+        Http::assertSentCount(5);
+    }
 }

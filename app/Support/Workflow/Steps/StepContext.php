@@ -130,6 +130,24 @@ final class StepContext
     }
 
     /**
+     * A "fields" setting worked out: each named value, without the ones left nameless.
+     *
+     * @return array<string, mixed>
+     */
+    public function fields(string $name): array
+    {
+        $values = [];
+
+        foreach ((array) $this->setting($name) as $field) {
+            if ($field['name'] !== '') {
+                $values[$field['name']] = $this->template("{$name}.{$field['name']}", $field['value']);
+            }
+        }
+
+        return $values;
+    }
+
+    /**
      * Send something outside, keeping a record of it: "sending" before the
      * call, "sent" or "failed" after -- so when a worker dies between, the
      * send is known to be unsure and is not simply made again.
