@@ -284,6 +284,52 @@ class WorkflowWorldTest extends TestCase
             && $request->hasHeader('Authorization', 'Bearer sk-or-secret'));
     }
 
+    // --- code ---
+
+    public function test_code_is_run_by_the_code_runner_on_what_came_before_and_gives_out_what_it_returns()
+    {
+        // The runner answers by what it is asked to run, as the real one would for each
+        Http::fake(['code:3000/run' => fn (Request $request) => Http::response(match (true) {
+            str_contains($request['code'], 'boom') => ['ok' => false, 'error' => 'TypeError: boom', 'line' => 3, 'logs' => ['about to fail']],
+            str_contains($request['code'], 'return {}') => '{"ok":true,"value":{},"logs":[]}',
+            str_contains($request['code'], 'return [') => ['ok' => true, 'value' => [1, 2], 'logs' => []],
+            default => ['ok' => true, 'value' => ['shout' => 'ADA', 'total' => 42], 'logs' => ['read Ada', 'done']],
+        })]);
+        $user = User::factory()->create();
+        $code = "console.log('read', trigger.name);\nreturn { shout: trigger.name.toUpperCase(), total: node(\"sum\").n * 2 };";
+
+        $run = $this->runChain($user, [
+            $this->node('sum', 'data.set', ['fields' => [['name' => 'n', 'value' => '{{ 20 + 1 }}']]]),
+            $this->node('work', 'data.code', ['code' => $code, 'seconds' => 3]),
+            $this->node('none', 'data.code', ['code' => 'return {}']),
+            $this->node('list', 'data.code', ['code' => 'return [1, 2]']),
+            $this->node('after', 'output.log', ['message' => '{{ node("work").shout }} {{ node("work").total }} {{ len(node("list").value) }}']),
+        ], ['name' => 'Ada']);
+
+        $this->assertSame(RunStatus::Succeeded, $run->status, (string) $run->error);
+        // A record is given out as it is, an empty one too; anything else as "value"
+        $this->assertSame([['shout' => 'ADA', 'total' => 42], [], ['value' => [1, 2]]], [$this->step($run, 'work')->output, $this->step($run, 'none')->output, $this->step($run, 'list')->output]);
+        // What it logged is in the run's log, before what follows it
+        $this->assertSame(['read Ada', 'done', 'ADA 42 2'], $run->logs()->pluck('message')->all());
+        // It is handed the code as written, its time, and what a formula could read: nothing else
+        Http::assertSent(fn (Request $request) => $request['code'] === $code
+            && $request['seconds'] === 3
+            && array_keys($request['data']) === ['trigger', 'input', 'steps']
+            && $request['data']['trigger']['name'] === 'Ada'
+            && $request['data']['steps']['sum'] === ['n' => 21]
+            && $request['data']['input'] === ['n' => 21]);
+
+        // What goes wrong in it is said as the code would say it, with the line
+        $failed = $this->runChain($user, [$this->node('work', 'data.code', ['code' => "const a = 1;\n\nthrow new TypeError('boom');"])]);
+        $this->assertSame([RunStatus::Failed, 'Run code: TypeError: boom (line 3)'], [$failed->status, $failed->error]);
+        $this->assertSame(['about to fail'], $failed->logs()->pluck('message')->all());
+
+        // With no runner to ask, it says so and waits to try again, rather than run anything here
+        Http::fake(['code:3000/run' => fn () => throw new ConnectionException('refused')]);
+        $unreached = $this->runChain($user, [$this->node('work', 'data.code', ['code' => 'return 1'])]);
+        $this->assertSame(['retry_wait', 'The code runner could not be reached: it runs as the "code" container.'], [($waiting = $this->step($unreached, 'work'))->status->value, $waiting->error['message']]);
+    }
+
     // --- the web ---
 
     public function test_a_request_reaches_only_the_public_internet()

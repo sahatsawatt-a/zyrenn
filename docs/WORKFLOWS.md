@@ -29,13 +29,15 @@ After changing PHP code, tell the workers to load it:
 
 ## Settings (`.env`)
 
-| Setting                      | Default | Meaning                                                                                                                                                                                  |
-| ---------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WORKFLOWS_PUBLIC_URL`       | empty   | Where Telegram, LINE and other senders reach `/hooks/*` from outside, e.g. an ngrok or Traefik address. Empty: nothing outside can reach the hooks, and Telegram bots are polled instead |
-| `NGROK_AUTHTOKEN`            | empty   | With `tunnel` among `COMPOSE_PROFILES`, the stack runs an ngrok tunnel at `WORKFLOWS_PUBLIC_URL` itself, which lets only `/hooks/*` through and comes back after a restart               |
-| `WORKFLOWS_KEEP_RUNS_DAYS`   | 30      | Runs that ended are deleted after this, with their steps, logs and sends                                                                                                                 |
-| `WORKFLOWS_KEEP_EVENTS_DAYS` | 14      | Records of what came in by webhook (used to spot repeats)                                                                                                                                |
-| `WORKFLOWS_KEEP_AUDIT_DAYS`  | 365     | Who published, switched on, ran, or changed a connection                                                                                                                                 |
+| Setting                      | Default            | Meaning                                                                                                                                                                                                                                                                                    |
+| ---------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `WORKFLOWS_PUBLIC_URL`       | empty              | Where Telegram, LINE and other senders reach `/hooks/*` from outside, e.g. an ngrok or Traefik address. Empty: nothing outside can reach the hooks, and Telegram bots are polled instead                                                                                                   |
+| `NGROK_AUTHTOKEN`            | empty              | With `tunnel` among `COMPOSE_PROFILES`, the stack runs an ngrok tunnel at `WORKFLOWS_PUBLIC_URL` itself, which lets only `/hooks/*` through and comes back after a restart                                                                                                                 |
+| `TUNNEL_CARRIES`             | `hooks`            | What that tunnel lets through: only `/hooks/*`, or with `app` the whole app, whose sign-in page is then on the internet. An error asked for at the public address never shows a debug page, whatever `APP_DEBUG` says; with the dev server, name the tunnel's host in `VITE_ALLOWED_HOSTS` |
+| `CODE_URL`                   | `http://code:3000` | Where a **Run code** step runs: the `code` container. Only changed to run one elsewhere                                                                                                                                                                                                    |
+| `WORKFLOWS_KEEP_RUNS_DAYS`   | 30                 | Runs that ended are deleted after this, with their steps, logs and sends                                                                                                                                                                                                                   |
+| `WORKFLOWS_KEEP_EVENTS_DAYS` | 14                 | Records of what came in by webhook (used to spot repeats)                                                                                                                                                                                                                                  |
+| `WORKFLOWS_KEEP_AUDIT_DAYS`  | 365                | Who published, switched on, ran, or changed a connection                                                                                                                                                                                                                                   |
 
 Runs still going or waiting are never pruned, however old.
 
@@ -236,6 +238,21 @@ messages does not, so a chat kept in a room is not written in for it. The
 "A rich menu for your LINE channel" template makes one, names it "main" and
 shows it to everyone, by hand.
 
+**Run code.** For what formulas can't say, a **Run code** step (Data) runs
+JavaScript: the body of a function that reads `trigger`, `input` and
+`node("key")` as a formula does, and whose `return` is what the step gives
+out -- a record as it is, anything else as `value`. `console.log` writes in
+the run's log; an error stops the step, saying which line. It may `await`,
+but only its own work: there is nothing outside it to reach.
+
+It never runs in the app. The `code` container (`docker/code`) runs it in a
+QuickJS interpreter compiled to WebAssembly, which has no network, no files,
+no process and no modules; each run has a thread and an interpreter of its
+own, 128 MB of memory, and is stopped after the step's time (5 seconds
+unless it says, 30 at most). It is handed up to 2 MB to read and may give
+back 1 MB. The container itself holds nothing of the app -- no `.env`, no
+volumes, no added rights -- and publishes no port.
+
 **Buttons.** Wherever a step takes buttons, each is what it says and what
 tapping it does. An address opens -- `link:` before it says it is one, where
 a formula gives it. Otherwise it comes back to the workflow,
@@ -298,6 +315,13 @@ templates are the full bridge between an outside chat and a room here:
   a picture when it is a JPEG or PNG, else as a link made by **Make a link
   to a file** -- an address that opens that one file for a day without
   signing in.
+- Who a chat is with is kept with its room, by **Find or make a room**:
+  their name and id as details, and their picture as the room's face. LINE
+  gives a picture's address ("LINE: who wrote"). Telegram gives a file:
+  **Telegram: about a chat** names the chat's photo, **Telegram: get the
+  file** keeps it in the Drive under the photo's own id -- told to use the
+  one there, so the same photo is fetched once -- and the room is given the
+  file's ref_id. A chat that shows a bot no photo keeps the face it had.
 - On LINE, what is written in the room is first tried as a reply to the
   last thing the other end wrote, which LINE does not count against the
   month's allowance: a **Reply on LINE** step with `{{ trigger.reply.token }}`
@@ -331,6 +355,136 @@ Checked against the real services: a LINE picture and a sticker in, a
 picture out to a phone, the read receipt (refused, Chat being off), and a
 few read-only questions to both. Everything else has only been run against
 faked services.
+
+## LinkedIn
+
+Each call is a step of its own, as the member the connection is signed in
+as.
+
+**Post on LinkedIn** posts on the member's own profile: words (at most
+3,000 letters), alone or with one thing more -- a link shown as a card, a
+picture or several (2 to 20; JPEG, PNG or GIF), a video (MP4, at most
+200 MB), a document shown page by page (PDF, Word or PowerPoint; at most
+100 MB and 300 pages), or a poll (a question, 2 to 4 answers, open from a
+day to two weeks). It is seen by anyone, or by the member's connections
+only. It gives out the post's `id` and its address as `url`. LinkedIn has no way
+to be told "this is a repeat", so the step is never simply made again; it
+does refuse a post whose words are the same as one just made.
+
+**The others.** Repost (with words over it or none), delete a post,
+comment, delete a comment, like, take back a like, and "LinkedIn: who I
+am". A post is named by the id a step gave out or by its link; a comment by
+the `urn` "Comment on LinkedIn" gives.
+
+LinkedIn has two sets of calls, and a step uses the one that has its call.
+The older (`/v2`) posts words, a link, a picture or a video, and comments,
+likes and deletes. The newer (`/rest`) has several pictures, documents,
+polls and reposts, and is asked for by the month it was written against
+(`LinkedInApi::VERSION`), which LinkedIn answers to for a year: move it on
+before then. Its words are written with a backslash before each mark it
+would read as its own -- a bracket, a star, an underscore -- so they stand
+for themselves; a `#` before a word stays the hashtag it looks like.
+
+The connection is a LinkedIn app of one's own, and a member signed in
+through it:
+
+1. At linkedin.com/developers make an app (LinkedIn asks for a company page
+   to tie it to), and on its Products page add **Share on LinkedIn** and
+   **Sign In with LinkedIn using OpenID Connect**. Neither is reviewed.
+2. Add a LinkedIn connection here with the app's client ID and client
+   secret, from its Auth page.
+3. The connection then shows the address LinkedIn sends its member back to,
+   the same for every connection: add it on the Auth page under "Authorized
+   redirect URLs". With `WORKFLOWS_PUBLIC_URL` set it is that address's
+   `/hooks/linkedin/signed-in`, which takes nothing in and only passes the
+   member on to where they set out (the tunnel has to be up); without, it
+   is `/settings/connections/signed-in` where the app is open, which
+   LinkedIn wants to be https and which has to be the one listed.
+4. **Sign in with LinkedIn**, and say yes there.
+
+A sign-in lasts 60 days, and LinkedIn renews one unasked only for its
+marketing partners -- so the connection says until when it is signed in,
+and a step after that fails saying so rather than asking LinkedIn. Signing
+in again takes one click while still signed in to LinkedIn. A member posts
+through an app at most 150 times a day.
+
+Nothing here reads: the sign-in cannot see the member's feed, their past
+posts, or who commented, so nothing on LinkedIn can start a workflow.
+Posting as a company page needs LinkedIn's Community Management API, which
+is reviewed; editing a profile is for developers LinkedIn approves. A post
+cannot be put in a group: LinkedIn has a place for one in a post, and
+answers an ordinary app that names it with a 500. LinkedIn has no test
+site; it lets a developer keep up to five test profiles.
+
+Checked against the real LinkedIn (2026-10-12), each by a step in a
+workflow: signing in by the public address; a post of words alone, with a
+link, a picture, two pictures, a video, a document and a poll; a comment
+and a like, and each taken away again; every post deleted; and "who I am".
+A repost of a post seen by connections only was refused (403), which
+LinkedIn does for such a post whoever asks; one of a post anyone can see
+has not been tried.
+
+## WhatsApp, Facebook, Instagram and Threads
+
+The four are Meta's, set up in one Meta app (developers.facebook.com), and
+their calls are written against one Graph API version (`Meta::VERSION`),
+which Meta answers to for about two years: move it on before then. Each call
+is a step of its own, in its service's group. None has been run against the
+real service yet; all of it against faked ones.
+
+**WhatsApp** is a business number, by Meta's Cloud API -- not a person's own
+WhatsApp. The connection takes the number's ID and a token (WhatsApp → API
+Setup in the Meta app; the token shown there lasts a day, a system user's
+lasts) and the app's secret. Meta gives a test number that can write to five
+phones for nothing.
+
+- **WhatsApp message** starts a run when the number is written to. The
+  connection shows its webhook address and a verify token: both go in the
+  Meta app under WhatsApp → Configuration, subscribed to "messages". Meta
+  signs what it sends with the app secret; one address takes everything the
+  app is told of, so only what came to the connection's own number is taken.
+- **Send on WhatsApp** (words, with up to three buttons), **Send a file**
+  (a picture, a video or a recording shown as one, anything else as a
+  document), **Send a place**, **React**, **Mark as read** (with
+  "typing…"), and **WhatsApp: get the file**.
+- Words of one's own reach someone only within 24 hours of their last
+  message. Before that, or after, only **Send a template** does: a message
+  WhatsApp approved for the business, which Meta charges for.
+
+**Facebook** posts as a Page: Facebook lets an app post as a Page, never on
+a person's own profile. The connection is the Meta app's ID and secret, with
+Facebook Login added; someone who looks after the Page signs in, and the
+Page's own token is kept, which does not run out. An account that looks
+after several Pages names the one in "Page". Steps: **Post on a Facebook
+Page** (words, a link, a picture or several, a video), comment, like, take
+back a like, delete, and -- Facebook lets a Page read -- **the Page's
+posts**, **a post's comments** and **the Page**. Nothing on Facebook starts
+a workflow yet: a schedule that asks for the newest comments does instead.
+
+**Instagram** posts as a professional account (a business's or a creator's;
+Instagram gives an app nothing of a personal one), signed in by Instagram's
+own login with the Instagram app's ID and secret. Steps: **Post on
+Instagram** (a picture, several to swipe through, a reel, a story), comment,
+answer a comment, delete a comment, **my posts**, **a post's comments**,
+**who I am**. Instagram is not sent a file: it is handed an address and
+fetches it, so posting needs `WORKFLOWS_PUBLIC_URL`, and a picture has to be
+a JPEG. A video is published once Instagram has worked through it; the step
+waits meanwhile, holding no worker, for up to five minutes. An app can
+publish and cannot take a post down again.
+
+**Threads** posts as a Threads profile -- anyone's -- signed in with the
+Threads app's ID and secret. Steps: **Post on Threads** (words up to 500
+letters, a link, a picture, a video, several; told which post it answers,
+a reply under it), repost, delete (100 a day), **my posts**, **a post's
+replies**, **who I am**. Pictures and videos are fetched from the app, as
+on Instagram.
+
+Instagram's and Threads' sign-ins last 60 days and, unlike LinkedIn's, are
+made new unasked while they still hold -- when a step uses the connection or
+it is tested with ten days or fewer left -- so one in use does not run out.
+Every sign-in comes back by the same public address as LinkedIn's
+(`/hooks/{service}/signed-in`), which the connection shows to be listed in
+the Meta app.
 
 ## SerpApi and Tavily
 

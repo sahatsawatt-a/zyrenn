@@ -2,7 +2,6 @@
 
 namespace App\Support\Workflow\Steps;
 
-use App\Models\Drive\DriveFile;
 use App\Support\RemoteDownload;
 
 /**
@@ -22,16 +21,8 @@ final class DriveSave implements Step
     public function run(StepContext $step): StepResult
     {
         // Told to use a file of that name already in the folder: nothing is fetched
-        if ($step->setting('same') === 'reuse' && ($name = DriveFile::nameOnly($step->text('name'))) !== '') {
-            $there = $step->owner()->driveFiles()
-                ->where('name', $name)
-                ->where('folder_id', DriveSteps::folder($step)?->id)
-                ->latest('id')
-                ->first();
-
-            if ($there !== null) {
-                return new StepResult(DriveSteps::summary($there));
-            }
+        if (($there = DriveSteps::there($step)) !== null) {
+            return new StepResult(DriveSteps::summary($there));
         }
 
         return DriveSteps::keep($step, $step->setting('from') === 'text' ? self::fromText($step) : self::fromUrl($step));

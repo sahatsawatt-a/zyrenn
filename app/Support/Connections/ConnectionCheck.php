@@ -6,14 +6,16 @@ use App\Models\Connection;
 use App\Support\Chat\AiClient;
 use App\Support\Chat\AiFailed;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 
 /**
  * Whether a connection works, asked of the service itself in the cheapest
  * way it offers: the models a host lists, the bot Telegram says a token is,
- * the channel LINE says a token opens, what is left of a search key's
- * allowance. A failure is an answer too, so it comes back as ok: false
- * rather than as an error. A token is never repeated
+ * the channel LINE says a token opens, the member or the Page a sign-in is
+ * of, the number WhatsApp says a token speaks for, what is left of a search
+ * key's allowance. A failure is an answer too, so it
+ * comes back as ok: false rather than as an error. A token is never repeated
  * in what comes back, even when the service says it.
  */
 class ConnectionCheck
@@ -32,6 +34,14 @@ class ConnectionCheck
         return match ($connection->service) {
             Services::TELEGRAM => $this->telegram($connection),
             Services::LINE => $this->line($connection),
+            Services::LINKEDIN => $this->linkedin($connection),
+            Services::FACEBOOK => $this->signedIn($connection, fn () => Http::timeout(10)->acceptJson()->withToken($connection->secret('page_token') ?? '')
+                ->get(Meta::FACEBOOK.'/'.$connection->setting('page_id'), ['fields' => 'name']), 'name'),
+            Services::INSTAGRAM => $this->signedIn($connection, fn () => Http::timeout(10)->acceptJson()
+                ->get(Meta::INSTAGRAM.'/me', ['fields' => 'username', 'access_token' => $connection->secret('access_token')]), 'username'),
+            Services::THREADS => $this->signedIn($connection, fn () => Http::timeout(10)->acceptJson()
+                ->get(Meta::THREADS.'/me', ['fields' => 'username', 'access_token' => $connection->secret('access_token')]), 'username'),
+            Services::WHATSAPP => $this->whatsapp($connection),
             Services::SERPAPI => $this->serpapi($connection),
             Services::TAVILY => $this->tavily($connection),
             default => ['ok' => true, 'message' => 'Nothing to try ahead: it is checked when it is used.'],
@@ -105,6 +115,109 @@ class ConnectionCheck
         return ['ok' => false, 'message' => $response->status() === 401
             ? 'LINE refused the channel access token.'
             : "LINE answered with {$response->status()}."];
+    }
+
+    /**
+     * Its client id and secret can only be tried by signing in, so until
+     * then there is nothing to ask; after, LinkedIn says who the sign-in is of.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    private function linkedin(Connection $connection): array
+    {
+        $until = LinkedInSignIn::until($connection);
+
+        if ($until === null) {
+            return ['ok' => true, 'message' => 'Nothing to try yet: once it is saved, sign in with LinkedIn.'];
+        }
+
+        if ($until->isPast()) {
+            return ['ok' => false, 'message' => "Its sign-in ran out on {$until->toFormattedDayDateString()}: sign in with LinkedIn again."];
+        }
+
+        try {
+            $response = LinkedInSignIn::who($connection->secret('access_token') ?? '');
+        } catch (ConnectionException) {
+            return ['ok' => false, 'message' => 'Could not reach LinkedIn.'];
+        }
+
+        if ($response->successful()) {
+            $name = $response->json('name');
+
+            return ['ok' => true, 'message' => (is_string($name) ? "Works: signed in as {$name}" : 'Works')." until {$until->toFormattedDayDateString()}."];
+        }
+
+        return ['ok' => false, 'message' => $response->status() === 401
+            ? 'LinkedIn no longer takes this sign-in: sign in with LinkedIn again.'
+            : "LinkedIn answered with {$response->status()}."];
+    }
+
+    /**
+     * One signed in on its service's own pages (SignIns): nothing to ask
+     * until it is, then the service says who the sign-in is of. One near its
+     * end that can be made new is, first.
+     *
+     * @param  callable(): Response  $ask
+     * @return array{ok: bool, message: string}
+     */
+    private function signedIn(Connection $connection, callable $ask, string $named): array
+    {
+        /** @var class-string<SignsIn> $signIn */
+        $signIn = SignIns::for($connection->service);
+        $service = $connection->label();
+
+        if (is_subclass_of($signIn, ProfileSignIn::class)) {
+            $signIn::refresh($connection);
+        }
+
+        $who = $signIn::signedIn($connection);
+        $until = $who['until'] ?? null;
+
+        if ($who === null) {
+            return ['ok' => true, 'message' => "Nothing to try yet: once it is saved, sign in with {$service}."];
+        }
+
+        if ($until?->isPast()) {
+            return ['ok' => false, 'message' => "Its sign-in ran out on {$until->toFormattedDayDateString()}: sign in with {$service} again."];
+        }
+
+        try {
+            $response = $ask();
+        } catch (ConnectionException) {
+            return ['ok' => false, 'message' => "Could not reach {$service}."];
+        }
+
+        if (! $response->successful()) {
+            return ['ok' => false, 'message' => "{$service} no longer takes this sign-in ({$response->status()}): sign in with {$service} again."];
+        }
+
+        $name = $response->json($named);
+
+        return ['ok' => true, 'message' => (is_string($name) ? "Works: signed in as {$name}" : 'Works').($until === null ? '.' : " until {$until->toFormattedDayDateString()}.")];
+    }
+
+    /**
+     * @return array{ok: bool, message: string}
+     */
+    private function whatsapp(Connection $connection): array
+    {
+        try {
+            $response = Http::timeout(10)->acceptJson()->withToken($connection->secret('access_token') ?? '')
+                ->get(Meta::FACEBOOK.'/'.rawurlencode((string) $connection->setting('phone_number_id')), ['fields' => 'display_phone_number,verified_name']);
+        } catch (ConnectionException) {
+            return ['ok' => false, 'message' => 'Could not reach WhatsApp.'];
+        }
+
+        if ($response->successful()) {
+            $number = $response->json('display_phone_number');
+            $name = $response->json('verified_name');
+
+            return ['ok' => true, 'message' => 'Works'.(is_string($number) ? ": this is {$number}".(is_string($name) && $name !== '' ? " ({$name})" : '') : '').'.'];
+        }
+
+        return ['ok' => false, 'message' => in_array($response->status(), [401, 403], true) || $response->json('error.code') === 190
+            ? 'WhatsApp refused the access token: the one from API Setup lasts a day.'
+            : 'WhatsApp said: '.Meta::said($response)];
     }
 
     /**

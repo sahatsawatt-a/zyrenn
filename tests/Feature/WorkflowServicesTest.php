@@ -15,16 +15,17 @@ use App\Support\Workflow\NodeStatus;
 use App\Support\Workflow\NodeTypes;
 use App\Support\Workflow\References;
 use App\Support\Workflow\RunStatus;
+use App\Support\Workflow\Steps\WhatsAppApi;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /**
- * Every call Telegram and LINE offer as a step of its own: each asks the
- * call it stands for, with what its settings came to -- and the triggers
- * start on the kind of thing they are set to. Through the real queue; both
- * services are faked.
+ * Every call Telegram, LINE and LinkedIn offer as a step of its own: each
+ * asks the call it stands for, with what its settings came to -- and the
+ * triggers start on the kind of thing they are set to. Through the real
+ * queue; the services are faked.
  */
 class WorkflowServicesTest extends TestCase
 {
@@ -635,6 +636,457 @@ class WorkflowServicesTest extends TestCase
         $drawn = Envelope::telegram(['update_id' => 1, 'message' => ['message_id' => 1, 'chat' => $chat, 'from' => $from, 'sticker' => ['file_id' => 'tgs-1', 'is_animated' => true, 'thumbnail' => ['file_id' => 'thumb-1']]]])['sticker'];
         $filmed = Envelope::telegram(['update_id' => 2, 'message' => ['message_id' => 2, 'chat' => $chat, 'from' => $from, 'sticker' => ['file_id' => 'webm-1', 'is_video' => true, 'emoji' => '🎉']]])['sticker'];
         $this->assertSame([true, 'thumb-1', true, 'webm-1'], [$drawn['animated'], $drawn['picture'], $filmed['animated'], $filmed['picture']]);
+    }
+
+    // --- LinkedIn ---
+
+    public function test_a_post_on_linkedin_goes_out_as_the_member_with_a_link_or_a_picture()
+    {
+        Http::fake([
+            'api.linkedin.com/v2/assets?action=registerUpload' => Http::response(['value' => [
+                'uploadMechanism' => ['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest' => ['uploadUrl' => 'https://api.linkedin.com/mediaUpload/abc/0']],
+                'asset' => 'urn:li:digitalmediaAsset:abc',
+            ]]),
+            'api.linkedin.com/mediaUpload/abc/0' => Http::response('', 201),
+            'api.linkedin.com/v2/ugcPosts' => Http::response(['id' => 'urn:li:share:77'], 201, ['X-RestLi-Id' => 'urn:li:share:77']),
+        ]);
+        $user = User::factory()->create();
+        $as = Connection::factory()->linkedin()->for($user)->create()->ref_id;
+        $picture = $this->file($user, 'launch.png');
+
+        $run = $this->runChain($user, [
+            $this->node('words', 'linkedin.post', ['connection' => $as, 'text' => 'Out today: {{ trigger.what }}']),
+            $this->node('card', 'linkedin.post', ['connection' => $as, 'text' => 'Read on', 'with' => 'link', 'link' => 'https://example.com/{{ trigger.what }}', 'title' => 'The news', 'description' => 'All of it', 'visibility' => 'CONNECTIONS']),
+            $this->node('shown', 'linkedin.post', ['connection' => $as, 'with' => 'picture', 'picture' => $picture->ref_id]),
+        ], ['what' => 'beans']);
+
+        $this->assertAllWentThrough($run);
+        $this->assertSame(['id' => 'urn:li:share:77', 'url' => 'https://www.linkedin.com/feed/update/urn:li:share:77/', 'as' => 'Ada Lovelace'], $this->step($run, 'words')->output);
+
+        $posts = Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/v2/ugcPosts'))->map(fn (array $pair) => $pair[0])->values();
+        $content = fn (int $n) => $posts[$n]['specificContent']['com.linkedin.ugc.ShareContent'];
+
+        // As the member who signed in, with their token and never the app's secret
+        $this->assertSame(['urn:li:person:abc123', 'PUBLISHED'], [$posts[0]['author'], $posts[0]['lifecycleState']]);
+        $this->assertTrue($posts[0]->hasHeader('Authorization', 'Bearer linkedin-token'));
+        $this->assertSame(['shareCommentary' => ['text' => 'Out today: beans'], 'shareMediaCategory' => 'NONE'], $content(0));
+        $this->assertSame('PUBLIC', $posts[0]['visibility']['com.linkedin.ugc.MemberNetworkVisibility']);
+
+        $this->assertSame(['ARTICLE', [['status' => 'READY', 'originalUrl' => 'https://example.com/beans', 'title' => ['text' => 'The news'], 'description' => ['text' => 'All of it']]]], [$content(1)['shareMediaCategory'], $content(1)['media']]);
+        $this->assertSame('CONNECTIONS', $posts[1]['visibility']['com.linkedin.ugc.MemberNetworkVisibility']);
+
+        // A picture is handed over first, as the member's own, and the post carries what LinkedIn named it
+        $asked = $this->asked('api.linkedin.com');
+        $this->assertSame('urn:li:person:abc123', $asked['assets']['registerUploadRequest']['owner']);
+        $this->assertSame(['PUT', base64_decode(self::PNG)], [$asked['0']->method(), $asked['0']->body()]);
+        $this->assertSame(['IMAGE', [['status' => 'READY', 'media' => 'urn:li:digitalmediaAsset:abc']]], [$content(2)['shareMediaCategory'], $content(2)['media']]);
+    }
+
+    public function test_a_linkedin_post_says_what_is_missing_and_when_its_sign_in_has_run_out()
+    {
+        Http::fake(['api.linkedin.com/v2/ugcPosts' => Http::response(['message' => 'Content is a duplicate of urn:li:share:77', 'status' => 422], 422)]);
+        $user = User::factory()->create();
+        $as = Connection::factory()->linkedin()->for($user)->create();
+        $run = fn (array $settings, ?Connection $through = null) => $this->step($this->runChain($user, [$this->node('it', 'linkedin.post', ['connection' => ($through ?? $as)->ref_id, ...$settings])], ['n' => 1]), 'it')->error['message'];
+
+        $this->assertSame('The post came to nothing.', $run(['text' => ' ']));
+        $this->assertStringContainsString('at most 3,000 letters, and this is 3,001', $run(['text' => str_repeat('a', 3001)]));
+        $this->assertStringContainsString('not an address', $run(['with' => 'link', 'link' => 'example.com']));
+        $this->assertStringContainsString('JPEG, a PNG or a GIF', $run(['with' => 'picture', 'picture' => $this->file($user, 'notes.pdf', 'application/pdf')->ref_id]));
+        // What LinkedIn says is passed on as it said it
+        $this->assertSame('LinkedIn said: Content is a duplicate of urn:li:share:77.', $run(['text' => 'Again']));
+        Http::assertSentCount(1);
+
+        // Never asked with a sign-in that is over, or one not made yet
+        $old = Connection::factory()->linkedin()->for($user)->create(['name' => 'Old']);
+        $old->forceFill(['settings' => [...$old->settings, 'expires_at' => now()->subDay()->toIso8601String()]])->save();
+        $new = Connection::factory()->for($user)->create(['name' => 'New', 'service' => 'linkedin', 'settings' => ['client_id' => 'c'], 'secrets' => ['client_secret' => 's']]);
+
+        $this->assertStringContainsString('ran out on', $run(['text' => 'Hi'], $old));
+        $this->assertStringContainsString('"New" is not signed in to LinkedIn yet', $run(['text' => 'Hi'], $new));
+        Http::assertSentCount(1);
+    }
+
+    public function test_a_linkedin_post_carries_a_video_several_pictures_a_document_or_a_poll()
+    {
+        Http::fake([
+            'api.linkedin.com/v2/assets?action=registerUpload' => Http::response(['value' => [
+                'uploadMechanism' => ['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest' => ['uploadUrl' => 'https://www.linkedin.com/dms-uploads/vid/0', 'headers' => ['media-type-family' => 'VIDEO']]],
+                'asset' => 'urn:li:digitalmediaAsset:vid',
+            ]]),
+            'api.linkedin.com/rest/images?action=initializeUpload' => Http::sequence()
+                ->push(['value' => ['uploadUrl' => 'https://www.linkedin.com/dms-uploads/img/1', 'image' => 'urn:li:image:1']])
+                ->push(['value' => ['uploadUrl' => 'https://www.linkedin.com/dms-uploads/img/2', 'image' => 'urn:li:image:2']]),
+            'api.linkedin.com/rest/documents?action=initializeUpload' => Http::response(['value' => ['uploadUrl' => 'https://www.linkedin.com/dms-uploads/doc/0', 'document' => 'urn:li:document:9']]),
+            'www.linkedin.com/dms-uploads/*' => Http::response('', 201),
+            'api.linkedin.com/v2/ugcPosts' => Http::response([], 201, ['X-RestLi-Id' => 'urn:li:ugcPost:70']),
+            'api.linkedin.com/rest/posts' => Http::response('', 201, ['x-restli-id' => 'urn:li:ugcPost:88']),
+        ]);
+        $user = User::factory()->create();
+        $as = Connection::factory()->linkedin()->for($user)->create()->ref_id;
+        $film = $this->file($user, 'launch.mp4', 'video/mp4');
+        $deck = $this->file($user, 'plan.pdf', 'application/pdf');
+        $views = [$this->file($user, 'front.png')->ref_id, $this->file($user, 'back.png')->ref_id];
+
+        $run = $this->runChain($user, [
+            $this->node('film', 'linkedin.post', ['connection' => $as, 'text' => 'Watch', 'with' => 'video', 'video' => $film->ref_id, 'visibility' => 'CONNECTIONS']),
+            $this->node('album', 'linkedin.post', ['connection' => $as, 'text' => 'Two (2) views #launch', 'with' => 'pictures', 'pictures' => implode(', ', $views)]),
+            $this->node('deck', 'linkedin.post', ['connection' => $as, 'with' => 'document', 'document' => $deck->ref_id, 'visibility' => 'CONNECTIONS']),
+            $this->node('ask', 'linkedin.post', ['connection' => $as, 'text' => 'Tell us', 'with' => 'poll', 'question' => 'Which next?', 'answers' => "Maps\nWorkflows\n\nChat", 'lasts' => 'SEVEN_DAYS']),
+        ], ['n' => 1]);
+
+        $this->assertAllWentThrough($run);
+        $this->assertSame('https://www.linkedin.com/feed/update/urn:li:ugcPost:88/', $this->step($run, 'ask')->output['url']);
+
+        // A video goes by the older call; where it is put is its own key
+        $old = Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/v2/ugcPosts'))->sole()[0];
+        $this->assertSame(['CONNECTIONS', 'VIDEO', 'urn:li:digitalmediaAsset:vid'], [
+            $old['visibility']['com.linkedin.ugc.MemberNetworkVisibility'],
+            $old['specificContent']['com.linkedin.ugc.ShareContent']['shareMediaCategory'], $old['specificContent']['com.linkedin.ugc.ShareContent']['media'][0]['media'],
+        ]);
+        $put = fn (string $where) => Http::recorded(fn (Request $request) => str_ends_with($request->url(), "/dms-uploads/{$where}"))->sole()[0];
+        $this->assertSame(['PUT', false, 'VIDEO'], [$put('vid/0')->method(), $put('vid/0')->hasHeader('Authorization'), $put('vid/0')->header('media-type-family')[0]]);
+        $this->assertTrue($put('img/1')->hasHeader('Authorization', 'Bearer linkedin-token'));
+
+        // The rest go by the newer call, asked for by its month, its words written so their marks stand for themselves
+        $new = Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/rest/posts'))->map(fn (array $pair) => $pair[0])->values();
+        $this->assertTrue($new[0]->hasHeader('LinkedIn-Version', '202609'));
+        $this->assertSame(['urn:li:person:abc123', 'Two \\(2\\) views #launch', 'PUBLIC', 'PUBLISHED'], [$new[0]['author'], $new[0]['commentary'], $new[0]['visibility'], $new[0]['lifecycleState']]);
+        $this->assertSame(['multiImage' => ['images' => [['id' => 'urn:li:image:1'], ['id' => 'urn:li:image:2']]]], $new[0]['content']);
+        $this->assertSame([['media' => ['title' => 'plan.pdf', 'id' => 'urn:li:document:9']], 'CONNECTIONS'], [$new[1]['content'], $new[1]['visibility']]);
+        $this->assertSame(['poll' => ['question' => 'Which next?', 'options' => [['text' => 'Maps'], ['text' => 'Workflows'], ['text' => 'Chat']], 'settings' => ['duration' => 'SEVEN_DAYS']]], $new[2]['content']);
+    }
+
+    public function test_each_other_linkedin_call_is_a_step_and_a_post_is_named_by_its_id_or_its_link()
+    {
+        Http::fake(fn (Request $request) => match (true) {
+            str_ends_with($request->url(), '/rest/posts') => Http::response('', 201, ['x-restli-id' => 'urn:li:share:99']),
+            $request->method() === 'POST' && str_ends_with($request->url(), '/comments') => Http::response(['id' => '555', '$URN' => 'urn:li:comment:(urn:li:activity:77,555)'], 201, ['x-restli-id' => '555']),
+            str_ends_with($request->url(), '/v2/userinfo') => Http::response(['sub' => 'abc123', 'name' => 'Ada Lovelace', 'given_name' => 'Ada', 'family_name' => 'Lovelace', 'picture' => 'https://media.example/ada.jpg', 'locale' => ['country' => 'GB', 'language' => 'en']]),
+            $request->method() === 'DELETE' => Http::response('', 204),
+            default => Http::response('', 201),
+        });
+        $user = User::factory()->create();
+        $on = fn (array $settings = []) => ['connection' => Connection::factory()->linkedin()->for($user)->create()->ref_id, ...$settings];
+
+        $run = $this->runChain($user, [
+            $this->node('again', 'linkedin.repost', $on(['post' => 'https://www.linkedin.com/feed/update/urn:li:share:77/', 'text' => 'Worth a read'])),
+            $this->node('said', 'linkedin.comment', $on(['post' => 'urn:li:share:77', 'text' => 'Well said'])),
+            $this->node('liked', 'linkedin.like', $on(['post' => '{{ trigger.post }}'])),
+            $this->node('unliked', 'linkedin.unlike', $on(['post' => 'urn:li:share:77'])),
+            $this->node('unsaid', 'linkedin.comment_delete', $on(['comment' => '{{ node("said").urn }}'])),
+            $this->node('gone', 'linkedin.delete', $on(['post' => '{{ node("again").id }}'])),
+            $this->node('who', 'linkedin.me', $on()),
+        ], ['post' => 'https://www.linkedin.com/posts/ada_some-words-activity-7123-AbCd']);
+
+        $this->assertAllWentThrough($run);
+        $sent = Http::recorded()->map(fn (array $pair) => [$pair[0]->method().' '.rawurldecode(str_replace('https://api.linkedin.com', '', $pair[0]->url())), $pair[0]->data()])->all();
+        $me = 'urn:li:person:abc123';
+
+        $this->assertSame(['POST /rest/posts', 'urn:li:share:77', 'Worth a read'], [$sent[0][0], $sent[0][1]['reshareContext']['parent'], $sent[0][1]['commentary']]);
+        $this->assertSame(['POST /v2/socialActions/urn:li:share:77/comments', ['actor' => $me, 'message' => ['text' => 'Well said']]], $sent[1]);
+        // A post's own page names it in its last words
+        $this->assertSame(['POST /v2/socialActions/urn:li:activity:7123/likes', ['actor' => $me, 'object' => 'urn:li:activity:7123']], $sent[2]);
+        $this->assertSame("DELETE /v2/socialActions/urn:li:share:77/likes/{$me}?actor={$me}", $sent[3][0]);
+        // A comment is taken away by what the step that made it gave out
+        $this->assertSame("DELETE /v2/socialActions/urn:li:activity:77/comments/555?actor={$me}", $sent[4][0]);
+        $this->assertSame('DELETE /v2/ugcPosts/urn:li:share:99', $sent[5][0]);
+
+        $this->assertSame(['id' => 'urn:li:share:99', 'url' => 'https://www.linkedin.com/feed/update/urn:li:share:99/', 'as' => 'Ada Lovelace', 'of' => 'urn:li:share:77'], $this->step($run, 'again')->output);
+        $this->assertSame(['id' => '555', 'urn' => 'urn:li:comment:(urn:li:activity:77,555)', 'post' => 'urn:li:share:77'], $this->step($run, 'said')->output);
+        $this->assertSame(['id' => 'abc123', 'name' => 'Ada Lovelace', 'first' => 'Ada', 'last' => 'Lovelace', 'picture' => 'https://media.example/ada.jpg', 'language' => 'en'], $this->step($run, 'who')->output);
+    }
+
+    public function test_a_linkedin_step_says_what_is_wrong_before_linkedin_is_asked()
+    {
+        Http::fake();
+        $user = User::factory()->create();
+        $as = Connection::factory()->linkedin()->for($user)->create()->ref_id;
+        $one = $this->file($user, 'front.png')->ref_id;
+        $run = fn (string $type, array $settings) => $this->step($this->runChain($user, [$this->node('it', $type, ['connection' => $as, ...$settings])], ['n' => 1]), 'it')->error['message'];
+
+        $this->assertStringContainsString('from 2 to 20, and these are 1', $run('linkedin.post', ['with' => 'pictures', 'pictures' => $one]));
+        $this->assertStringContainsString('not a video', $run('linkedin.post', ['with' => 'video', 'video' => $one]));
+        $this->assertStringContainsString('a PDF, a Word file or a PowerPoint', $run('linkedin.post', ['with' => 'document', 'document' => $one]));
+        $this->assertStringContainsString('from 2 to 4 answers', $run('linkedin.post', ['with' => 'poll', 'question' => 'Well?', 'answers' => 'Yes']));
+        $this->assertStringContainsString('at most 30 letters', $run('linkedin.post', ['with' => 'poll', 'question' => 'Well?', 'answers' => "Yes\n".str_repeat('n', 31)]));
+        $this->assertStringContainsString('not a LinkedIn post', $run('linkedin.like', ['post' => 'the one from Tuesday']));
+        $this->assertStringContainsString('not a LinkedIn comment', $run('linkedin.comment_delete', ['comment' => 'that one']));
+        Http::assertNothingSent();
+    }
+
+    // --- Facebook ---
+
+    public function test_a_facebook_page_posts_comments_likes_deletes_and_reads_as_the_page()
+    {
+        Http::fake(fn (Request $request) => match (true) {
+            str_ends_with($request->url(), '/1001/photos') => Http::response(['id' => 'photo-'.Http::recorded()->count(), 'post_id' => '1001_77']),
+            str_contains($request->url(), 'graph-video.facebook.com') => Http::response(['id' => '9001']),
+            str_ends_with($request->url(), '/1001/feed') && $request->method() === 'POST' => Http::response(['id' => '1001_55']),
+            str_contains($request->url(), '/1001/feed') => Http::response(['data' => [['id' => '1001_55', 'message' => 'Out today', 'created_time' => '2026-10-12T09:00:00+0000', 'permalink_url' => 'https://www.facebook.com/1001/posts/55']]]),
+            str_contains($request->url(), '/1001_55/comments') && $request->method() === 'GET' => Http::response(['data' => [['id' => '55_1', 'message' => 'Nice', 'created_time' => '2026-10-12T10:00:00+0000', 'from' => ['id' => '7', 'name' => 'Bo']]]]),
+            str_ends_with($request->url(), '/comments') => Http::response(['id' => '55_2']),
+            $request->method() === 'GET' => Http::response(['id' => '1001', 'name' => 'Shop', 'link' => 'https://www.facebook.com/shop', 'fan_count' => 12, 'followers_count' => 15, 'picture' => ['data' => ['url' => 'https://example.com/p.jpg']]]),
+            default => Http::response(['success' => true]),
+        });
+        $user = User::factory()->create();
+        $page = Connection::factory()->facebook()->for($user)->create()->ref_id;
+        $on = fn (array $settings = []) => ['connection' => $page, ...$settings];
+        $front = $this->file($user, 'front.png')->ref_id;
+
+        $run = $this->runChain($user, [
+            $this->node('words', 'facebook.post', $on(['text' => 'Out today', 'with' => 'link', 'link' => 'https://example.com/news'])),
+            $this->node('shown', 'facebook.post', $on(['text' => 'Look', 'with' => 'picture', 'picture' => $front])),
+            $this->node('album', 'facebook.post', $on(['text' => 'Both sides', 'with' => 'pictures', 'pictures' => "{$front}, ".$this->file($user, 'back.png')->ref_id])),
+            $this->node('film', 'facebook.post', $on(['text' => 'Watch', 'with' => 'video', 'video' => $this->file($user, 'clip.mp4', 'video/mp4')->ref_id, 'title' => 'Launch'])),
+            $this->node('said', 'facebook.comment', $on(['post' => '{{ node("words").id }}', 'text' => 'Thanks all'])),
+            $this->node('liked', 'facebook.like', $on(['post' => '{{ node("words").id }}'])),
+            $this->node('unliked', 'facebook.unlike', $on(['post' => '{{ node("words").url }}'])),
+            $this->node('posts', 'facebook.posts', $on(['count' => 5])),
+            $this->node('heard', 'facebook.comments', $on(['post' => '{{ node("posts").first.id }}'])),
+            $this->node('who', 'facebook.me', $on()),
+            $this->node('gone', 'facebook.delete', $on(['post' => '{{ node("said").id }}'])),
+        ], ['n' => 1]);
+
+        $this->assertAllWentThrough($run);
+        $sent = Http::recorded()->map(fn (array $pair) => [$pair[0]->method().' '.preg_replace('#^https://graph(-video)?\.facebook\.com/v25\.0#', '$1', strtok($pair[0]->url(), '?')), $pair[0]])->all();
+        $calls = array_column($sent, 0);
+
+        // Each goes to the Page's own call for it, as the Page
+        $this->assertSame(['POST /1001/feed', 'POST /1001/photos', 'POST /1001/photos', 'POST /1001/photos', 'POST /1001/feed', 'POST -video/1001/videos'], array_slice($calls, 0, 6));
+        $this->assertTrue($sent[0][1]->hasHeader('Authorization', 'Bearer page-token'));
+        $this->assertSame(['message' => 'Out today', 'link' => 'https://example.com/news'], $sent[0][1]->data());
+        // Several pictures are handed over unseen, then shown by one post
+        $this->assertStringContainsString('name="published"', $sent[2][1]->body());
+        $this->assertSame(['Both sides', [['media_fbid' => 'photo-2'], ['media_fbid' => 'photo-3']]], [$sent[4][1]['message'], $sent[4][1]['attached_media']]);
+        $this->assertSame(['POST /1001_55/comments', 'POST /1001_55/likes', 'DELETE /1001_55/likes', 'GET /1001/feed', 'GET /1001_55/comments', 'GET /1001', 'DELETE /55_2'], array_slice($calls, 6));
+
+        $this->assertSame(['id' => '1001_55', 'url' => 'https://www.facebook.com/1001_55', 'as' => 'Shop'], $this->step($run, 'words')->output);
+        $this->assertSame(['1001_77', 'https://www.facebook.com/1001/videos/9001'], [$this->step($run, 'shown')->output['id'], $this->step($run, 'film')->output['url']]);
+        $this->assertSame([['id' => '55_1', 'text' => 'Nice', 'at' => '2026-10-12T10:00:00+0000', 'from' => ['id' => '7', 'name' => 'Bo']]], $this->step($run, 'heard')->output['comments']);
+        $this->assertSame(['Shop', 15, 'https://example.com/p.jpg'], array_values(array_intersect_key($this->step($run, 'who')->output, array_flip(['name', 'followers', 'picture']))));
+    }
+
+    // --- Instagram and Threads ---
+
+    public function test_instagram_is_handed_a_post_to_fetch_and_publishes_it_once_it_has_worked_through_it()
+    {
+        $asked = 0;
+        Http::fake(function (Request $request) use (&$asked) {
+            $path = (string) parse_url($request->url(), PHP_URL_PATH);
+
+            return match (true) {
+                str_ends_with($path, '/1789/media') && $request->method() === 'POST' => Http::response(['id' => 'box-'.(Http::recorded(fn (Request $made) => str_ends_with((string) parse_url($made->url(), PHP_URL_PATH), '/1789/media'))->count() + 1)]),
+                str_ends_with($path, '/1789/media_publish') => Http::response(['id' => '17900']),
+                // The reel's video is still being worked through the first time it is asked after
+                str_contains($path, '/box-') => Http::response(['status_code' => str_ends_with($path, '/box-5') && $asked++ === 0 ? 'IN_PROGRESS' : 'FINISHED']),
+                str_ends_with($path, '/17900') => Http::response(['permalink' => 'https://www.instagram.com/p/AbC/']),
+                str_ends_with($path, '/17900/comments') && $request->method() === 'GET' => Http::response(['data' => [['id' => 'c1', 'text' => 'Love it', 'username' => 'bo', 'timestamp' => '2026-10-12T10:00:00+0000', 'like_count' => 2]]]),
+                str_ends_with($path, '/1789/media') => Http::response(['data' => [['id' => '17900', 'caption' => 'New in', 'media_type' => 'VIDEO', 'media_product_type' => 'REELS', 'permalink' => 'https://www.instagram.com/p/AbC/', 'timestamp' => '2026-10-12T09:00:00+0000', 'like_count' => 4, 'comments_count' => 1]]]),
+                str_ends_with($path, '/me') => Http::response(['user_id' => '1789', 'username' => 'shop', 'account_type' => 'BUSINESS', 'followers_count' => 120, 'media_count' => 9]),
+                $request->method() === 'DELETE' => Http::response(['success' => true]),
+                default => Http::response(['id' => 'c2']),
+            };
+        });
+        $user = User::factory()->create();
+        $as = Connection::factory()->instagram()->for($user)->create()->ref_id;
+        $on = fn (array $settings = []) => ['connection' => $as, ...$settings];
+        $photo = $this->file($user, 'front.jpg', 'image/jpeg');
+        $clip = $this->file($user, 'clip.mp4', 'video/mp4');
+
+        $run = $this->runChain($user, [
+            $this->node('shown', 'instagram.post', $on(['what' => 'picture', 'picture' => $photo->ref_id, 'caption' => 'New in #shop'])),
+            $this->node('swipe', 'instagram.post', $on(['what' => 'several', 'files' => "{$photo->ref_id}, {$clip->ref_id}", 'caption' => 'Both'])),
+            $this->node('reel', 'instagram.post', $on(['what' => 'reel', 'video' => $clip->ref_id])),
+        ], ['n' => 1]);
+
+        // The reel waits, holding no worker, and carries on when asked again
+        $this->assertSame([RunStatus::Waiting, NodeStatus::Waiting, 'processing'], [$run->status, $this->step($run, 'reel')->status, $this->step($run, 'reel')->waiting_for]);
+        $this->travel(15)->seconds();
+        $this->work();
+        $this->assertAllWentThrough($run->fresh());
+        $this->assertSame(['id' => '17900', 'url' => 'https://www.instagram.com/p/AbC/', 'as' => 'shop'], $this->step($run, 'shown')->output);
+
+        $made = Http::recorded(fn (Request $request) => $request->method() === 'POST' && str_ends_with($request->url(), '/1789/media'))->map(fn (array $pair) => $pair[0])->values();
+        // Instagram is told where to fetch each from: the app's public address, signed
+        $this->assertStringStartsWith('https://hooks.example.test/hooks/files/', $made[0]['image_url']);
+        $this->assertSame(['New in #shop', true, 'VIDEO', 'CAROUSEL', 'box-2,box-3', 'REELS'], [$made[0]['caption'], $made[1]['is_carousel_item'], $made[2]['media_type'], $made[3]['media_type'], $made[3]['children'], $made[4]['media_type']]);
+        $this->assertSame(['box-1', 'box-4', 'box-5'], Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/media_publish'))->map(fn (array $pair) => $pair[0]['creation_id'])->values()->all());
+        // Only once: what was made while it waited is what is published
+        $this->assertCount(5, $made);
+
+        $run = $this->runChain($user, [
+            $this->node('posts', 'instagram.posts', $on()),
+            $this->node('heard', 'instagram.comments', $on(['post' => '{{ node("posts").first.id }}'])),
+            $this->node('said', 'instagram.comment', $on(['post' => '{{ node("posts").first.id }}', 'text' => 'Thanks'])),
+            $this->node('back', 'instagram.reply', $on(['comment' => '{{ item(node("heard").comments, 1).id }}', 'text' => 'Glad'])),
+            $this->node('gone', 'instagram.comment_delete', $on(['comment' => '{{ node("said").id }}'])),
+            $this->node('who', 'instagram.me', $on()),
+        ], ['n' => 1]);
+
+        $this->assertAllWentThrough($run);
+        $this->assertSame(['REELS', 4], [$this->step($run, 'posts')->output['first']['kind'], $this->step($run, 'posts')->output['first']['likes']]);
+        $this->assertSame(['bo', 'Love it'], [$this->step($run, 'heard')->output['comments'][0]['from'], $this->step($run, 'heard')->output['comments'][0]['text']]);
+        $calls = Http::recorded()->map(fn (array $pair) => $pair[0]->method().' '.str_replace('https://graph.instagram.com/v25.0', '', strtok($pair[0]->url(), '?')))->all();
+        $this->assertSame(['POST /17900/comments', 'POST /c1/replies', 'DELETE /c2', 'GET /me'], array_slice($calls, -4));
+        $this->assertSame(['shop', 'BUSINESS', 120], array_values(array_intersect_key($this->step($run, 'who')->output, array_flip(['username', 'kind', 'followers']))));
+
+        // A picture Instagram would not take is said before it is asked
+        $before = Http::recorded()->count();
+        $png = $this->step($this->runChain($user, [$this->node('it', 'instagram.post', $on(['picture' => $this->file($user, 'front.png')->ref_id]))], ['n' => 1]), 'it');
+        $this->assertStringContainsString('only a JPEG', $png->error['message']);
+        $this->assertSame($before, Http::recorded()->count());
+    }
+
+    public function test_threads_posts_replies_reposts_deletes_and_reads()
+    {
+        Http::fake(function (Request $request) {
+            $path = (string) parse_url($request->url(), PHP_URL_PATH);
+
+            return match (true) {
+                str_ends_with($path, '/2456/threads') && $request->method() === 'POST' => Http::response(['id' => 'box-'.(Http::recorded(fn (Request $made) => $made->method() === 'POST' && str_ends_with((string) parse_url($made->url(), PHP_URL_PATH), '/2456/threads'))->count() + 1)]),
+                str_ends_with($path, '/threads_publish') => Http::response(['id' => '18000']),
+                str_contains($path, '/box-') => Http::response(['status' => 'FINISHED']),
+                str_ends_with($path, '/repost') => Http::response(['id' => '18001']),
+                str_ends_with($path, '/2456/threads') => Http::response(['data' => [['id' => '18000', 'text' => 'Out today', 'username' => 'shop', 'permalink' => 'https://www.threads.net/@shop/post/AbC', 'timestamp' => '2026-10-12T09:00:00+0000']]]),
+                str_ends_with($path, '/18000/replies') => Http::response(['data' => [['id' => '18002', 'text' => 'When?', 'username' => 'bo']]]),
+                str_ends_with($path, '/me') => Http::response(['id' => '2456', 'username' => 'shop', 'threads_biography' => 'Beans']),
+                $request->method() === 'DELETE' => Http::response(['success' => true, 'deleted_id' => '18000']),
+                default => Http::response(['permalink' => 'https://www.threads.net/@shop/post/AbC']),
+            };
+        });
+        $user = User::factory()->create();
+        $as = Connection::factory()->threads()->for($user)->create()->ref_id;
+        $on = fn (array $settings = []) => ['connection' => $as, ...$settings];
+
+        $run = $this->runChain($user, [
+            $this->node('words', 'threads.post', $on(['text' => 'Out today', 'with' => 'link', 'link' => 'https://example.com/news'])),
+            $this->node('shown', 'threads.post', $on(['text' => 'Look', 'with' => 'picture', 'picture' => $this->file($user, 'front.png')->ref_id])),
+            $this->node('under', 'threads.post', $on(['text' => 'More soon', 'reply_to' => '{{ node("words").id }}'])),
+            $this->node('again', 'threads.repost', $on(['post' => '{{ node("words").id }}'])),
+            $this->node('posts', 'threads.posts', $on()),
+            $this->node('heard', 'threads.replies', $on(['post' => '{{ node("posts").first.id }}'])),
+            $this->node('who', 'threads.me', $on()),
+            $this->node('gone', 'threads.delete', $on(['post' => '{{ node("words").id }}'])),
+        ], ['n' => 1]);
+
+        $this->assertAllWentThrough($run);
+        $made = Http::recorded(fn (Request $request) => $request->method() === 'POST' && str_ends_with($request->url(), '/2456/threads'))->map(fn (array $pair) => $pair[0])->values();
+
+        $this->assertTrue($made[0]->hasHeader('Authorization', 'Bearer th-token'));
+        $this->assertSame(['media_type' => 'TEXT', 'link_attachment' => 'https://example.com/news', 'text' => 'Out today'], $made[0]->data());
+        $this->assertSame(['IMAGE', 'Look'], [$made[1]['media_type'], $made[1]['text']]);
+        $this->assertStringStartsWith('https://hooks.example.test/hooks/files/', $made[1]['image_url']);
+        // Told which post it answers, it is a reply under it
+        $this->assertSame(['media_type' => 'TEXT', 'text' => 'More soon', 'reply_to_id' => '18000'], $made[2]->data());
+        $this->assertSame(['id' => '18000', 'url' => 'https://www.threads.net/@shop/post/AbC', 'as' => 'shop'], $this->step($run, 'words')->output);
+
+        $calls = Http::recorded()->map(fn (array $pair) => $pair[0]->method().' '.str_replace('https://graph.threads.net/v1.0', '', strtok($pair[0]->url(), '?')))->all();
+        $this->assertSame(['POST /18000/repost', 'GET /2456/threads', 'GET /18000/replies', 'GET /me', 'DELETE /18000'], array_slice($calls, -5));
+        $this->assertSame(['When?', 1, 'Beans'], [$this->step($run, 'heard')->output['replies'][0]['text'], $this->step($run, 'heard')->output['count'], $this->step($run, 'who')->output['about']]);
+
+        $long = $this->step($this->runChain($user, [$this->node('it', 'threads.post', $on(['text' => str_repeat('a', 501)]))], ['n' => 1]), 'it');
+        $this->assertStringContainsString('at most 500 letters, and this is 501', $long->error['message']);
+    }
+
+    // --- WhatsApp ---
+
+    public function test_a_whatsapp_message_starts_a_run_and_each_whatsapp_call_is_a_step()
+    {
+        Http::fake(fn (Request $request) => match (true) {
+            str_ends_with($request->url(), '/106540352242922/media') => Http::response(['id' => 'media-9']),
+            str_ends_with($request->url(), '/106540352242922/messages') => Http::response(['messaging_product' => 'whatsapp', 'contacts' => [['input' => '16505551234', 'wa_id' => '16505551234']], 'messages' => [['id' => 'wamid.out']]]),
+            str_contains($request->url(), 'lookaside.fbsbx.com') => Http::response(base64_decode(self::PNG), 200, ['Content-Type' => 'image/png']),
+            str_ends_with($request->url(), '/media-in') => Http::response(['url' => 'https://lookaside.fbsbx.com/whatsapp/media-in', 'mime_type' => 'image/png', 'id' => 'media-in']),
+            default => Http::response(['error' => ['message' => 'Not faked']], 400),
+        });
+        $user = User::factory()->create();
+        $number = Connection::factory()->whatsapp()->for($user)->create();
+        $on = fn (array $settings = []) => ['connection' => $number->ref_id, ...$settings];
+        $doc = $this->file($user, 'menu.pdf', 'application/pdf');
+
+        $workflow = Workflow::factory()->for($user)->steps([
+            $this->node('heard', 'trigger.whatsapp', $on()),
+            $this->node('read', 'whatsapp.read', $on(['typing' => 'yes'])),
+            $this->node('save', 'whatsapp.file', $on()),
+            $this->node('say', 'whatsapp.send', $on(['text' => 'Got "{{ trigger.text }}" from {{ trigger.sender.name }}', 'reply_to' => '{{ trigger.reply.to }}', 'buttons' => [['name' => 'Yes', 'value' => 'ok'], ['name' => 'No', 'value' => '']]])),
+            $this->node('menu', 'whatsapp.send_file', $on(['file' => $doc->ref_id, 'text' => 'Our menu'])),
+            $this->node('back', 'whatsapp.send_file', $on(['file' => '{{ node("save").ref_id }}'])),
+            $this->node('place', 'whatsapp.location', $on(['lat' => '13.75', 'lng' => '100.5', 'name' => 'Shop'])),
+            $this->node('wave', 'whatsapp.react', $on()),
+            $this->node('later', 'whatsapp.template', $on(['to' => '+66 81 234 5678', 'name' => 'order_ready', 'language' => 'th', 'values' => "{{ trigger.sender.name }}\n42"])),
+        ], array_map(fn (array $pair) => $this->edge($pair[0], $pair[1]), [['heard', 'read'], ['read', 'save'], ['save', 'say'], ['say', 'menu'], ['menu', 'back'], ['back', 'place'], ['place', 'wave'], ['wave', 'later']]))->create();
+        $this->actingAs($user)->postJson(route('workflows.publish', $workflow), ['revision' => $workflow->revision])->assertOk();
+        $this->actingAs($user)->patchJson(route('workflows.enable', $workflow), ['enabled' => true])->assertOk();
+        auth()->logout();
+
+        $hook = "/hooks/whatsapp/{$number->ref_id}";
+        $said = fn (string $to, array $message) => ['object' => 'whatsapp_business_account', 'entry' => [['id' => '1', 'changes' => [['field' => 'messages', 'value' => [
+            'messaging_product' => 'whatsapp',
+            'metadata' => ['display_phone_number' => '15550783881', 'phone_number_id' => $to],
+            'contacts' => [['profile' => ['name' => 'Sheena'], 'wa_id' => '16505551234']],
+            'messages' => [$message],
+        ]]]]]];
+        $send = fn (array $body, ?string $secret = 'wa-app-secret') => $this->call('POST', $hook, [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', (string) json_encode($body), (string) $secret),
+        ], (string) json_encode($body));
+
+        // Meta asks first whether the address is the app's: only its token is answered
+        $this->get($hook.'?hub.mode=subscribe&hub.challenge=1158201444&hub.verify_token='.WhatsAppApi::verifyToken($number))->assertOk()->assertSee('1158201444');
+        $this->get($hook.'?hub.mode=subscribe&hub.challenge=1&hub.verify_token=guess')->assertForbidden();
+
+        $picture = ['from' => '16505551234', 'id' => 'wamid.in', 'timestamp' => '1749416383', 'type' => 'image', 'image' => ['id' => 'media-in', 'mime_type' => 'image/png', 'caption' => 'Is this it?']];
+        // Signed with another secret, or for another number of the same app: nothing starts
+        $send($said('106540352242922', $picture), 'someone-elses')->assertForbidden();
+        $send($said('999', $picture))->assertOk();
+        $this->assertSame(0, $workflow->runs()->count());
+
+        $send($said('106540352242922', $picture))->assertOk();
+        // The same message sent again starts nothing more; nor does word that one was delivered
+        $send($said('106540352242922', $picture))->assertOk();
+        $send(['object' => 'whatsapp_business_account', 'entry' => [['id' => '1', 'changes' => [['field' => 'messages', 'value' => ['metadata' => ['phone_number_id' => '106540352242922'], 'statuses' => [['id' => 'wamid.out', 'status' => 'delivered']]]]]]]])->assertOk();
+        $this->work();
+
+        $run = $workflow->runs()->sole();
+        $this->assertAllWentThrough($run);
+        $heard = $run->trigger_data;
+        $this->assertSame(['whatsapp', 'message', 'image', 'wamid.in', 'Is this it?', ['media-in']], [$heard['service'], $heard['type'], $heard['kind'], $heard['id'], $heard['text'], $heard['files']]);
+        $this->assertSame([['id' => '16505551234', 'kind' => 'private', 'title' => null], 'Sheena'], [$heard['chat'], $heard['sender']['name']]);
+        $this->assertSame(['image/png', 'wamid.out'], [$this->step($run, 'save')->output['mime'], $this->step($run, 'say')->output['id']]);
+
+        $sent = Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/messages'))->map(fn (array $pair) => $pair[0])->values();
+        $this->assertTrue($sent[0]->hasHeader('Authorization', 'Bearer wa-token'));
+        $this->assertSame(['messaging_product' => 'whatsapp', 'status' => 'read', 'message_id' => 'wamid.in', 'typing_indicator' => ['type' => 'text']], $sent[0]->data());
+        // Words with buttons under them, in answer to theirs, to the number they wrote from
+        $this->assertSame(['16505551234', ['message_id' => 'wamid.in'], 'interactive'], [$sent[1]['to'], $sent[1]['context'], $sent[1]['type']]);
+        $this->assertSame(['Got "Is this it?" from Sheena', [['type' => 'reply', 'reply' => ['id' => 'ok', 'title' => 'Yes']], ['type' => 'reply', 'reply' => ['id' => 'No', 'title' => 'No']]]], [$sent[1]['interactive']['body']['text'], $sent[1]['interactive']['action']['buttons']]);
+        // A file is handed over first, then sent as what WhatsApp shows it as
+        $this->assertSame(['document', ['id' => 'media-9', 'caption' => 'Our menu', 'filename' => 'menu.pdf']], [$sent[2]['type'], $sent[2]['document']]);
+        $this->assertSame(['image', ['id' => 'media-9']], [$sent[3]['type'], $sent[3]['image']]);
+        $this->assertSame(['latitude' => 13.75, 'longitude' => 100.5, 'name' => 'Shop'], $sent[4]['location']);
+        $this->assertSame(['message_id' => 'wamid.in', 'emoji' => '👍'], $sent[5]['reaction']);
+        $this->assertSame(['66812345678', ['name' => 'order_ready', 'language' => ['code' => 'th'], 'components' => [['type' => 'body', 'parameters' => [['type' => 'text', 'text' => 'Sheena'], ['type' => 'text', 'text' => '42']]]]]], [$sent[6]['to'], $sent[6]['template']]);
+
+        // A press of a button comes back as one, to a trigger that takes buttons
+        $pressed = Envelope::whatsapp([], ['from' => '1', 'id' => 'w2', 'type' => 'interactive', 'interactive' => ['type' => 'button_reply', 'button_reply' => ['id' => 'ok', 'title' => 'Yes']]]);
+        $this->assertSame(['button', 'button', 'ok', ['id' => 'ok', 'title' => 'Yes']], [$pressed['type'], $pressed['kind'], $pressed['text'], $pressed['button']]);
+        $this->assertTrue(Envelope::wanted('whatsapp', 'button', $pressed['type']) && ! Envelope::wanted('whatsapp', 'reaction', $pressed['type']));
+    }
+
+    public function test_whatsapp_says_when_only_a_template_will_reach_someone()
+    {
+        Http::fake(['graph.facebook.com/*' => Http::response(['error' => ['message' => '(#131047) Re-engagement message', 'type' => 'OAuthException', 'code' => 131047]], 400)]);
+        $user = User::factory()->create();
+        $number = Connection::factory()->whatsapp()->for($user)->create()->ref_id;
+        $run = fn (string $type, array $settings) => $this->step($this->runChain($user, [$this->node('it', $type, ['connection' => $number, ...$settings])], ['n' => 1]), 'it')->error['message'];
+
+        $this->assertStringContainsString('There is no one to send to', $run('whatsapp.send', ['to' => 'no number here', 'text' => 'Hi']));
+        $this->assertStringContainsString('at most 3 buttons', $run('whatsapp.send', ['to' => '66812345678', 'text' => 'Hi', 'buttons' => array_map(fn (int $n) => ['name' => "B{$n}", 'value' => ''], [1, 2, 3, 4])]));
+        $this->assertStringContainsString('two numbers', $run('whatsapp.location', ['to' => '66812345678', 'lat' => 'north', 'lng' => '1']));
+        Http::assertNothingSent();
+
+        $this->assertStringContainsString('only within 24 hours', $run('whatsapp.send', ['to' => '66812345678', 'text' => 'Hi']));
     }
 
     // --- SerpApi and Tavily ---

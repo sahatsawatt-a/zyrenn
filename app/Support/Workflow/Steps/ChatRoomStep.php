@@ -114,7 +114,15 @@ final class ChatRoomStep implements Step
             }
         }
 
-        $room->note($details, filled($step->setting('picture')) ? $step->text('picture') : null);
+        $picture = filled($step->setting('picture')) ? trim($step->text('picture')) : null;
+
+        // A picture in the Drive, by its ref_id, is shown from there: one of the workflow's own, and a picture
+        if ($picture !== null && $picture !== '' && ! str_starts_with($picture, 'https://')) {
+            $file = $step->owner()->driveFiles()->where('ref_id', $picture)->first();
+            $picture = $file?->isImage() ? $file->url() : null;
+        }
+
+        $room->note($details, $picture);
     }
 
     /**

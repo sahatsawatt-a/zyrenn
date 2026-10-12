@@ -15,7 +15,10 @@ use Illuminate\Validation\Rule;
  * Anything else is "custom".
  *
  * @phpstan-type Field array{name: string, label: string, type: string, required: bool, placeholder?: string, help?: string, options?: array<string, string>, default?: string}
- * @phpstan-type Service array{label: string, group: string, hint: string, testable: bool, settings: list<Field>, secrets: list<Field>, url?: string, key_required?: bool, v1?: bool}
+ * A service whose member signs in on its own pages (LinkedIn) is given what
+ * that brings -- a token, who it is, until when -- beside what is typed:
+ * 'granted' names those, and they are kept through every change of the rest.
+ * @phpstan-type Service array{label: string, group: string, hint: string, testable: bool, settings: list<Field>, secrets: list<Field>, url?: string, key_required?: bool, v1?: bool, granted?: array{settings: list<string>, secrets: list<string>}, signs_in?: string}
  */
 final class Services
 {
@@ -24,6 +27,8 @@ final class Services
     public const MESSAGING = 'messaging';
 
     public const HTTP = 'http';
+
+    public const SOCIAL = 'social';
 
     public const SEARCH = 'search';
 
@@ -39,6 +44,19 @@ final class Services
     public const TELEGRAM = 'telegram';
 
     public const LINE = 'line';
+
+    /** A member of LinkedIn, posted as; signed in on LinkedIn's own pages (LinkedInSignIn). */
+    public const LINKEDIN = 'linkedin';
+
+    /** A Facebook Page, an Instagram professional account, a Threads profile: each signed in on its own pages (SignIns). */
+    public const FACEBOOK = 'facebook';
+
+    public const INSTAGRAM = 'instagram';
+
+    public const THREADS = 'threads';
+
+    /** A WhatsApp Business number, by Meta's Cloud API. */
+    public const WHATSAPP = 'whatsapp';
 
     /** Search engines' results as data, by a key (serpapi.com). */
     public const SERPAPI = 'serpapi';
@@ -170,6 +188,81 @@ final class Services
             'secrets' => [
                 ['name' => 'channel_access_token', 'label' => 'Channel access token', 'type' => 'secret', 'required' => true],
                 ['name' => 'channel_secret', 'label' => 'Channel secret', 'type' => 'secret', 'required' => true],
+            ],
+        ];
+
+        $services[self::LINKEDIN] = [
+            'label' => 'LinkedIn',
+            'group' => self::SOCIAL,
+            'hint' => 'A LinkedIn member, for workflows to post as. Both values are on the Auth page of an app made at linkedin.com/developers, with the products "Share on LinkedIn" and "Sign In with LinkedIn using OpenID Connect" added. Save it, then sign in with LinkedIn.',
+            'testable' => true,
+            'settings' => [
+                ['name' => 'client_id', 'label' => 'Client ID', 'type' => 'text', 'required' => true],
+            ],
+            'secrets' => [
+                ['name' => 'client_secret', 'label' => 'Client secret', 'type' => 'secret', 'required' => true],
+            ],
+            'granted' => ['settings' => ['member', 'member_name', 'expires_at'], 'secrets' => ['access_token']],
+            'signs_in' => 'Add it to the LinkedIn app\'s Auth page, under "Authorized redirect URLs", then sign in.',
+        ];
+
+        $services[self::FACEBOOK] = [
+            'label' => 'Facebook',
+            'group' => self::SOCIAL,
+            'hint' => 'A Facebook Page, for workflows to post as: Facebook lets an app post as a Page, never as a person. Both values are under App settings → Basic of an app made at developers.facebook.com, with Facebook Login added. Save it, then sign in as someone who looks after the Page.',
+            'testable' => true,
+            'settings' => [
+                ['name' => 'client_id', 'label' => 'App ID', 'type' => 'text', 'required' => true],
+                ['name' => 'page', 'label' => 'Page', 'type' => 'text', 'required' => false, 'placeholder' => 'Its name: only when you look after several'],
+            ],
+            'secrets' => [
+                ['name' => 'client_secret', 'label' => 'App secret', 'type' => 'secret', 'required' => true],
+            ],
+            'granted' => ['settings' => ['page_id', 'page_name'], 'secrets' => ['page_token']],
+            'signs_in' => 'Add it in the Meta app under Facebook Login → Settings → "Valid OAuth Redirect URIs", then sign in.',
+        ];
+
+        $services[self::INSTAGRAM] = [
+            'label' => 'Instagram',
+            'group' => self::SOCIAL,
+            'hint' => 'An Instagram professional account (a business\'s or a creator\'s; not a personal one), for workflows to post as. Both values are in a Meta app under Instagram → API setup with Instagram login: the Instagram app\'s own ID and secret, not the Meta app\'s. Save it, then sign in with Instagram.',
+            'testable' => true,
+            'settings' => [
+                ['name' => 'client_id', 'label' => 'Instagram app ID', 'type' => 'text', 'required' => true],
+            ],
+            'secrets' => [
+                ['name' => 'client_secret', 'label' => 'Instagram app secret', 'type' => 'secret', 'required' => true],
+            ],
+            'granted' => ['settings' => ['member', 'member_name', 'expires_at'], 'secrets' => ['access_token']],
+            'signs_in' => 'Add it in the Meta app under Instagram → API setup with Instagram login → Business login settings → "OAuth redirect URIs", then sign in.',
+        ];
+
+        $services[self::THREADS] = [
+            'label' => 'Threads',
+            'group' => self::SOCIAL,
+            'hint' => 'A Threads profile, for workflows to post as. Both values are in a Meta app with the Threads use case, under Use cases → Access the Threads API → Settings: the Threads app\'s own ID and secret. Save it, then sign in with Threads.',
+            'testable' => true,
+            'settings' => [
+                ['name' => 'client_id', 'label' => 'Threads app ID', 'type' => 'text', 'required' => true],
+            ],
+            'secrets' => [
+                ['name' => 'client_secret', 'label' => 'Threads app secret', 'type' => 'secret', 'required' => true],
+            ],
+            'granted' => ['settings' => ['member', 'member_name', 'expires_at'], 'secrets' => ['access_token']],
+            'signs_in' => 'Add it in the Meta app under the Threads use case → Settings → "Redirect Callback URLs", then sign in.',
+        ];
+
+        $services[self::WHATSAPP] = [
+            'label' => 'WhatsApp',
+            'group' => self::MESSAGING,
+            'hint' => 'A WhatsApp Business number, by Meta\'s Cloud API. The number\'s ID and a token are in a Meta app under WhatsApp → API Setup (that token lasts a day; a system user\'s lasts). The app secret, under App settings → Basic, tells Meta\'s messages from anyone else\'s.',
+            'testable' => true,
+            'settings' => [
+                ['name' => 'phone_number_id', 'label' => 'Phone number ID', 'type' => 'text', 'required' => true, 'placeholder' => '106540352242922'],
+            ],
+            'secrets' => [
+                ['name' => 'access_token', 'label' => 'Access token', 'type' => 'secret', 'required' => true],
+                ['name' => 'app_secret', 'label' => 'App secret', 'type' => 'secret', 'required' => true],
             ],
         ];
 
@@ -343,12 +436,14 @@ final class Services
 
     /**
      * The settings as they are kept: only the service's own, each defaulted
-     * when it was left out and has a usual value.
+     * when it was left out and has a usual value -- and what signing in gave,
+     * as it is saved.
      *
      * @param  array<string, mixed>  $given
+     * @param  array<string, mixed>  $saved
      * @return array<string, string>
      */
-    public static function settings(string $name, array $given): array
+    public static function settings(string $name, array $given, array $saved = []): array
     {
         $service = self::get($name) ?? ['settings' => []];
         $settings = [];
@@ -367,11 +462,12 @@ final class Services
             }
         }
 
-        return $settings;
+        return [...$settings, ...self::granted($service['granted']['settings'] ?? [], $saved)];
     }
 
     /**
-     * The secrets as they are kept: the ones given, and the saved ones for any left blank.
+     * The secrets as they are kept: the ones given, the saved ones for any
+     * left blank, and what signing in gave.
      *
      * @param  array<string, mixed>  $given
      * @param  array<string, mixed>  $saved
@@ -391,6 +487,21 @@ final class Services
             }
         }
 
-        return $secrets;
+        return [...$secrets, ...self::granted($service['granted']['secrets'] ?? [], $saved)];
+    }
+
+    /**
+     * What signing in gave, of what is saved: never typed, so never taken from a form.
+     *
+     * @param  list<string>  $names
+     * @param  array<string, mixed>  $saved
+     * @return array<string, string>
+     */
+    private static function granted(array $names, array $saved): array
+    {
+        return array_filter(
+            array_intersect_key($saved, array_flip($names)),
+            fn ($value) => is_string($value) && $value !== '',
+        );
     }
 }

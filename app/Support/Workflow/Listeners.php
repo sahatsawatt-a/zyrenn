@@ -26,6 +26,7 @@ final class Listeners
         'trigger.webhook' => 'webhook',
         'trigger.telegram' => 'telegram',
         'trigger.line' => 'line',
+        'trigger.whatsapp' => 'whatsapp',
     ];
 
     public static function rebuild(Workflow $workflow): void
@@ -57,7 +58,7 @@ final class Listeners
                     'key' => match ($kind) {
                         'chat_room' => (string) ($node['config']['room'] ?? ''),
                         'webhook' => (string) ($node['config']['token'] ?? ''),
-                        'telegram', 'line' => (string) ($node['config']['connection'] ?? ''),
+                        'telegram', 'line', 'whatsapp' => (string) ($node['config']['connection'] ?? ''),
                         default => '',
                     },
                     'settings' => $node['config'],

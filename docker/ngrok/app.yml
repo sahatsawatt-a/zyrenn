@@ -1,0 +1,5 @@
+# What the tunnel lets through when TUNNEL_CARRIES=app (docker-compose.yml,
+# `tunnel`): the whole app, as anyone who opens its public address sees it --
+# its sign-in page is then all that stands in front of it. Nothing is held
+# back here, at ngrok's edge; hooks.yml is the one that lets only hooks in.
+on_http_request: []

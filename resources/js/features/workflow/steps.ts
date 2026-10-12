@@ -4,6 +4,7 @@ import {
     Ban,
     BookOpenText,
     Braces,
+    Code,
     ChartBar,
     CheckCheck,
     CircleCheck,
@@ -71,6 +72,8 @@ import {
     Tag,
     Terminal,
     TextSearch,
+    ThumbsDown,
+    ThumbsUp,
     Timer,
     Trash2,
     UserCheck,
@@ -91,6 +94,7 @@ import type {
 const ICONS: Record<string, Component> = {
     play: Play,
     braces: Braces,
+    code: Code,
     split: Split,
     signpost: Signpost,
     merge: Merge,
@@ -152,6 +156,8 @@ const ICONS: Record<string, Component> = {
     webhook: Webhook,
     send: Send,
     'message-circle': MessageCircle,
+    'thumbs-up': ThumbsUp,
+    'thumbs-down': ThumbsDown,
     search: Search,
     newspaper: Newspaper,
     image: Image,
@@ -210,6 +216,26 @@ const TONES: Record<string, { strip: string; tile: string }> = {
     line: {
         strip: 'bg-green-500',
         tile: 'bg-green-500/10 text-green-600 dark:text-green-400',
+    },
+    linkedin: {
+        strip: 'bg-blue-600',
+        tile: 'bg-blue-600/10 text-blue-700 dark:text-blue-400',
+    },
+    whatsapp: {
+        strip: 'bg-lime-500',
+        tile: 'bg-lime-500/10 text-lime-700 dark:text-lime-400',
+    },
+    facebook: {
+        strip: 'bg-sky-600',
+        tile: 'bg-sky-600/10 text-sky-700 dark:text-sky-400',
+    },
+    instagram: {
+        strip: 'bg-pink-500',
+        tile: 'bg-pink-500/10 text-pink-600 dark:text-pink-400',
+    },
+    threads: {
+        strip: 'bg-neutral-700 dark:bg-neutral-300',
+        tile: 'bg-neutral-500/10 text-neutral-700 dark:text-neutral-300',
     },
 };
 

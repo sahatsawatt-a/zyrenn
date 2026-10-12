@@ -51,9 +51,9 @@ use App\Models\Chat\ChatRoom;
  * dies partway it may have gone out already, so it is not simply run again
  * (its "unsure" setting says what happens instead).
  *
- * Every call a service offers -- SerpApi, Tavily, Telegram, LINE -- is a
- * kind of its own, in that service's group; most of them are listed in
- * ServiceKinds.
+ * Every call a service offers -- SerpApi, Tavily, Telegram, LINE, WhatsApp,
+ * LinkedIn, Facebook, Instagram, Threads -- is a kind of its own, in that service's
+ * group; most of them are listed in ServiceKinds.
  *
  * @phpstan-type Setting array{name: string, label: string, type: string, required: bool, default?: mixed, help?: string, placeholder?: string, options?: array<string, string>, services?: list<string>, names?: string, when?: array<string, string|bool|list<string>>, linked?: bool, ways?: bool, anywhere?: bool, labels?: bool, drive?: string, does?: list<array<string, string>>, places?: array{by: string, picture: string, layouts: array<string, list<array{int, int, int, int}>>}}
  * @phpstan-type NodeType array{type: string, version: int, label: string, group: string, icon: string, description: string, trigger: bool, inputs: list<string>, outputs: list<string>, config: list<Setting>, repeatable?: bool, oldest?: int, empty?: array<string, null>}
@@ -146,6 +146,28 @@ final class NodeTypes
                         'default' => [],
                         'help' => 'Each value can hold {{ formulas }}: {{ input.total * 1.07 }}, {{ node("fetch").name }}.',
                     ],
+                ],
+            ],
+            [
+                'type' => 'data.code',
+                'version' => 1,
+                'label' => 'Run code',
+                'group' => 'data',
+                'icon' => 'code',
+                'description' => 'Runs JavaScript you write on what came before, and gives out what it returns. It can only work things out: there is no network and no file for it to reach, and it is stopped when its time is up.',
+                'trigger' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    [
+                        'name' => 'code',
+                        'label' => 'Code',
+                        'type' => 'code',
+                        'required' => true,
+                        'default' => "// trigger, input and node(\"key\") are what formulas read.\n// What is returned is what the step gives out.\nreturn {\n    text: String(trigger.text ?? '').trim(),\n};\n",
+                        'help' => 'JavaScript: the body of a function. A record it returns is given out as it is; anything else as "value". console.log writes in the run\'s log.',
+                    ],
+                    ['name' => 'seconds', 'label' => 'Stop it after, in seconds', 'type' => 'number', 'required' => false, 'default' => Steps\RunCode::SECONDS, 'help' => 'At most 30.'],
                 ],
             ],
             [
@@ -515,6 +537,36 @@ final class NodeTypes
                 ],
             ],
 
+            [
+                'type' => 'trigger.whatsapp',
+                'version' => 1,
+                'label' => 'WhatsApp message',
+                'group' => 'whatsapp',
+                'icon' => 'message-circle',
+                'description' => 'Starts a run when the business number is sent a message on WhatsApp. Later steps read trigger.text, trigger.chat.id (their number) and trigger.sender.name; "WhatsApp: get the file" fetches a picture or file it carried (trigger.files).',
+                'trigger' => true,
+                'inputs' => [],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'connection', 'label' => 'Number', 'type' => 'connection', 'required' => true, 'services' => ['whatsapp'], 'help' => 'Its webhook address, shown on the connection, has to be set in the Meta app.'],
+                    [
+                        'name' => 'on',
+                        'label' => 'When',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'message',
+                        'options' => [
+                            'message' => 'A message is sent, or a button pressed',
+                            'button' => 'A button is pressed',
+                            'reaction' => 'Someone reacts to a message',
+                            'any' => 'Any of these',
+                        ],
+                        'help' => 'A pressed button reads as trigger.text and trigger.button; a place sent, trigger.location; a reaction, trigger.reaction. trigger.type says which it was, and trigger.kind what was sent: text, image, video, audio, file, sticker, location.',
+                    ],
+                    self::PER_CHAT,
+                ],
+            ],
+
             // --- Chat ---
             [
                 'type' => 'chat.room',
@@ -531,7 +583,7 @@ final class NodeTypes
                     ['name' => 'title', 'label' => 'Title', 'type' => 'template', 'required' => true, 'default' => 'From a workflow', 'placeholder' => '{{ trigger.sender.name }} on Telegram'],
                     ['name' => 'link', 'label' => 'Link it to', 'type' => 'connection', 'required' => false, 'services' => ['telegram', 'line'], 'help' => 'A bot or channel: what is written in the room can then go back through it, to the chat below.'],
                     ['name' => 'link_chat', 'label' => 'Its chat there', 'type' => 'template', 'required' => false, 'default' => '{{ trigger.chat.id }}', 'when' => ['link' => true]],
-                    ['name' => 'picture', 'label' => 'Its picture', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("who").picture }}', 'help' => 'The address of a picture to show as the room\'s face, at its top and in the list of chats: whoever it is with, as "LINE: who wrote" gives their picture. Kept up to date each time the step runs.'],
+                    ['name' => 'picture', 'label' => 'Its picture', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("who").picture }}', 'help' => 'A picture to show as the room\'s face, at its top and in the list of chats -- its address, or one in the Drive by its ref_id: whoever it is with, as "LINE: who wrote" gives their picture. Kept up to date each time the step runs.'],
                     ['name' => 'details', 'label' => 'Details to keep', 'type' => 'fields', 'required' => false, 'default' => [], 'help' => 'Things known about the room, each by a name: language {{ node("who").language }}, line_id {{ trigger.sender.id }}. Shown in the room under "About this chat", and read by later runs as trigger.room.details.language. One that comes to nothing is left as it was.'],
                 ],
             ],
@@ -818,11 +870,33 @@ final class NodeTypes
                 'trigger' => false,
                 'inputs' => [self::IN],
                 'outputs' => [self::OUT],
+                // With nothing fetched and the run carrying on, later steps read no file rather than fail
+                'empty' => ['ref_id' => null, 'name' => null, 'url' => null, 'kind' => null, 'mime' => null, 'size' => null],
                 'config' => [
                     ['name' => 'connection', 'label' => 'Bot', 'type' => 'connection', 'required' => true, 'services' => ['telegram'], 'help' => 'The one the message was sent to: it is asked for the file.'],
                     ['name' => 'file', 'label' => 'Which file', 'type' => 'template', 'required' => false, 'placeholder' => '{{ item(trigger.files, 2) }}', 'help' => 'Left empty, the first the message carried. A message lists them as trigger.files; one without any fails this step, so put an If on len(trigger.files) > 0 before it.'],
                     ['name' => 'name', 'label' => 'Called', 'type' => 'template', 'required' => false, 'placeholder' => 'receipt-{{ trigger.id }}.jpg', 'help' => 'Left empty, what it was sent as; a photo, which has no name, is named for when it came.'],
                     ['name' => 'folder', 'label' => 'Keep it in', 'type' => 'folder', 'required' => false, 'help' => 'A Drive folder. Telegram hands a bot files of at most 20 MB.'],
+                    ['name' => 'same', 'label' => 'If a file called that is there already', 'type' => 'choice', 'required' => true, 'default' => 'new', 'options' => ['new' => 'Keep both', 'reuse' => 'Use the one there'], 'help' => 'Only when it is given a name: the one there is given out, and Telegram is not asked again.', 'when' => ['name' => true]],
+                ],
+            ],
+            [
+                'type' => 'whatsapp.file',
+                'version' => 1,
+                'label' => 'WhatsApp: get the file',
+                'group' => 'whatsapp',
+                'icon' => 'file-down',
+                'description' => 'Fetches a picture, a video, a recording or a document sent to the business number, and keeps it in the Drive. A WhatsApp message carries only its id, and WhatsApp keeps what it was sent for a week. Gives out the file: its ref_id, name, kind, size, url and, for a picture, the markdown that shows it.',
+                'trigger' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'empty' => ['ref_id' => null, 'name' => null, 'url' => null, 'kind' => null, 'mime' => null, 'size' => null],
+                'config' => [
+                    ['name' => 'connection', 'label' => 'Number', 'type' => 'connection', 'required' => true, 'services' => ['whatsapp'], 'help' => 'The one the message was sent to: it is asked for the file.'],
+                    ['name' => 'file', 'label' => 'Which file', 'type' => 'template', 'required' => false, 'placeholder' => '{{ item(trigger.files, 1) }}', 'help' => 'Left empty, the one the message carried. A message without any fails this step, so put an If on len(trigger.files) > 0 before it.'],
+                    ['name' => 'name', 'label' => 'Called', 'type' => 'template', 'required' => false, 'placeholder' => 'receipt-{{ trigger.id }}.jpg', 'help' => 'Left empty, what it was sent as; a photo, which has no name, is named for when it came.'],
+                    ['name' => 'folder', 'label' => 'Keep it in', 'type' => 'folder', 'required' => false, 'help' => 'A Drive folder.'],
+                    ['name' => 'same', 'label' => 'If a file called that is there already', 'type' => 'choice', 'required' => true, 'default' => 'new', 'options' => ['new' => 'Keep both', 'reuse' => 'Use the one there'], 'help' => 'Only when it is given a name: the one there is given out, and WhatsApp is not asked again.', 'when' => ['name' => true]],
                 ],
             ],
             [
@@ -886,6 +960,57 @@ final class NodeTypes
                         'default' => 'plain',
                         'options' => ['plain' => 'Plain text', 'markdown' => 'Markdown', 'html' => 'HTML'],
                     ],
+                    [
+                        'name' => 'unsure',
+                        'label' => 'If it may not have gone out',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'ask',
+                        'options' => ['ask' => 'Ask me', 'retry' => 'Send it again', 'never' => 'Don\'t send it again'],
+                    ],
+                ],
+            ],
+            [
+                'type' => 'linkedin.post',
+                'version' => 1,
+                'label' => 'Post on LinkedIn',
+                'group' => 'linkedin',
+                'icon' => 'megaphone',
+                'description' => 'Posts on a LinkedIn member\'s own profile, as them: words, alone or with one thing more -- a link shown as a card, a picture or several, a video, a document shown page by page, or a poll. Gives out the post\'s id and its address as url.',
+                'trigger' => false,
+                'repeatable' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'connection', 'label' => 'As', 'type' => 'connection', 'required' => true, 'services' => ['linkedin'], 'help' => 'A LinkedIn connection, signed in. A sign-in lasts 60 days.'],
+                    ['name' => 'text', 'label' => 'Words', 'type' => 'template', 'required' => false, 'help' => 'At most 3,000 letters. LinkedIn refuses words the same as a post just made.'],
+                    [
+                        'name' => 'with',
+                        'label' => 'With',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'none',
+                        'options' => [
+                            'none' => 'Nothing else',
+                            'link' => 'A link, shown as a card',
+                            'picture' => 'A picture from the Drive',
+                            'pictures' => 'Several pictures from the Drive',
+                            'video' => 'A video from the Drive',
+                            'document' => 'A document from the Drive',
+                            'poll' => 'A poll',
+                        ],
+                    ],
+                    ['name' => 'link', 'label' => 'Link', 'type' => 'template', 'required' => false, 'placeholder' => 'https://example.com/news/{{ trigger.id }}', 'when' => ['with' => 'link']],
+                    ['name' => 'picture', 'label' => 'Picture', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'drive' => 'image', 'help' => 'A JPEG, PNG or GIF in the Drive, by its ref_id.', 'when' => ['with' => 'picture']],
+                    ['name' => 'pictures', 'label' => 'Pictures', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("find").files }}', 'help' => 'From 2 to 20 in the Drive, each a JPEG, PNG or GIF: a list of them, or their ref_ids with commas between.', 'when' => ['with' => 'pictures']],
+                    ['name' => 'video', 'label' => 'Video', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'drive' => 'video', 'help' => 'An MP4 in the Drive, by its ref_id: at most 200 MB. LinkedIn shows the post once it has worked through it.', 'when' => ['with' => 'video']],
+                    ['name' => 'document', 'label' => 'Document', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'help' => 'A PDF, a Word file or a PowerPoint in the Drive, by its ref_id: at most 100 MB and 300 pages. Shown to leaf through.', 'when' => ['with' => 'document']],
+                    ['name' => 'title', 'label' => 'Its title', 'type' => 'template', 'required' => false, 'help' => 'Left empty: a link takes its page\'s own, a document is called as its file is.', 'when' => ['with' => ['link', 'picture', 'video', 'document']]],
+                    ['name' => 'description', 'label' => 'A line about it', 'type' => 'template', 'required' => false, 'help' => 'A short description of the link, the picture or the video.', 'when' => ['with' => ['link', 'picture', 'video']]],
+                    ['name' => 'question', 'label' => 'It asks', 'type' => 'template', 'required' => false, 'placeholder' => 'Which should we build next?', 'help' => 'At most 140 letters.', 'when' => ['with' => 'poll']],
+                    ['name' => 'answers', 'label' => 'Answers', 'type' => 'template', 'required' => false, 'placeholder' => "Maps\nWorkflows\nChat", 'help' => 'From 2 to 4, one on a line, each at most 30 letters.', 'when' => ['with' => 'poll']],
+                    ['name' => 'lasts', 'label' => 'Open for', 'type' => 'choice', 'required' => false, 'default' => 'THREE_DAYS', 'options' => Steps\LinkedInPost::POLL_LASTS, 'when' => ['with' => 'poll']],
+                    ...ServiceKinds::linkedinSeenBy(),
                     [
                         'name' => 'unsure',
                         'label' => 'If it may not have gone out',
@@ -1053,6 +1178,11 @@ final class NodeTypes
             'tavily' => 'Tavily',
             'telegram' => 'Telegram',
             'line' => 'LINE',
+            'whatsapp' => 'WhatsApp',
+            'linkedin' => 'LinkedIn',
+            'facebook' => 'Facebook',
+            'instagram' => 'Instagram',
+            'threads' => 'Threads',
         ];
     }
 
@@ -1087,6 +1217,28 @@ final class NodeTypes
                 'People and groups' => ['line.profile', 'line.group', 'line.group_count', 'line.leave'],
                 'Rich menus' => ['line.richmenu_make', 'line.richmenu_default', 'line.richmenu_default_off', 'line.richmenu', 'line.richmenu_off', 'line.richmenu_many', 'line.richmenu_many_off', 'line.richmenu_of', 'line.richmenus', 'line.richmenu_alias', 'line.richmenu_alias_off', 'line.richmenu_delete'],
                 'Allowance' => ['line.quota', 'line.consumption'],
+            ],
+            'whatsapp' => [
+                'Messages' => ['trigger.whatsapp', 'whatsapp.send', 'whatsapp.send_file', 'whatsapp.template', 'whatsapp.location', 'whatsapp.react', 'whatsapp.read', 'whatsapp.file'],
+            ],
+            'facebook' => [
+                'Posts' => ['facebook.post', 'facebook.delete', 'facebook.posts'],
+                'Comments and likes' => ['facebook.comment', 'facebook.like', 'facebook.unlike', 'facebook.comments'],
+                'The Page' => ['facebook.me'],
+            ],
+            'instagram' => [
+                'Posts' => ['instagram.post', 'instagram.posts'],
+                'Comments' => ['instagram.comment', 'instagram.reply', 'instagram.comment_delete', 'instagram.comments'],
+                'The account' => ['instagram.me'],
+            ],
+            'threads' => [
+                'Posts' => ['threads.post', 'threads.repost', 'threads.delete', 'threads.posts', 'threads.replies'],
+                'The profile' => ['threads.me'],
+            ],
+            'linkedin' => [
+                'Posts' => ['linkedin.post', 'linkedin.repost', 'linkedin.delete'],
+                'Comments and likes' => ['linkedin.comment', 'linkedin.comment_delete', 'linkedin.like', 'linkedin.unlike'],
+                'The member' => ['linkedin.me'],
             ],
         ];
     }

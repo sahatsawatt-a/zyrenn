@@ -22,6 +22,9 @@ const RUN = Date.now().toString().slice(-6);
 const MODEL_NAME = `e2e model ${RUN}`;
 const BOT_NAME = `e2e bot ${RUN}`;
 const KEY_NAME = `e2e key ${RUN}`;
+const MEMBER_NAME = `e2e member ${RUN}`;
+const PAGE_NAME = `e2e page ${RUN}`;
+const NUMBER_NAME = `e2e number ${RUN}`;
 
 await runBoard(
     '/settings/connections',
@@ -132,6 +135,127 @@ await runBoard(
             'the page never holds the token',
             !(await page.content()).includes('e2e-not-a-real-token'),
         );
+
+        // A LinkedIn member: the app's id and secret are typed, and the
+        // member signs in on LinkedIn's own page -- there is no token to paste
+        await page.locator('[data-connection-add]').click();
+        await sheet.locator('[data-service="linkedin"]').click();
+        check(
+            'a LinkedIn member asks for its app’s id and secret, and for no token',
+            (await sheet.locator('#connection-client_id').count()) === 1 &&
+                (await sheet.locator('#connection-client_secret').count()) ===
+                    1 &&
+                (await sheet.locator('#connection-access_token').count()) === 0,
+        );
+        await sheet.locator('#connection-name').fill(MEMBER_NAME);
+        await sheet.locator('#connection-client_id').fill('e2e-client');
+        await sheet.locator('#connection-client_secret').fill('e2e-secret');
+        await sheet.locator('[data-connection-save]').click();
+        await row(MEMBER_NAME).waitFor();
+
+        const wayIn = row(MEMBER_NAME).locator('[data-connection-sign-in]');
+        check(
+            'kept under Social, it says it is not signed in, and shows the way there and the address to come back to',
+            (await page
+                .locator('[data-group="social"]', { hasText: MEMBER_NAME })
+                .count()) === 1 &&
+                (await row(MEMBER_NAME).innerText()).includes(
+                    'Not signed in yet',
+                ) &&
+                /\/settings\/connections\/[^/]+\/sign-in$/.test(
+                    (await wayIn.locator('a').getAttribute('href')) ?? '',
+                ) &&
+                // The app's public address when it has one, else where it is open
+                /\/(hooks\/linkedin|settings\/connections)\/signed-in$/.test(
+                    await wayIn.locator('code').innerText(),
+                ),
+            await row(MEMBER_NAME).innerText(),
+        );
+        await page.screenshot({ path: `${SHOTS}/connections-linkedin.png` });
+
+        // As LinkedIn leaves it once its member has said yes
+        tinker(
+            `$c = ${user}->connections()->where('name', '${MEMBER_NAME}')->first(); $c->settings = [...$c->settings, 'member' => 'e2e', 'member_name' => 'E2E Member', 'expires_at' => now()->addDays(60)->toIso8601String()]; $c->secrets = [...$c->secrets, 'access_token' => 'e2e-token']; $c->save();`,
+        );
+        await page.reload({ waitUntil: 'networkidle' });
+        check(
+            'signed in, it says who as and until when, and asks for nothing more',
+            /Signed in as E2E Member until \S/.test(
+                await row(MEMBER_NAME).innerText(),
+            ) &&
+                (await row(MEMBER_NAME)
+                    .locator('[data-connection-sign-in]')
+                    .count()) === 0,
+            await row(MEMBER_NAME).innerText(),
+        );
+        check(
+            'the page never holds its secret or its token',
+            !/e2e-secret|e2e-token/.test(await page.content()),
+        );
+
+        // A Facebook Page signs in the same way, at Facebook: its own words on the row
+        await page.locator('[data-connection-add]').click();
+        check(
+            'Meta’s four are there to connect: three to sign in to, and WhatsApp’s number',
+            (await sheet
+                .locator(
+                    '[data-service="facebook"], [data-service="instagram"], [data-service="threads"], [data-service="whatsapp"]',
+                )
+                .count()) === 4,
+        );
+        await sheet.locator('[data-service="facebook"]').click();
+        await sheet.locator('#connection-name').fill(PAGE_NAME);
+        await sheet.locator('#connection-client_id').fill('e2e-app');
+        await sheet.locator('#connection-client_secret').fill('e2e-secret');
+        check(
+            'a Page may be named, for an account that looks after several',
+            (await sheet.locator('#connection-page').count()) === 1,
+        );
+        await sheet.locator('[data-connection-save]').click();
+        await row(PAGE_NAME).waitFor();
+        const toFacebook = row(PAGE_NAME).locator('[data-connection-sign-in]');
+        check(
+            'it says where Facebook is told of the address, and signs in with Facebook',
+            (await toFacebook.innerText()).includes('Facebook Login') &&
+                /Sign in with\s+Facebook/.test(await toFacebook.innerText()) &&
+                (await toFacebook.locator('code').innerText()).includes(
+                    'facebook/signed-in',
+                ),
+            await toFacebook.innerText(),
+        );
+
+        // A WhatsApp number: pasted, tried with Meta, and its webhook shown with its verify token
+        await page.locator('[data-connection-add]').click();
+        await sheet.locator('[data-service="whatsapp"]').click();
+        await sheet.locator('#connection-name').fill(NUMBER_NAME);
+        await sheet.locator('#connection-phone_number_id').fill('100000000001');
+        await sheet.locator('#connection-access_token').fill('e2e-not-a-token');
+        await sheet.locator('#connection-app_secret').fill('e2e-app-secret');
+        await sheet.locator('[data-connection-save]').click();
+        await sheet.locator('[data-connection-verdict]').waitFor({
+            timeout: 20000,
+        });
+        const refused = await sheet
+            .locator('[data-connection-verdict]')
+            .innerText();
+        check(
+            'WhatsApp is asked, and a token it does not know is said so without repeating it',
+            /WhatsApp/.test(refused) && !refused.includes('e2e-not-a-token'),
+            refused,
+        );
+        await sheet.locator('[data-connection-save]').click();
+        await row(NUMBER_NAME).waitFor();
+        const metaHook = row(NUMBER_NAME).locator('[data-connection-hook]');
+        check(
+            'kept under Messaging, it shows its webhook address and the verify token Meta asks for',
+            (await page
+                .locator('[data-group="messaging"]', { hasText: NUMBER_NAME })
+                .count()) === 1 &&
+                /\/hooks\/whatsapp\//.test(await metaHook.innerText()) &&
+                /verify token [0-9a-f]{32}/.test(await metaHook.innerText()),
+            await metaHook.innerText(),
+        );
+        await page.screenshot({ path: `${SHOTS}/connections-meta.png` });
 
         await page.locator('[data-connection-add]').click();
         // OpenRouter lists its models, with their prices, without a key: a try

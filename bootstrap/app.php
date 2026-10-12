@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\QuietOutside;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -23,6 +24,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // and the browser blocks them as mixed content. `app` publishes no port,
         // so these headers can only come from `web` on the compose network.
         $middleware->trustProxies(at: '*');
+
+        // First of all, so that whatever fails after it fails quietly outside
+        $middleware->prepend(QuietOutside::class);
 
         // Note and board autosave send a document, not a form: spaces at the edges
         // of a note's text nodes are content (e.g. "Energy is " before a formula),

@@ -346,6 +346,9 @@ final class TelegramCall implements Step
             'username' => $chat['username'] ?? null,
             'description' => $chat['description'] ?? $chat['bio'] ?? null,
             'topics' => (bool) ($chat['is_forum'] ?? false),
+            // Its photo, when it shows one to a bot: a file "Telegram: get the file" fetches, and what tells one photo from another
+            'photo' => $chat['photo']['big_file_id'] ?? null,
+            'photo_id' => $chat['photo']['big_file_unique_id'] ?? null,
         ];
     }
 

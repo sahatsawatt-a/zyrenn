@@ -17,7 +17,7 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 The kinds of step a workflow can have, to build one with create-workflow and update-workflow. Without
 "type": every kind -- its type, name, group, whether it starts a run, its ways out, and what it does.
 With "type": that kind in full -- each setting's name, kind (text, template with {{ formulas }},
-formula without them, choice with its options, connection of the services listed, room, table,
+formula without them, code as JavaScript, choice with its options, connection of the services listed, room, table,
 column, folder as a Drive path like "Receipts/2026", fields as a list of {name, value}, number, cron,
 model, timezone, workflow), whether it is needed, its default, and when it applies ("when": another
 setting's value, or any of a list of them). "labels" on a fields setting: its names are any words,

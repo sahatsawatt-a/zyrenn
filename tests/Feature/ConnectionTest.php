@@ -6,6 +6,7 @@ use App\Models\Chat\ChatRoom;
 use App\Models\Connection;
 use App\Models\Project;
 use App\Models\User;
+use App\Support\Workflow\Steps\WhatsAppApi;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
@@ -587,6 +588,268 @@ class ConnectionTest extends TestCase
         config(['services.workflows.public_url' => null]);
         $this->actingAs($user)->get(route('connections.index'))->assertInertia(fn (Assert $page) => $page
             ->where('connections.0.hook', ['url' => null, 'set' => 'by_hand']));
+    }
+
+    public function test_a_linkedin_connection_is_signed_in_on_linkedin_and_keeps_what_that_gave_through_a_change()
+    {
+        config(['services.workflows.public_url' => null]);
+        Http::preventStrayRequests();
+        Http::fake([
+            'www.linkedin.com/oauth/v2/accessToken' => Http::response(['access_token' => 'granted-token', 'expires_in' => 5184000, 'scope' => 'openid,profile,w_member_social']),
+            'api.linkedin.com/v2/userinfo' => Http::response(['sub' => 'abc123', 'name' => 'Ada Lovelace']),
+        ]);
+        $user = User::factory()->create();
+
+        // Nothing to try before it is signed in, so it is saved at once
+        $this->actingAs($user)
+            ->postJson(route('connections.check'), ['service' => 'linkedin', 'settings' => ['client_id' => 'client-1'], 'secrets' => ['client_secret' => 'shh']])
+            ->assertJson(['ok' => true]);
+        $this->actingAs($user)
+            ->post(route('connections.store'), ['name' => 'Me', 'service' => 'linkedin', 'settings' => ['client_id' => 'client-1', 'member' => 'someone-else'], 'secrets' => ['client_secret' => 'shh', 'access_token' => 'typed']])
+            ->assertRedirect();
+
+        $connection = $user->connections()->sole();
+        // What signing in gives is never taken from a form
+        $this->assertSame([['client_id' => 'client-1'], ['client_secret' => 'shh']], [$connection->settings, $connection->secrets]);
+
+        $callback = route('connections.signed-in');
+        $this->actingAs($user)->get(route('connections.index'))->assertInertia(fn (Assert $page) => $page
+            ->where('connections.0.sign_in.url', route('connections.sign-in', $connection))
+            ->where('connections.0.sign_in.callback', $callback)
+            ->where('connections.0.sign_in.service', 'LinkedIn')
+            ->where('connections.0.sign_in.state', 'no')
+            ->where('connections.0.sign_in.detail', 'Not signed in yet'));
+
+        // There: to LinkedIn, to post as its member, and back to the one address
+        $to = $this->actingAs($user)->get(route('connections.sign-in', $connection))->assertRedirect()->headers->get('Location');
+        parse_str((string) parse_url((string) $to, PHP_URL_QUERY), $asked);
+        $this->assertStringStartsWith('https://www.linkedin.com/oauth/v2/authorization?', (string) $to);
+        $this->assertSame(['code', 'client-1', $callback, 'openid profile w_member_social'], [$asked['response_type'], $asked['client_id'], $asked['redirect_uri'], $asked['scope']]);
+
+        // And back: the code is traded with the secret, and LinkedIn says who it is
+        $this->travelTo('2026-10-12 09:00:00');
+        $this->actingAs($user)->get(route('connections.signed-in', ['code' => 'the-code', 'state' => $asked['state']]))
+            ->assertRedirect(route('connections.index'));
+        Http::assertSent(fn (Request $request) => str_contains($request->url(), 'accessToken')
+            && $request->data() === ['grant_type' => 'authorization_code', 'code' => 'the-code', 'redirect_uri' => $callback, 'client_id' => 'client-1', 'client_secret' => 'shh']);
+
+        $connection->refresh();
+        $this->assertSame(['client_id' => 'client-1', 'member' => 'abc123', 'member_name' => 'Ada Lovelace', 'expires_at' => '2026-12-11T09:00:00+00:00'], $connection->settings);
+        $this->assertSame('granted-token', $connection->secret('access_token'));
+
+        $this->actingAs($user)->get(route('connections.index'))->assertInertia(fn (Assert $page) => $page
+            ->where('connections.0.sign_in.state', 'yes')
+            ->where('connections.0.sign_in.detail', 'Signed in as Ada Lovelace until 11 Dec 2026'));
+
+        // The same answer is not taken twice
+        $this->actingAs($user)->get(route('connections.signed-in', ['code' => 'the-code', 'state' => $asked['state']]))->assertRedirect(route('connections.index'));
+        Http::assertSentCount(2);
+
+        // Renamed, with its secret left blank: still signed in, and LinkedIn says so
+        $this->actingAs($user)
+            ->patch(route('connections.update', $connection), ['name' => 'Ada', 'service' => 'linkedin', 'settings' => ['client_id' => 'client-1'], 'secrets' => ['client_secret' => '']])
+            ->assertRedirect();
+        $connection->refresh();
+        $this->assertSame(['Ada', 'abc123', 'granted-token', 'shh'], [$connection->name, $connection->setting('member'), $connection->secret('access_token'), $connection->secret('client_secret')]);
+        $this->actingAs($user)->getJson(route('connections.test', $connection))
+            ->assertJson(['ok' => true, 'message' => 'Works: signed in as Ada Lovelace until Fri, Dec 11, 2026.']);
+
+        $this->travelTo('2026-12-12 09:00:00');
+        $this->actingAs($user)->getJson(route('connections.test', $connection))
+            ->assertJson(['ok' => false, 'message' => 'Its sign-in ran out on Fri, Dec 11, 2026: sign in with LinkedIn again.']);
+    }
+
+    public function test_a_linkedin_sign_in_is_only_for_who_keeps_the_connection_and_a_refusal_keeps_nothing()
+    {
+        config(['services.workflows.public_url' => null]);
+        Http::preventStrayRequests();
+        Http::fake(['www.linkedin.com/oauth/v2/accessToken' => Http::response(['error' => 'invalid_client', 'error_description' => 'Client authentication failed'], 401)]);
+        $user = User::factory()->create();
+        $connection = Connection::factory()->for($user)->create(['name' => 'Me', 'service' => 'linkedin', 'settings' => ['client_id' => 'client-1'], 'secrets' => ['client_secret' => 'wrong']]);
+        $state = function () use ($user, $connection) {
+            parse_str((string) parse_url((string) $this->actingAs($user)->get(route('connections.sign-in', $connection))->headers->get('Location'), PHP_URL_QUERY), $asked);
+
+            return $asked['state'];
+        };
+
+        $this->actingAs(User::factory()->create())->get(route('connections.sign-in', $connection))->assertForbidden();
+        $this->actingAs($user)->get(route('connections.sign-in', Connection::factory()->telegram()->for($user)->create()))->assertNotFound();
+
+        // Said no on LinkedIn's page; an answer nobody asked for; a secret LinkedIn does not know
+        $this->actingAs($user)->get(route('connections.signed-in', ['error' => 'user_cancelled_authorize', 'state' => $state()]))
+            ->assertRedirect(route('connections.index'))->assertInertiaFlash('toast.message', 'Signing in to LinkedIn was cancelled.');
+        $state();
+        $this->actingAs($user)->get(route('connections.signed-in', ['code' => 'c', 'state' => 'made-up']))
+            ->assertRedirect(route('connections.index'))->assertInertiaFlash('toast.type', 'error');
+        Http::assertNothingSent();
+        $this->actingAs($user)->get(route('connections.signed-in', ['code' => 'c', 'state' => $state()]))
+            ->assertInertiaFlash('toast.message', 'LinkedIn did not sign it in: Client authentication failed.');
+
+        $this->assertSame([['client_id' => 'client-1'], ['client_secret' => 'wrong']], [$connection->fresh()->settings, $connection->fresh()->secrets]);
+    }
+
+    public function test_where_the_app_has_a_public_address_linkedin_sends_its_member_back_by_it()
+    {
+        config(['services.workflows.public_url' => 'https://hooks.example.test']);
+        Http::preventStrayRequests();
+        Http::fake([
+            'www.linkedin.com/oauth/v2/accessToken' => Http::response(['access_token' => 'granted-token', 'expires_in' => 5184000]),
+            'api.linkedin.com/v2/userinfo' => Http::response(['sub' => 'abc123', 'name' => 'Ada Lovelace']),
+        ]);
+        $public = 'https://hooks.example.test/hooks/linkedin/signed-in';
+        $user = User::factory()->create();
+        $connection = Connection::factory()->for($user)->create(['name' => 'Me', 'service' => 'linkedin', 'settings' => ['client_id' => 'client-1'], 'secrets' => ['client_secret' => 'shh']]);
+
+        // The one address to give LinkedIn, wherever the app is opened from
+        $this->actingAs($user)->get('http://localhost:8001/settings/connections')->assertInertia(fn (Assert $page) => $page
+            ->where('connections.0.sign_in.callback', $public));
+        parse_str((string) parse_url((string) $this->actingAs($user)->get("http://localhost:8001/settings/connections/{$connection->ref_id}/sign-in")->headers->get('Location'), PHP_URL_QUERY), $asked);
+        $this->assertSame($public, $asked['redirect_uri']);
+
+        // Nobody is signed in there: it takes nothing, and passes them on to where they set out -- once
+        auth()->logout();
+        $this->get("/hooks/linkedin/signed-in?code=the-code&state={$asked['state']}")
+            ->assertRedirect("http://localhost:8001/settings/connections/signed-in?code=the-code&state={$asked['state']}");
+        $this->get("/hooks/linkedin/signed-in?code=the-code&state={$asked['state']}&to=https://evil.test")
+            ->assertRedirect(config('app.url')."/settings/connections/signed-in?code=the-code&state={$asked['state']}");
+        Http::assertNothingSent();
+        $this->assertNull($connection->fresh()->secret('access_token'));
+
+        // Set out from a host the app is not known at: passed on to the app's own, never there
+        parse_str((string) parse_url((string) $this->actingAs($user)->get("http://evil.test/settings/connections/{$connection->ref_id}/sign-in")->headers->get('Location'), PHP_URL_QUERY), $forged);
+        $this->get("/hooks/linkedin/signed-in?code=c&state={$forged['state']}")
+            ->assertRedirect(config('app.url')."/settings/connections/signed-in?code=c&state={$forged['state']}");
+        parse_str((string) parse_url((string) $this->actingAs($user)->get("http://localhost:8001/settings/connections/{$connection->ref_id}/sign-in")->headers->get('Location'), PHP_URL_QUERY), $asked);
+
+        // And there the code is traded, naming the address LinkedIn was given
+        $this->actingAs($user)->get("http://localhost:8001/settings/connections/signed-in?code=the-code&state={$asked['state']}")->assertRedirect();
+        Http::assertSent(fn (Request $request) => str_contains($request->url(), 'accessToken') && $request['redirect_uri'] === $public);
+        $this->assertSame('granted-token', $connection->fresh()->secret('access_token'));
+    }
+
+    public function test_an_error_asked_for_at_the_public_address_never_shows_its_workings()
+    {
+        config(['app.debug' => true, 'services.workflows.public_url' => 'https://hooks.example.test']);
+
+        $this->get('http://localhost/login');
+        $this->assertTrue(config('app.debug'));
+
+        $this->get('https://hooks.example.test/login');
+        $this->assertFalse(config('app.debug'));
+    }
+
+    public function test_a_facebook_connection_is_signed_in_as_the_page_it_posts_as()
+    {
+        config(['services.workflows.public_url' => 'https://hooks.example.test']);
+        Http::preventStrayRequests();
+        $pages = [['id' => '1001', 'name' => 'Shop', 'access_token' => 'shop-token'], ['id' => '1002', 'name' => 'Side Project', 'access_token' => 'side-token']];
+        Http::fake(fn (Request $request) => match (true) {
+            str_contains($request->url(), 'fb_exchange_token') => Http::response(['access_token' => 'long-user-token', 'expires_in' => 5184000]),
+            str_contains($request->url(), '/oauth/access_token') => Http::response(['access_token' => 'short-user-token', 'token_type' => 'bearer', 'expires_in' => 5000]),
+            str_contains($request->url(), '/me/accounts') => Http::response(['data' => $pages]),
+            default => Http::response(['error' => ['message' => 'Not faked']], 400),
+        });
+        $user = User::factory()->create();
+        $connection = Connection::factory()->for($user)->create(['name' => 'Page', 'service' => 'facebook', 'settings' => ['client_id' => 'app-1'], 'secrets' => ['client_secret' => 'app-secret']]);
+        $signIn = function () use ($user, $connection) {
+            parse_str((string) parse_url((string) $this->actingAs($user)->get("http://localhost/settings/connections/{$connection->ref_id}/sign-in")->headers->get('Location'), PHP_URL_QUERY), $asked);
+
+            return [$asked, $this->actingAs($user)->get("http://localhost/settings/connections/signed-in?code=the-code&state={$asked['state']}")];
+        };
+
+        // To Facebook, for its Pages, and back by the public address
+        [$asked, $back] = $signIn();
+        $this->assertSame(['app-1', 'https://hooks.example.test/hooks/facebook/signed-in', 'code'], [$asked['client_id'], $asked['redirect_uri'], $asked['response_type']]);
+        $this->assertStringContainsString('pages_manage_posts', $asked['scope']);
+
+        // It looks after two: which one has to be said, and nothing is kept until it is
+        $back->assertInertiaFlash('toast.message', 'This account looks after 2 Pages: "Shop", "Side Project". Write the one to post as in "Page" on the connection, then sign in again.');
+        $this->assertNull($connection->fresh()->secret('page_token'));
+
+        $this->actingAs($user)->patch(route('connections.update', $connection), ['name' => 'Page', 'service' => 'facebook', 'settings' => ['client_id' => 'app-1', 'page' => 'side project'], 'secrets' => []])->assertRedirect();
+        $signIn()[1]->assertInertiaFlash('toast.message', 'Signed in to Facebook as Side Project.');
+
+        // The Page's own token is what is kept, made from a sign-in that lasts
+        $connection->refresh();
+        $this->assertSame(['1002', 'Side Project', 'side-token'], [$connection->setting('page_id'), $connection->setting('page_name'), $connection->secret('page_token')]);
+        Http::assertSent(fn (Request $request) => str_contains($request->url(), '/me/accounts') && $request->hasHeader('Authorization', 'Bearer long-user-token'));
+        $this->actingAs($user)->get(route('connections.index'))->assertInertia(fn (Assert $page) => $page
+            ->where('connections.0.sign_in.detail', 'Signed in as Side Project')
+            ->where('connections.0.saved_secrets', ['client_secret', 'page_token']));
+
+        // A Page not among them is said so, with those there are
+        $this->actingAs($user)->patch(route('connections.update', $connection), ['name' => 'Page', 'service' => 'facebook', 'settings' => ['client_id' => 'app-1', 'page' => 'Elsewhere'], 'secrets' => []]);
+        $signIn()[1]->assertInertiaFlash('toast.message', 'There is no Page "Elsewhere" among those shared with the app: "Shop", "Side Project".');
+    }
+
+    public function test_instagram_and_threads_sign_in_for_sixty_days_and_are_made_new_before_they_run_out()
+    {
+        config(['services.workflows.public_url' => null]);
+        Http::preventStrayRequests();
+        Http::fake(fn (Request $request) => match (true) {
+            // Instagram wraps what it gives in a list of one; Threads does not
+            $request->url() === 'https://api.instagram.com/oauth/access_token' => Http::response(['data' => [['access_token' => 'ig-short', 'user_id' => '1789', 'permissions' => 'instagram_business_basic']]]),
+            $request->url() === 'https://graph.threads.net/oauth/access_token' => Http::response(['access_token' => 'th-short', 'token_type' => 'bearer', 'user_id' => 2456]),
+            str_contains($request->url(), 'ig_exchange_token') => Http::response(['access_token' => 'ig-long', 'token_type' => 'bearer', 'expires_in' => 5184000]),
+            str_contains($request->url(), 'th_exchange_token') => Http::response(['access_token' => 'th-long', 'token_type' => 'bearer', 'expires_in' => 5184000]),
+            str_contains($request->url(), 'ig_refresh_token') => Http::response(['access_token' => 'ig-renewed', 'token_type' => 'bearer', 'expires_in' => 5184000]),
+            str_starts_with($request->url(), 'https://graph.instagram.com/v25.0/me') => Http::response(['user_id' => '1789', 'username' => 'shop']),
+            str_starts_with($request->url(), 'https://graph.threads.net/v1.0/me') => Http::response(['id' => '2456', 'username' => 'shop.th']),
+            default => Http::response(['error' => ['message' => 'Not faked']], 400),
+        });
+        $this->travelTo('2026-10-12 09:00:00');
+        $user = User::factory()->create();
+        $make = fn (string $service) => Connection::factory()->for($user)->create(['name' => ucfirst($service), 'service' => $service, 'settings' => ['client_id' => 'the-app'], 'secrets' => ['client_secret' => 'the-secret']]);
+        $signIn = function (Connection $connection) use ($user) {
+            $to = (string) $this->actingAs($user)->get(route('connections.sign-in', $connection))->headers->get('Location');
+            parse_str((string) parse_url($to, PHP_URL_QUERY), $asked);
+            $this->actingAs($user)->get(route('connections.signed-in', ['code' => 'the-code', 'state' => $asked['state']]))->assertInertiaFlash('toast.type', 'success');
+
+            return [$to, $asked];
+        };
+
+        [$to, $asked] = $signIn($instagram = $make('instagram'));
+        $this->assertStringStartsWith('https://www.instagram.com/oauth/authorize?', $to);
+        $this->assertSame(['the-app', 'instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments'], [$asked['client_id'], $asked['scope']]);
+        $instagram->refresh();
+        $this->assertSame(['1789', 'shop', '2026-12-11T09:00:00+00:00', 'ig-long'], [$instagram->setting('member'), $instagram->setting('member_name'), $instagram->setting('expires_at'), $instagram->secret('access_token')]);
+
+        [$to, $asked] = $signIn($threads = $make('threads'));
+        $this->assertStringStartsWith('https://threads.com/oauth/authorize?', $to);
+        $this->assertStringContainsString('threads_content_publish', $asked['scope']);
+        $threads->refresh();
+        $this->assertSame(['2456', 'shop.th', 'th-long'], [$threads->setting('member'), $threads->setting('member_name'), $threads->secret('access_token')]);
+        $this->actingAs($user)->getJson(route('connections.test', $threads))->assertJson(['ok' => true, 'message' => 'Works: signed in as shop.th until Fri, Dec 11, 2026.']);
+
+        // With weeks left it is used as it is; near its end it is made new, unasked
+        $this->actingAs($user)->getJson(route('connections.test', $instagram))->assertJson(['ok' => true]);
+        $this->assertSame('ig-long', $instagram->fresh()->secret('access_token'));
+
+        $this->travelTo('2026-12-05 09:00:00');
+        $this->actingAs($user)->getJson(route('connections.test', $instagram))->assertJson(['ok' => true, 'message' => 'Works: signed in as shop until Wed, Feb 3, 2027.']);
+        $this->assertSame(['ig-renewed', '2027-02-03T09:00:00+00:00'], [$instagram->fresh()->secret('access_token'), $instagram->fresh()->setting('expires_at')]);
+    }
+
+    public function test_a_whatsapp_number_is_tried_with_its_token_and_shows_where_meta_sends_its_messages()
+    {
+        config(['services.workflows.public_url' => 'https://hooks.example.test']);
+        Http::preventStrayRequests();
+        Http::fake(['graph.facebook.com/v25.0/106540352242922*' => Http::response(['display_phone_number' => '+1 555 078 3881', 'verified_name' => 'Shop', 'id' => '106540352242922'])]);
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->postJson(route('connections.check'), ['service' => 'whatsapp', 'settings' => ['phone_number_id' => '106540352242922'], 'secrets' => ['access_token' => 'wa-token', 'app_secret' => 's']])
+            ->assertJson(['ok' => true, 'message' => 'Works: this is +1 555 078 3881 (Shop).']);
+        Http::assertSent(fn (Request $request) => $request->hasHeader('Authorization', 'Bearer wa-token'));
+
+        $number = Connection::factory()->whatsapp()->for($user)->create();
+        $token = WhatsAppApi::verifyToken($number);
+
+        $this->actingAs($user)->get(route('connections.index'))->assertInertia(fn (Assert $page) => $page
+            ->where('connections.0.hook.url', "https://hooks.example.test/hooks/whatsapp/{$number->ref_id}")
+            ->where('connections.0.hook.set', 'by_hand')
+            ->where('connections.0.hook.hint', fn (string $hint) => str_contains($hint, $token) && strlen($token) === 32)
+            ->where('connections.0.sign_in', null));
     }
 
     public function test_a_search_key_is_tried_for_nothing_and_says_what_is_left_of_it()

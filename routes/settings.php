@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ConnectionController;
+use App\Http\Controllers\ConnectionSignInController;
 use App\Http\Controllers\Settings\McpController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
@@ -46,6 +47,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('throttle:30,1')->name('connections.test');
     Route::get('settings/connections/{connection}/models', [ConnectionController::class, 'models'])
         ->name('connections.models');
+    // A connection signed in on its service's own pages (LinkedIn): there, and
+    // back to the one address the service is told of
+    Route::get('settings/connections/signed-in', [ConnectionSignInController::class, 'finish'])->name('connections.signed-in');
+    Route::get('settings/connections/{connection}/sign-in', [ConnectionSignInController::class, 'start'])
+        ->middleware('throttle:30,1')->name('connections.sign-in');
     Route::redirect('settings/ai-connections', '/settings/connections');
 });
 

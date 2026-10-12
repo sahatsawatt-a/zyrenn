@@ -21,19 +21,26 @@ use App\Support\Workflow\Steps\DriveFind;
 use App\Support\Workflow\Steps\DriveLink;
 use App\Support\Workflow\Steps\DriveRead;
 use App\Support\Workflow\Steps\DriveSave;
+use App\Support\Workflow\Steps\FacebookCall;
+use App\Support\Workflow\Steps\FacebookPost;
 use App\Support\Workflow\Steps\ForEachStep;
 use App\Support\Workflow\Steps\GivenTrigger;
 use App\Support\Workflow\Steps\HttpRequest;
 use App\Support\Workflow\Steps\IfCondition;
+use App\Support\Workflow\Steps\InstagramCall;
+use App\Support\Workflow\Steps\InstagramPost;
 use App\Support\Workflow\Steps\LineCall;
 use App\Support\Workflow\Steps\LineFile;
 use App\Support\Workflow\Steps\LineProfile;
 use App\Support\Workflow\Steps\LineReply;
 use App\Support\Workflow\Steps\LineRichMenu;
 use App\Support\Workflow\Steps\LineSend;
+use App\Support\Workflow\Steps\LinkedInCall;
+use App\Support\Workflow\Steps\LinkedInPost;
 use App\Support\Workflow\Steps\Log;
 use App\Support\Workflow\Steps\ManualTrigger;
 use App\Support\Workflow\Steps\MergeStep;
+use App\Support\Workflow\Steps\RunCode;
 use App\Support\Workflow\Steps\SerpApiCall;
 use App\Support\Workflow\Steps\SetData;
 use App\Support\Workflow\Steps\Step;
@@ -49,6 +56,11 @@ use App\Support\Workflow\Steps\TelegramCall;
 use App\Support\Workflow\Steps\TelegramFile;
 use App\Support\Workflow\Steps\TelegramSend;
 use App\Support\Workflow\Steps\TelegramSendFile;
+use App\Support\Workflow\Steps\ThreadsCall;
+use App\Support\Workflow\Steps\ThreadsPost;
+use App\Support\Workflow\Steps\WhatsAppCall;
+use App\Support\Workflow\Steps\WhatsAppFile;
+use App\Support\Workflow\Steps\WhatsAppSend;
 use DomainException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -112,6 +124,7 @@ final class Engine
         'trigger.webhook' => GivenTrigger::class,
         'trigger.telegram' => GivenTrigger::class,
         'trigger.line' => GivenTrigger::class,
+        'trigger.whatsapp' => GivenTrigger::class,
         'line.profile' => LineProfile::class,
         'line.file' => LineFile::class,
         'telegram.file' => TelegramFile::class,
@@ -126,6 +139,7 @@ final class Engine
         'drive.read' => DriveRead::class,
         'drive.link' => DriveLink::class,
         'ai.chat' => AskAi::class,
+        'data.code' => RunCode::class,
         'http.request' => HttpRequest::class,
         'serpapi.google' => SerpApiCall::class,
         'serpapi.news' => SerpApiCall::class,
@@ -144,6 +158,42 @@ final class Engine
         'telegram.send_file' => TelegramSendFile::class,
         'line.send' => LineSend::class,
         'line.reply' => LineReply::class,
+        'whatsapp.file' => WhatsAppFile::class,
+        'whatsapp.send' => WhatsAppSend::class,
+        'whatsapp.send_file' => WhatsAppCall::class,
+        'whatsapp.template' => WhatsAppCall::class,
+        'whatsapp.location' => WhatsAppCall::class,
+        'whatsapp.react' => WhatsAppCall::class,
+        'whatsapp.read' => WhatsAppCall::class,
+        'facebook.post' => FacebookPost::class,
+        'facebook.comment' => FacebookCall::class,
+        'facebook.like' => FacebookCall::class,
+        'facebook.unlike' => FacebookCall::class,
+        'facebook.delete' => FacebookCall::class,
+        'facebook.posts' => FacebookCall::class,
+        'facebook.comments' => FacebookCall::class,
+        'facebook.me' => FacebookCall::class,
+        'instagram.post' => InstagramPost::class,
+        'instagram.comment' => InstagramCall::class,
+        'instagram.reply' => InstagramCall::class,
+        'instagram.comment_delete' => InstagramCall::class,
+        'instagram.posts' => InstagramCall::class,
+        'instagram.comments' => InstagramCall::class,
+        'instagram.me' => InstagramCall::class,
+        'threads.post' => ThreadsPost::class,
+        'threads.repost' => ThreadsCall::class,
+        'threads.delete' => ThreadsCall::class,
+        'threads.posts' => ThreadsCall::class,
+        'threads.replies' => ThreadsCall::class,
+        'threads.me' => ThreadsCall::class,
+        'linkedin.post' => LinkedInPost::class,
+        'linkedin.repost' => LinkedInCall::class,
+        'linkedin.delete' => LinkedInCall::class,
+        'linkedin.comment' => LinkedInCall::class,
+        'linkedin.comment_delete' => LinkedInCall::class,
+        'linkedin.like' => LinkedInCall::class,
+        'linkedin.unlike' => LinkedInCall::class,
+        'linkedin.me' => LinkedInCall::class,
         // One call to a service each (ServiceKinds)
         'telegram.album' => TelegramCall::class,
         'telegram.sticker' => TelegramCall::class,

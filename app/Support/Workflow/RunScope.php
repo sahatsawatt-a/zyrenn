@@ -25,6 +25,18 @@ final class RunScope implements Callables, Scope
         private readonly array $skipped = [],
     ) {}
 
+    /**
+     * All a formula could name, at once, for a step that reads it somewhere
+     * formulas don't reach: trigger, input, and what every step before this
+     * one gave out, by key.
+     *
+     * @return array{trigger: mixed, input: mixed, steps: array<string, mixed>}
+     */
+    public function all(): array
+    {
+        return ['trigger' => $this->trigger, 'input' => $this->input, 'steps' => $this->outputs];
+    }
+
     public function lookup(string $name): mixed
     {
         return match (mb_strtolower($name)) {

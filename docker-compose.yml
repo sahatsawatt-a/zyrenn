@@ -216,6 +216,10 @@ services:
     # after a restart, where an agent started by hand does not -- and LINE and
     # Telegram are then posting to an address that is offline.
     #
+    # TUNNEL_CARRIES=app lets the whole app through instead (docker/ngrok/app.yml):
+    # anyone with the address then reaches its sign-in page. The dev server
+    # needs the tunnel's host in VITE_ALLOWED_HOSTS to answer there.
+    #
     # Left out unless COMPOSE_PROFILES names `tunnel`. It needs NGROK_AUTHTOKEN
     # and, as WORKFLOWS_PUBLIC_URL, a domain of that ngrok account's.
     tunnel:
@@ -225,12 +229,12 @@ services:
         environment:
             NGROK_AUTHTOKEN: '${NGROK_AUTHTOKEN:-}'
         volumes:
-            - ./docker/ngrok/hooks.yml:/etc/ngrok/hooks.yml:ro
+            - ./docker/ngrok:/etc/ngrok:ro
         command:
             - http
             - web:8080
             - '--url=${WORKFLOWS_PUBLIC_URL:-}'
-            - '--traffic-policy-file=/etc/ngrok/hooks.yml'
+            - '--traffic-policy-file=/etc/ngrok/${TUNNEL_CARRIES:-hooks}.yml'
             - '--log=stdout'
         depends_on:
             - web
@@ -272,6 +276,49 @@ services:
             start_period: 90s
         depends_on:
             - web
+
+    # The code runner: where a workflow's "Run code" step runs what someone
+    # wrote (docker/code/server.mjs) -- JavaScript in a QuickJS interpreter
+    # compiled to WebAssembly, which has no files, no network and no process
+    # to reach, stopped when its time is up and kept to a fixed memory.
+    #
+    # It shares nothing with the app: its own image, only its two scripts
+    # mounted, no .env, no volumes, no added rights, a ceiling on memory and
+    # processes -- so code that got out of the interpreter would still be in
+    # a box with nothing in it. Installed as `chrome` is: into /work on the
+    # first boot, found there again on a restart.
+    #
+    # No `ports`: only `worker` and `app` ask it, on the compose network.
+    code:
+        image: node:22-alpine
+        restart: unless-stopped
+        user: node
+        working_dir: /home/node
+        volumes:
+            - ./docker/code:/srv:ro
+        command: >
+            sh -c "mkdir -p /home/node/work && cd /home/node/work &&
+                   { [ -d node_modules/quickjs-emscripten ] || npm i quickjs-emscripten@0.31.0 >/tmp/npm.log 2>&1 ||
+                     { echo 'npm install failed:'; tail -20 /tmp/npm.log; exit 1; }; } &&
+                   cp /srv/server.mjs /srv/run.mjs /home/node/work/ && exec node /home/node/work/server.mjs"
+        expose:
+            - '3000'
+        cap_drop:
+            - ALL
+        security_opt:
+            - no-new-privileges:true
+        mem_limit: 768m
+        pids_limit: 128
+        healthcheck:
+            test:
+                [
+                    'CMD-SHELL',
+                    'node -e "fetch(''http://127.0.0.1:3000/healthz'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+                ]
+            interval: 10s
+            timeout: 5s
+            retries: 6
+            start_period: 60s
 
     postgres:
         image: postgres:17-alpine

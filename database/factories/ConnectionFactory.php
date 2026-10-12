@@ -49,6 +49,71 @@ class ConnectionFactory extends Factory
     }
 
     /**
+     * A LinkedIn member, signed in for another 30 days.
+     */
+    public function linkedin(): static
+    {
+        return $this->state([
+            'name' => 'Ada on LinkedIn',
+            'service' => Services::LINKEDIN,
+            'settings' => ['client_id' => 'client-1', 'member' => 'abc123', 'member_name' => 'Ada Lovelace', 'expires_at' => now()->addDays(30)->toIso8601String()],
+            'secrets' => ['client_secret' => 'linkedin-secret', 'access_token' => 'linkedin-token'],
+        ]);
+    }
+
+    /**
+     * A Facebook Page, signed in.
+     */
+    public function facebook(): static
+    {
+        return $this->state([
+            'name' => 'Shop page',
+            'service' => Services::FACEBOOK,
+            'settings' => ['client_id' => 'app-1', 'page_id' => '1001', 'page_name' => 'Shop'],
+            'secrets' => ['client_secret' => 'app-secret', 'page_token' => 'page-token'],
+        ]);
+    }
+
+    /**
+     * An Instagram professional account, signed in for another 30 days.
+     */
+    public function instagram(): static
+    {
+        return $this->state([
+            'name' => 'Shop on Instagram',
+            'service' => Services::INSTAGRAM,
+            'settings' => ['client_id' => 'ig-app', 'member' => '1789', 'member_name' => 'shop', 'expires_at' => now()->addDays(30)->toIso8601String()],
+            'secrets' => ['client_secret' => 'ig-secret', 'access_token' => 'ig-token'],
+        ]);
+    }
+
+    /**
+     * A Threads profile, signed in for another 30 days.
+     */
+    public function threads(): static
+    {
+        return $this->state([
+            'name' => 'Shop on Threads',
+            'service' => Services::THREADS,
+            'settings' => ['client_id' => 'th-app', 'member' => '2456', 'member_name' => 'shop', 'expires_at' => now()->addDays(30)->toIso8601String()],
+            'secrets' => ['client_secret' => 'th-secret', 'access_token' => 'th-token'],
+        ]);
+    }
+
+    /**
+     * A WhatsApp business number.
+     */
+    public function whatsapp(): static
+    {
+        return $this->state([
+            'name' => 'Shop line',
+            'service' => Services::WHATSAPP,
+            'settings' => ['phone_number_id' => '106540352242922'],
+            'secrets' => ['access_token' => 'wa-token', 'app_secret' => 'wa-app-secret'],
+        ]);
+    }
+
+    /**
      * A SerpApi key.
      */
     public function serpapi(): static

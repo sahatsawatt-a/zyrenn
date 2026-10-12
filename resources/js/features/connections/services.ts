@@ -1,7 +1,12 @@
 import {
+    AtSign,
+    Briefcase,
+    Camera,
     Cpu,
+    Flag,
     KeyRound,
     MessageCircle,
+    Phone,
     Radar,
     Search,
     Send,
@@ -23,7 +28,7 @@ export type Field = {
     default?: string;
 };
 
-export type ServiceGroup = 'ai' | 'messaging' | 'search' | 'http';
+export type ServiceGroup = 'ai' | 'messaging' | 'social' | 'search' | 'http';
 
 export type Service = {
     label: string;
@@ -47,8 +52,25 @@ export type SavedConnection = {
     created_at: string;
     // Where a bot or channel sends what it is told: pasted into LINE's
     // console by hand, or set by the app for Telegram; no url while nothing
-    // outside can reach the app
-    hook: { url: string | null; set: 'by_hand' | 'by_app' } | null;
+    // outside can reach the app. A hint says where it is pasted, where that
+    // is not LINE's console.
+    hook: {
+        url: string | null;
+        set: 'by_hand' | 'by_app';
+        hint?: string;
+    } | null;
+    // For one that is signed in on its service's own pages: the way there,
+    // the address the service has to be told it comes back to and where that
+    // is told, and how it stands -- 'no' before it ever was signed in, 'over'
+    // once its time has run out
+    sign_in: {
+        url: string;
+        callback: string;
+        service: string;
+        hint: string;
+        state: 'yes' | 'no' | 'over';
+        detail: string;
+    } | null;
 };
 
 export type CheckResult = {
@@ -74,6 +96,11 @@ export const GROUPS: {
         description: 'Bots that workflows hear from and send through.',
     },
     {
+        key: 'social',
+        title: 'Social',
+        description: 'Members and pages that workflows post as.',
+    },
+    {
         key: 'search',
         title: 'Search',
         description: 'Keys for searching the web, and reading its pages.',
@@ -92,6 +119,8 @@ const TONES = {
     violet: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
     sky: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
     green: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    blue: 'bg-blue-600/10 text-blue-700 dark:text-blue-400',
+    pink: 'bg-pink-500/10 text-pink-600 dark:text-pink-400',
     amber: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
     cyan: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
     rose: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
@@ -110,6 +139,16 @@ export function lookOf(service: string, group?: ServiceGroup): Look {
             return { icon: Send, tone: TONES.sky };
         case 'line':
             return { icon: MessageCircle, tone: TONES.green };
+        case 'linkedin':
+            return { icon: Briefcase, tone: TONES.blue };
+        case 'facebook':
+            return { icon: Flag, tone: TONES.sky };
+        case 'instagram':
+            return { icon: Camera, tone: TONES.pink };
+        case 'threads':
+            return { icon: AtSign, tone: TONES.slate };
+        case 'whatsapp':
+            return { icon: Phone, tone: TONES.green };
         case 'serpapi':
             return { icon: Search, tone: TONES.cyan };
         case 'tavily':
@@ -148,7 +187,13 @@ export function detailOf(
                     : 'Receives messages by asking Telegram';
             }
 
+            if (connection.service === 'whatsapp') {
+                return `Business number ${s.phone_number_id ?? ''}`;
+            }
+
             return 'Messaging API channel';
+        case 'social':
+            return connection.sign_in?.detail ?? '';
         case 'search':
             return connection.service === 'tavily'
                 ? 'Searches the web and reads pages, by its key'

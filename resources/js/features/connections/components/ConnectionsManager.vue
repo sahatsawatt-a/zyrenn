@@ -6,6 +6,7 @@ import {
     CircleX,
     Copy,
     Loader2,
+    LogIn,
     MoreHorizontal,
     Pencil,
     Plug,
@@ -104,15 +105,18 @@ const starters = [
 // --- whether each still works ---
 const checks = ref<Record<string, CheckResult | 'checking'>>({});
 
-// A webhook address copied, to paste where the service asks for it
+// An address of a connection's copied -- its webhook's, or the one it comes
+// back to from signing in -- to paste where the service asks for it
 const copied = ref<string | null>(null);
 
-async function copyHook(connection: SavedConnection) {
-    if (!connection.hook?.url) {
+async function copyAddress(connection: SavedConnection) {
+    const address = connection.hook?.url ?? connection.sign_in?.callback;
+
+    if (!address) {
         return;
     }
 
-    await navigator.clipboard.writeText(connection.hook.url);
+    await navigator.clipboard.writeText(address);
     copied.value = connection.ref_id;
     setTimeout(() => (copied.value = null), 1500);
 }
@@ -291,7 +295,7 @@ function remove() {
                                     size="icon-sm"
                                     variant="ghost"
                                     :aria-label="`Copy ${connection.name}'s webhook address`"
-                                    @click="copyHook(connection)"
+                                    @click="copyAddress(connection)"
                                 >
                                     <Check
                                         v-if="copied === connection.ref_id"
@@ -304,6 +308,9 @@ function remove() {
                                     Its webhook address shows here once
                                     WORKFLOWS_PUBLIC_URL says where the app is
                                     reached from outside.
+                                </template>
+                                <template v-else-if="connection.hook.hint">
+                                    {{ connection.hook.hint }}
                                 </template>
                                 <template
                                     v-else-if="
@@ -319,6 +326,48 @@ function remove() {
                                     is switched on.
                                 </template>
                             </p>
+                        </div>
+                        <!-- Not signed in, or no longer: what the service has to be told first, and the way there -->
+                        <div
+                            v-if="
+                                connection.sign_in &&
+                                can.manage &&
+                                connection.sign_in.state !== 'yes'
+                            "
+                            class="mt-1.5 grid grid-cols-1 gap-1.5"
+                            data-connection-sign-in
+                        >
+                            <div class="flex items-center gap-1.5">
+                                <code
+                                    class="bg-muted/50 min-w-0 flex-1 truncate rounded border px-1.5 py-0.5 text-[11px]"
+                                    :title="connection.sign_in.callback"
+                                    >{{ connection.sign_in.callback }}</code
+                                >
+                                <Button
+                                    size="icon-sm"
+                                    variant="ghost"
+                                    :aria-label="`Copy the address ${connection.name} comes back to`"
+                                    @click="copyAddress(connection)"
+                                >
+                                    <Check
+                                        v-if="copied === connection.ref_id"
+                                    />
+                                    <Copy v-else />
+                                </Button>
+                            </div>
+                            <p class="text-muted-foreground text-xs">
+                                {{ connection.sign_in.hint }}
+                            </p>
+                            <Button
+                                size="sm"
+                                class="justify-self-start"
+                                as-child
+                            >
+                                <a :href="connection.sign_in.url">
+                                    <LogIn /> Sign in with
+                                    {{ connection.sign_in.service }}
+                                </a>
+                            </Button>
                         </div>
                         <p
                             v-if="checks[connection.ref_id]"
@@ -383,6 +432,19 @@ function remove() {
                             <DropdownMenuContent align="end">
                                 <DropdownMenuItem @select="edit(connection)">
                                     <Pencil /> Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    v-if="connection.sign_in"
+                                    as-child
+                                >
+                                    <a :href="connection.sign_in.url">
+                                        <LogIn />
+                                        {{
+                                            connection.sign_in.state === 'no'
+                                                ? 'Sign in'
+                                                : 'Sign in again'
+                                        }}
+                                    </a>
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                     v-if="

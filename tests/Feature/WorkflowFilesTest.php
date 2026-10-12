@@ -301,6 +301,55 @@ class WorkflowFilesTest extends TestCase
         $this->assertNull(ChatRoom::sole()->messages()->where('content', '')->sole()->toChat()['file']);
     }
 
+    public function test_a_telegram_room_keeps_who_it_is_with_and_their_photo_fetched_once()
+    {
+        Http::fake([
+            'api.telegram.org/bot123:abc/getChat*' => fn (Request $request) => Http::response(['ok' => true, 'result' => (int) $request['chat_id'] === 77
+                ? ['id' => 77, 'type' => 'private', 'first_name' => 'Ada', 'username' => 'ada', 'photo' => ['small_file_id' => 'small1', 'big_file_id' => 'big1', 'big_file_unique_id' => 'uniq1']]
+                // Someone who shows a bot no photo
+                : ['id' => 88, 'type' => 'private', 'first_name' => 'Bo']]),
+            'api.telegram.org/bot123:abc/getFile*' => Http::response(['ok' => true, 'result' => ['file_id' => 'big1', 'file_path' => 'profile_photos/file_1.jpg']]),
+            'api.telegram.org/file/bot123:abc/profile_photos/file_1.jpg' => Http::response(base64_decode(self::PNG), 200, ['Content-Type' => 'image/jpeg']),
+            'api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 9]]),
+        ]);
+        $user = User::factory()->create();
+        $bot = $this->bot($user);
+
+        $this->actingAs($user)->post(route('workflows.store'), ['template' => 'telegram-room', 'connections' => ['telegram' => $bot->ref_id]])->assertRedirect();
+        $workflow = $user->workflows()->sole();
+        $this->assertSame([], References::allProblems($workflow));
+        $this->actingAs($user)->postJson(route('workflows.publish', $workflow), ['revision' => $workflow->revision])->assertOk();
+        $this->actingAs($user)->patchJson(route('workflows.enable', $workflow), ['enabled' => true])->assertOk();
+
+        $writes = function (int $update, int $who, string $name, string $text) use ($bot) {
+            $this->postJson("/hooks/telegram/{$bot->ref_id}", ['update_id' => $update, 'message' => ['message_id' => $update, 'text' => $text, 'chat' => ['id' => $who, 'type' => 'private'], 'from' => ['id' => $who, 'first_name' => $name, 'username' => strtolower($name)]]], ['X-Telegram-Bot-Api-Secret-Token' => 'shh'])->assertOk();
+            $this->work();
+        };
+        $fetched = fn () => Http::recorded(fn (Request $request) => str_contains($request->url(), '/getFile'))->count();
+
+        // Their photo is kept in the Drive, and is the room's face; who they are is kept by name
+        $writes(701, 77, 'Ada', 'hi');
+        $face = $user->driveFiles()->sole();
+        $room = ChatRoom::sole();
+        $this->assertSame(['face-uniq1.jpg', 'Faces', true], [$face->name, $face->folder->name, $face->isImage()]);
+        $this->assertSame("/drive/files/{$face->ref_id}", $room->picture);
+        $this->assertSame(['name' => 'Ada', 'telegram_id' => '77', 'username' => 'ada'], $room->details);
+        $this->actingAs($user)->get(route('chats.show', $room))->assertInertia(fn ($page) => $page->where('room.picture', "/drive/files/{$face->ref_id}"));
+        $this->actingAs($user)->get($room->picture)->assertOk();
+
+        // The same photo is not fetched again with the next message
+        $writes(702, 77, 'Ada', 'again');
+        $this->assertSame([1, 1], [$fetched(), $user->driveFiles()->count()]);
+
+        // Someone with no photo to show has a room all the same, without a face
+        $writes(703, 88, 'Bo', 'hello');
+        $this->assertSame([null, 'Bo'], [($other = ChatRoom::where('external_key', 'telegram:88')->sole())->picture, $other->details['name']]);
+        $this->assertSame([], $workflow->runs()->where('status', '!=', RunStatus::Succeeded->value)->pluck('error')->all());
+
+        // A room's face is a picture of the workflow's own, or a web address: nothing else of the app
+        $this->assertSame([null, null, 'https://example.com/a.png'], [ChatRoom::pictureAt('/drive/files/../../etc'), ChatRoom::pictureAt('/settings'), ChatRoom::pictureAt('https://example.com/a.png')]);
+    }
+
     public function test_a_file_sent_in_a_chat_is_kept_in_the_drive_and_goes_out_through_the_bridge()
     {
         Http::fake(['api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 9]])]);

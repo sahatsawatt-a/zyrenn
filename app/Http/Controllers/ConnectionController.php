@@ -11,7 +11,9 @@ use App\Support\Chat\AiClient;
 use App\Support\Chat\AiFailed;
 use App\Support\Connections\ConnectionCheck;
 use App\Support\Connections\Services;
+use App\Support\Connections\SignIns;
 use App\Support\Workflow\Inbound\Hooks;
+use App\Support\Workflow\Steps\WhatsAppApi;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -112,7 +114,7 @@ class ConnectionController extends Controller
         $connection->fill([
             'name' => $validated['name'],
             'service' => $validated['service'],
-            'settings' => Services::settings($validated['service'], $validated['settings'] ?? []),
+            'settings' => Services::settings($validated['service'], $validated['settings'] ?? [], $sameKind ? $before['settings'] : []),
         ]);
         $connection->secrets = Services::secrets($validated['service'], $validated['secrets'] ?? [], $saved) ?: null;
         $connection->save();
@@ -212,7 +214,7 @@ class ConnectionController extends Controller
 
         $tried = new Connection([
             'service' => $validated['service'],
-            'settings' => Services::settings($validated['service'], $validated['settings'] ?? []),
+            'settings' => Services::settings($validated['service'], $validated['settings'] ?? [], $saved->settings ?? []),
         ]);
         $tried->secrets = Services::secrets($validated['service'], $validated['secrets'] ?? [], $saved->secrets ?? []);
 
@@ -247,6 +249,7 @@ class ConnectionController extends Controller
             'added_by' => $connection->creator?->name,
             'created_at' => $connection->created_at,
             'hook' => self::hookOf($connection),
+            'sign_in' => SignIns::describe($connection),
         ];
     }
 
@@ -256,11 +259,16 @@ class ConnectionController extends Controller
      * a workflow using the bot is switched on. The address is null while
      * nothing outside can reach the app (WORKFLOWS_PUBLIC_URL).
      *
-     * @return array{url: string|null, set: string}|null
+     * @return array{url: string|null, set: string, hint?: string}|null
      */
     private static function hookOf(Connection $connection): ?array
     {
         return match (true) {
+            $connection->service === Services::WHATSAPP => [
+                'url' => Hooks::url("whatsapp/{$connection->ref_id}"),
+                'set' => 'by_hand',
+                'hint' => 'In the Meta app, under WhatsApp → Configuration → Webhook: paste it as the Callback URL, with the verify token '.WhatsAppApi::verifyToken($connection).', then subscribe to "messages".',
+            ],
             $connection->service === 'line' => ['url' => Hooks::url("line/{$connection->ref_id}"), 'set' => 'by_hand'],
             $connection->service === 'telegram' && $connection->setting('receive') !== 'poll' => ['url' => Hooks::url("telegram/{$connection->ref_id}"), 'set' => 'by_app'],
             default => null,

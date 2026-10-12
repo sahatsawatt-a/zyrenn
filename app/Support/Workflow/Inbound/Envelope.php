@@ -60,6 +60,11 @@ final class Envelope
             'member' => ['memberJoined', 'memberLeft'],
             'unsend' => ['unsend'],
         ],
+        'whatsapp' => [
+            'message' => ['message', 'button'],
+            'button' => ['button'],
+            'reaction' => ['reaction'],
+        ],
     ];
 
     /**
@@ -353,6 +358,59 @@ final class Envelope
                 'unsent' => $event['unsend']['messageId'] ?? null,
             ], fn ($part) => $part !== null),
             'raw' => $event,
+        ];
+    }
+
+    /**
+     * One message sent to a WhatsApp business number, as Meta's webhook says
+     * it. Beside the common shape: button { id, title } for a press;
+     * location { lat, lng, title, address }; reaction { message, emoji }.
+     * A group is not told of: the Cloud API speaks with one person at a time.
+     *
+     * @param  array<string, mixed>  $value  what the webhook carried it in: the number it came to, and who is who
+     * @param  array<string, mixed>  $message
+     * @return array<string, mixed>
+     */
+    public static function whatsapp(array $value, array $message): array
+    {
+        $kind = (string) ($message['type'] ?? 'text');
+        $from = (string) ($message['from'] ?? '');
+        $sent = in_array($kind, ['image', 'video', 'audio', 'document', 'sticker'], true) && is_array($message[$kind] ?? null) ? $message[$kind] : [];
+        // A button under a message of one's own, a row of a list, or a template's quick reply
+        $pressed = $message['interactive']['button_reply'] ?? $message['interactive']['list_reply'] ?? null;
+        $pressed ??= is_array($message['button'] ?? null) ? ['id' => $message['button']['payload'] ?? null, 'title' => $message['button']['text'] ?? null] : null;
+        $who = collect((array) ($value['contacts'] ?? []))->firstWhere('wa_id', $from);
+        $text = (string) ($message['text']['body'] ?? $sent['caption'] ?? $pressed['id'] ?? $message['reaction']['emoji'] ?? '');
+
+        return [
+            'service' => 'whatsapp',
+            'type' => match (true) {
+                $pressed !== null => 'button',
+                $kind === 'reaction' => 'reaction',
+                default => 'message',
+            },
+            // What was sent: text, image, video, audio, file, sticker, location or contacts; a press is a button
+            'kind' => $pressed !== null ? 'button' : ($kind === 'document' ? 'file' : $kind),
+            'id' => (string) ($message['id'] ?? ''),
+            'at' => is_numeric($message['timestamp'] ?? null) ? Carbon::createFromTimestamp((int) $message['timestamp'])->format('Y-m-d\TH:i:s.vP') : null,
+            'chat' => ['id' => $from, 'kind' => 'private', 'title' => null],
+            'sender' => ['id' => $from, 'name' => is_array($who) ? ($who['profile']['name'] ?? null) : null],
+            'text' => $text,
+            'display' => $text,
+            // What WhatsApp holds to be fetched, by its id
+            'files' => isset($sent['id']) ? [(string) $sent['id']] : [],
+            'reply' => ['to' => $message['id'] ?? null, 'quote' => $message['context']['id'] ?? null],
+            ...array_filter([
+                'button' => $pressed === null ? null : ['id' => (string) ($pressed['id'] ?? ''), 'title' => (string) ($pressed['title'] ?? '')],
+                'location' => $kind !== 'location' ? null : [
+                    'lat' => $message['location']['latitude'] ?? null,
+                    'lng' => $message['location']['longitude'] ?? null,
+                    'title' => $message['location']['name'] ?? null,
+                    'address' => $message['location']['address'] ?? null,
+                ],
+                'reaction' => $kind !== 'reaction' ? null : ['message' => $message['reaction']['message_id'] ?? null, 'emoji' => $message['reaction']['emoji'] ?? null],
+            ], fn ($part) => $part !== null),
+            'raw' => ['message' => $message, 'metadata' => $value['metadata'] ?? null],
         ];
     }
 

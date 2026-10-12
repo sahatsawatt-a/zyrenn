@@ -278,15 +278,18 @@ class ChatRoom extends Model
 
     /**
      * A picture's address as a room may show it: a web address over https,
-     * and nothing else -- it is drawn by everyone who opens the room.
+     * or a file's own address in the Drive, and nothing else -- it is drawn
+     * by everyone who opens the room.
      */
     public static function pictureAt(?string $url): ?string
     {
         $url = trim((string) $url);
 
-        return mb_strlen($url) <= 1000 && str_starts_with($url, 'https://') && filter_var($url, FILTER_VALIDATE_URL) !== false
-            ? $url
-            : null;
+        return match (true) {
+            preg_match('#^/drive/files/[A-Za-z0-9]{6,16}$#', $url) === 1 => $url,
+            mb_strlen($url) <= 1000 && str_starts_with($url, 'https://') && filter_var($url, FILTER_VALIDATE_URL) !== false => $url,
+            default => null,
+        };
     }
 
     /**

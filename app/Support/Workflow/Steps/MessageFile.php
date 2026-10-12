@@ -7,7 +7,8 @@ use App\Support\Workflow\References;
 use App\Support\Workflow\Template;
 
 /**
- * What "Telegram: get the file" and "LINE: get the file" share. A message
+ * What "Telegram: get the file", "LINE: get the file" and "WhatsApp: get the
+ * file" share. A message
  * carries only the ids of what was sent with it (Envelope); each service's
  * own step asks it for the file, with the bot's or channel's key, and keeps
  * it in the Drive of the workflow's owner -- in the one step, since a file's
@@ -33,7 +34,14 @@ final class MessageFile
         $id = trim(Template::text(is_array($sent) ? ($sent['id'] ?? $sent['file_id'] ?? '') : $sent));
 
         if ($id === '') {
-            throw new StepFailed('There is no file here: the message carried none. An "If" on len(trigger.files) > 0 keeps this step for the messages that do.');
+            throw new StepFailed(filled($step->setting('file'))
+                ? 'There is no file here: the one it names came to nothing.'
+                : 'There is no file here: the message carried none. An "If" on len(trigger.files) > 0 keeps this step for the messages that do.');
+        }
+
+        // Told to use a file of that name already in the folder: the service is not asked for it again
+        if (($there = DriveSteps::there($step)) !== null) {
+            return new StepResult(DriveSteps::summary($there));
         }
 
         $got = $fetch($through, $id, $trigger);
@@ -48,7 +56,7 @@ final class MessageFile
 
     /**
      * What a file was called by whoever sent it, when the message says: a
-     * document's name on Telegram, a file's on LINE.
+     * document's name on Telegram or WhatsApp, a file's on LINE.
      *
      * @param  array<string, mixed>  $trigger
      */
@@ -65,9 +73,13 @@ final class MessageFile
             return $message['fileName'];
         }
 
+        // Telegram calls them file_id and file_name; WhatsApp, id and filename
         foreach (['document', 'video', 'audio', 'animation'] as $kind) {
-            if (($message[$kind]['file_id'] ?? null) === $id && is_string($message[$kind]['file_name'] ?? null)) {
-                return $message[$kind]['file_name'];
+            $sent = is_array($message[$kind] ?? null) ? $message[$kind] : [];
+            $name = $sent['file_name'] ?? $sent['filename'] ?? null;
+
+            if (($sent['file_id'] ?? $sent['id'] ?? null) === $id && is_string($name)) {
+                return $name;
             }
         }
 

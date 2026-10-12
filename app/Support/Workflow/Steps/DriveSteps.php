@@ -108,6 +108,24 @@ final class DriveSteps
     }
 
     /**
+     * The file a step told to use the one there finds: of the name it gives,
+     * in its folder. Null when it wasn't told to, gives no name, or there
+     * is none -- and it is then fetched and kept.
+     */
+    public static function there(StepContext $step): ?DriveFile
+    {
+        if ($step->setting('same') !== 'reuse' || ($name = DriveFile::nameOnly($step->text('name'))) === '') {
+            return null;
+        }
+
+        return $step->owner()->driveFiles()
+            ->where('name', $name)
+            ->where('folder_id', self::folder($step)?->id)
+            ->latest('id')
+            ->first();
+    }
+
+    /**
      * Keep fetched or written bytes in the Drive, under the step's "name"
      * (else the name they came with) and in its "folder", and give the file
      * out. The temporary file is deleted either way.

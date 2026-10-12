@@ -9,6 +9,7 @@ use App\Support\Workflow\Inbound\Envelope;
 use App\Support\Workflow\Ingest;
 use App\Support\Workflow\Listeners;
 use App\Support\Workflow\References;
+use App\Support\Workflow\Steps\WhatsAppApi;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -100,6 +101,59 @@ class HookController extends Controller
                 fn (WorkflowListener $listener) => Envelope::wanted('line', $listener->settings['on'] ?? null, $envelope['type'])
                     && in_array($listener->settings['chats'] ?? 'any', ['any', $envelope['chat']['kind']], true),
             );
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * A WhatsApp business number's messages, by Meta's webhook: asked once,
+     * when it is set up, to prove the address is the app's, and after that
+     * signed with the Meta app's secret. One address takes everything the
+     * Meta app is told of, so only what came to this connection's own
+     * number is taken; that a message was delivered or read starts nothing.
+     */
+    public function whatsapp(Request $request, string $connection): JsonResponse|Response
+    {
+        $number = Connection::where('ref_id', $connection)->where('service', 'whatsapp')->first();
+
+        if ($request->isMethod('GET')) {
+            return $number !== null && $request->query('hub_mode') === 'subscribe' && hash_equals(WhatsAppApi::verifyToken($number), (string) $request->query('hub_verify_token'))
+                ? response((string) $request->query('hub_challenge'), 200, ['Content-Type' => 'text/plain'])
+                : response()->json(['ok' => false], 403);
+        }
+
+        $secret = $number?->secret('app_secret');
+        $signed = 'sha256='.hash_hmac('sha256', $request->getContent(), (string) $secret);
+
+        if ($number === null || $secret === null || ! hash_equals($signed, (string) $request->header('X-Hub-Signature-256'))) {
+            return response()->json(['ok' => false], 403);
+        }
+
+        foreach ((array) $request->json('entry', []) as $entry) {
+            foreach ((array) ($entry['changes'] ?? []) as $change) {
+                $value = is_array($change['value'] ?? null) ? $change['value'] : [];
+
+                if (($change['field'] ?? null) !== 'messages' || (string) ($value['metadata']['phone_number_id'] ?? '') !== (string) $number->setting('phone_number_id')) {
+                    continue;
+                }
+
+                foreach ((array) ($value['messages'] ?? []) as $message) {
+                    if (! is_array($message)) {
+                        continue;
+                    }
+
+                    $envelope = Envelope::whatsapp($value, $message);
+
+                    Ingest::fire(
+                        "whatsapp:{$number->ref_id}",
+                        $envelope['id'] ?: hash('sha256', json_encode($message) ?: ''),
+                        $envelope,
+                        Listeners::for('whatsapp', $number->ref_id),
+                        fn (WorkflowListener $listener) => Envelope::wanted('whatsapp', $listener->settings['on'] ?? null, $envelope['type']),
+                    );
+                }
+            }
         }
 
         return response()->json(['ok' => true]);

@@ -1,12 +1,7 @@
 <script setup lang="ts">
-import { Download, Paperclip } from '@lucide/vue';
+import { Paperclip } from '@lucide/vue';
 import { onBeforeUnmount, ref } from 'vue';
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogTitle,
-} from '@/components/ui/dialog';
+import PictureDialog from '@/features/chat/components/PictureDialog.vue';
 
 // A file under a chat message, from the Drive: a picture shown small and
 // opened larger over the chat; a sticker small and bare, as a sticker is --
@@ -113,31 +108,7 @@ onBeforeUnmount(() => {
                 class="max-h-72 max-w-full rounded-2xl border object-cover sm:max-w-xs"
             />
         </button>
-        <Dialog v-model:open="open">
-            <DialogContent
-                class="flex max-h-[92vh] w-auto max-w-[92vw] flex-col gap-3 p-3 sm:max-w-[92vw]"
-                data-chat-picture
-            >
-                <DialogTitle class="truncate pr-8 text-sm font-medium">{{
-                    file.name
-                }}</DialogTitle>
-                <DialogDescription class="sr-only"
-                    >The picture, as large as it fits.</DialogDescription
-                >
-                <img
-                    :src="file.url"
-                    :alt="file.name"
-                    class="max-h-[78vh] max-w-full self-center rounded-lg object-contain"
-                />
-                <a
-                    :href="`${file.url}?download=1`"
-                    class="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 self-start text-xs underline-offset-2 hover:underline"
-                >
-                    <Download class="size-3.5" />
-                    Download
-                </a>
-            </DialogContent>
-        </Dialog>
+        <PictureDialog v-model:open="open" :file="file" />
     </template>
     <video
         v-else-if="file.is_video"

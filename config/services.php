@@ -73,6 +73,11 @@ return [
         'key' => env('SERPAPI_KEY'),
     ],
 
+    'code' => [
+        // The code runner (docker/code), where a workflow's "Run code" step runs: private on the compose network
+        'url' => env('CODE_URL', 'http://code:3000'),
+    ],
+
     'chrome' => [
         // The PDF printer (docker/chrome), private on the compose network
         'url' => env('CHROME_URL', 'http://chrome:3000'),

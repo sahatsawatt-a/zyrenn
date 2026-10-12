@@ -4,6 +4,7 @@
 //
 // A model answering in a room is a workflow's: tests/e2e/workflow-steps.mjs
 // (a chat answered by a workflow) and tests/e2e/workflow-ai.mjs (Ask AI).
+import { writeFileSync } from 'node:fs';
 import { SHOTS, runBoard, tinker } from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);
@@ -131,6 +132,70 @@ await runBoard(
             JSON.stringify(sizes),
         );
         await page.screenshot({ path: `${SHOTS}/chat-emoji.png` });
+
+        // --- pictures sent one after another are drawn as one ---
+        const PIXEL =
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+        const pictures = [1, 2, 3].map(
+            (n) => `${SHOTS}/e2e-album-${RUN}-${n}.png`,
+        );
+        pictures.forEach((path) =>
+            writeFileSync(path, Buffer.from(PIXEL, 'base64')),
+        );
+        afterwards(() =>
+            tinker(
+                `${user}->driveFiles()->where('name', 'like', 'e2e-album-${RUN}-%')->get()->each->delete();`,
+            ),
+        );
+        // Sent, and landed: the page takes one message at a time
+        const sendPicture = async (path, words = '') => {
+            const before = await page.locator('[data-chat-file]').count();
+
+            await page.locator('[data-chat-file-input]').setInputFiles(path);
+            await page.locator('[data-chat-attached]').waitFor();
+            await input.fill(words);
+            await input.press('Enter');
+            await page
+                .locator('[data-chat-file]')
+                .nth(before)
+                .waitFor({ timeout: 15000 });
+            await page.locator('button[aria-label="Send"]').waitFor();
+        };
+        const album = page.locator('[data-chat-album]');
+
+        await sendPicture(pictures[0], 'Three of them');
+        await page
+            .locator('[data-chat-mine]', { hasText: 'Three of them' })
+            .locator('[data-chat-file]')
+            .waitFor();
+        check('one picture is shown as a picture', (await album.count()) === 0);
+        await sendPicture(pictures[1]);
+        await sendPicture(pictures[2]);
+        await album.locator('[data-chat-file]').nth(2).waitFor();
+        check(
+            'pictures sent one after another are drawn as one, under what the first said',
+            (await album.count()) === 1 &&
+                (await album.locator('[data-chat-file]').count()) === 3 &&
+                (await page
+                    .locator('[data-chat-mine]', { hasText: 'Three of them' })
+                    .locator('[data-chat-album]')
+                    .count()) === 1,
+            String(await album.locator('[data-chat-file]').count()),
+        );
+        await album.locator('[data-chat-file]').nth(1).click();
+        const viewer = page.locator('[data-chat-picture]');
+        const place = viewer.locator('[data-chat-picture-place]');
+        await viewer.waitFor();
+        const opened = await place.innerText();
+        await page.keyboard.press('ArrowRight');
+        check(
+            'one opens larger, and the others are a step away',
+            opened === '2 of 3' && (await place.innerText()) === '3 of 3',
+            `${opened} -> ${await place.innerText()}`,
+        );
+        await page.keyboard.press('Escape');
+        await viewer.waitFor({ state: 'detached' });
+        await page.screenshot({ path: `${SHOTS}/chat-album.png` });
 
         const chatLink = page
             .locator('[data-sidebar="menu"]')

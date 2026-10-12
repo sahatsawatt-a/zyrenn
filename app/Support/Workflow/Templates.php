@@ -121,6 +121,10 @@ final class Templates
      * shared on Telegram is written as its name and number; anything else
      * is said as it was.
      *
+     * Who it is with is kept with the room: their name and id, and their
+     * picture -- LINE gives its address; Telegram's is fetched into the
+     * Drive, once for each photo.
+     *
      * Going out, what is written in the room goes to the outside chat, and
      * a file sent there goes with it: by Telegram's own call for a file; on
      * LINE as a picture when it is one LINE takes, else as a link that
@@ -143,14 +147,20 @@ final class Templates
             ? ['connection' => References::LINKED, 'to' => '{{ trigger.room.link.chat }}']
             : ['connection' => References::LINKED, 'chat' => '{{ trigger.room.link.chat }}'];
         $send = "{$service}.send";
-        // Where the question of its kind stands: LINE asks who wrote first
-        $at = $line ? 3 : 2;
+        // Where the question of its kind stands: LINE asks who wrote first; Telegram asks about the
+        // chat, then fetches its photo
+        $at = $line ? 3 : 4;
 
         /** @var list<array{0: int, 1: int, 2: string, 3: string, 4: array<string, mixed>, 5?: string}> $steps */
         $steps = [
             // In: column, row, key, kind, settings, and what a failure does when not stopping
             [0, 0, 'heard', "trigger.{$service}", ['connection' => $connection]],
-            ...$line ? [[1, 0, 'who', 'line.profile', ['connection' => $connection, 'user' => '{{ trigger.sender.id }}', 'chat' => '{{ trigger.chat.id }}'], 'continue']] : [],
+            ...$line ? [[1, 0, 'who', 'line.profile', ['connection' => $connection, 'user' => '{{ trigger.sender.id }}', 'chat' => '{{ trigger.chat.id }}'], 'continue']] : [
+                [1, 0, 'about', 'telegram.chat', ['connection' => $connection, 'chat' => '{{ trigger.chat.id }}'], 'continue'],
+                // Kept once for each photo: the same one is not fetched again with every message. A chat
+                // that shows a bot no photo has none to fetch, and the room keeps the face it had
+                [2, 0, 'face', 'telegram.file', ['connection' => $connection, 'file' => '{{ node("about").photo }}', 'name' => 'face-{{ node("about").photo_id }}.jpg', 'folder' => 'Telegram/Faces', 'same' => 'reuse'], 'continue'],
+            ],
             [$at - 1, 0, 'room', 'chat.room', [
                 'key' => "{$service}:{{ trigger.chat.id }}",
                 'title' => $line
@@ -169,6 +179,8 @@ final class Templates
                         ['name' => 'status', 'value' => '{{ coalesce(node("who").status, "") }}'],
                     ],
                 ] : [
+                    // The chat's own photo: whoever a one-to-one chat is with, or the group's
+                    'picture' => '{{ coalesce(node("face").ref_id, "") }}',
                     'details' => [
                         ['name' => 'name', 'value' => '{{ coalesce(trigger.sender.name, "") }}'],
                         ['name' => 'telegram_id', 'value' => '{{ trigger.sender.id }}'],
@@ -248,7 +260,9 @@ final class Templates
         ];
 
         $joins = [
-            ...$line ? [['heard', 'out', 'who'], ['who', 'out', 'room']] : [['heard', 'out', 'room']],
+            ...$line
+                ? [['heard', 'out', 'who'], ['who', 'out', 'room']]
+                : [['heard', 'out', 'about'], ['about', 'out', 'face'], ['face', 'out', 'room']],
             ['room', 'out', 'kind'],
             ['kind', 'file', 'save'], ['save', 'out', 'show'],
             ['kind', 'sticker', 'sticker'], ['sticker', 'out', 'showsticker'],

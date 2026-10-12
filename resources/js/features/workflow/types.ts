@@ -6,6 +6,7 @@ export type SettingType =
     | 'template'
     | 'formula'
     | 'json'
+    | 'code'
     | 'choice'
     | 'fields'
     | 'number'

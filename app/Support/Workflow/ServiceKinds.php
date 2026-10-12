@@ -4,9 +4,9 @@ namespace App\Support\Workflow;
 
 /**
  * The kinds of step that are one call to a service each -- SerpApi, Tavily,
- * Telegram, LINE -- beside the ones NodeTypes lists itself: every call a
- * service offers is a step of its own, in that service's group. Run by that
- * service's ...Call class.
+ * Telegram, LINE, WhatsApp, LinkedIn, Facebook, Instagram, Threads -- beside the ones
+ * NodeTypes lists itself: every call a service offers is a step of its own,
+ * in that service's group. Run by that service's ...Call class.
  *
  * @phpstan-import-type Setting from NodeTypes
  * @phpstan-import-type NodeType from NodeTypes
@@ -28,7 +28,7 @@ final class ServiceKinds
      */
     public static function all(): array
     {
-        return [...self::serpapi(), ...self::tavily(), ...self::telegram(), ...self::line()];
+        return [...self::serpapi(), ...self::tavily(), ...self::telegram(), ...self::line(), ...self::whatsapp(), ...self::linkedin(), ...self::facebook(), ...self::instagram(), ...self::threads()];
     }
 
     // --- SerpApi ---
@@ -322,7 +322,7 @@ final class ServiceKinds
             ]),
 
             // Asked
-            self::kind('telegram.chat', 'Telegram: about a chat', 'info', 'Asks Telegram about a chat: gives out its id, kind, title, username, description, and whether it has topics.', [$bot, $chat]),
+            self::kind('telegram.chat', 'Telegram: about a chat', 'info', 'Asks Telegram about a chat: gives out its id, kind, title, username, description, whether it has topics, and its photo -- the photo of whoever a one-to-one chat is with -- as a file "Telegram: get the file" fetches.', [$bot, $chat]),
             self::kind('telegram.member', 'Telegram: about a member', 'user-search', 'Asks Telegram how someone stands in a chat: gives out their name, their status, and whether they are in it and look after it.', [$bot, $chat, $user]),
             self::kind('telegram.member_count', 'Telegram: how many members', 'users', 'Asks Telegram how many people are in a chat, as count.', [$bot, $chat]),
         ];
@@ -469,6 +469,229 @@ final class ServiceKinds
             self::kind('line.richmenu_alias_off', 'Take away a rich menu\'s name on LINE', 'tag', 'Takes a short name away from the rich menu that goes by it. A tab that names it does nothing after.', [$channel, $alias]),
             self::kind('line.richmenu_delete', 'Delete a rich menu on LINE', 'trash-2', 'Deletes a rich menu of the channel\'s for good. Those shown it see the usual one, or none.', [$channel, $menu]),
             self::kind('line.richmenus', 'LINE: rich menus', 'list', 'Asks LINE for the channel\'s rich menus: gives out menus, each with its id, name, the words on its bar, its size, how many places it has to tap, the short names it goes by (aliases), and whether everyone is shown it (default). Menus drawn in LINE Official Account Manager are not among them.', [$channel]),
+        ];
+    }
+
+    // --- LinkedIn ---
+
+    /**
+     * Who sees a LinkedIn post.
+     *
+     * @return list<Setting>
+     */
+    public static function linkedinSeenBy(): array
+    {
+        return [
+            ['name' => 'visibility', 'label' => 'Seen by', 'type' => 'choice', 'required' => true, 'default' => 'PUBLIC', 'options' => ['PUBLIC' => 'Anyone', 'CONNECTIONS' => 'Connections only']],
+        ];
+    }
+
+    /**
+     * @return list<NodeType>
+     */
+    private static function linkedin(): array
+    {
+        $as = ['name' => 'connection', 'label' => 'As', 'type' => 'connection', 'required' => true, 'services' => ['linkedin']];
+        $post = ['name' => 'post', 'label' => 'Post', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("post").id }}', 'help' => 'Its id, as "Post on LinkedIn" gives it, or its link.'];
+
+        return [
+            self::kind('linkedin.repost', 'Repost on LinkedIn', 'repeat', 'Shares a post again on the member\'s own profile, with words of their own over it or none. Gives out the new post\'s id and its address as url.', [
+                $as,
+                $post,
+                ['name' => 'text', 'label' => 'Words over it', 'type' => 'template', 'required' => false, 'help' => 'Left empty, a plain repost.'],
+                ...self::linkedinSeenBy(),
+            ], sends: true),
+            self::kind('linkedin.delete', 'Delete a post on LinkedIn', 'trash-2', 'Deletes one of the member\'s own posts for good. One already gone is no error.', [$as, $post]),
+            self::kind('linkedin.comment', 'Comment on LinkedIn', 'message-square', 'Writes a comment under a post, as the member. Gives out the comment\'s id, and urn, which "Delete a comment on LinkedIn" takes.', [
+                $as,
+                $post,
+                ['name' => 'text', 'label' => 'Comment', 'type' => 'template', 'required' => true, 'help' => 'At most 1,250 letters.'],
+            ], sends: true),
+            self::kind('linkedin.comment_delete', 'Delete a comment on LinkedIn', 'trash-2', 'Takes away a comment the member wrote.', [
+                $as,
+                ['name' => 'comment', 'label' => 'Comment', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("comment").urn }}', 'help' => 'What "Comment on LinkedIn" gives as urn -- or its id, with its post below.'],
+                [...$post, 'required' => false, 'label' => 'Its post', 'help' => 'Only with a comment named by its id alone.'],
+            ]),
+            self::kind('linkedin.like', 'Like a post on LinkedIn', 'thumbs-up', 'Likes a post, as the member.', [$as, $post]),
+            self::kind('linkedin.unlike', 'Take back a like on LinkedIn', 'thumbs-down', 'Takes the member\'s like off a post.', [$as, $post]),
+            self::kind('linkedin.me', 'LinkedIn: who I am', 'badge-check', 'Asks LinkedIn who the connection is signed in as. Gives out id, name, first, last, picture and language.', [$as]),
+        ];
+    }
+
+    // --- WhatsApp ---
+
+    /**
+     * @return list<NodeType>
+     */
+    private static function whatsapp(): array
+    {
+        $number = ['name' => 'connection', 'label' => 'Number', 'type' => 'connection', 'required' => true, 'services' => ['whatsapp']];
+        $to = ['name' => 'to', 'label' => 'To', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.chat.id }}', 'help' => 'Their number with its country code, like 66812345678.'];
+        $under = ['name' => 'reply_to', 'label' => 'In answer to', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.reply.to }}', 'help' => 'A message\'s id: this is then shown under it. Left empty, it stands alone.'];
+        $window = 'Only within 24 hours of their last message: after that, WhatsApp takes a template alone.';
+
+        return [
+            self::kind('whatsapp.send', 'Send on WhatsApp', 'send', 'Sends words from a business number to someone who wrote to it, with up to three buttons under them when any are named. '.$window, [
+                $number,
+                $to,
+                ['name' => 'text', 'label' => 'Message', 'type' => 'template', 'required' => true],
+                ['name' => 'buttons', 'label' => 'Buttons', 'type' => 'fields', 'required' => false, 'default' => [], 'labels' => true, 'help' => 'Up to three, each at most 20 letters: what it says, and what a press sends back as trigger.text -- its own words when left empty.'],
+                $under,
+            ], sends: true),
+            self::kind('whatsapp.send_file', 'Send a file on WhatsApp', 'file-up', 'Sends a file from the Drive: a picture (JPEG or PNG, at most 5 MB), a video or a recording (16 MB) is shown as one, anything else goes as a document (100 MB). '.$window, [
+                $number,
+                $to,
+                ['name' => 'file', 'label' => 'File', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("save").ref_id }}', 'help' => 'A file in the Drive, by its ref_id.'],
+                ['name' => 'text', 'label' => 'Words under it', 'type' => 'template', 'required' => false],
+                $under,
+            ], sends: true),
+            self::kind('whatsapp.template', 'Send a template on WhatsApp', 'file-text', 'Sends a message made from a template WhatsApp has approved for the business: the one thing that reaches someone first, or after the 24 hours since they last wrote. Meta charges for most of them.', [
+                $number,
+                [...$to, 'default' => null, 'placeholder' => '66812345678'],
+                ['name' => 'name', 'label' => 'Template', 'type' => 'template', 'required' => true, 'placeholder' => 'hello_world', 'help' => 'Its name, as WhatsApp Manager lists it.'],
+                ['name' => 'language', 'label' => 'In', 'type' => 'template', 'required' => true, 'default' => 'en_US', 'help' => 'The language it was approved in, as WhatsApp writes it: en_US, th.'],
+                ['name' => 'values', 'label' => 'Its values', 'type' => 'template', 'required' => false, 'placeholder' => "{{ trigger.name }}\n{{ trigger.total }}", 'help' => 'What goes where its words leave room ({{1}}, {{2}}…), one on a line, in order.'],
+            ], sends: true),
+            self::kind('whatsapp.location', 'Send a place on WhatsApp', 'map-pin', 'Sends a place, shown on a map. '.$window, [
+                $number,
+                $to,
+                ['name' => 'lat', 'label' => 'Latitude', 'type' => 'template', 'required' => true, 'placeholder' => '13.7563'],
+                ['name' => 'lng', 'label' => 'Longitude', 'type' => 'template', 'required' => true, 'placeholder' => '100.5018'],
+                ['name' => 'name', 'label' => 'Called', 'type' => 'template', 'required' => false],
+                ['name' => 'address', 'label' => 'Address', 'type' => 'template', 'required' => false],
+                $under,
+            ], sends: true),
+            self::kind('whatsapp.react', 'React on WhatsApp', 'smile', 'Puts an emoji on a message someone sent, in place of one put there before.', [
+                $number,
+                $to,
+                ['name' => 'message', 'label' => 'On message', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.reply.to }}', 'help' => 'The message\'s id.'],
+                ['name' => 'emoji', 'label' => 'Emoji', 'type' => 'template', 'required' => false, 'default' => '👍', 'help' => 'Left empty, the reaction is taken back.'],
+            ]),
+            self::kind('whatsapp.read', 'Mark as read on WhatsApp', 'check-check', 'Marks a message, and all before it in its chat, as read: the two ticks under theirs turn blue.', [
+                $number,
+                ['name' => 'message', 'label' => 'Message', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.reply.to }}', 'help' => 'The message\'s id.'],
+                ['name' => 'typing', 'label' => 'And show "typing…"', 'type' => 'choice', 'required' => true, 'default' => 'no', 'options' => ['no' => 'No', 'yes' => 'Yes, until an answer goes or 25 seconds pass']],
+            ]),
+        ];
+    }
+
+    // --- Facebook ---
+
+    /**
+     * @return list<NodeType>
+     */
+    private static function facebook(): array
+    {
+        $page = ['name' => 'connection', 'label' => 'Page', 'type' => 'connection', 'required' => true, 'services' => ['facebook'], 'help' => 'A Facebook connection, signed in.'];
+        $on = ['name' => 'post', 'label' => 'Post', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("post").id }}', 'help' => 'Its id, as "Post on a Facebook Page" or "Facebook: the Page\'s posts" gives it.'];
+        $either = [...$on, 'label' => 'Post or comment', 'help' => 'The id of a post, or of a comment under one.'];
+        $count = fn (int $usual) => ['name' => 'count', 'label' => 'How many', 'type' => 'number', 'required' => false, 'default' => $usual, 'help' => 'The newest first; at most 100.'];
+
+        return [
+            self::kind('facebook.post', 'Post on a Facebook Page', 'megaphone', 'Posts as a Facebook Page: words, alone or with a link shown as a card, a picture or several, or a video. Facebook lets an app post as a Page, never on a person\'s own profile. Gives out the post\'s id and its address as url.', [
+                $page,
+                ['name' => 'text', 'label' => 'Words', 'type' => 'template', 'required' => false],
+                ['name' => 'with', 'label' => 'With', 'type' => 'choice', 'required' => true, 'default' => 'none', 'options' => ['none' => 'Nothing else', 'link' => 'A link, shown as a card', 'picture' => 'A picture from the Drive', 'pictures' => 'Several pictures from the Drive', 'video' => 'A video from the Drive']],
+                ['name' => 'link', 'label' => 'Link', 'type' => 'template', 'required' => false, 'placeholder' => 'https://example.com/news/{{ trigger.id }}', 'when' => ['with' => 'link']],
+                ['name' => 'picture', 'label' => 'Picture', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'drive' => 'image', 'help' => 'A picture in the Drive, by its ref_id.', 'when' => ['with' => 'picture']],
+                ['name' => 'pictures', 'label' => 'Pictures', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("find").files }}', 'help' => 'From 2 to 10 in the Drive: a list of them, or their ref_ids with commas between.', 'when' => ['with' => 'pictures']],
+                ['name' => 'video', 'label' => 'Video', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'drive' => 'video', 'help' => 'A video in the Drive, by its ref_id.', 'when' => ['with' => 'video']],
+                ['name' => 'title', 'label' => 'Its title', 'type' => 'template', 'required' => false, 'when' => ['with' => 'video']],
+            ], sends: true),
+            self::kind('facebook.comment', 'Comment on Facebook', 'message-square', 'Writes a comment as the Page: under one of its posts, or in answer to a comment there. Gives out the comment\'s id.', [
+                $page,
+                $either,
+                ['name' => 'text', 'label' => 'Comment', 'type' => 'template', 'required' => true],
+            ], sends: true),
+            self::kind('facebook.like', 'Like on Facebook', 'thumbs-up', 'Likes a post or a comment, as the Page.', [$page, $either]),
+            self::kind('facebook.unlike', 'Take back a like on Facebook', 'thumbs-down', 'Takes the Page\'s like off a post or a comment.', [$page, $either]),
+            self::kind('facebook.delete', 'Delete on Facebook', 'trash-2', 'Deletes a post of the Page\'s, or a comment under one, for good.', [$page, $either]),
+            self::kind('facebook.posts', 'Facebook: the Page\'s posts', 'list', 'Asks Facebook for the Page\'s newest posts: gives out posts, each with its id, text, at and url, and the newest alone as first.', [$page, $count(10)]),
+            self::kind('facebook.comments', 'Facebook: a post\'s comments', 'scroll-text', 'Asks Facebook for the comments under a post of the Page\'s, the newest first: gives out comments, each with its id, text, at and from, and how many as count.', [$page, $on, $count(25)]),
+            self::kind('facebook.me', 'Facebook: the Page', 'badge-check', 'Asks Facebook about the Page the connection is signed in as. Gives out id, name, url, likes, followers and picture.', [$page]),
+        ];
+    }
+
+    // --- Instagram ---
+
+    /**
+     * @return list<NodeType>
+     */
+    private static function instagram(): array
+    {
+        $account = ['name' => 'connection', 'label' => 'As', 'type' => 'connection', 'required' => true, 'services' => ['instagram'], 'help' => 'An Instagram connection, signed in.'];
+        $post = ['name' => 'post', 'label' => 'Post', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("post").id }}', 'help' => 'Its id, as "Post on Instagram" or "Instagram: my posts" gives it -- not its link.'];
+        $comment = ['name' => 'comment', 'label' => 'Comment', 'type' => 'template', 'required' => true, 'placeholder' => '{{ item(node("comments").comments, 1).id }}', 'help' => 'Its id, as a step gives it.'];
+        $fetched = 'Instagram fetches it from the app, so the app needs its public address.';
+
+        return [
+            self::kind('instagram.post', 'Post on Instagram', 'megaphone', 'Posts as an Instagram professional account: a picture, several to swipe through, a reel, or a story. Gives out the post\'s id and its address as url. Instagram lets an app post, and not take a post down again.', [
+                $account,
+                ['name' => 'what', 'label' => 'What', 'type' => 'choice', 'required' => true, 'default' => 'picture', 'options' => ['picture' => 'A picture', 'several' => 'Several pictures or videos, to swipe through', 'reel' => 'A reel', 'story' => 'A story']],
+                ['name' => 'picture', 'label' => 'Picture', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'drive' => 'image', 'help' => 'A JPEG in the Drive, by its ref_id. '.$fetched, 'when' => ['what' => 'picture']],
+                ['name' => 'files', 'label' => 'Pictures and videos', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("find").files }}', 'help' => 'From 2 to 10 in the Drive, each a JPEG or an MP4: a list of them, or their ref_ids with commas between. '.$fetched, 'when' => ['what' => 'several']],
+                ['name' => 'video', 'label' => 'Video', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'drive' => 'video', 'help' => 'An MP4 or a MOV in the Drive, by its ref_id. '.$fetched, 'when' => ['what' => 'reel']],
+                ['name' => 'story', 'label' => 'Picture or video', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'help' => 'A JPEG, an MP4 or a MOV in the Drive, by its ref_id. '.$fetched, 'when' => ['what' => 'story']],
+                ['name' => 'caption', 'label' => 'Caption', 'type' => 'template', 'required' => false, 'help' => 'At most 2,200 letters.', 'when' => ['what' => ['picture', 'several', 'reel']]],
+            ], sends: true),
+            self::kind('instagram.comment', 'Comment on Instagram', 'message-square', 'Writes a comment under one of the account\'s posts, as the account. Gives out the comment\'s id.', [
+                $account,
+                $post,
+                ['name' => 'text', 'label' => 'Comment', 'type' => 'template', 'required' => true],
+            ], sends: true),
+            self::kind('instagram.reply', 'Answer a comment on Instagram', 'reply', 'Answers a comment under one of the account\'s posts, as the account. Gives out the answer\'s id.', [
+                $account,
+                $comment,
+                ['name' => 'text', 'label' => 'Answer', 'type' => 'template', 'required' => true],
+            ], sends: true),
+            self::kind('instagram.comment_delete', 'Delete a comment on Instagram', 'trash-2', 'Takes away a comment under one of the account\'s posts: its own, or someone else\'s.', [$account, $comment]),
+            self::kind('instagram.posts', 'Instagram: my posts', 'list', 'Asks Instagram for the account\'s newest posts: gives out posts, each with its id, text, kind, at, url, likes and comments, and the newest alone as first.', [
+                $account,
+                ['name' => 'count', 'label' => 'How many', 'type' => 'number', 'required' => false, 'default' => 10, 'help' => 'The newest first; at most 100.'],
+            ]),
+            self::kind('instagram.comments', 'Instagram: a post\'s comments', 'scroll-text', 'Asks Instagram for the comments under one of the account\'s posts: gives out comments, each with its id, text, at, from and likes, and how many as count.', [
+                $account,
+                $post,
+                ['name' => 'count', 'label' => 'How many', 'type' => 'number', 'required' => false, 'default' => 25, 'help' => 'At most 100.'],
+            ]),
+            self::kind('instagram.me', 'Instagram: who I am', 'badge-check', 'Asks Instagram about the account the connection is signed in as. Gives out id, username, name, kind, picture, followers, following and posts.', [$account]),
+        ];
+    }
+
+    // --- Threads ---
+
+    /**
+     * @return list<NodeType>
+     */
+    private static function threads(): array
+    {
+        $profile = ['name' => 'connection', 'label' => 'As', 'type' => 'connection', 'required' => true, 'services' => ['threads'], 'help' => 'A Threads connection, signed in.'];
+        $post = ['name' => 'post', 'label' => 'Post', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("post").id }}', 'help' => 'Its id, as "Post on Threads" or "Threads: my posts" gives it -- not its link.'];
+        $fetched = 'Threads fetches it from the app, so the app needs its public address.';
+
+        return [
+            self::kind('threads.post', 'Post on Threads', 'megaphone', 'Posts on a Threads profile: words (at most 500 letters), alone or with a link, a picture, a video, or several to swipe through -- or, told which post it answers, as a reply under it. Gives out the post\'s id and its address as url.', [
+                $profile,
+                ['name' => 'text', 'label' => 'Words', 'type' => 'template', 'required' => false, 'help' => 'At most 500 letters.'],
+                ['name' => 'with', 'label' => 'With', 'type' => 'choice', 'required' => true, 'default' => 'none', 'options' => ['none' => 'Nothing else', 'link' => 'A link, shown as a card', 'picture' => 'A picture from the Drive', 'video' => 'A video from the Drive', 'several' => 'Several pictures or videos']],
+                ['name' => 'link', 'label' => 'Link', 'type' => 'template', 'required' => false, 'placeholder' => 'https://example.com/news/{{ trigger.id }}', 'when' => ['with' => 'link']],
+                ['name' => 'picture', 'label' => 'Picture', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'drive' => 'image', 'help' => 'A JPEG or a PNG in the Drive, by its ref_id. '.$fetched, 'when' => ['with' => 'picture']],
+                ['name' => 'video', 'label' => 'Video', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'drive' => 'video', 'help' => 'An MP4 or a MOV in the Drive, by its ref_id. '.$fetched, 'when' => ['with' => 'video']],
+                ['name' => 'files', 'label' => 'Pictures and videos', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("find").files }}', 'help' => 'From 2 to 20 in the Drive: a list of them, or their ref_ids with commas between. '.$fetched, 'when' => ['with' => 'several']],
+                ['name' => 'reply_to', 'label' => 'In answer to', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("post").id }}', 'help' => 'A post\'s id: this is then a reply under it. Left empty, a post of its own.'],
+            ], sends: true),
+            self::kind('threads.repost', 'Repost on Threads', 'repeat', 'Shares a post again on the profile, as it is. Gives out the repost\'s id.', [$profile, $post], sends: true),
+            self::kind('threads.delete', 'Delete a post on Threads', 'trash-2', 'Deletes one of the profile\'s own posts or replies for good. Threads lets an app delete 100 a day.', [$profile, $post]),
+            self::kind('threads.posts', 'Threads: my posts', 'list', 'Asks Threads for the profile\'s newest posts: gives out posts, each with its id, text, from, at and url, and the newest alone as first.', [
+                $profile,
+                ['name' => 'count', 'label' => 'How many', 'type' => 'number', 'required' => false, 'default' => 10, 'help' => 'The newest first; at most 100.'],
+            ]),
+            self::kind('threads.replies', 'Threads: a post\'s replies', 'scroll-text', 'Asks Threads for the replies under one of the profile\'s posts: gives out replies, each with its id, text, from, at and url, and how many as count.', [
+                $profile,
+                $post,
+                ['name' => 'count', 'label' => 'How many', 'type' => 'number', 'required' => false, 'default' => 25, 'help' => 'At most 100.'],
+            ]),
+            self::kind('threads.me', 'Threads: who I am', 'badge-check', 'Asks Threads about the profile the connection is signed in as. Gives out id, username, name, picture and about.', [$profile]),
         ];
     }
 

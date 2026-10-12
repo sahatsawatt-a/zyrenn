@@ -132,6 +132,15 @@ function chosen(file: { ref_id: string }) {
 const fields = (setting: Setting): Field[] =>
     Array.isArray(value(setting)) ? (value(setting) as Field[]) : [];
 
+// In code, Tab sets in rather than leaving the box
+function indent(event: KeyboardEvent, setting: Setting) {
+    const box = event.target as HTMLTextAreaElement;
+    const at = box.selectionStart;
+
+    box.setRangeText('    ', at, box.selectionEnd, 'end');
+    set(setting, box.value);
+}
+
 const jsonProblem = (text: unknown) => {
     if (typeof text !== 'string' || text.trim() === '') {
         return '';
@@ -717,6 +726,35 @@ async function copyHook(token: unknown) {
                         :placeholder="setting.placeholder"
                         :disabled="!editable"
                         @update:model-value="set(setting, String($event))"
+                    />
+                </div>
+
+                <!-- Code: as it is written, its lines unbroken -->
+                <div
+                    v-else-if="setting.type === 'code'"
+                    class="grid grid-cols-1 gap-2"
+                >
+                    <Label :for="`setting-${setting.name}`">{{
+                        setting.label
+                    }}</Label>
+                    <textarea
+                        :id="`setting-${setting.name}`"
+                        :value="String(value(setting) ?? '')"
+                        rows="14"
+                        wrap="off"
+                        :class="textBox"
+                        class="leading-relaxed"
+                        data-takes-data="formula"
+                        :disabled="!editable"
+                        spellcheck="false"
+                        autocapitalize="off"
+                        @keydown.tab.exact.prevent="indent($event, setting)"
+                        @input="
+                            set(
+                                setting,
+                                ($event.target as HTMLTextAreaElement).value,
+                            )
+                        "
                     />
                 </div>
 
