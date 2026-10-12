@@ -1,5 +1,6 @@
 # Optional overlay for a machine that runs Ollama as a container of its own on
-# a shared network (here one named `ai`), so a chat can reach it by name:
+# a shared network (here one named `ai`), so a chat -- and a workflow's "Ask
+# AI" step, which the worker runs -- can reach it by name:
 #
 #   http://ollama:11434
 #
@@ -19,4 +20,6 @@ networks:
 
 services:
     app:
+        networks: [default, ollama]
+    worker:
         networks: [default, ollama]
