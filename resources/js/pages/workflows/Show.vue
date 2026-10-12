@@ -111,6 +111,8 @@ const props = defineProps<{
     listening: { node_id: string; kind: string }[];
     activity: Activity[];
     groups: Record<string, string>;
+    // A group with many kinds, in parts: each part's name and its kinds, in order
+    sections: Record<string, Record<string, string[]>>;
     breadcrumbs: { ref_id: string; name: string }[];
 }>();
 
@@ -1212,6 +1214,7 @@ const statusText = computed(
                     v-if="paletteShown"
                     :types="nodeTypes"
                     :groups="groups"
+                    :sections="sections"
                     :after="nextAfter"
                     :compact="compact"
                     @add="addInView"

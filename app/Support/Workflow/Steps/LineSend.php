@@ -2,9 +2,12 @@
 
 namespace App\Support\Workflow\Steps;
 
+use App\Support\Workflow\NodeTypes;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -22,6 +25,9 @@ final class LineSend implements Step
 {
     /** How many people one multicast reaches. */
     private const MOST_AT_ONCE = 500;
+
+    /** For how many seconds after a message its reply token is tried, unless the step says. */
+    public const REPLY_WITHIN = 60;
 
     public function run(StepContext $step): StepResult
     {
@@ -47,14 +53,23 @@ final class LineSend implements Step
             $token = $step->setting('token') === null
                 ? ($step->run->trigger_data['reply']['token'] ?? null)
                 : trim($step->text('token'));
+            $heard = $step->run->trigger_data;
+            $to = (string) ($heard['chat']['id'] ?? $heard['room']['link']['chat'] ?? '');
+            $output = ['to' => $to, 'sent' => true];
+            $why = self::unusable($step, is_string($token) ? $token : '');
 
-            if (! is_string($token) || $token === '') {
-                throw new StepFailed('There is no reply token: only a LINE message can be answered, with the token it came with ({{ trigger.reply.token }}). To write to someone first, use "Push on LINE".');
+            if ($why === null) {
+                $response = $step->deliver('line', $to, null, fn () => self::send($http, 'reply', ['replyToken' => $token, 'messages' => $messages]));
+                $said = (string) ($response->json('message') ?? '');
+
+                if ($response->status() === 400 && str_contains(strtolower($said), 'reply token')) {
+                    $why = "LINE said: {$said} A reply must come soon after the message, and only once.";
+                }
             }
 
-            $to = (string) ($step->run->trigger_data['chat']['id'] ?? '');
-            $response = $step->deliver('line', $to, null, fn () => self::send($http, 'reply', ['replyToken' => $token, 'messages' => $messages]));
-            $output = ['to' => $to, 'sent' => true];
+            if ($why !== null) {
+                return self::unsent($step, $to, $why);
+            }
         } else {
             [$target, $body, $output] = match ($how) {
                 'multicast' => self::toMany($step),
@@ -82,15 +97,59 @@ final class LineSend implements Step
             $why = $response->json('message') ?? "{$response->status()}.";
             $detail = collect((array) $response->json('details'))->pluck('message')->filter()->implode(' ');
 
-            throw new StepFailed(
-                str_contains(strtolower((string) $why), 'reply token')
-                    ? "LINE said: {$why} A reply must come soon after the message, and only once; \"Push on LINE\" writes to someone at any time."
-                    : trim("LINE said: {$why} {$detail}"),
-                retryable: $response->serverError(),
-            );
+            throw new StepFailed(trim("LINE said: {$why} {$detail}"), retryable: $response->serverError());
         }
 
         return new StepResult($output);
+    }
+
+    /**
+     * Why a reply token can't be used, without asking LINE; null when it
+     * can be tried. It is too old when the step gives a time and the token
+     * is the one the run began with -- a LINE message's own, or, from a
+     * linked chat, that of the last thing the other end sent -- so that its
+     * age is known. And LINE takes a token once: whichever step has it
+     * first, and no other after.
+     */
+    private static function unusable(StepContext $step, string $token): ?string
+    {
+        if ($token === '') {
+            return 'There is no reply token: only a LINE message can be answered, with the token it came with ({{ trigger.reply.token }}).';
+        }
+
+        $heard = $step->run->trigger_data['reply'] ?? null;
+        $came = is_array($heard) && ($heard['token'] ?? null) === $token ? ($heard['at'] ?? $step->run->created_at) : null;
+        $within = (int) $step->setting('within');
+
+        if ($within > 0 && $came !== null && Carbon::parse($came)->diffInSeconds(now()) > $within) {
+            return "The message it answers came more than {$within} seconds ago: its reply token is not tried after that.";
+        }
+
+        $key = 'workflows:line-reply:'.sha1($token);
+
+        return Cache::add($key, $step->nodeRun->id, now()->addDay()) || Cache::get($key) === $step->nodeRun->id
+            ? null
+            : 'Its reply token was used already: LINE takes one once.';
+    }
+
+    /**
+     * A reply that could not go: the run carries on down "not sent", where
+     * a push can send it instead -- and with nothing that way, the step
+     * fails, as a reply LINE refused always did.
+     *
+     * @throws StepFailed
+     */
+    private static function unsent(StepContext $step, string $to, string $why): StepResult
+    {
+        $follows = false;
+
+        foreach ($step->run->version->definition['edges'] ?? [] as $edge) {
+            $follows = $follows || ($edge['source'] === $step->node['id'] && $edge['sourceHandle'] === NodeTypes::UNSENT);
+        }
+
+        return $follows
+            ? new StepResult(['to' => $to, 'sent' => false, 'why' => $why], NodeTypes::UNSENT)
+            : throw new StepFailed("{$why} \"Push on LINE\" writes to someone at any time.");
     }
 
     /**

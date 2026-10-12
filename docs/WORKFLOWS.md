@@ -32,6 +32,7 @@ After changing PHP code, tell the workers to load it:
 | Setting                      | Default | Meaning                                                                                                                                                                                  |
 | ---------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `WORKFLOWS_PUBLIC_URL`       | empty   | Where Telegram, LINE and other senders reach `/hooks/*` from outside, e.g. an ngrok or Traefik address. Empty: nothing outside can reach the hooks, and Telegram bots are polled instead |
+| `NGROK_AUTHTOKEN`            | empty   | With `tunnel` among `COMPOSE_PROFILES`, the stack runs an ngrok tunnel at `WORKFLOWS_PUBLIC_URL` itself, which lets only `/hooks/*` through and comes back after a restart               |
 | `WORKFLOWS_KEEP_RUNS_DAYS`   | 30      | Runs that ended are deleted after this, with their steps, logs and sends                                                                                                                 |
 | `WORKFLOWS_KEEP_EVENTS_DAYS` | 14      | Records of what came in by webhook (used to spot repeats)                                                                                                                                |
 | `WORKFLOWS_KEEP_AUDIT_DAYS`  | 365     | Who published, switched on, ran, or changed a connection                                                                                                                                 |
@@ -204,12 +205,40 @@ chat, about a member, how many members.
 everyone" (broadcast) carry the same message: words and a picture, a
 sticker, a place, a video, a recording, buttons to choose from, a yes-or-no
 question, or a Flex card -- with quick replies under it, and quoting a
-message. Also: show loading, mark as read, leave a group, set or take off
-someone's rich menu. Asking: who wrote, about a group, how many members,
-the rich menus, the monthly allowance and how much of it is used.
+message. Also: show loading, mark as read, leave a group. Asking: who
+wrote, about a group, how many members, the monthly allowance and how much
+of it is used.
+
+**LINE's rich menus.** The panel under a chat is a picture with places to
+tap, and each call about one is a step. "Make a rich menu" takes a JPEG or
+PNG from the Drive (800 to 2500 wide, at least 250 high, at least 1.45 times
+as wide as high, at most 1 MB; LINE's own are 2500 × 1686 and 2500 × 843),
+makes the menu the picture's size, lays its buttons out as chosen -- six,
+four, three, two, one, or areas written out as LINE takes them -- and puts
+the picture on it. A menu and its picture are made together because LINE
+shows no menu without one, takes none of another size, and lets neither be
+changed: a menu that is to look different is made again. Should the picture
+be turned down, the menu made for it is deleted again. A menu is seen by no
+one until it is shown: to everyone ("Show a rich menu to everyone", and stop
+doing so), to one person, or to up to 500 at once -- a person's own comes
+before everyone's, and everyone's before one set in LINE Official Account
+Manager. "Name a rich menu" gives one a short name, moved when it is already
+in use; wherever a step takes a menu, its id or a short name will do. "LINE:
+rich menus" lists those made here, with their short names and which one
+everyone sees, and "LINE: someone's rich menu" says which a person was
+given. LINE makes or deletes at most 100 menus an hour, and keeps 1000.
+
+A button on a menu does what any button does (below), and one more thing:
+`menu:` and another menu's short name turns to that menu, as a tab does.
+LINE tells the workflow of it as `trigger.type` "menu", with `trigger.menu`
+saying which it turned to -- a trigger set to buttons takes it, one set to
+messages does not, so a chat kept in a room is not written in for it. The
+"A rich menu for your LINE channel" template makes one, names it "main" and
+shows it to everyone, by hand.
 
 **Buttons.** Wherever a step takes buttons, each is what it says and what
-tapping it does. An address opens. Otherwise it comes back to the workflow,
+tapping it does. An address opens -- `link:` before it says it is one, where
+a formula gives it. Otherwise it comes back to the workflow,
 to a trigger set to buttons, as `trigger.text`: on Telegram anything else
 does (at most 64 bytes); on LINE what follows `postback:` does, unseen, and
 anything else is said in the chat as the person's own message.
@@ -269,6 +298,13 @@ templates are the full bridge between an outside chat and a room here:
   a picture when it is a JPEG or PNG, else as a link made by **Make a link
   to a file** -- an address that opens that one file for a day without
   signing in.
+- On LINE, what is written in the room is first tried as a reply to the
+  last thing the other end wrote, which LINE does not count against the
+  month's allowance: a **Reply on LINE** step with `{{ trigger.reply.token }}`
+  stands before each **Push on LINE**. The reply goes while its token can be
+  used -- for a minute after their message unless the step says another
+  time, and once. When it can't, the run carries on down the reply's "not
+  sent" way to the push, which sends it as before.
 - On LINE, a **Chat message** trigger set to "Someone reads what an outside
   chat sent" marks the message read there, once someone has seen it here.
   LINE allows this only with **Chat switched on** for the channel (LINE

@@ -10,16 +10,33 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { listDriveMedia } from '@/lib/drive';
 import type { DriveFile } from '@/lib/drive';
 import { files as roomFiles } from '@/routes/chats';
 
-// A file already in the Drive, to send in a chat: the Drive is the chat's
-// own -- one's own for one's own chat, the project's for a project's -- so
-// everyone in the chat can open what is chosen.
+// A file already in the Drive, chosen by name. For a chat, the Drive is the
+// chat's own -- one's own for one's own chat, the project's for a project's
+// -- so everyone in the chat can open what is chosen. Without a chat, it is
+// the Drive of wherever the page is, and only its pictures or its videos.
 
 const open = defineModel<boolean>('open', { required: true });
 
-const props = defineProps<{ room: string }>();
+const props = withDefaults(
+    defineProps<{
+        room?: string;
+        // Without a chat: which of the Drive's files to offer
+        kind?: 'image' | 'video';
+        title?: string;
+        description?: string;
+    }>(),
+    {
+        room: undefined,
+        kind: 'image',
+        title: 'Send a file from the Drive',
+        description:
+            'The newest first. Everyone in this chat can open what you choose.',
+    },
+);
 
 const emit = defineEmits<{ (e: 'pick', file: DriveFile): void }>();
 
@@ -33,6 +50,12 @@ async function load() {
     failed.value = false;
 
     try {
+        if (props.room === undefined) {
+            found.value = await listDriveMedia(props.kind, query.value.trim());
+
+            return;
+        }
+
         const response = await fetch(
             roomFiles(props.room, {
                 query: query.value.trim() ? { q: query.value.trim() } : {},
@@ -84,11 +107,8 @@ const sizeOf = (bytes: number) =>
     <Dialog v-model:open="open">
         <DialogContent class="sm:max-w-lg" data-chat-drive>
             <DialogHeader>
-                <DialogTitle>Send a file from the Drive</DialogTitle>
-                <DialogDescription>
-                    The newest first. Everyone in this chat can open what you
-                    choose.
-                </DialogDescription>
+                <DialogTitle>{{ title }}</DialogTitle>
+                <DialogDescription>{{ description }}</DialogDescription>
             </DialogHeader>
 
             <div class="relative">

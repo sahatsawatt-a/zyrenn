@@ -3,6 +3,7 @@
 namespace App\Support\Workflow\Inbound;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 
 /**
  * What came in, in one shape whichever service sent it, so a workflow reads
@@ -50,7 +51,8 @@ final class Envelope
         ],
         'line' => [
             'message' => ['message', 'postback'],
-            'button' => ['postback'],
+            // A rich menu turned to another is a tap too, but nothing anyone said
+            'button' => ['postback', 'menu'],
             'follow' => ['follow'],
             'unfollow' => ['unfollow'],
             'join' => ['join'],
@@ -286,8 +288,12 @@ final class Envelope
     /**
      * One LINE webhook event.
      *
-     * Beside the common shape: reply.quote and reply.read, the tokens to
-     * quote the message or mark it read by; button { data } for a postback;
+     * Beside the common shape: at, when LINE says it happened -- which is
+     * not when it came, for what LINE sends again; reply.quote and
+     * reply.read, the tokens to quote the message or mark it read by;
+     * button { data } for a postback;
+     * menu { alias, turned } for a rich menu turned to another -- of type
+     * "menu", which a trigger set to messages does not take;
      * location { lat, lng, title, address }; sticker { id, package,
      * animated, url };
      * members, the ids of who joined or left a group; unsent, the id of a
@@ -302,10 +308,12 @@ final class Envelope
         $message = $event['message'] ?? [];
         $kind = $message['type'] ?? 'text';
         $members = $event['joined']['members'] ?? $event['left']['members'] ?? null;
+        // A rich menu turned to another, as a tab does: LINE says how it went
+        $turned = is_array($event['postback']['params'] ?? null) && isset($event['postback']['params']['status']) ? $event['postback']['params'] : null;
 
         return [
             'service' => 'line',
-            'type' => (string) ($event['type'] ?? 'message'),
+            'type' => $turned !== null ? 'menu' : (string) ($event['type'] ?? 'message'),
             // What was sent: text, image, video, audio, file, sticker or location; a tap is a button
             'kind' => match (true) {
                 isset($event['postback']) => 'button',
@@ -313,6 +321,7 @@ final class Envelope
                 default => 'other',
             },
             'id' => (string) ($event['webhookEventId'] ?? ''),
+            'at' => is_numeric($event['timestamp'] ?? null) ? Carbon::createFromTimestampMs($event['timestamp'])->format('Y-m-d\TH:i:s.vP') : null,
             'chat' => [
                 'id' => (string) ($source['groupId'] ?? $source['roomId'] ?? $source['userId'] ?? ''),
                 'kind' => ($source['type'] ?? 'user') === 'user' ? 'private' : 'group',
@@ -332,6 +341,7 @@ final class Envelope
             ],
             ...array_filter([
                 'button' => ! isset($event['postback']) ? null : ['data' => (string) ($event['postback']['data'] ?? ''), 'params' => $event['postback']['params'] ?? null],
+                'menu' => $turned === null ? null : ['alias' => $turned['newRichMenuAliasId'] ?? null, 'turned' => $turned['status'] === 'SUCCESS'],
                 'location' => $kind !== 'location' ? null : [
                     'lat' => $message['latitude'] ?? null,
                     'lng' => $message['longitude'] ?? null,

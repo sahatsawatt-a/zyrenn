@@ -534,11 +534,17 @@ class WorkflowWorldTest extends TestCase
         $frozen['nodes'][1]['config']['mode'] = 'reply';
         // A version is never changed once written, so as it was written then
         DB::table('workflow_versions')->where('id', $version->id)->update(['definition' => json_encode($frozen)]);
-        $run = Engine::start($workflow, $version->fresh(), null, 'line', 'heard', $heard);
+        // Another message, with a token of its own: LINE takes one once, and the first was answered above
+        $run = Engine::start($workflow, $version->fresh(), null, 'line', 'heard', [...$heard, 'reply' => ['token' => 'rt-10', 'to' => null]]);
         $this->work();
 
         $this->assertSame(RunStatus::Succeeded, $run->fresh()->status, (string) $run->fresh()->error);
-        Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/message/reply') && $request['messages'][0]['text'] === 'As before');
+        Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/message/reply') && $request['replyToken'] === 'rt-10' && $request['messages'][0]['text'] === 'As before');
+
+        // And a token answered with already is not tried again: the step says why, and what to use instead
+        $again = Engine::start($workflow, $version->fresh(), null, 'line', 'heard', [...$heard, 'reply' => ['token' => 'rt-10', 'to' => null]]);
+        $this->work();
+        $this->assertSame([RunStatus::Failed, 'Push on LINE: Its reply token was used already: LINE takes one once. "Push on LINE" writes to someone at any time.'], [$again->fresh()->status, $again->fresh()->error]);
     }
 
     // --- webhooks and schedules ---

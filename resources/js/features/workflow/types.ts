@@ -38,12 +38,36 @@ export type Setting = {
     when?: Record<string, string | boolean | string[]>;
     // Named values whose names are any words: what a button says
     labels?: boolean;
+    // Names a file in the Drive: its pictures, or its videos, are offered
+    drive?: 'image' | 'video';
     // A room: "any chat linked to …" too; a connection: "the chat's own" too
     linked?: boolean;
     // A Switch's ways: each named value a formula, each name a way out
     ways?: boolean;
     // A folder: left empty, every folder rather than the top of the Drive
     anywhere?: boolean;
+    // Named values that are buttons: what tapping one may do
+    does?: Does[];
+    // Buttons that each have a place on a picture: the setting that says how
+    // it is laid out, the one that names the picture, and each layout's
+    // places as [x, y, width, height] on a picture six across and two down
+    places?: {
+        by: string;
+        picture: string;
+        layouts: Record<string, [number, number, number, number][]>;
+    };
+};
+
+// One thing a button may do. Its value is written with "prefix" before it --
+// or, where "address" (a pattern) matches, as the address alone -- and
+// anything written neither way is the one that has neither.
+export type Does = {
+    kind: string;
+    label: string;
+    prefix?: string;
+    address?: string;
+    placeholder?: string;
+    hint?: string;
 };
 
 // What a workflow's steps may choose from: its owner's connections, chats

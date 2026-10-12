@@ -11,7 +11,8 @@ use App\Models\Connection;
  *
  * Multicast and broadcast carry a message and go out as a push does, with a
  * key so LINE never delivers one twice (LineSend). The rest ask, or set
- * something to what it would be anyway, and can be made again.
+ * something to what it would be anyway, and can be made again. Rich menus
+ * have a class of their own (LineRichMenu).
  */
 final class LineCall implements Step
 {
@@ -33,12 +34,9 @@ final class LineCall implements Step
                 'markAsReadToken' => LineApi::needs($step, 'token', 'read token: a LINE message comes with one, {{ trigger.reply.read }}'),
             ]),
             'line.leave' => self::leave($step, $channel),
-            'line.richmenu' => self::done($channel, 'POST', 'user/'.rawurlencode(self::user($step)).'/richmenu/'.rawurlencode(LineApi::needs($step, 'menu', 'rich menu: its id, as "LINE: rich menus" gives it'))),
-            'line.richmenu_off' => self::done($channel, 'DELETE', 'user/'.rawurlencode(self::user($step)).'/richmenu'),
 
             'line.quota' => self::quota($channel),
             'line.consumption' => ['sent' => (int) (LineApi::call($channel, 'GET', 'message/quota/consumption')['totalUsage'] ?? 0)],
-            'line.richmenus' => self::menus($channel),
             'line.group' => self::group($step, $channel),
             'line.group_count' => self::count($step, $channel),
 
@@ -55,11 +53,6 @@ final class LineCall implements Step
         LineApi::call($channel, $method, $path, $body);
 
         return ['done' => true];
-    }
-
-    private static function user(StepContext $step): string
-    {
-        return LineApi::needs($step, 'user', 'person: a LINE user id, like {{ trigger.sender.id }}');
     }
 
     /**
@@ -101,20 +94,6 @@ final class LineCall implements Step
             'limited' => ($quota['type'] ?? 'none') === 'limited',
             'limit' => isset($quota['value']) ? (int) $quota['value'] : null,
         ];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private static function menus(Connection $channel): array
-    {
-        $menus = array_map(fn (array $menu) => [
-            'id' => $menu['richMenuId'] ?? null,
-            'name' => $menu['name'] ?? null,
-            'bar' => $menu['chatBarText'] ?? null,
-        ], array_values(array_filter((array) (LineApi::call($channel, 'GET', 'richmenu/list')['richmenus'] ?? []), 'is_array')));
-
-        return ['menus' => $menus, 'count' => count($menus)];
     }
 
     /**

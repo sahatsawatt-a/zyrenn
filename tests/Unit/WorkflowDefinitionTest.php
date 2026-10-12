@@ -6,6 +6,7 @@ use App\Support\Formula\FormulaError;
 use App\Support\Workflow\Definition;
 use App\Support\Workflow\DefinitionInvalid;
 use App\Support\Workflow\NodeStatus;
+use App\Support\Workflow\NodeTypes;
 use App\Support\Workflow\RunScope;
 use App\Support\Workflow\RunStatus;
 use App\Support\Workflow\Template;
@@ -51,6 +52,19 @@ class WorkflowDefinitionTest extends TestCase
     private function messages(array $definition): array
     {
         return array_column(Definition::problems($definition), 'message');
+    }
+
+    public function test_a_service_with_many_steps_sets_every_one_of_them_out_in_a_part()
+    {
+        foreach (NodeTypes::sections() as $group => $parts) {
+            $placed = array_merge(...array_values($parts));
+            $kinds = array_keys(array_filter(NodeTypes::all(), fn (array $type) => $type['group'] === $group));
+
+            // Each of the group's kinds once, and nothing that is not one
+            $this->assertSame([], array_diff($kinds, $placed), "{$group}: in no part");
+            $this->assertSame([], array_diff($placed, $kinds), "{$group}: not a kind of it");
+            $this->assertSame($placed, array_values(array_unique($placed)), "{$group}: in two parts");
+        }
     }
 
     public function test_a_new_workflow_starts_with_a_trigger_and_nothing_in_its_way()

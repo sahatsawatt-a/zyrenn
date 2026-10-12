@@ -37,10 +37,14 @@ final class ServiceKinds
      *
      * @return list<Setting>
      */
-    public static function telegramButtons(string $help = 'Each is what the button says, and what pressing it does: an address opens (after "webapp:", as a mini app); anything else comes back as a press, for a "Telegram message" trigger set to buttons -- it reads it as trigger.text. Left empty, the button\'s own words come back.'): array
+    public static function telegramButtons(string $help = 'Each is what the button says, and what pressing it does.'): array
     {
         return [
-            ['name' => 'buttons', 'label' => 'Buttons', 'type' => 'fields', 'required' => false, 'default' => [], 'labels' => true, 'help' => $help],
+            ['name' => 'buttons', 'label' => 'Buttons', 'type' => 'fields', 'required' => false, 'default' => [], 'labels' => true, 'help' => $help, 'does' => [
+                ['kind' => 'press', 'label' => 'Comes back as a press', 'written' => 'anything else', 'placeholder' => 'Its own words', 'hint' => 'For a "Telegram message" trigger set to buttons, which reads it as trigger.text; at most 64 bytes. Left empty, the button\'s own words come back.'],
+                ['kind' => 'link', 'label' => 'Opens a link', 'address' => Steps\TelegramApi::ADDRESS, 'prefix' => 'link:', 'written' => 'an address, or "link:" and a formula that gives one', 'placeholder' => 'https://…'],
+                ['kind' => 'webapp', 'label' => 'Opens a mini app', 'prefix' => 'webapp:', 'written' => '"webapp:" and its address', 'placeholder' => 'https://…', 'hint' => 'An https address, opened inside Telegram.'],
+            ]],
             ['name' => 'per_row', 'label' => 'Buttons side by side', 'type' => 'number', 'required' => false, 'default' => 1, 'when' => ['buttons' => true]],
         ];
     }
@@ -197,7 +201,8 @@ final class ServiceKinds
      */
     public static function lineMessage(): array
     {
-        $buttonHelp = 'Each is what it says (20 letters), and what tapping it does: an address opens; "postback:" and some data comes back unseen, as trigger.text of a "LINE message" trigger; anything else is said in the chat as the person\'s own message. Left empty, its own words are said.';
+        $buttonHelp = 'Each is what it says (20 letters), and what tapping it does.';
+        $does = self::lineDoes();
 
         return [
             ['name' => 'kind', 'label' => 'Send', 'type' => 'choice', 'required' => true, 'default' => 'text', 'options' => [
@@ -205,7 +210,7 @@ final class ServiceKinds
                 'buttons' => 'Buttons to choose from', 'confirm' => 'A yes-or-no question', 'flex' => 'A Flex card',
             ]],
             ['name' => 'text', 'label' => 'Message', 'type' => 'template', 'required' => false, 'when' => ['kind' => ['text', 'location', 'buttons', 'confirm']], 'help' => 'With a picture or a place, it can be left empty.'],
-            ['name' => 'file', 'label' => 'Picture', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'when' => ['kind' => 'text'], 'help' => 'A JPEG or PNG in the Drive, by its ref_id, at most 10 MB. LINE fetches it from this app, which must be reachable from outside.'],
+            ['name' => 'file', 'label' => 'Picture', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'drive' => 'image', 'when' => ['kind' => 'text'], 'help' => 'A JPEG or PNG in the Drive, by its ref_id, at most 10 MB. LINE fetches it from this app, which must be reachable from outside.'],
             ['name' => 'quote', 'label' => 'Quoting', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.reply.quote }}', 'when' => ['kind' => 'text'], 'help' => 'The quote token of a message, to show the words as an answer to it.'],
             ['name' => 'package', 'label' => 'Sticker package', 'type' => 'template', 'required' => false, 'placeholder' => '446', 'when' => ['kind' => 'sticker'], 'help' => 'Only the stickers LINE lists as sendable; a message\'s own are trigger.sticker.package and trigger.sticker.id.'],
             ['name' => 'sticker', 'label' => 'Sticker', 'type' => 'template', 'required' => false, 'placeholder' => '1988', 'when' => ['kind' => 'sticker']],
@@ -214,14 +219,14 @@ final class ServiceKinds
             ['name' => 'lat', 'label' => 'Latitude', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.location.lat }}', 'when' => ['kind' => 'location']],
             ['name' => 'lng', 'label' => 'Longitude', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.location.lng }}', 'when' => ['kind' => 'location']],
             ['name' => 'media', 'label' => 'File', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'when' => ['kind' => ['video', 'audio']], 'help' => 'In the Drive, by its ref_id: an MP4 video, or an MP3 or M4A recording. LINE fetches it from this app.'],
-            ['name' => 'preview', 'label' => 'Picture shown first', 'type' => 'template', 'required' => false, 'when' => ['kind' => 'video'], 'help' => 'A JPEG or PNG in the Drive: what the video shows before it plays.'],
+            ['name' => 'preview', 'label' => 'Picture shown first', 'type' => 'template', 'required' => false, 'drive' => 'image', 'when' => ['kind' => 'video'], 'help' => 'A JPEG or PNG in the Drive: what the video shows before it plays.'],
             ['name' => 'seconds', 'label' => 'How long, in seconds', 'type' => 'template', 'required' => false, 'when' => ['kind' => 'audio'], 'help' => 'LINE shows this as the recording\'s length.'],
-            ['name' => 'choices', 'label' => 'Buttons', 'type' => 'fields', 'required' => false, 'default' => [], 'labels' => true, 'when' => ['kind' => 'buttons'], 'help' => "Up to four. {$buttonHelp}"],
+            ['name' => 'choices', 'label' => 'Buttons', 'type' => 'fields', 'required' => false, 'default' => [], 'labels' => true, 'when' => ['kind' => 'buttons'], 'help' => "Up to four. {$buttonHelp}", 'does' => $does],
             ['name' => 'yes', 'label' => 'Yes says', 'type' => 'template', 'required' => false, 'default' => 'Yes', 'when' => ['kind' => 'confirm'], 'help' => 'Tapping it says so in the chat.'],
             ['name' => 'no', 'label' => 'No says', 'type' => 'template', 'required' => false, 'default' => 'No', 'when' => ['kind' => 'confirm']],
             ['name' => 'flex', 'label' => 'Card', 'type' => 'template', 'required' => false, 'when' => ['kind' => 'flex'], 'placeholder' => '{ "type": "bubble", "body": { … } }', 'help' => 'The JSON of a bubble or a carousel, as LINE\'s Flex Message Simulator gives it. It can hold {{ formulas }}.'],
             ['name' => 'alt', 'label' => 'In a notification', 'type' => 'template', 'required' => false, 'when' => ['kind' => ['flex', 'buttons', 'confirm']], 'help' => 'What a notification says, where the card or the buttons can\'t be drawn.'],
-            ['name' => 'quick', 'label' => 'Quick replies', 'type' => 'fields', 'required' => false, 'default' => [], 'labels' => true, 'help' => "Shown over the keyboard until one is tapped; up to 13. {$buttonHelp}"],
+            ['name' => 'quick', 'label' => 'Quick replies', 'type' => 'fields', 'required' => false, 'default' => [], 'labels' => true, 'help' => "Shown over the keyboard until one is tapped; up to 13. {$buttonHelp}", 'does' => $does],
         ];
     }
 
@@ -254,16 +259,79 @@ final class ServiceKinds
                 ['name' => 'token', 'label' => 'Read token', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.reply.read }}', 'help' => 'What a LINE message comes with: {{ trigger.reply.read }}.'],
             ]),
             self::kind('line.leave', 'Leave a group on LINE', 'log-out', 'Takes the channel out of a group or a multi-person chat.', [$channel, $group]),
-            self::kind('line.richmenu', 'Set someone\'s rich menu on LINE', 'panel-bottom', 'Gives one person a rich menu of the channel\'s -- the panel under their chat -- in place of the usual one.', [
-                $channel, $user,
-                ['name' => 'menu', 'label' => 'Rich menu', 'type' => 'template', 'required' => true, 'placeholder' => 'richmenu-…', 'help' => 'Its id; "LINE: rich menus" lists the channel\'s.'],
-            ]),
-            self::kind('line.richmenu_off', 'Take off someone\'s rich menu on LINE', 'panel-bottom-close', 'Takes away the rich menu given to one person; they see the channel\'s usual one again.', [$channel, $user]),
-            self::kind('line.richmenus', 'LINE: rich menus', 'list', 'Asks LINE for the channel\'s rich menus: gives out menus, each with its id, name and the words on its bar.', [$channel]),
+            ...self::lineRichMenus($channel, $user),
             self::kind('line.quota', 'LINE: monthly allowance', 'gauge', 'Asks LINE how many messages the channel may send first this month: limited, and limit.', [$channel]),
             self::kind('line.consumption', 'LINE: sent this month', 'chart-bar', 'Asks LINE how many messages counted against the allowance have gone out this month, as sent.', [$channel]),
             self::kind('line.group', 'LINE: about a group', 'info', 'Asks LINE for a group\'s name and picture.', [$channel, $group]),
             self::kind('line.group_count', 'LINE: how many members', 'users', 'Asks LINE how many people are in a group or a multi-person chat, as count.', [$channel, $group]),
+        ];
+    }
+
+    /**
+     * What tapping a LINE button may do, and how each is written as the
+     * button's value (LineApi::action reads it). On a rich menu, a button
+     * may turn to another menu too.
+     *
+     * @return list<array<string, string>>
+     */
+    private static function lineDoes(bool $menu = false): array
+    {
+        return [
+            ['kind' => 'say', 'label' => 'Says a message in the chat', 'written' => 'anything else', 'placeholder' => 'Its own words', 'hint' => 'Said as the person\'s own message. Left empty, the button\'s own words are said.'],
+            ['kind' => 'link', 'label' => 'Opens a link', 'address' => Steps\LineApi::ADDRESS, 'prefix' => 'link:', 'written' => 'an address, or "link:" and a formula that gives one', 'placeholder' => 'https://…', 'hint' => 'An address on the internet, tel: and a number to call, or line:// for somewhere in LINE.'],
+            ['kind' => 'postback', 'label' => 'Sends data back, unseen', 'prefix' => 'postback:', 'written' => '"postback:" and the data', 'placeholder' => 'hours', 'hint' => 'Comes back as trigger.text of a "LINE message" trigger set to buttons.'],
+            ...$menu ? [['kind' => 'menu', 'label' => 'Turns to another menu', 'prefix' => 'menu:', 'written' => '"menu:" and the other menu\'s short name', 'placeholder' => 'more', 'hint' => 'The other menu\'s short name. It turns to it as a tab does.']] : [],
+        ];
+    }
+
+    /**
+     * The rich menu -- the panel under a chat -- made, shown and named.
+     *
+     * @param  Setting  $channel
+     * @param  Setting  $user
+     * @return list<NodeType>
+     */
+    private static function lineRichMenus(array $channel, array $user): array
+    {
+        $menu = ['name' => 'menu', 'label' => 'Rich menu', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("make").id }}', 'help' => 'Its id (richmenu-…), or a short name given to it; "LINE: rich menus" lists the channel\'s.'];
+        $alias = ['name' => 'alias', 'label' => 'Short name', 'type' => 'template', 'required' => true, 'placeholder' => 'main', 'help' => 'Up to 32 of a-z, 0-9, "-" and "_".'];
+        $many = ['name' => 'to', 'label' => 'Who', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("find").rows.line_id }}', 'help' => 'LINE user ids (U…): a list of them, or with commas between; up to 500.'];
+        $layouts = [
+            'six' => 'Six: three across, two rows',
+            'four' => 'Four: two across, two rows',
+            'top' => 'Four: one across the top, three under it',
+            'large' => 'Three: a large one, two beside it',
+            'rows' => 'Two: one over the other',
+            'three' => 'Three, side by side',
+            'two' => 'Two, side by side',
+            'narrow' => 'Two: a narrow one, then a wide one',
+            'wide' => 'Two: a wide one, then a narrow one',
+            'one' => 'One: the whole picture',
+            'custom' => 'Areas of my own',
+        ];
+
+        return [
+            self::kind('line.richmenu_make', 'Make a rich menu on LINE', 'panel-bottom-open', 'Makes a rich menu -- the panel under a chat: a picture, and places on it to tap -- and puts its picture on it. It is shown to no one until it is set for everyone or for someone. Its picture and its buttons can\'t be changed after: a menu that is to look different is made again. Gives out its id.', [
+                $channel,
+                ['name' => 'name', 'label' => 'Called', 'type' => 'template', 'required' => true, 'placeholder' => 'Main menu', 'help' => 'For telling the channel\'s menus apart; people never see it.'],
+                ['name' => 'picture', 'label' => 'Picture', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("save").ref_id }}', 'drive' => 'image', 'help' => 'A JPEG or PNG in the Drive, by its ref_id, at most 1 MB: 800 to 2500 wide, at least 250 high, at least 1.45 times as wide as it is high. LINE\'s own are 2500 × 1686 and, half as high, 2500 × 843. The menu is made the picture\'s size.'],
+                ['name' => 'layout', 'label' => 'Buttons on it', 'type' => 'choice', 'required' => true, 'default' => 'six', 'options' => $layouts, 'help' => 'Where the picture can be tapped. Draw the picture to match.'],
+                ['name' => 'buttons', 'label' => 'Buttons', 'type' => 'fields', 'required' => false, 'default' => [], 'labels' => true, 'when' => ['layout' => array_values(array_diff(array_keys($layouts), ['custom']))], 'help' => 'From left to right, top to bottom. Each is what it is (read aloud for those who can\'t see the picture; 20 letters), and what tapping it does. A place left without a button does nothing.', 'does' => self::lineDoes(menu: true), 'places' => ['by' => 'layout', 'picture' => 'picture', 'layouts' => Steps\LineRichMenu::LAYOUTS]],
+                ['name' => 'areas', 'label' => 'Areas', 'type' => 'template', 'required' => false, 'when' => ['layout' => 'custom'], 'placeholder' => '[{ "bounds": { "x": 0, "y": 0, "width": 1250, "height": 843 }, "action": { "type": "message", "text": "Hours" } }]', 'help' => 'A JSON list of up to 20, each with its bounds on the picture and its action, as LINE takes them. It can hold {{ formulas }}.'],
+                ['name' => 'bar', 'label' => 'On the bar', 'type' => 'template', 'required' => false, 'default' => 'Menu', 'help' => 'The words on the bar under the chat that opens and closes the menu; at most 14 letters.'],
+                ['name' => 'open', 'label' => 'When the chat is opened', 'type' => 'choice', 'required' => true, 'default' => 'yes', 'options' => ['yes' => 'The menu is open', 'no' => 'The menu is closed until its bar is tapped']],
+            ]),
+            self::kind('line.richmenu_default', 'Show a rich menu to everyone on LINE', 'panel-bottom', 'Makes a rich menu the one everyone sees who has none of their own, in place of the one shown before. It comes before a menu set in LINE Official Account Manager.', [$channel, $menu]),
+            self::kind('line.richmenu_default_off', 'Stop showing a rich menu to everyone on LINE', 'panel-bottom-close', 'Takes away the rich menu shown to everyone. Those given one of their own keep it; the rest see the one set in LINE Official Account Manager, if there is one.', [$channel]),
+            self::kind('line.richmenu', 'Set someone\'s rich menu on LINE', 'panel-bottom', 'Gives one person a rich menu of the channel\'s -- the panel under their chat -- in place of the usual one.', [$channel, $user, $menu]),
+            self::kind('line.richmenu_off', 'Take off someone\'s rich menu on LINE', 'panel-bottom-close', 'Takes away the rich menu given to one person; they see the channel\'s usual one again.', [$channel, $user]),
+            self::kind('line.richmenu_many', 'Set many people\'s rich menu on LINE', 'panel-bottom', 'Gives several people a rich menu of the channel\'s at once, in place of the usual one. LINE does it shortly after, not at once.', [$channel, $many, $menu]),
+            self::kind('line.richmenu_many_off', 'Take off many people\'s rich menu on LINE', 'panel-bottom-close', 'Takes away the rich menu given to several people at once; they see the channel\'s usual one again. LINE does it shortly after, not at once.', [$channel, $many]),
+            self::kind('line.richmenu_of', 'LINE: someone\'s rich menu', 'panel-bottom-dashed', 'Asks LINE which rich menu one person was given: its id as menu, or nothing when they see the usual one.', [$channel, $user]),
+            self::kind('line.richmenu_alias', 'Name a rich menu on LINE', 'tag', 'Gives a rich menu a short name, by which a button on another menu turns to it ("menu:" and the name) and any step can name it. A name already in use is moved to this menu: every tab that names it then turns to the new one.', [$channel, $alias, $menu]),
+            self::kind('line.richmenu_alias_off', 'Take away a rich menu\'s name on LINE', 'tag', 'Takes a short name away from the rich menu that goes by it. A tab that names it does nothing after.', [$channel, $alias]),
+            self::kind('line.richmenu_delete', 'Delete a rich menu on LINE', 'trash-2', 'Deletes a rich menu of the channel\'s for good. Those shown it see the usual one, or none.', [$channel, $menu]),
+            self::kind('line.richmenus', 'LINE: rich menus', 'list', 'Asks LINE for the channel\'s rich menus: gives out menus, each with its id, name, the words on its bar, its size, how many places it has to tap, the short names it goes by (aliases), and whether everyone is shown it (default). Menus drawn in LINE Official Account Manager are not among them.', [$channel]),
         ];
     }
 

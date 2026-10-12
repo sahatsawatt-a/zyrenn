@@ -22,6 +22,7 @@ on. Answers as get-workflow does, with anything still standing in the way.
 
 Templates: telegram-room, line-room (outside chats in a room of their own, both ways), telegram-ai,
 line-ai (an AI answers), telegram-drive, line-drive (a picture or file sent in is kept in the Drive),
+line-menu (run by hand: a rich menu made from a picture in the Drive and shown to everyone),
 daily-telegram (a table summed up each morning).
 TEXT)]
 class CreateWorkflow extends WorkflowTool

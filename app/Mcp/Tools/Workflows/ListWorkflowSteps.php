@@ -21,7 +21,7 @@ formula without them, choice with its options, connection of the services listed
 column, folder as a Drive path like "Receipts/2026", fields as a list of {name, value}, number, cron,
 model, timezone, workflow), whether it is needed, its default, and when it applies ("when": another
 setting's value, or any of a list of them). "labels" on a fields setting: its names are any words,
-such as what a button says.
+such as what a button says; "does" lists what such a button's value may do, and how each is written.
 
 Also "choices": what settings may point at, by ref_id -- the owner's connections (name and service,
 never a secret), chat rooms, tables with their columns, and the workflows a "For each" may run -- and
@@ -63,6 +63,11 @@ class ListWorkflowSteps extends WorkflowTool
                     'services' => $setting['services'] ?? null,
                     'when' => $setting['when'] ?? null,
                     'labels' => $setting['labels'] ?? null,
+                    'does' => isset($setting['does']) ? array_map(fn (array $does) => array_filter([
+                        'does' => $does['label'],
+                        'written' => $does['written'],
+                        'help' => $does['hint'] ?? null,
+                    ]), $setting['does']) : null,
                     'help' => $setting['help'] ?? null,
                     'linked' => ($setting['linked'] ?? false) ? 'Also "*linked": the chat the run started from\'s own (room: "*linked:telegram" / "*linked:line").' : null,
                 ], fn ($value) => $value !== null), $type['config']),

@@ -40,6 +40,8 @@ import {
     MousePointerClick,
     PanelBottom,
     PanelBottomClose,
+    PanelBottomDashed,
+    PanelBottomOpen,
     Pencil,
     Pin,
     PinOff,
@@ -57,6 +59,7 @@ import {
     SquareMousePointer,
     Sticker,
     Table2,
+    Tag,
     Terminal,
     Timer,
     Trash2,
@@ -68,6 +71,7 @@ import {
 } from '@lucide/vue';
 import type { Component } from 'vue';
 import type {
+    Does,
     NodeType,
     RunStatus,
     StepNode,
@@ -127,6 +131,9 @@ const ICONS: Record<string, Component> = {
     'log-out': LogOut,
     'panel-bottom': PanelBottom,
     'panel-bottom-close': PanelBottomClose,
+    'panel-bottom-open': PanelBottomOpen,
+    'panel-bottom-dashed': PanelBottomDashed,
+    tag: Tag,
     list: List,
     link: Link,
     gauge: Gauge,
@@ -194,6 +201,8 @@ export const handleLabel = (handle: string) =>
         false: 'false',
         approved: 'approved',
         rejected: 'rejected',
+        // A reply that could not go, for a push to send instead
+        unsent: 'not sent',
     })[handle] ?? '';
 
 /**
@@ -215,7 +224,8 @@ export function outputsOf(step: StepNode, type?: NodeType): string[] {
 }
 
 // Which ways out mean no, drawn in red; the other named ones in green
-export const isNo = (handle: string) => ['false', 'rejected'].includes(handle);
+export const isNo = (handle: string) =>
+    ['false', 'rejected', 'unsent'].includes(handle);
 
 /** "Set data 2" → "set_data_2": a key a formula can name, not yet taken. */
 export function freshKey(label: string, taken: Set<string>): string {
@@ -367,4 +377,37 @@ export function duration(ms: number | null): string {
     }
 
     return `${Math.floor(ms / 60000)} min ${Math.round((ms % 60000) / 1000)} s`;
+}
+
+/** A setting written over several lines: a template, or a named value. */
+export const textBox =
+    'border-input bg-background placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 w-full rounded-md border px-3 py-2 font-mono text-xs shadow-xs outline-none focus-visible:ring-[3px] disabled:opacity-60';
+
+/** What a button's value does, and what is written of it once that is said. */
+export function readDoes(
+    does: Does[],
+    value: string,
+): { way: Does; rest: string } {
+    const address = does.find(
+        (way) => way.address && new RegExp(way.address, 'i').test(value),
+    );
+
+    if (address) {
+        return { way: address, rest: value };
+    }
+
+    const prefixed = does.find(
+        (way) => way.prefix && value.startsWith(way.prefix),
+    );
+
+    return prefixed
+        ? { way: prefixed, rest: value.slice(prefixed.prefix!.length) }
+        : { way: does.find((way) => !way.prefix) ?? does[0], rest: value };
+}
+
+/** A button's value, from what it does and what was written of it. */
+export function writeDoes(way: Does, rest: string): string {
+    return way.address && new RegExp(way.address, 'i').test(rest)
+        ? rest
+        : (way.prefix ?? '') + rest;
 }

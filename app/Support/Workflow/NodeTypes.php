@@ -54,7 +54,7 @@ use App\Models\Chat\ChatRoom;
  * Every call Telegram or LINE offers is a kind of its own, in that
  * service's group; most of them are listed in ServiceKinds.
  *
- * @phpstan-type Setting array{name: string, label: string, type: string, required: bool, default?: mixed, help?: string, placeholder?: string, options?: array<string, string>, services?: list<string>, names?: string, when?: array<string, string|bool|list<string>>, linked?: bool, ways?: bool, anywhere?: bool, labels?: bool}
+ * @phpstan-type Setting array{name: string, label: string, type: string, required: bool, default?: mixed, help?: string, placeholder?: string, options?: array<string, string>, services?: list<string>, names?: string, when?: array<string, string|bool|list<string>>, linked?: bool, ways?: bool, anywhere?: bool, labels?: bool, drive?: string, does?: list<array<string, string>>, places?: array{by: string, picture: string, layouts: array<string, list<array{int, int, int, int}>>}}
  * @phpstan-type NodeType array{type: string, version: int, label: string, group: string, icon: string, description: string, trigger: bool, inputs: list<string>, outputs: list<string>, config: list<Setting>, repeatable?: bool, oldest?: int, empty?: array<string, null>}
  */
 final class NodeTypes
@@ -63,6 +63,9 @@ final class NodeTypes
     public const IN = 'in';
 
     public const OUT = 'out';
+
+    /** The way a step carries on when what it was to send could not go, for another to send it. */
+    public const UNSENT = 'unsent';
 
     /** A Switch's way when none of its others is taken. */
     public const OTHERWISE = 'otherwise';
@@ -497,7 +500,7 @@ final class NodeTypes
                             'unsend' => 'A message is taken back',
                             'any' => 'Any of these',
                         ],
-                        'help' => 'A tapped button reads as trigger.text and trigger.button; a place sent, trigger.location; a sticker, trigger.sticker; who joined or left, trigger.members. trigger.type says which it was.',
+                        'help' => 'A tapped button reads as trigger.text and trigger.button; a place sent, trigger.location; a sticker, trigger.sticker; who joined or left, trigger.members. trigger.type says which it was. A rich menu turned to another by one of its tabs counts as a button tapped, not as a message: trigger.menu says which it turned to.',
                     ],
                     [
                         'name' => 'chats',
@@ -946,14 +949,15 @@ final class NodeTypes
                 'label' => 'Reply on LINE',
                 'group' => 'line',
                 'icon' => 'reply',
-                'description' => 'Answers a LINE message, by LINE\'s reply call: free, but only soon after the message and only once. Words, a picture, a sticker, a place, buttons to choose from, a card -- with quick replies under it.',
+                'description' => 'Answers a LINE message, by LINE\'s reply call: free, but only soon after the message and only once. Words, a picture, a sticker, a place, buttons to choose from, a card -- with quick replies under it. When its token can\'t be used it carries on down "not sent", where a "Push on LINE" can send it instead; with nothing that way, it fails.',
                 'trigger' => false,
                 'repeatable' => false,
                 'inputs' => [self::IN],
-                'outputs' => [self::OUT],
+                'outputs' => [self::OUT, self::UNSENT],
                 'config' => [
                     ['name' => 'connection', 'label' => 'Channel', 'type' => 'connection', 'required' => true, 'services' => ['line'], 'linked' => true],
-                    ['name' => 'token', 'label' => 'Reply token', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.reply.token }}', 'help' => 'What the LINE message came with: the message that started the run gives it as {{ trigger.reply.token }}.'],
+                    ['name' => 'token', 'label' => 'Reply token', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.reply.token }}', 'help' => 'What the LINE message came with: the message that started the run gives it as {{ trigger.reply.token }}. From a linked chat, that is the token of the last thing they sent.'],
+                    ['name' => 'within', 'label' => 'For how long after the message, in seconds', 'type' => 'number', 'required' => false, 'default' => Steps\LineSend::REPLY_WITHIN, 'help' => 'An older token is not tried. LINE promises a minute. Left empty, LINE is asked whatever its age.'],
                     ...ServiceKinds::lineMessage(),
                     [
                         'name' => 'unsure',
@@ -1046,6 +1050,32 @@ final class NodeTypes
             'web' => 'Web',
             'telegram' => 'Telegram',
             'line' => 'LINE',
+        ];
+    }
+
+    /**
+     * A group with many kinds, set out in parts: each part's name, and its
+     * kinds in the order shown. A kind of that group in no part comes
+     * before them all.
+     *
+     * @return array<string, array<string, list<string>>>
+     */
+    public static function sections(): array
+    {
+        return [
+            'telegram' => [
+                'Messages' => ['trigger.telegram', 'telegram.send', 'telegram.send_file', 'telegram.album', 'telegram.sticker', 'telegram.location', 'telegram.contact', 'telegram.poll', 'telegram.forward', 'telegram.copy', 'telegram.action', 'telegram.file'],
+                'A message sent' => ['telegram.edit', 'telegram.edit_buttons', 'telegram.delete', 'telegram.pin', 'telegram.unpin', 'telegram.react'],
+                'Buttons and commands' => ['telegram.answer_button', 'telegram.answer_inline', 'telegram.commands'],
+                'Payments' => ['telegram.invoice', 'telegram.answer_checkout'],
+                'Chats and people' => ['telegram.chat', 'telegram.member', 'telegram.member_count', 'telegram.topic', 'telegram.restrict', 'telegram.ban', 'telegram.unban'],
+            ],
+            'line' => [
+                'Messages' => ['trigger.line', 'line.reply', 'line.send', 'line.multicast', 'line.broadcast', 'line.loading', 'line.read', 'line.file'],
+                'People and groups' => ['line.profile', 'line.group', 'line.group_count', 'line.leave'],
+                'Rich menus' => ['line.richmenu_make', 'line.richmenu_default', 'line.richmenu_default_off', 'line.richmenu', 'line.richmenu_off', 'line.richmenu_many', 'line.richmenu_many_off', 'line.richmenu_of', 'line.richmenus', 'line.richmenu_alias', 'line.richmenu_alias_off', 'line.richmenu_delete'],
+                'Allowance' => ['line.quota', 'line.consumption'],
+            ],
         ];
     }
 }

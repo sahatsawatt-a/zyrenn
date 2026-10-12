@@ -24,6 +24,9 @@ final class TelegramApi
 {
     private const PER_SECOND = 25;
 
+    /** How what a button does starts, when it is an address to open. */
+    public const ADDRESS = '^(https?|tg)://';
+
     /**
      * The step's bot: one of the owner's, or the one the run's chat is linked through.
      *
@@ -109,7 +112,8 @@ final class TelegramApi
     /**
      * Buttons under a message, from a step's named values: each name is
      * what the button says, its value what pressing it does -- an address
-     * opens, "webapp:" and an address opens it as a mini app, anything else
+     * opens ("link:" before it says it is one, where a formula gives it),
+     * "webapp:" and an address opens it as a mini app, anything else
      * comes back to the bot as the press (trigger.text), the name itself
      * when there is none. Null when the step names no buttons.
      *
@@ -130,7 +134,8 @@ final class TelegramApi
             }
 
             $buttons[] = match (true) {
-                preg_match('#^(https?|tg)://#i', $does) === 1 => ['text' => $label, 'url' => $does],
+                preg_match('#'.self::ADDRESS.'#i', $does) === 1 => ['text' => $label, 'url' => $does],
+                str_starts_with($does, 'link:') => ['text' => $label, 'url' => trim(substr($does, 5))],
                 str_starts_with($does, 'webapp:') => ['text' => $label, 'web_app' => ['url' => trim(substr($does, 7))]],
                 strlen($does) > 64 => throw new StepFailed("What the button \"{$label}\" sends back is longer than the 64 bytes Telegram keeps."),
                 default => ['text' => $label, 'callback_data' => $does !== '' ? $does : mb_strcut($label, 0, 64)],

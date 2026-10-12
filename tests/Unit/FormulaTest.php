@@ -98,6 +98,12 @@ class FormulaTest extends TestCase
         $this->assertSame('Day 5 · ฿600', $this->text('"Day " & day & " · ฿" & cny * rate'));
         $this->assertSame('1,234.50', $this->text('text(1234.5, 2)'));
 
+        // How text starts, and what it has in it: letters alike whatever their case
+        $this->assertSame('true', $this->text('starts("  AI: when do you open?", "ai")'));
+        $this->assertSame('false', $this->text('starts("Is the AI in?", "ai")'));
+        $this->assertSame('true', $this->text('contains("Is the AI in?", "ai")'));
+        $this->assertSame('false', $this->text('starts(note, "ai") or contains(kind, "")'));
+
         // The branch not taken is never worked out
         $this->assertSame('1', $this->text('if(true, 1, 1 / 0)'));
         $this->assertSame('false', $this->text('false and 1 / 0'));

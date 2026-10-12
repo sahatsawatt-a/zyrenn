@@ -32,6 +32,8 @@ final class Functions
         'text' => 'text(value, format)',
         'upper' => 'upper(text)',
         'lower' => 'lower(text)',
+        'starts' => 'starts(text, with)',
+        'contains' => 'contains(text, part)',
         'len' => 'len(text or list)',
         'item' => 'item(list, n), counting from 1; from the end below 0',
         'date' => 'date("2026-12-03") or date(year, month, day)',
@@ -66,6 +68,7 @@ final class Functions
             'text' => self::text($args),
             'upper' => Evaluator::each(self::one($name, $args), fn ($value) => mb_strtoupper(Evaluator::text($value))),
             'lower' => Evaluator::each(self::one($name, $args), fn ($value) => mb_strtolower(Evaluator::text($value))),
+            'starts', 'contains' => self::has($name, $args),
             'len' => self::length(self::one($name, $args)),
             'item' => self::item($args),
             'date' => self::date($args),
@@ -143,6 +146,27 @@ final class Functions
         }
 
         return $args[0];
+    }
+
+    /**
+     * Whether text starts with some words, or has them anywhere in it --
+     * letters alike whatever their case, and whatever space comes first.
+     *
+     * @param  list<mixed>  $args
+     */
+    private static function has(string $name, array $args): mixed
+    {
+        if (count($args) !== 2) {
+            throw new FormulaError(self::SIGNATURES[$name].' takes two values.');
+        }
+
+        $part = mb_strtolower(Evaluator::text($args[1]));
+
+        return Evaluator::each($args[0], function ($value) use ($name, $part) {
+            $text = mb_strtolower(ltrim(Evaluator::text($value)));
+
+            return $part !== '' && ($name === 'starts' ? str_starts_with($text, $part) : str_contains($text, $part));
+        });
     }
 
     /**

@@ -6,17 +6,20 @@ import {
     ChevronRight,
     CircleAlert,
     Copy,
-    Plus,
+    HardDrive,
     Trash2,
     X,
 } from '@lucide/vue';
+import { useLocalStorage } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import DriveFileDialog from '@/features/chat/components/DriveFileDialog.vue';
 import ModelPicker from '@/features/chat/components/ModelPicker.vue';
+import NamedValues from '@/features/workflow/components/editor/NamedValues.vue';
 import PickOne from '@/features/workflow/components/editor/PickOne.vue';
-import { iconOf, toneOf } from '@/features/workflow/steps';
+import { iconOf, textBox, toneOf } from '@/features/workflow/steps';
 import type {
     Field,
     NodeType,
@@ -59,8 +62,28 @@ const emit = defineEmits<{
     showData: [];
 }>();
 
-const textarea =
-    'border-input bg-background placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 w-full rounded-md border px-3 py-2 font-mono text-xs shadow-xs outline-none focus-visible:ring-[3px] disabled:opacity-60';
+// --- how wide it is: as it was last dragged, by its left edge ---
+const USUAL_WIDTH = 384;
+const width = useLocalStorage('workflow.settings.width', USUAL_WIDTH);
+
+const bounded = (wide: number) =>
+    Math.round(Math.max(320, Math.min(wide, 720, window.innerWidth - 360)));
+
+function startResize(event: PointerEvent) {
+    const startX = event.clientX;
+    const startWidth = bounded(width.value);
+
+    const move = (moved: PointerEvent) =>
+        (width.value = bounded(startWidth + startX - moved.clientX));
+
+    const stop = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', stop);
+    };
+
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop);
+}
 
 // --- its key, kept only once it is one a formula can name ---
 const key = ref(props.step.key);
@@ -97,26 +120,17 @@ const value = (setting: Setting) => props.step.config[setting.name];
 const set = (setting: Setting, next: unknown) =>
     emit('update', { config: { ...props.step.config, [setting.name]: next } });
 
-const fields = (setting: Setting): Field[] =>
-    Array.isArray(value(setting)) ? (value(setting) as Field[]) : [];
+// The setting a file is being chosen for in the Drive, while one is
+const choosing = ref<Setting | null>(null);
 
-function changeField(setting: Setting, index: number, patch: Partial<Field>) {
-    set(
-        setting,
-        fields(setting).map((field, at) =>
-            at === index ? { ...field, ...patch } : field,
-        ),
-    );
+function chosen(file: { ref_id: string }) {
+    if (choosing.value) {
+        set(choosing.value, file.ref_id);
+    }
 }
 
-const addField = (setting: Setting) =>
-    set(setting, [...fields(setting), { name: '', value: '' }]);
-
-const removeField = (setting: Setting, index: number) =>
-    set(
-        setting,
-        fields(setting).filter((_, at) => at !== index),
-    );
+const fields = (setting: Setting): Field[] =>
+    Array.isArray(value(setting)) ? (value(setting) as Field[]) : [];
 
 const jsonProblem = (text: unknown) => {
     if (typeof text !== 'string' || text.trim() === '') {
@@ -345,13 +359,22 @@ async function copyHook(token: unknown) {
 
 <template>
     <aside
-        class="bg-background flex min-h-0 flex-col"
+        class="bg-background relative flex min-h-0 flex-col"
         :class="[
-            compact ? 'flex-1' : 'w-80 shrink-0 border-l',
+            compact ? 'flex-1' : 'shrink-0 border-l',
             { 'taking-data': dragging },
         ]"
+        :style="compact ? undefined : { width: `${bounded(width)}px` }"
         data-step-settings
     >
+        <div
+            v-if="!compact"
+            class="hover:bg-primary active:bg-primary absolute inset-y-0 -left-px z-10 w-1 cursor-col-resize transition-colors"
+            title="Drag to resize, double-click for its usual width"
+            data-resize-settings
+            @pointerdown.prevent="startResize"
+            @dblclick="width = USUAL_WIDTH"
+        />
         <div class="flex items-start gap-3 border-b p-4">
             <span
                 class="flex size-9 shrink-0 items-center justify-center rounded-lg"
@@ -431,114 +454,16 @@ async function copyHook(token: unknown) {
                 :key="setting.name"
             >
                 <!-- Named values -->
-                <div
+                <NamedValues
                     v-if="setting.type === 'fields'"
-                    class="grid grid-cols-1 gap-2"
-                >
-                    <Label>{{ setting.label }}</Label>
-                    <div
-                        v-for="(field, index) in fields(setting)"
-                        :key="index"
-                        class="flex items-start gap-1.5"
-                        data-field-row
-                    >
-                        <div
-                            v-if="setting.names === 'columns'"
-                            class="w-32 shrink-0"
-                        >
-                            <PickOne
-                                :model-value="field.name"
-                                :options="columns"
-                                placeholder="Column"
-                                :disabled="!editable || !table"
-                                @update:model-value="
-                                    changeField(setting, index, {
-                                        name: $event ?? '',
-                                    })
-                                "
-                            />
-                        </div>
-                        <Input
-                            v-else
-                            :model-value="field.name"
-                            :placeholder="
-                                setting.ways
-                                    ? 'way'
-                                    : setting.labels
-                                      ? 'what it says'
-                                      : 'name'
-                            "
-                            class="h-8 w-28 shrink-0 text-xs"
-                            :class="{ 'font-mono': !setting.labels }"
-                            :disabled="!editable"
-                            aria-label="Name"
-                            @update:model-value="
-                                changeField(setting, index, {
-                                    name: String($event),
-                                })
-                            "
-                        />
-                        <Input
-                            :model-value="field.value"
-                            :placeholder="
-                                setting.ways
-                                    ? 'input.total > 100'
-                                    : setting.labels
-                                      ? 'what it does'
-                                      : '{{ input.total }}'
-                            "
-                            class="h-8 min-w-0 flex-1 font-mono text-xs"
-                            :disabled="!editable"
-                            :aria-label="setting.ways ? 'When' : 'Value'"
-                            :data-takes-data="
-                                setting.ways ? 'formula' : 'template'
-                            "
-                            @update:model-value="
-                                changeField(setting, index, {
-                                    value: String($event),
-                                })
-                            "
-                        />
-                        <Button
-                            v-if="editable"
-                            size="icon-sm"
-                            variant="ghost"
-                            aria-label="Remove value"
-                            @click="removeField(setting, index)"
-                        >
-                            <X />
-                        </Button>
-                    </div>
-                    <p
-                        v-if="setting.names === 'columns' && !table"
-                        class="text-muted-foreground text-xs"
-                    >
-                        Choose the table first.
-                    </p>
-                    <Button
-                        v-if="editable"
-                        variant="outline"
-                        size="sm"
-                        class="justify-self-start"
-                        data-add-field
-                        @click="addField(setting)"
-                    >
-                        <Plus />
-                        {{
-                            setting.ways
-                                ? 'Add a way'
-                                : setting.labels
-                                  ? 'Add one'
-                                  : 'Add a value'
-                        }}
-                    </Button>
-                    <p
-                        v-if="setting.ways && fields(setting).length"
-                        class="text-muted-foreground text-xs"
-                    >
-                        Then “otherwise”, when none of these is true.
-                    </p>
-                </div>
+                    :setting="setting"
+                    :fields="fields(setting)"
+                    :editable="editable"
+                    :config="step.config"
+                    :columns="columns"
+                    :table="!!table"
+                    @update="set(setting, $event)"
+                />
 
                 <!-- From a list: a dropdown -->
                 <div
@@ -804,7 +729,7 @@ async function copyHook(token: unknown) {
                         :id="`setting-${setting.name}`"
                         :value="String(value(setting) ?? '')"
                         :rows="setting.type === 'json' ? 7 : 3"
-                        :class="textarea"
+                        :class="textBox"
                         data-takes-data="template"
                         :placeholder="setting.placeholder"
                         :disabled="!editable"
@@ -825,6 +750,16 @@ async function copyHook(token: unknown) {
                     >
                         {{ jsonProblem(value(setting)) }}
                     </p>
+                    <Button
+                        v-if="setting.drive && editable"
+                        variant="outline"
+                        size="sm"
+                        class="justify-self-start"
+                        :data-choose-file="setting.name"
+                        @click="choosing = setting"
+                    >
+                        <HardDrive /> Choose from the Drive
+                    </Button>
                 </div>
 
                 <p
@@ -899,6 +834,15 @@ async function copyHook(token: unknown) {
                 </div>
             </div>
         </div>
+
+        <DriveFileDialog
+            :open="choosing !== null"
+            :kind="choosing?.drive"
+            :title="`${choosing?.label ?? 'A file'}, from the Drive`"
+            description="The newest first. Its ref_id is filled in."
+            @update:open="(open) => (open ? null : (choosing = null))"
+            @pick="chosen"
+        />
 
         <div v-if="editable" class="flex gap-2 border-t p-3">
             <Button variant="outline" size="sm" @click="emit('duplicate')">

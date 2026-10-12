@@ -79,6 +79,22 @@ final class Templates
                     ['answer', 'line.reply', ['connection' => $line, 'text' => 'Saved {{ node("save").name }} in the Drive.']],
                 ], ['has' => 'true']),
             ],
+            'line-menu' => [
+                'title' => 'A rich menu for your LINE channel',
+                'description' => 'Run by hand, it makes the panel under the chat from a picture in your Drive -- three buttons side by side -- and shows it to everyone. Choose the picture and say what each button does first; to change the menu later, change them and run it again.',
+                'needs' => ['line' => 'Channel'],
+                'definition' => self::chain([
+                    ['start', 'trigger.manual', []],
+                    ['make', 'line.richmenu_make', ['connection' => $line, 'name' => 'Main menu', 'layout' => 'three', 'bar' => 'Menu', 'buttons' => [
+                        ['name' => 'Opening hours', 'value' => 'What are your opening hours?'],
+                        ['name' => 'Website', 'value' => 'https://example.com'],
+                        ['name' => 'Talk to us', 'value' => 'I would like to talk to someone'],
+                    ]]],
+                    // Its short name moves to each new menu, so a tab or a step that says "main" means the latest
+                    ['name', 'line.richmenu_alias', ['connection' => $line, 'alias' => 'main', 'menu' => '{{ node("make").id }}']],
+                    ['show', 'line.richmenu_default', ['connection' => $line, 'menu' => '{{ node("make").id }}']],
+                ]),
+            ],
             'daily-telegram' => [
                 'title' => 'Daily summary to Telegram',
                 'description' => 'Every weekday morning, a table\'s rows are summed up by an AI model and sent to a Telegram chat. Choose the table and the chat after.',
@@ -108,7 +124,10 @@ final class Templates
      * Going out, what is written in the room goes to the outside chat, and
      * a file sent there goes with it: by Telegram's own call for a file; on
      * LINE as a picture when it is one LINE takes, else as a link that
-     * opens it for a day. A place shared there goes out as a place. On LINE, too: a message is marked read there once
+     * opens it for a day. A place shared there goes out as a place. On LINE
+     * each is tried first as a reply to the last thing the other end wrote,
+     * which LINE does not count, and pushed when that can't go: after a
+     * minute, or once the token is used. On LINE, too: a message is marked read there once
      * someone has seen it here, and someone who adds the channel has a room
      * before they write.
      *
@@ -249,6 +268,28 @@ final class Templates
                 : [['out', 'file', 'backfile']],
         ];
 
+        // On LINE each thing sent out is first tried as a reply to the last thing they wrote, which
+        // LINE does not count: a step before the push, that leads to it only when the reply can't go
+        $replies = $line ? ['back' => 'answer', 'backplace' => 'answerplace', 'backpicture' => 'answerpicture', 'backlink' => 'answerlink'] : [];
+        $placed = [];
+
+        foreach ($steps as $step) {
+            $reply = $replies[$step[2]] ?? null;
+
+            if ($reply === null) {
+                $placed[] = $step;
+
+                continue;
+            }
+
+            // The reply stands where the push stood, and the push one place on
+            $placed[] = [$step[0], $step[1], $reply, 'line.reply', [...array_diff_key($step[4], ['to' => true]), 'token' => '{{ trigger.reply.token }}', 'within' => Steps\LineSend::REPLY_WITHIN]];
+            $placed[] = [$step[0] + 1, $step[1], $step[2], $step[3], $step[4]];
+            $joins = [...array_map(fn (array $join) => $join[2] === $step[2] ? [$join[0], $join[1], $reply] : $join, $joins), [$reply, NodeTypes::UNSENT, $step[2]]];
+        }
+
+        $steps = $placed;
+
         return [
             'nodes' => array_map(fn (array $step) => [
                 'id' => $step[2], 'key' => $step[2], 'type' => $step[3],
@@ -256,7 +297,7 @@ final class Templates
                 'config' => $step[4],
                 ...isset($step[5]) ? ['onError' => $step[5]] : [],
             ], $steps),
-            'edges' => array_values(array_map(fn (array $join) => ['id' => implode('.', $join), 'source' => $join[0], 'sourceHandle' => $join[1], 'target' => $join[2]], $joins)),
+            'edges' => array_map(fn (array $join) => ['id' => implode('.', $join), 'source' => $join[0], 'sourceHandle' => $join[1], 'target' => $join[2]], $joins),
         ];
     }
 

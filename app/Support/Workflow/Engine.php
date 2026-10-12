@@ -29,6 +29,7 @@ use App\Support\Workflow\Steps\LineCall;
 use App\Support\Workflow\Steps\LineFile;
 use App\Support\Workflow\Steps\LineProfile;
 use App\Support\Workflow\Steps\LineReply;
+use App\Support\Workflow\Steps\LineRichMenu;
 use App\Support\Workflow\Steps\LineSend;
 use App\Support\Workflow\Steps\Log;
 use App\Support\Workflow\Steps\ManualTrigger;
@@ -160,9 +161,18 @@ final class Engine
         'line.loading' => LineCall::class,
         'line.read' => LineCall::class,
         'line.leave' => LineCall::class,
-        'line.richmenu' => LineCall::class,
-        'line.richmenu_off' => LineCall::class,
-        'line.richmenus' => LineCall::class,
+        'line.richmenu_make' => LineRichMenu::class,
+        'line.richmenu_delete' => LineRichMenu::class,
+        'line.richmenu_default' => LineRichMenu::class,
+        'line.richmenu_default_off' => LineRichMenu::class,
+        'line.richmenu' => LineRichMenu::class,
+        'line.richmenu_off' => LineRichMenu::class,
+        'line.richmenu_many' => LineRichMenu::class,
+        'line.richmenu_many_off' => LineRichMenu::class,
+        'line.richmenu_of' => LineRichMenu::class,
+        'line.richmenu_alias' => LineRichMenu::class,
+        'line.richmenu_alias_off' => LineRichMenu::class,
+        'line.richmenus' => LineRichMenu::class,
         'line.quota' => LineCall::class,
         'line.consumption' => LineCall::class,
         'line.group' => LineCall::class,

@@ -6,6 +6,8 @@ use App\Models\Connection;
 use App\Models\Drive\DriveFile;
 use App\Support\Workflow\References;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -17,6 +19,12 @@ use Illuminate\Support\Facades\Http;
 final class LineApi
 {
     private const API = 'https://api.line.me/v2/bot/';
+
+    /** How what a button does starts, when it is an address to open. */
+    public const ADDRESS = '^(https?://|tel:|line://)';
+
+    /** Where LINE takes and gives the bytes of a file. */
+    private const DATA = 'https://api-data.line.me/v2/bot/';
 
     private const MAX_PICTURE_BYTES = 10 * 1024 * 1024;
 
@@ -65,10 +73,52 @@ final class LineApi
      */
     public static function call(Connection $channel, string $method, string $path, array $body = []): array
     {
+        $response = self::answer($channel, fn (PendingRequest $request) => $request->send($method, self::API.$path, $method === 'GET' || $body === [] ? [] : ['json' => $body]));
+
+        return is_array($response->json()) ? $response->json() : [];
+    }
+
+    /**
+     * What LINE has at an address, or null when it has no such thing: a
+     * person with no rich menu of their own, a name no menu goes by.
+     *
+     * @param  list<int>  $none  what LINE answers with when there is none
+     * @return array<string, mixed>|null
+     *
+     * @throws StepFailed
+     */
+    public static function find(Connection $channel, string $path, array $none = [404]): ?array
+    {
+        $response = self::answer($channel, fn (PendingRequest $request) => $request->get(self::API.$path), $none);
+
+        return ! $response->successful() ? null : (is_array($response->json()) ? $response->json() : []);
+    }
+
+    /**
+     * A file's bytes put to LINE, which takes them at another address than
+     * everything else.
+     *
+     * @throws StepFailed
+     */
+    public static function upload(Connection $channel, string $path, string $bytes, string $mime): void
+    {
+        self::answer($channel, fn (PendingRequest $request) => $request->timeout(60)->withBody($bytes, $mime)->post(self::DATA.$path));
+    }
+
+    /**
+     * LINE's answer to one request, read the same way each time: busy is
+     * tried again, a refusal is passed on as LINE worded it -- with the
+     * part of what was sent it objects to, when it names one.
+     *
+     * @param  callable(PendingRequest): Response  $ask
+     * @param  list<int>  $allowed  statuses that are an answer here, not a refusal
+     *
+     * @throws StepFailed
+     */
+    private static function answer(Connection $channel, callable $ask, array $allowed = []): Response
+    {
         try {
-            $response = Http::timeout(15)
-                ->withToken((string) $channel->secret('channel_access_token'))
-                ->send($method, self::API.$path, $method === 'GET' || $body === [] ? [] : ['json' => $body]);
+            $response = $ask(Http::timeout(15)->withToken((string) $channel->secret('channel_access_token')));
         } catch (ConnectionException) {
             throw new StepFailed('Could not reach LINE.', retryable: true);
         }
@@ -77,11 +127,14 @@ final class LineApi
             throw new StepFailed("LINE is busy ({$response->status()}).", retryable: true, retryAfter: 30);
         }
 
-        if (! $response->successful()) {
-            throw new StepFailed('LINE said: '.($response->json('message') ?? "{$response->status()}."));
+        if (! $response->successful() && ! in_array($response->status(), $allowed, true)) {
+            $detail = $response->json('details.0');
+            $about = is_array($detail) ? trim(($detail['property'] ?? '').' '.($detail['message'] ?? '')) : '';
+
+            throw new StepFailed('LINE said: '.($response->json('message') ?? "{$response->status()}.").($about === '' ? '' : " ({$about})"));
         }
 
-        return is_array($response->json()) ? $response->json() : [];
+        return $response;
     }
 
     /**
@@ -266,11 +319,12 @@ final class LineApi
 
     /**
      * What a step's named values do when tapped: each name is what the
-     * button says, its value what tapping it does.
+     * button says, its value what tapping it does. In a rich menu, a value
+     * may also turn to another of the channel's menus.
      *
      * @return list<array<string, string>>
      */
-    private static function actions(StepContext $step, string $setting, int $most): array
+    public static function actions(StepContext $step, string $setting, int $most, bool $menu = false): array
     {
         $actions = [];
 
@@ -278,7 +332,7 @@ final class LineApi
             $label = trim((string) ($field['name'] ?? ''));
 
             if ($label !== '') {
-                $actions[] = self::action($label, trim($step->text("{$setting}.{$label}", (string) ($field['value'] ?? ''))));
+                $actions[] = self::action($label, trim($step->text("{$setting}.{$label}", (string) ($field['value'] ?? ''))), $menu);
             }
         }
 
@@ -290,20 +344,24 @@ final class LineApi
     }
 
     /**
-     * One thing to tap: an address opens; "postback:" and some data comes
-     * back to the workflow unseen (trigger.text), the label shown as said;
-     * anything else is said in the chat as the person's own message -- the
-     * label itself, when there is nothing else.
+     * One thing to tap: an address opens ("link:" before it says it is one,
+     * where a formula gives it); "postback:" and some data comes back to
+     * the workflow unseen (trigger.text), the label shown as said;
+     * in a rich menu, "menu:" and the short name of another menu turns to
+     * that one, as a tab does; anything else is said in the chat as the
+     * person's own message -- the label itself, when there is nothing else.
      *
      * @return array<string, string>
      */
-    private static function action(string $label, string $does): array
+    private static function action(string $label, string $does, bool $menu = false): array
     {
         $label = mb_substr($label, 0, 20);
 
         return match (true) {
-            preg_match('#^(https?://|tel:|line://)#i', $does) === 1 => ['type' => 'uri', 'label' => $label, 'uri' => $does],
+            preg_match('#'.self::ADDRESS.'#i', $does) === 1 => ['type' => 'uri', 'label' => $label, 'uri' => $does],
+            str_starts_with($does, 'link:') => ['type' => 'uri', 'label' => $label, 'uri' => trim(substr($does, 5))],
             str_starts_with($does, 'postback:') => ['type' => 'postback', 'label' => $label, 'data' => mb_substr(trim(substr($does, 9)), 0, 300), 'displayText' => $label],
+            $menu && str_starts_with($does, 'menu:') => ['type' => 'richmenuswitch', 'label' => $label, 'richMenuAliasId' => trim(substr($does, 5)), 'data' => 'menu:'.trim(substr($does, 5))],
             default => ['type' => 'message', 'label' => $label, 'text' => mb_substr($does !== '' ? $does : $label, 0, 300)],
         };
     }

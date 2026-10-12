@@ -93,10 +93,10 @@ class WorkflowServicesTest extends TestCase
         $this->assertSame(RunStatus::Succeeded, $run->status);
     }
 
-    private function file(User $user, string $name, ?string $mime = null): DriveFile
+    private function file(User $user, string $name, ?string $mime = null, ?string $bytes = null): DriveFile
     {
         $temp = (string) tempnam(sys_get_temp_dir(), 'test-file-');
-        file_put_contents($temp, base64_decode(self::PNG));
+        file_put_contents($temp, $bytes ?? base64_decode(self::PNG));
         $file = DriveFile::keep($temp, $name, $user);
         unlink($temp);
 
@@ -106,6 +106,19 @@ class WorkflowServicesTest extends TestCase
         }
 
         return $file;
+    }
+
+    /**
+     * A grey PNG of a size, written out by hand: the tests have nothing to draw with.
+     */
+    private function png(int $width, int $height): string
+    {
+        $chunk = fn (string $type, string $data) => pack('N', strlen($data)).$type.$data.pack('N', crc32($type.$data));
+
+        return "\x89PNG\r\n\x1a\n"
+            .$chunk('IHDR', pack('NNCCCCC', $width, $height, 8, 0, 0, 0, 0))
+            .$chunk('IDAT', (string) gzcompress(str_repeat("\0".str_repeat("\x80", $width), $height)))
+            .$chunk('IEND', '');
     }
 
     private function bot(User $user): Connection
@@ -182,7 +195,7 @@ class WorkflowServicesTest extends TestCase
             $this->node('topic', 'telegram.topic', $on(['name' => 'Orders'])),
             $this->node('typing', 'telegram.action', $on()),
             $this->node('edit', 'telegram.edit', $on(['message' => '{{ node("send").message_id }}', 'text' => 'Done.'])),
-            $this->node('rebutton', 'telegram.edit_buttons', $on(['buttons' => [['name' => 'Undo', 'value' => 'undo']]])),
+            $this->node('rebutton', 'telegram.edit_buttons', $on(['buttons' => [['name' => 'Undo', 'value' => 'undo'], ['name' => 'Where', 'value' => 'link:{{ trigger.site }}']]])),
             $this->node('delete', 'telegram.delete', $on()),
             $this->node('pin', 'telegram.pin', $on()),
             $this->node('unpin', 'telegram.unpin', $on()),
@@ -198,7 +211,7 @@ class WorkflowServicesTest extends TestCase
             $this->node('who', 'telegram.member', $on()),
             $this->node('many', 'telegram.member_count', $on()),
         ], [
-            'chat' => ['id' => '77'], 'sender' => ['id' => '5'], 'reply' => ['to' => 3], 'location' => ['lat' => 13.75, 'lng' => 100.5],
+            'chat' => ['id' => '77'], 'sender' => ['id' => '5'], 'reply' => ['to' => 3], 'location' => ['lat' => 13.75, 'lng' => 100.5], 'site' => 'https://example.com/shop',
             'button' => ['id' => 'press-1'], 'inline' => ['id' => 'ask-1'], 'checkout' => ['id' => 'pay-1'],
         ]);
 
@@ -231,7 +244,8 @@ class WorkflowServicesTest extends TestCase
 
         // A message changed in place loses its buttons unless some are named
         $this->assertSame(['9', 'Done.', ['inline_keyboard' => []]], [$asked['editMessageText']['message_id'], $asked['editMessageText']['text'], $asked['editMessageText']['reply_markup']]);
-        $this->assertSame([[['text' => 'Undo', 'callback_data' => 'undo']]], $asked['editMessageReplyMarkup']['reply_markup']['inline_keyboard']);
+        // "link:" says what a formula gives is an address
+        $this->assertSame([[['text' => 'Undo', 'callback_data' => 'undo']], [['text' => 'Where', 'url' => 'https://example.com/shop']]], $asked['editMessageReplyMarkup']['reply_markup']['inline_keyboard']);
         $this->assertSame(['77', '3'], [$asked['deleteMessage']['chat_id'], $asked['deleteMessage']['message_id']]);
         $this->assertTrue($asked['pinChatMessage']['disable_notification']);
         $this->assertFalse(isset($asked['unpinChatMessage']['message_id']));
@@ -272,7 +286,6 @@ class WorkflowServicesTest extends TestCase
         Http::fake([
             'api.line.me/v2/bot/message/quota' => Http::response(['type' => 'limited', 'value' => 200]),
             'api.line.me/v2/bot/message/quota/consumption' => Http::response(['totalUsage' => 12]),
-            'api.line.me/v2/bot/richmenu/list' => Http::response(['richmenus' => [['richMenuId' => 'richmenu-1', 'name' => 'Main', 'chatBarText' => 'Menu']]]),
             'api.line.me/v2/bot/group/C1/summary' => Http::response(['groupName' => 'Team', 'pictureUrl' => 'https://example.com/t.png']),
             'api.line.me/v2/bot/group/C1/members/count' => Http::response(['count' => 5]),
             'api.line.me/*' => Http::response([]),
@@ -286,7 +299,7 @@ class WorkflowServicesTest extends TestCase
 
         $run = $this->runChain($user, [
             $this->node('answer', 'line.reply', $on(['kind' => 'buttons', 'title' => 'Order 12', 'text' => 'Send it?', 'choices' => [
-                ['name' => 'Yes', 'value' => 'postback:send:12'], ['name' => 'Look first', 'value' => 'https://example.com/12'], ['name' => 'Not yet'],
+                ['name' => 'Yes', 'value' => 'postback:send:12'], ['name' => 'Look first', 'value' => 'https://example.com/12'], ['name' => 'Not yet'], ['name' => 'The shop', 'value' => 'link:{{ trigger.site }}'],
             ]])),
             $this->node('words', 'line.send', $to(['text' => 'On its way', 'quote' => '{{ trigger.reply.quote }}', 'quick' => [['name' => 'Thanks', 'value' => 'thank you']]])),
             $this->node('sticker', 'line.send', $to(['kind' => 'sticker', 'package' => '446', 'sticker' => '1988'])),
@@ -298,26 +311,25 @@ class WorkflowServicesTest extends TestCase
             $this->node('all', 'line.broadcast', $on(['text' => 'To everyone'])),
             $this->node('dots', 'line.loading', $on(['seconds' => 12])),
             $this->node('read', 'line.read', $on()),
-            $this->node('menu', 'line.richmenu', $on(['menu' => 'richmenu-1'])),
-            $this->node('nomenu', 'line.richmenu_off', $on()),
-            $this->node('menus', 'line.richmenus', $on()),
             $this->node('quota', 'line.quota', $on()),
             $this->node('used', 'line.consumption', $on()),
             $this->node('group', 'line.group', $on(['chat' => 'C1'])),
             $this->node('count', 'line.group_count', $on(['chat' => 'C1'])),
             $this->node('leave', 'line.leave', $on(['chat' => 'C1'])),
-        ], ['chat' => ['id' => 'U9'], 'sender' => ['id' => 'U9'], 'reply' => ['token' => 'rt-9', 'quote' => 'q-9', 'read' => 'read-9']]);
+        ], ['chat' => ['id' => 'U9'], 'sender' => ['id' => 'U9'], 'reply' => ['token' => 'rt-9', 'quote' => 'q-9', 'read' => 'read-9'], 'site' => 'https://example.com/shop']);
 
         $this->assertAllWentThrough($run);
         $sent = fn (string $how) => Http::recorded(fn (Request $request) => str_ends_with($request->url(), "/message/{$how}"))->map(fn (array $pair) => $pair[0])->values();
 
-        // Buttons: an address opens, a postback comes back unseen, anything else is said
+        // Buttons: an address opens, a postback comes back unseen, anything else
+        // is said -- and "link:" says what a formula gives is an address
         $buttons = $sent('reply')->sole()['messages'][0];
         $this->assertSame(['template', 'Send it?', 'buttons', 'Order 12'], [$buttons['type'], $buttons['altText'], $buttons['template']['type'], $buttons['template']['title']]);
         $this->assertSame([
             ['type' => 'postback', 'label' => 'Yes', 'data' => 'send:12', 'displayText' => 'Yes'],
             ['type' => 'uri', 'label' => 'Look first', 'uri' => 'https://example.com/12'],
             ['type' => 'message', 'label' => 'Not yet', 'text' => 'Not yet'],
+            ['type' => 'uri', 'label' => 'The shop', 'uri' => 'https://example.com/shop'],
         ], $buttons['template']['actions']);
 
         $pushed = $sent('push')->map(fn (Request $request) => $request['messages'][0])->all();
@@ -338,15 +350,189 @@ class WorkflowServicesTest extends TestCase
         $asked = $this->asked('api.line.me');
         $this->assertSame(['U9', 15], [$asked['start']['chatId'], $asked['start']['loadingSeconds']]);
         $this->assertSame('read-9', $asked['markAsRead']['markAsReadToken']);
-        Http::assertSent(fn (Request $request) => $request->method() === 'POST' && str_ends_with($request->url(), '/user/U9/richmenu/richmenu-1'));
-        Http::assertSent(fn (Request $request) => $request->method() === 'DELETE' && str_ends_with($request->url(), '/user/U9/richmenu'));
         Http::assertSent(fn (Request $request) => $request->method() === 'POST' && str_ends_with($request->url(), '/group/C1/leave'));
 
-        $this->assertSame([['id' => 'richmenu-1', 'name' => 'Main', 'bar' => 'Menu']], $this->step($run, 'menus')->output['menus']);
         $this->assertSame(['limited' => true, 'limit' => 200], $this->step($run, 'quota')->output);
         $this->assertSame(12, $this->step($run, 'used')->output['sent']);
         $this->assertSame('Team', $this->step($run, 'group')->output['name']);
         $this->assertSame(5, $this->step($run, 'count')->output['count']);
+    }
+
+    // --- LINE's rich menus ---
+
+    /**
+     * LINE as far as rich menus go: it makes one, keeps the short names
+     * given, and says which menu everyone sees.
+     *
+     * @param  array<string, string>  $aliases  the short names it has, by reference
+     */
+    private function fakeRichMenus(string $made, array &$aliases, int $upload = 200): void
+    {
+        Http::fake([
+            'api-data.line.me/*' => Http::response($upload === 200 ? [] : ['message' => 'The request body has 1 error(s)', 'details' => [['message' => 'image size must match richmenu size']]], $upload),
+            'api.line.me/*' => function (Request $request) use ($made, &$aliases) {
+                $path = substr((string) parse_url($request->url(), PHP_URL_PATH), strlen('/v2/bot/'));
+                $does = "{$request->method()} {$path}";
+
+                if (str_starts_with($does, 'GET richmenu/alias/') && $path !== 'richmenu/alias/list') {
+                    $alias = basename($path);
+
+                    return isset($aliases[$alias]) ? Http::response(['richMenuAliasId' => $alias, 'richMenuId' => $aliases[$alias]]) : Http::response(['message' => 'richmenu alias not found'], 404);
+                }
+
+                if (str_starts_with($does, 'POST richmenu/alias')) {
+                    $aliases[$request['richMenuAliasId'] ?? basename($path)] = $request['richMenuId'];
+                }
+
+                return match ($does) {
+                    'POST richmenu' => Http::response(['richMenuId' => $made]),
+                    'GET richmenu/list' => Http::response(['richmenus' => [['richMenuId' => $made, 'name' => 'Main', 'chatBarText' => 'Open me', 'size' => ['width' => 1200, 'height' => 810], 'areas' => [[], [], []]]]]),
+                    'GET richmenu/alias/list' => Http::response(['aliases' => collect($aliases)->map(fn (string $menu, string $alias) => ['richMenuAliasId' => $alias, 'richMenuId' => $menu])->values()->all()]),
+                    'GET user/all/richmenu' => Http::response(['richMenuId' => $made]),
+                    'GET user/U9/richmenu' => Http::response(['message' => 'the user has no richmenu'], 404),
+                    default => Http::response([]),
+                };
+            },
+        ]);
+    }
+
+    public function test_a_rich_menu_is_made_the_size_of_its_picture_named_and_shown()
+    {
+        $made = 'richmenu-'.str_repeat('ab', 16);
+        $other = 'richmenu-'.str_repeat('cd', 16);
+        $aliases = [];
+        $this->fakeRichMenus($made, $aliases);
+        $user = User::factory()->create();
+        $channel = $this->channel($user)->ref_id;
+        $picture = $this->file($user, 'menu.png', bytes: $this->png(1200, 810));
+        $on = fn (array $settings = []) => ['connection' => $channel, ...$settings];
+
+        $run = $this->runChain($user, [
+            $this->node('make', 'line.richmenu_make', $on(['name' => 'Main', 'picture' => $picture->ref_id, 'layout' => 'large', 'bar' => 'Open me', 'buttons' => [
+                ['name' => 'Order', 'value' => 'https://example.com/order'], ['name' => 'Hours', 'value' => 'postback:hours'], ['name' => 'More', 'value' => 'menu:more'],
+            ]])),
+            $this->node('name', 'line.richmenu_alias', $on(['alias' => 'main', 'menu' => '{{ node("make").id }}'])),
+            // From here on its short name will do for it
+            $this->node('everyone', 'line.richmenu_default', $on(['menu' => 'main'])),
+            $this->node('one', 'line.richmenu', $on(['menu' => 'main'])),
+            $this->node('many', 'line.richmenu_many', $on(['to' => 'U1, U2 U1', 'menu' => 'main'])),
+            $this->node('fewer', 'line.richmenu_many_off', $on(['to' => 'U1'])),
+            $this->node('whose', 'line.richmenu_of', $on()),
+            $this->node('menus', 'line.richmenus', $on()),
+            $this->node('again', 'line.richmenu_alias', $on(['alias' => 'main', 'menu' => '{{ node("make").id }}'])),
+            $this->node('moved', 'line.richmenu_alias', $on(['alias' => 'main', 'menu' => $other])),
+            $this->node('unnamed', 'line.richmenu_alias_off', $on(['alias' => 'old'])),
+            $this->node('nomenu', 'line.richmenu_off', $on()),
+            $this->node('noone', 'line.richmenu_default_off', $on()),
+            $this->node('gone', 'line.richmenu_delete', $on(['menu' => '{{ node("make").id }}'])),
+        ], ['sender' => ['id' => 'U9']]);
+
+        $this->assertAllWentThrough($run);
+        $sent = fn (string $does) => Http::recorded(fn (Request $request) => "{$request->method()} ".substr((string) parse_url($request->url(), PHP_URL_PATH), strlen('/v2/bot/')) === $does)->map(fn (array $pair) => $pair[0])->values();
+
+        // The menu is the picture's size, its buttons where the layout puts them: neighbours meet, and none runs off it
+        $menu = $sent('POST richmenu')->sole();
+        $this->assertSame([['width' => 1200, 'height' => 810], true, 'Main', 'Open me'], [$menu['size'], $menu['selected'], $menu['name'], $menu['chatBarText']]);
+        $this->assertSame([
+            ['x' => 0, 'y' => 0, 'width' => 800, 'height' => 810],
+            ['x' => 800, 'y' => 0, 'width' => 400, 'height' => 405],
+            ['x' => 800, 'y' => 405, 'width' => 400, 'height' => 405],
+        ], array_column($menu['areas'], 'bounds'));
+        // An address opens, a postback comes back unseen, and a tab turns to another menu by its short name
+        $this->assertSame([
+            ['type' => 'uri', 'label' => 'Order', 'uri' => 'https://example.com/order'],
+            ['type' => 'postback', 'label' => 'Hours', 'data' => 'hours', 'displayText' => 'Hours'],
+            ['type' => 'richmenuswitch', 'label' => 'More', 'richMenuAliasId' => 'more', 'data' => 'menu:more'],
+        ], array_column($menu['areas'], 'action'));
+        $this->assertSame(['id' => $made, 'name' => 'Main', 'width' => 1200, 'height' => 810, 'areas' => 3], $this->step($run, 'make')->output);
+
+        // Its picture goes where LINE takes files, as the bytes it is
+        $picture = Http::recorded(fn (Request $request) => str_contains($request->url(), 'api-data.line.me'))->sole()[0];
+        $this->assertSame(["https://api-data.line.me/v2/bot/richmenu/{$made}/content", 'image/png', $this->png(1200, 810)], [$picture->url(), $picture->header('Content-Type')[0], $picture->body()]);
+
+        // A name is made once, left alone when it already says so, and moved when it names another
+        $this->assertSame(['richMenuAliasId' => 'main', 'richMenuId' => $made], $sent('POST richmenu/alias')->sole()->data());
+        $this->assertSame(['richMenuId' => $other], $sent('POST richmenu/alias/main')->sole()->data());
+        $this->assertSame([false, false, true], array_map(fn (string $key) => $this->step($run, $key)->output['moved'], ['name', 'again', 'moved']));
+        $this->assertCount(1, $sent('DELETE richmenu/alias/old'));
+
+        // Shown to everyone, to one, to many -- each named by the short name, asked for by its id
+        $this->assertCount(1, $sent("POST user/all/richmenu/{$made}"));
+        $this->assertCount(1, $sent("POST user/U9/richmenu/{$made}"));
+        $this->assertSame(['richMenuId' => $made, 'userIds' => ['U1', 'U2']], $sent('POST richmenu/bulk/link')->sole()->data());
+        $this->assertSame(['userIds' => ['U1']], $sent('POST richmenu/bulk/unlink')->sole()->data());
+        $this->assertCount(1, $sent('DELETE user/U9/richmenu'));
+        $this->assertCount(1, $sent('DELETE user/all/richmenu'));
+        $this->assertCount(1, $sent("DELETE richmenu/{$made}"));
+
+        // Someone with none of their own has none, which is no failure
+        $this->assertNull($this->step($run, 'whose')->output['menu']);
+        $this->assertSame([
+            'menus' => [['id' => $made, 'name' => 'Main', 'bar' => 'Open me', 'width' => 1200, 'height' => 810, 'areas' => 3, 'aliases' => ['main'], 'default' => true]],
+            'count' => 1,
+            'default' => $made,
+        ], $this->step($run, 'menus')->output);
+    }
+
+    public function test_a_rich_menu_that_cant_be_made_says_why_and_leaves_none_behind()
+    {
+        $made = 'richmenu-'.str_repeat('ab', 16);
+        $aliases = [];
+        $this->fakeRichMenus($made, $aliases, upload: 400);
+        $user = User::factory()->create();
+        $channel = $this->channel($user)->ref_id;
+        $picture = $this->file($user, 'menu.png', bytes: $this->png(1200, 810))->ref_id;
+        $buttons = fn (int $many) => array_map(fn (int $at) => ['name' => "Button {$at}", 'value' => ''], range(1, $many));
+        $run = fn (string $type, array $settings) => $this->step($this->runChain($user, [$this->node('it', $type, ['connection' => $channel, ...$settings])], ['sender' => ['id' => 'U9']]), 'it')->error['message'];
+        $make = fn (array $settings) => $run('line.richmenu_make', ['name' => 'Main', 'picture' => $picture, 'layout' => 'two', 'buttons' => $buttons(2), ...$settings]);
+
+        $this->assertStringContainsString('"tiny.png" is 1 × 1', $make(['picture' => $this->file($user, 'tiny.png')->ref_id]));
+        $this->assertStringContainsString('"tall.png" is 1000 × 800', $make(['picture' => $this->file($user, 'tall.png', bytes: $this->png(1000, 800))->ref_id]));
+        $this->assertStringContainsString('is a JPEG or a PNG', $make(['picture' => $this->file($user, 'menu.gif', 'image/gif')->ref_id]));
+        $this->assertStringContainsString('at most 2 of these, and there are 3', $make(['buttons' => $buttons(3)]));
+        $this->assertStringContainsString('Name at least one button', $make(['buttons' => []]));
+        $this->assertStringContainsString('at most 14 letters', $make(['bar' => 'Tap here to open it']));
+        $this->assertStringContainsString('JSON list of up to 20', $make(['layout' => 'custom', 'areas' => '{"bounds": {}}']));
+        Http::assertNotSent(fn (Request $request) => $request->method() === 'POST' && str_ends_with($request->url(), '/v2/bot/richmenu'));
+
+        // LINE turns the picture down: what it said is passed on, and the menu made for it is taken away again
+        $this->assertSame('LINE said: The request body has 1 error(s) (image size must match richmenu size)', $make([]));
+        Http::assertSent(fn (Request $request) => $request->method() === 'DELETE' && str_ends_with($request->url(), "/v2/bot/richmenu/{$made}"));
+
+        // Areas of one's own go as they are written
+        $areas = [['bounds' => ['x' => 0, 'y' => 0, 'width' => 1200, 'height' => 810], 'action' => ['type' => 'message', 'text' => 'Hi {{ trigger.sender.id }}']]];
+        $make(['layout' => 'custom', 'areas' => json_encode($areas)]);
+        Http::assertSent(fn (Request $request) => $request->method() === 'POST' && str_ends_with($request->url(), '/v2/bot/richmenu') && $request['areas'][0]['action']['text'] === 'Hi U9');
+
+        $this->assertStringContainsString('no rich menu with the id or the short name "members"', $run('line.richmenu_default', ['menu' => 'members']));
+        $this->assertStringContainsString('"Main Menu" is not', $run('line.richmenu_alias', ['alias' => 'Main Menu', 'menu' => $made]));
+        $this->assertStringContainsString('There is no one named', $run('line.richmenu_many', ['to' => ' , ', 'menu' => $made]));
+    }
+
+    public function test_the_rich_menu_template_makes_names_and_shows_one_once_given_a_picture()
+    {
+        $made = 'richmenu-'.str_repeat('ab', 16);
+        $aliases = [];
+        $this->fakeRichMenus($made, $aliases);
+        $user = User::factory()->create();
+        $channel = $this->channel($user);
+
+        $this->actingAs($user)->post(route('workflows.store'), ['template' => 'line-menu', 'connections' => ['line' => $channel->ref_id]])->assertRedirect();
+        $workflow = $user->workflows()->sole();
+        $nodes = collect($workflow->definition['nodes'])->map(fn (array $node) => $node['key'] !== 'make' ? $node : [...$node, 'config' => [...$node['config'], 'picture' => $this->file($user, 'menu.png', bytes: $this->png(2500, 843))->ref_id]]);
+        $workflow->update(['definition' => [...$workflow->definition, 'nodes' => $nodes->all()]]);
+        $this->assertSame([], References::allProblems($workflow));
+
+        $run = Engine::start($workflow, $workflow->freeze(WorkflowVersion::TEST, $user), $user);
+        $this->work();
+
+        $this->assertAllWentThrough($run->fresh());
+        // Three side by side, the whole height of a short picture
+        $menu = Http::recorded(fn (Request $request) => $request->method() === 'POST' && str_ends_with($request->url(), '/v2/bot/richmenu'))->sole()[0];
+        $this->assertSame([[0, 833], [833, 834], [1667, 833]], array_map(fn (array $area) => [$area['bounds']['x'], $area['bounds']['width']], $menu['areas']));
+        $this->assertSame([843, 843, 843], array_map(fn (array $area) => $area['bounds']['height'], $menu['areas']));
+        $this->assertSame(['main' => $made], $aliases);
+        Http::assertSent(fn (Request $request) => $request->method() === 'POST' && str_ends_with($request->url(), "/user/all/richmenu/{$made}"));
     }
 
     // --- what starts a run ---
@@ -400,6 +586,7 @@ class WorkflowServicesTest extends TestCase
         $comings = $listening('comings', $this->node('heard', 'trigger.telegram', ['connection' => $bot->ref_id, 'on' => 'member']));
         $said = $listening('said', $this->node('heard', 'trigger.line', ['connection' => $channel->ref_id]));
         $friends = $listening('friends', $this->node('heard', 'trigger.line', ['connection' => $channel->ref_id, 'on' => 'follow']));
+        $taps = $listening('taps', $this->node('heard', 'trigger.line', ['connection' => $channel->ref_id, 'on' => 'button']));
 
         // The bot is told of everything it can be
         Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/setWebhook') && $request['allowed_updates'] === Envelope::TELEGRAM_UPDATES);
@@ -420,6 +607,7 @@ class WorkflowServicesTest extends TestCase
             ['type' => 'follow', 'webhookEventId' => 'ev1', 'replyToken' => 'rt-1', 'source' => ['type' => 'user', 'userId' => 'U1']],
             ['type' => 'message', 'webhookEventId' => 'ev2', 'replyToken' => 'rt-2', 'source' => ['type' => 'user', 'userId' => 'U1'], 'message' => ['type' => 'sticker', 'id' => 'm2', 'packageId' => '446', 'stickerId' => '1988']],
             ['type' => 'postback', 'webhookEventId' => 'ev3', 'replyToken' => 'rt-3', 'source' => ['type' => 'user', 'userId' => 'U1'], 'postback' => ['data' => 'send:12']],
+            ['type' => 'postback', 'webhookEventId' => 'ev4', 'replyToken' => 'rt-4', 'source' => ['type' => 'user', 'userId' => 'U1'], 'postback' => ['data' => 'menu:more', 'params' => ['newRichMenuAliasId' => 'more', 'status' => 'SUCCESS']]],
         ]]);
         $this->call('POST', "/hooks/line/{$channel->ref_id}", [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_X_LINE_SIGNATURE' => base64_encode(hash_hmac('sha256', $body, 'line-secret', true))], $body)->assertOk();
         $this->work();
@@ -432,6 +620,9 @@ class WorkflowServicesTest extends TestCase
         $this->assertSame(['joined'], $heard($comings));
         $this->assertSame(['message', 'postback'], $heard($said));
         $this->assertSame(['follow'], $heard($friends));
+        // A rich menu turned to another is a tap, and nothing anyone said
+        $this->assertSame(['postback', 'menu'], $heard($taps));
+        $this->assertSame(['alias' => 'more', 'turned' => true], $taps->runs()->orderByDesc('id')->first()->trigger_data['menu']);
 
         // A sticker is not a file to fetch, and says which it is
         $sticker = $said->runs()->orderBy('id')->first()->trigger_data;

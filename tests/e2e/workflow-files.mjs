@@ -9,6 +9,7 @@ const RUN = Date.now().toString().slice(-6);
 const TITLE = `e2e files ${RUN}`;
 const FOLDER = `e2e files ${RUN}`;
 const NAME = `e2e-${RUN}.md`;
+const PICTURE = `e2e-menu-${RUN}.png`;
 const user = `App\\Models\\User::where('email', '${process.env.E2E_EMAIL ?? 'test@example.com'}')->first()`;
 
 await runBoard(
@@ -16,7 +17,7 @@ await runBoard(
     async ({ page, check, afterwards }) => {
         afterwards(() =>
             tinker(
-                `$u = ${user}; $u->workflows()->where('title', '${TITLE}')->delete(); $u->driveFiles()->where('name', '${NAME}')->get()->each->delete(); $u->driveFolders()->where('name', 'Deeper')->delete(); $u->driveFolders()->where('name', '${FOLDER}')->delete();`,
+                `$u = ${user}; $u->workflows()->where('title', '${TITLE}')->delete(); $u->driveFiles()->whereIn('name', ['${NAME}', '${PICTURE}'])->get()->each->delete(); $u->driveFolders()->where('name', 'Deeper')->delete(); $u->driveFolders()->where('name', '${FOLDER}')->delete();`,
             ),
         );
 
@@ -119,6 +120,53 @@ await runBoard(
                     .first()
                     .getAttribute('placeholder')) === 'what it says',
         );
+        // What a button does is chosen, not spelt out; and its value has
+        // the whole panel to be read in
+        const does = buttons.locator('[data-does]').first();
+        const value = buttons.getByLabel('Value', { exact: true }).first();
+        await pick(does.locator('[data-pick-one]'), 'Sends data back, unseen');
+        await value.fill('send:12');
+        const choices = () =>
+            tinker(
+                `echo json_encode(collect(${user}->workflows()->where('title', '${TITLE}')->first()->definition['nodes'])->pluck('config.choices')->filter()->first());`,
+            ).trim();
+        await page
+            .locator('[data-save-status]', { hasText: /^\s*Saved\s*$/ })
+            .waitFor({ timeout: 10000 });
+        check(
+            'what a button does is chosen from a list, and kept as it was always written',
+            choices() ===
+                '[{"name":"Yes, send it","value":"postback:send:12"}]',
+            choices(),
+        );
+        await pick(
+            does.locator('[data-pick-one]'),
+            'Says a message in the chat',
+        );
+        await value.fill(
+            'https://example.com/orders/12?from=line&campaign=autumn',
+        );
+        const room = await value.evaluate((field) => ({
+            wide: field.clientWidth,
+            whole: field.scrollHeight <= field.clientHeight + 1,
+            panel: field.closest('[data-step-settings]').clientWidth,
+        }));
+        check(
+            'an address written as a message is a link, and is read whole across the panel',
+            (await does.innerText()).includes('Opens a link') &&
+                room.whole &&
+                room.wide > room.panel * 0.7,
+            `${await does.innerText()} ${JSON.stringify(room)}`,
+        );
+        await pick(
+            does.locator('[data-pick-one]'),
+            'Says a message in the chat',
+        );
+        check(
+            'a link made a message is written anew: an address can only open',
+            (await value.inputValue()) === '',
+            await value.inputValue(),
+        );
         await page
             .locator('[data-save-status]', { hasText: /^\s*Saved\s*$/ })
             .waitFor({ timeout: 10000 });
@@ -128,6 +176,128 @@ await runBoard(
                 'letters, digits',
             ),
             await page.locator('[data-problems]').innerText(),
+        );
+        await settings.locator('[data-remove-step]').click();
+
+        // --- a rich menu: its buttons follow its layout ---
+        check(
+            "every call about a rich menu is a step of LINE's own",
+            [
+                'make',
+                'default',
+                'default_off',
+                'many',
+                'many_off',
+                'of',
+                'alias',
+                'alias_off',
+                'delete',
+            ].every((call) => line.includes(`line.richmenu_${call}`)) &&
+                line.includes('line.richmenu') &&
+                line.includes('line.richmenus'),
+            line.filter((kind) => kind.includes('richmenu')).join(),
+        );
+        await page.locator('[data-palette-step="line.richmenu_make"]').click();
+        await step('make_a_rich_menu_on_line').waitFor();
+        check(
+            'a rich menu asks for its picture and what each button does',
+            (await shown('name')) &&
+                (await shown('picture')) &&
+                (await shown('layout')) &&
+                (await shown('bar')) &&
+                (await settings
+                    .getByText('Buttons', { exact: true })
+                    .count()) === 1 &&
+                !(await shown('areas')),
+        );
+        // Its picture is chosen from the Drive, not typed in as an id
+        const pictureRef = tinker(
+            `$u = ${user}; $t = tempnam(sys_get_temp_dir(), 'e2e'); file_put_contents($t, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')); echo App\\Models\\Drive\\DriveFile::keep($t, '${PICTURE}', $u)->ref_id;`,
+        ).trim();
+        await settings.locator('[data-choose-file="picture"]').click();
+        await page.locator('[data-chat-drive] input').fill(PICTURE);
+        await page.locator(`[data-drive-file="${PICTURE}"]`).click();
+        check(
+            'a picture chosen from the Drive is filled in by its ref_id',
+            pictureRef.length > 0 &&
+                (await settings.locator('#setting-picture').inputValue()) ===
+                    pictureRef,
+            `${pictureRef} | ${await settings.locator('#setting-picture').inputValue()}`,
+        );
+        // Its buttons are places on the picture, set up one at a time
+        const places = settings.locator('[data-places] [data-place]');
+        const button = settings.locator('[data-field-row]');
+        await settings.locator('[data-places] img').waitFor();
+        check(
+            "a rich menu's places are drawn over its picture, the next one free",
+            (await places.count()) === 6 &&
+                (await places.nth(0).isEnabled()) &&
+                (await places.nth(1).isDisabled()) &&
+                (await settings.locator('[data-add-field]').count()) === 0,
+            String(await places.count()),
+        );
+        await places.nth(0).click();
+        await button.getByLabel('Name').fill('Order');
+        await button
+            .getByLabel('Value', { exact: true })
+            .fill('https://example.com/order');
+        await places.nth(1).click();
+        await button.getByLabel('Name').fill('More');
+        await pick(
+            button.locator('[data-does] [data-pick-one]'),
+            'Turns to another menu',
+        );
+        await button.getByLabel('Value', { exact: true }).fill('more');
+        await places.nth(0).click();
+        check(
+            'a place chosen is the button set up, read back from what is kept',
+            (await button.count()) === 1 &&
+                (await button.getByLabel('Name').inputValue()) === 'Order' &&
+                (await button.locator('[data-does]').innerText()).includes(
+                    'Opens a link',
+                ) &&
+                (await places.nth(1).innerText()).includes('More') &&
+                (await places.nth(2).isEnabled()),
+            await places.nth(1).innerText(),
+        );
+        await page
+            .locator('[data-save-status]', { hasText: /^\s*Saved\s*$/ })
+            .waitFor({ timeout: 10000 });
+        const menu = tinker(
+            `echo json_encode(collect(${user}->workflows()->where('title', '${TITLE}')->first()->definition['nodes'])->pluck('config.buttons')->filter()->first(), JSON_UNESCAPED_SLASHES);`,
+        ).trim();
+        check(
+            'a button that turns to another menu is kept as "menu:" and its name',
+            menu ===
+                '[{"name":"Order","value":"https://example.com/order"},{"name":"More","value":"menu:more"}]',
+            menu,
+        );
+        await page.screenshot({ path: `${SHOTS}/workflow-rich-menu.png` });
+
+        // The panel is as wide as its left edge is dragged
+        const wide = async () => (await settings.boundingBox()).width;
+        const usual = await wide();
+        const edge = await settings
+            .locator('[data-resize-settings]')
+            .boundingBox();
+        await page.mouse.move(edge.x + 2, edge.y + 200);
+        await page.mouse.down();
+        await page.mouse.move(edge.x - 120, edge.y + 200, { steps: 4 });
+        await page.mouse.up();
+        const dragged = await wide();
+        await settings.locator('[data-resize-settings]').dblclick();
+        check(
+            'the settings are dragged wider by their edge, and double-clicked back',
+            dragged > usual + 100 && (await wide()) === usual,
+            `${usual} -> ${dragged} -> ${await wide()}`,
+        );
+        await pick(settings.locator('#setting-layout'), 'Areas of my own');
+        check(
+            "areas of one's own are written out instead of buttons",
+            (await shown('areas')) &&
+                (await settings
+                    .getByText('Buttons', { exact: true })
+                    .count()) === 0,
         );
         await settings.locator('[data-remove-step]').click();
 

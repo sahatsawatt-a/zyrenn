@@ -441,7 +441,28 @@ class WorkflowFilesTest extends TestCase
         $this->actingAs($user)->postJson(route('chats.read', $room), ['message' => $room->messages()->max('id')])->assertOk();
         $this->actingAs($user)->postJson(route('chats.read', $room), ['message' => $room->messages()->max('id')])->assertOk();
         $this->work();
-        $this->assertSame(['read-4'], Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/chat/markAsRead'))->map(fn (array $pair) => $pair[0]['markAsReadToken'])->values()->all());
+        $marked = fn () => Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/chat/markAsRead'))->map(fn (array $pair) => $pair[0]['markAsReadToken'])->values()->all();
+        $this->assertSame(['read-4'], $marked());
+
+        // LINE sends again, late, what did not get through: the token is the last one sent's, which
+        // marks all before it read -- not that of the last to come
+        $at = fn (int $seconds) => now()->addSeconds($seconds)->getTimestampMs();
+        $this->lineSends($channel, [...$from, 'type' => 'message', 'webhookEventId' => 'ev5', 'timestamp' => $at(60), 'message' => ['type' => 'text', 'id' => 'm5', 'text' => 'newer', 'markAsReadToken' => 'read-5']]);
+        $this->work();
+        $this->lineSends($channel, [...$from, 'type' => 'message', 'webhookEventId' => 'ev0', 'timestamp' => $at(-600), 'deliveryContext' => ['isRedelivery' => true], 'message' => ['type' => 'text', 'id' => 'm0', 'text' => 'sent a while ago', 'markAsReadToken' => 'read-0']]);
+        $this->work();
+        $this->actingAs($user)->postJson(route('chats.read', $room), ['message' => $room->messages()->max('id')])->assertOk();
+        $this->work();
+        $this->assertSame(['read-4', 'read-5'], $marked());
+
+        // A tap comes with no token: what was written before it is marked read all the same
+        $this->lineSends($channel, [...$from, 'type' => 'message', 'webhookEventId' => 'ev6', 'timestamp' => $at(120), 'message' => ['type' => 'text', 'id' => 'm6', 'text' => 'and then', 'markAsReadToken' => 'read-6']]);
+        $this->work();
+        $this->lineSends($channel, [...$from, 'type' => 'postback', 'webhookEventId' => 'ev7', 'timestamp' => $at(130), 'postback' => ['data' => 'help']]);
+        $this->work();
+        $this->actingAs($user)->postJson(route('chats.read', $room), ['message' => $room->messages()->max('id')])->assertOk();
+        $this->work();
+        $this->assertSame(['read-4', 'read-5', 'read-6'], $marked());
 
         // Out: words; a picture as a picture; any other file as a link that opens it
         $this->actingAs($user)->postJson(route('chats.messages.store', $room), ['content' => 'On my way'])->assertOk();
@@ -468,6 +489,31 @@ class WorkflowFilesTest extends TestCase
         $pdf = $user->driveFiles()->where('name', 'notes.pdf')->sole();
         $this->assertStringContainsString("📎 notes.pdf\nhttps://hooks.example.test/hooks/files/{$pdf->ref_id}?", $link['messages'][0]['text']);
 
+        // Written soon after the other end wrote, it goes as a reply to that -- which LINE does not
+        // count -- and LINE takes a token once: what is written next is pushed
+        $replied = fn () => Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/message/reply'))->map(fn (array $pair) => $pair[0]->data())->values()->all();
+        $say = function (string $words) use ($user, $room) {
+            $this->actingAs($user)->postJson(route('chats.messages.store', $room), ['content' => $words])->assertOk();
+            $this->work();
+        };
+        $this->assertSame([], $replied());
+        $this->lineSends($channel, [...$from, 'type' => 'message', 'webhookEventId' => 'ev8', 'replyToken' => 'rt-8', 'message' => ['type' => 'text', 'id' => 'm20', 'text' => 'Are you there?']]);
+        $this->work();
+        $before = $pushed()->count();
+        $say('Yes');
+        $say('Still here');
+        $this->assertSame([['replyToken' => 'rt-8', 'messages' => [['type' => 'text', 'text' => 'Yes']]]], $replied());
+        $this->assertSame([$before + 1, 'Still here'], [$pushed()->count(), $pushed()->last()['messages'][0]['text']]);
+
+        // And only for a while after: a token whose minute is up is not tried
+        $this->lineSends($channel, [...$from, 'type' => 'message', 'webhookEventId' => 'ev9', 'replyToken' => 'rt-9', 'message' => ['type' => 'text', 'id' => 'm21', 'text' => 'Hello?']]);
+        $this->work();
+        $this->travel(2)->minutes();
+        $say('Sorry, I was away');
+        $this->assertCount(1, $replied());
+        $this->assertSame([$before + 2, 'Sorry, I was away'], [$pushed()->count(), $pushed()->last()['messages'][0]['text']]);
+        $this->assertSame([], $workflow->runs()->where('status', '!=', RunStatus::Succeeded->value)->pluck('error')->all());
+
         // The link opens the file for whoever has it, and nothing else
         preg_match('#https://hooks\.example\.test(/hooks/files/\S+)#', $link['messages'][0]['text'], $found);
         $this->get($found[1])->assertOk();
@@ -476,6 +522,57 @@ class WorkflowFilesTest extends TestCase
     }
 
     // --- around: the Drive itself ---
+
+    public function test_an_ai_answers_on_line_only_when_asked_for_by_a_reply_or_a_push()
+    {
+        Http::fake([
+            // Anew each time it is asked: an answer streamed is read once
+            'openrouter.ai/*' => fn () => Http::response("data: {\"choices\":[{\"delta\":{\"content\":\"We open at nine.\"}}]}\n\ndata: [DONE]\n\n"),
+            'api.line.me/*' => Http::response([]),
+        ]);
+        $user = User::factory()->create();
+        $channel = $this->channel($user);
+        $ai = Connection::factory()->openrouter()->for($user)->create(['settings' => ['base_url' => 'https://openrouter.ai/api/v1', 'default_model' => 'some/model']]);
+        $answer = '{{ node("ask").text }}';
+
+        $workflow = Workflow::factory()->for($user)->steps([
+            $this->node('heard', 'trigger.line', ['connection' => $channel->ref_id]),
+            $this->node('asked', 'logic.if', ['condition' => 'starts(trigger.text, "@ai")']),
+            $this->node('ask', 'ai.chat', ['connection' => $ai->ref_id, 'prompt' => '{{ trigger.text }}']),
+            $this->node('aireply', 'line.reply', ['connection' => $channel->ref_id, 'token' => '{{ trigger.reply.token }}', 'within' => 60, 'text' => $answer]),
+            $this->node('aipush', 'line.send', ['connection' => $channel->ref_id, 'to' => '{{ trigger.chat.id }}', 'text' => $answer]),
+            $this->node('after', 'output.log', ['message' => 'Answered: '.$answer]),
+        ], [
+            $this->edge('heard', 'asked'), $this->edge('asked', 'ask', 'true'), $this->edge('ask', 'aireply'),
+            $this->edge('aireply', 'aipush', 'unsent'), $this->edge('aireply', 'after'), $this->edge('aipush', 'after'),
+        ])->create();
+        $this->actingAs($user)->postJson(route('workflows.publish', $workflow), ['revision' => $workflow->revision])->assertOk();
+        $this->actingAs($user)->patchJson(route('workflows.enable', $workflow), ['enabled' => true])->assertOk();
+
+        $says = function (string $event, string $text, ?string $token) use ($channel) {
+            $this->lineSends($channel, array_filter(['type' => 'message', 'webhookEventId' => $event, 'replyToken' => $token, 'source' => ['type' => 'user', 'userId' => 'U1'], 'message' => ['type' => 'text', 'id' => "m-{$event}", 'text' => $text]]));
+            $this->work();
+        };
+        $sent = fn (string $how) => Http::recorded(fn (Request $request) => str_ends_with($request->url(), "/message/{$how}"))->map(fn (array $pair) => $pair[0]->data())->values()->all();
+        $asked = fn () => Http::recorded(fn (Request $request) => str_contains($request->url(), 'openrouter.ai'))->count();
+        $went = fn (string $key) => $workflow->runs()->latest('id')->first()->steps()->where('node_key', $key)->sole()->status->value;
+
+        // Not asked for: the model is not put the question, and nothing goes back
+        $says('ev1', 'Hello there', 'rt-1');
+        $this->assertSame([0, [], []], [$asked(), $sent('reply'), $sent('push')]);
+
+        // Asked for, however it is written: answered as a reply, which is free, and the push passed by
+        $says('ev2', '  @AI when do you open?', 'rt-2');
+        $this->assertSame([1, [['replyToken' => 'rt-2', 'messages' => [['type' => 'text', 'text' => 'We open at nine.']]]], []], [$asked(), $sent('reply'), $sent('push')]);
+        $this->assertSame(['skipped', 'succeeded'], [$went('aipush'), $went('after')]);
+
+        // A token LINE has taken can't answer again: the same words are pushed instead, and the run goes on
+        $says('ev3', '@ai and on Sunday?', 'rt-2');
+        $this->assertCount(1, $sent('reply'));
+        $this->assertSame([['to' => 'U1', 'messages' => [['type' => 'text', 'text' => 'We open at nine.']]]], $sent('push'));
+        $this->assertSame(['succeeded', 'succeeded'], [$went('aipush'), $went('after')]);
+        $this->assertSame([], $workflow->runs()->where('status', '!=', RunStatus::Succeeded->value)->pluck('error')->all());
+    }
 
     public function test_text_is_written_to_a_file_found_and_read_back()
     {
