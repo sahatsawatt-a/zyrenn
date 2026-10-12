@@ -210,6 +210,31 @@ services:
         ports:
             - '${VITE_PORT:-5173}:5173'
 
+    # The way in from outside for workflow hooks: an ngrok tunnel to `web`, at
+    # the address in WORKFLOWS_PUBLIC_URL, that lets only /hooks/* through
+    # (docker/ngrok/hooks.yml). As a container it comes back with the stack
+    # after a restart, where an agent started by hand does not -- and LINE and
+    # Telegram are then posting to an address that is offline.
+    #
+    # Left out unless COMPOSE_PROFILES names `tunnel`. It needs NGROK_AUTHTOKEN
+    # and, as WORKFLOWS_PUBLIC_URL, a domain of that ngrok account's.
+    tunnel:
+        profiles: ['tunnel']
+        image: ngrok/ngrok:3-alpine
+        restart: unless-stopped
+        environment:
+            NGROK_AUTHTOKEN: '${NGROK_AUTHTOKEN:-}'
+        volumes:
+            - ./docker/ngrok/hooks.yml:/etc/ngrok/hooks.yml:ro
+        command:
+            - http
+            - web:8080
+            - '--url=${WORKFLOWS_PUBLIC_URL:-}'
+            - '--traffic-policy-file=/etc/ngrok/hooks.yml'
+            - '--log=stdout'
+        depends_on:
+            - web
+
     # The PDF printer: a headless Chrome that prints a note as the app draws it
     # (docker/chrome/server.mjs). The app hands it a URL on `web` and the user's
     # own session cookie, and gets the bytes back.
