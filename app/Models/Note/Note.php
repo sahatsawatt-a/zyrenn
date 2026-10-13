@@ -10,6 +10,7 @@ use App\Support\Live\Collab;
 use App\Support\Live\Live;
 use App\Support\Markdown\TiptapMarkdown;
 use App\Support\Note\NoteBlocks;
+use App\Support\Note\PageLinks;
 use Database\Factories\Note\NoteFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -64,6 +65,12 @@ class Note extends Model
                 $note->content = NoteBlocks::withIds($note->content);
             }
 
+            // A link that only names a page -- [[Budget]], as Markdown has it --
+            // is pointed at that page, found among the owner's
+            if ($note->isDirty('content') && ! $note->isDirty('ydoc') && $note->content !== null) {
+                [$note->content] = PageLinks::resolve($note->content, $note->owner());
+            }
+
             if ($note->isDirty('content')) {
                 $note->plain_text = $note->content ? TiptapMarkdown::toMarkdown($note->content) : null;
             }
@@ -79,6 +86,11 @@ class Note extends Model
         static::saved(function (Note $note) {
             if ($note->ydoc === null && $note->wasChanged(self::SHARED)) {
                 Collab::replace($note, Collab::changes($note));
+            }
+
+            // What it links to, for the pages linked to to know of
+            if ($note->wasChanged('content') || $note->wasRecentlyCreated) {
+                PageLinks::sync($note);
             }
 
             // History, however the words were saved: typed alone on its page,

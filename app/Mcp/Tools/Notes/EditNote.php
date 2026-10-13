@@ -7,6 +7,7 @@ use App\Models\Note\Note;
 use App\Support\Live\Collab;
 use App\Support\Note\NoteBlockProblem;
 use App\Support\Note\NoteBlocks;
+use App\Support\Note\PageLinks;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Validation\Rule;
 use Laravel\Mcp\Request;
@@ -78,6 +79,12 @@ class EditNote extends NoteTool
             return Response::error($problem->getMessage());
         }
 
+        // [[Title]] in what was written is pointed at the page of that name
+        // here: a note that is open is changed in its live copy, which
+        // nothing on the server reads the links of
+        [$done['edits']] = PageLinks::resolve($done['edits'], $owner);
+        [$done['doc'], $unlinked] = PageLinks::resolve($done['doc'], $owner);
+
         // Open somewhere: made in the live copy, block by block, which the app is then handed
         $live = Collab::apply($note, $done['edits'], $user);
 
@@ -92,6 +99,7 @@ class EditNote extends NoteTool
             'changed' => $done['changed'],
             // Deleted by someone, live, in the moment between reading and changing
             'not_found' => $live['missing'] ?? null,
+            ...($unlinked === [] ? [] : PageLinks::report($done['doc'])),
         ])));
     }
 }

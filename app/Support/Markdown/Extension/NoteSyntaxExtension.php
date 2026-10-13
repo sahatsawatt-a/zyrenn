@@ -7,7 +7,7 @@ use League\CommonMark\Extension\ExtensionInterface;
 
 /**
  * The note editor's Markdown syntax beyond GFM: callouts (`:::callout 💡` … `:::`),
- * `$$` math blocks and `$…$` inline math.
+ * `$$` math blocks, `$…$` inline math, `{{ … }}` live values and `[[Page]]` links.
  */
 final class NoteSyntaxExtension implements ExtensionInterface
 {
@@ -17,6 +17,8 @@ final class NoteSyntaxExtension implements ExtensionInterface
             ->addBlockStartParser(new CalloutStartParser, 55)
             ->addBlockStartParser(new MathBlockStartParser, 55)
             ->addInlineParser(new InlineMathParser)
-            ->addInlineParser(new InlineValueParser);
+            ->addInlineParser(new InlineValueParser)
+            // Before the brackets of an ordinary link are read as one
+            ->addInlineParser(new PageLinkParser, 50);
     }
 }

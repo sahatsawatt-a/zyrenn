@@ -12,6 +12,7 @@ import {
     watch,
     watchEffect,
 } from 'vue';
+import NoteBacklinks from '@/features/notes/components/NoteBacklinks.vue';
 import NoteToolbar from '@/features/notes/components/NoteToolbar.vue';
 import TiptapEditor from '@/features/notes/components/TiptapEditor.vue';
 import { fetchExport } from '@/lib/exporting';
@@ -21,6 +22,7 @@ import PresenceAvatars from '@/components/common/PresenceAvatars.vue';
 import { usePresence } from '@/composables/usePresence';
 import { sharingIsOn, useShared } from '@/composables/useShared';
 import { refreshValues, valuesNote } from '@/features/notes/lib/noteValues';
+import { linksNote } from '@/features/notes/lib/pageLinks';
 import { canChange, owned } from '@/lib/projects';
 import { index as ownIndex, pdf, show, update } from '@/routes/notes';
 import { index as projectIndex } from '@/routes/projects/notes';
@@ -56,7 +58,11 @@ let deletingHere = false;
 // Its live values, {{ … }}, are asked for as this note's
 watch(
     () => props.note.ref_id,
-    (refId: string) => (valuesNote.value = refId),
+    (refId: string) => {
+        valuesNote.value = refId;
+        // ...and so are its links to other pages, [[ … ]]
+        linksNote.value = refId;
+    },
     { immediate: true },
 );
 
@@ -480,5 +486,14 @@ const statusLabel = computed(() => {
             class="min-h-0! pt-2!"
             @update="onContentUpdate"
         />
+
+        <!-- Where this note is mentioned: in the column the title is in,
+             and left off paper -->
+        <div
+            class="mx-auto w-full px-10 pb-16 print:hidden"
+            :class="isWide ? 'max-w-none' : 'max-w-[800px]'"
+        >
+            <NoteBacklinks :note="note.ref_id" />
+        </div>
     </div>
 </template>

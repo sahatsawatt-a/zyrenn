@@ -1,4 +1,12 @@
-import { ref, computed, watch, nextTick, type CSSProperties } from 'vue';
+import {
+    ref,
+    computed,
+    isRef,
+    watch,
+    nextTick,
+    type CSSProperties,
+    type Ref,
+} from 'vue';
 import type {
     SuggestionKeyDownProps,
     SuggestionProps,
@@ -6,7 +14,15 @@ import type {
 import type { SlashCommandItem } from './useSlashCommands';
 import { searchCommands } from '@/features/notes/lib/commandSearch';
 
-export function useMenuRenderer(commandItems: SlashCommandItem[]) {
+/**
+ * The menu that opens at the caret for something being typed: where it sits,
+ * which item is lit, and what the arrow keys, Enter and Escape do. Given a
+ * fixed list, it shows those the typed letters match; given a ref, it shows
+ * whatever the ref holds -- a list that was looked up elsewhere.
+ */
+export function useMenuRenderer(
+    commandItems: SlashCommandItem[] | Ref<SlashCommandItem[]>,
+) {
     const showMenu = ref<boolean>(false);
     const searchQuery = ref<string>('');
     const selectedIndex = ref<number>(0);
@@ -19,7 +35,9 @@ export function useMenuRenderer(commandItems: SlashCommandItem[]) {
 
     // By name, by the words people use for it, or a letter off; best first
     const filteredItems = computed<SlashCommandItem[]>(() =>
-        searchCommands(commandItems, searchQuery.value),
+        isRef(commandItems)
+            ? commandItems.value
+            : searchCommands(commandItems, searchQuery.value),
     );
 
     // Auto-reset selection index when user updates typing string query

@@ -163,6 +163,12 @@ final class TiptapToMarkdown
                 continue;
             }
 
+            if (($node['type'] ?? '') === 'pageLink') {
+                $out .= $this->pageLink($node['attrs'] ?? []);
+
+                continue;
+            }
+
             $text = $node['text'] ?? '';
             $marks = [];
             foreach ($node['marks'] ?? [] as $mark) {
@@ -191,6 +197,30 @@ final class TiptapToMarkdown
         }
 
         return $out;
+    }
+
+    /**
+     * A link to a page, by the page's name: [[Budget]], with the kind said
+     * for anything but a note, and the words shown when they are its own.
+     * "target" is the page's ref_id, given when its name is one of two
+     * (PageLinks::named): then the name is what is shown.
+     *
+     * @param  array<string, mixed>  $attrs
+     */
+    private function pageLink(array $attrs): string
+    {
+        $plain = fn (mixed $words) => trim(str_replace(['[', ']', '|', "\n"], ' ', (string) $words));
+
+        $title = $plain($attrs['title'] ?? '');
+        $text = $plain($attrs['text'] ?? '');
+        $target = $plain($attrs['target'] ?? '') ?: $title;
+        $kind = in_array($attrs['kind'] ?? '', ['board', 'table', 'trip'], true) ? $attrs['kind'].':' : '';
+
+        if ($text === '' && $target !== $title) {
+            $text = $title;
+        }
+
+        return '[['.$kind.$target.($text !== '' ? '|'.$text : '').']]';
     }
 
     private function prefixLines(string $text, string $prefix): string

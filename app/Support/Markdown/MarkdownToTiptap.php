@@ -7,6 +7,7 @@ use App\Support\Markdown\Extension\InlineMath;
 use App\Support\Markdown\Extension\InlineValue;
 use App\Support\Markdown\Extension\MathBlock;
 use App\Support\Markdown\Extension\NoteSyntaxExtension;
+use App\Support\Markdown\Extension\PageLink;
 use League\CommonMark\Environment\Environment;
 use League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension;
 use League\CommonMark\Extension\CommonMark\Node\Block\BlockQuote;
@@ -391,6 +392,8 @@ final class MarkdownToTiptap
                 $node instanceof Image => [$this->text('!['.$this->plainText($node).']('.$node->getUrl().')', $marks)],
                 $node instanceof InlineMath => [['type' => 'inlineMath', 'attrs' => ['latex' => $node->latex]]],
                 $node instanceof InlineValue => [['type' => 'formula', 'attrs' => ['expression' => $node->expression]]],
+                // Only the name is known here: the page is found when the note is saved
+                $node instanceof PageLink => [['type' => 'pageLink', 'attrs' => ['kind' => $node->kind, 'ref' => '', 'title' => $node->title, 'text' => $node->text]]],
                 $node instanceof Newline => [['type' => 'hardBreak']],
                 $node instanceof HtmlInline => [$this->text($node->getLiteral(), $marks)],
                 // Bullet list task markers become taskItem attrs; in ordered lists they stay text

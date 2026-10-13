@@ -48,6 +48,12 @@ A note can hold what lives elsewhere, and it stays up to date:
 - **/map** shows a map.
 - **/value** shows a number from a trip or a table.
 
+## Link to another page
+
+Type **[[** and the first letters of a page's name, then pick it from the list. The link shows the page's name and follows it when the page is renamed. It can point at a note, a board, a table or a trip.
+
+A note lists the notes that link to it at the bottom, under **Linked from**.
+
 ## Move and change blocks
 
 Hover a block and use the handle to its left: drag it to move the block, or open it for the block's menu.

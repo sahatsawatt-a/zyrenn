@@ -9,8 +9,8 @@ namespace App\Support\Markdown;
  * Supported blocks: paragraphs, headings, bullet / ordered / task lists (nested),
  * blockquotes, code blocks (incl. mermaid), callouts (`:::callout 💡` … `:::`),
  * GFM tables, horizontal rules, images and `$$` math blocks. Inline: bold, italic,
- * strike, code, links and `$…$` math (pandoc rules: no space inside the dollars,
- * so "$5 and $10" stays text). A single newline inside a paragraph is a hard break.
+ * strike, code, links, `[[Page]]` links to another page by its name, and `$…$` math
+ * (pandoc rules: no space inside the dollars, so "$5 and $10" stays text). A single newline inside a paragraph is a hard break.
  */
 class TiptapMarkdown
 {

@@ -1,6 +1,6 @@
 <template>
     <div class="notion-dropdown" :style="style">
-        <div class="dropdown-header">BASIC BLOCKS</div>
+        <div class="dropdown-header">{{ heading }}</div>
 
         <div
             v-for="(item, index) in items"
@@ -22,7 +22,7 @@
 
         <!-- Fallback indicator when filtering leaves array blank -->
         <div v-if="items.length === 0" class="dropdown-empty">
-            No results found
+            {{ empty }}
         </div>
     </div>
 </template>
@@ -32,11 +32,17 @@ import type { CSSProperties } from 'vue';
 import type { SlashCommandItem } from '@/features/notes/composables/useSlashCommands';
 
 // Strict compiler type verification guards
-defineProps<{
-    items: SlashCommandItem[];
-    selectedIndex: number;
-    style: CSSProperties;
-}>();
+withDefaults(
+    defineProps<{
+        items: SlashCommandItem[];
+        selectedIndex: number;
+        style: CSSProperties;
+        // What the list is of, and what to say when it is empty
+        heading?: string;
+        empty?: string;
+    }>(),
+    { heading: 'BASIC BLOCKS', empty: 'No results found' },
+);
 
 defineEmits<{
     (e: 'select', index: number): void;

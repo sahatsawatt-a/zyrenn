@@ -19,6 +19,20 @@
             />
         </Teleport>
 
+        <!-- [[ : the pages there are to link to, by name -->
+        <Teleport to="body">
+            <CustomMenu
+                v-if="pageMenu.showMenu.value"
+                :items="pageMenu.filteredItems.value"
+                :selected-index="pageMenu.selectedIndex.value"
+                :style="pageMenu.menuStyle.value"
+                heading="LINK TO A PAGE"
+                empty="No page by that name"
+                data-test="page-link-menu"
+                @select="pageMenu.executeCommand"
+            />
+        </Teleport>
+
         <!-- Row / column controls while the cursor is inside a table -->
         <TableMenu v-if="editor" :editor="editor" />
 
@@ -72,6 +86,11 @@ import { CalloutNode } from '@/features/notes/nodes/CalloutNode';
 import { CodeBlockNode } from '@/features/notes/nodes/CodeBlockNode';
 import { CurrentLinePlaceholder } from '@/features/notes/nodes/CurrentLinePlaceholder';
 import { FormulaNode } from '@/features/notes/nodes/FormulaNode';
+import {
+    PageLinkNode,
+    PageLinkSuggest,
+} from '@/features/notes/nodes/PageLinkNode';
+import type { SlashCommandItem } from '@/features/notes/composables/useSlashCommands';
 import { PageBreak } from '@/features/notes/nodes/PageBreak';
 import { PdfHidden } from '@/features/notes/nodes/PdfHidden';
 import { ImageNode } from '@/features/notes/nodes/ImageNode';
@@ -243,6 +262,10 @@ const {
     searchQuery,
 } = useMenuRenderer(commandItems);
 
+// [[ opens the same kind of menu, on the pages found for what is typed
+const pagesFound = ref<SlashCommandItem[]>([]);
+const pageMenu = useMenuRenderer(pagesFound);
+
 // Initialize Core Tiptap Instance with all verified plugins
 const editor = useEditor({
     extensions: [
@@ -331,6 +354,18 @@ const editor = useEditor({
 
         // Live values, {{ … }}: a formula kept in the text, shown as what it comes to now
         FormulaNode,
+
+        // A link to another page by its name, [[ … ]], and the pages offered
+        // as one is typed
+        PageLinkNode,
+        ...(props.editable
+            ? [
+                  PageLinkSuggest(
+                      pageMenu.suggestionRenderOptions as any,
+                      (items) => (pagesFound.value = items),
+                  ),
+              ]
+            : []),
 
         // Images and videos from the Drive or a link (see ImageNode, VideoNode)
         ImageNode,

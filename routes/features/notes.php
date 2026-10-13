@@ -5,6 +5,7 @@ use App\Http\Controllers\Note\NoteFolderController;
 use App\Http\Controllers\Note\NotePdfController;
 use App\Http\Controllers\Note\NoteValueController;
 use App\Http\Controllers\Note\NoteVersionController;
+use App\Http\Controllers\Note\PageLinkController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'verified'])->group(function () {
@@ -16,6 +17,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('notes', NoteController::class)->only(['show', 'update', 'destroy']);
     // What its live values, {{ … }}, come to now
     Route::post('notes/{note}/values', NoteValueController::class)->name('notes.values');
+    // Its links to other pages, [[ … ]]: what there is to link to, what each
+    // points at now, and the notes that link here
+    Route::get('notes/{note}/page-links/pick', [PageLinkController::class, 'pick'])->name('notes.page-links.pick');
+    Route::post('notes/{note}/page-links', [PageLinkController::class, 'show'])->name('notes.page-links.show');
+    Route::get('notes/{note}/linked-from', [PageLinkController::class, 'linkedFrom'])->name('notes.linked-from');
     // Each one holds a browser on the server for a few seconds
     Route::get('notes/{note}/pdf', [NotePdfController::class, 'show'])
         ->middleware('throttle:10,1')

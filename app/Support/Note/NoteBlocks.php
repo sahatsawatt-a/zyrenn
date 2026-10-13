@@ -346,6 +346,10 @@ final class NoteBlocks
             return '{{ '.($node['attrs']['expression'] ?? '').' }}';
         }
 
+        if ($type === PageLinks::NODE) {
+            return (string) (($node['attrs']['text'] ?? '') ?: ($node['attrs']['title'] ?? ''));
+        }
+
         $parts = array_map(fn ($child) => is_array($child) ? self::text($child) : '', $node['content'] ?? []);
 
         return trim(preg_replace('/\s+/u', ' ', implode(' ', $parts)) ?? '');

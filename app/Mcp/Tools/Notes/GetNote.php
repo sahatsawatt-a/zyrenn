@@ -9,6 +9,7 @@ use App\Support\Live\Collab;
 use App\Support\Markdown\TiptapMarkdown;
 use App\Support\Note\NoteBlockProblem;
 use App\Support\Note\NoteBlocks;
+use App\Support\Note\PageLinks;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -66,28 +67,46 @@ class GetNote extends NoteTool
         Collab::flush($note);
         $note->refresh();
 
+        // Each [[link]] written as its page is called now
+        $content = PageLinks::named($note->content, $owner);
+
         try {
             if (filled($validated['section'] ?? null)) {
-                return Response::structured([...$this->summary($note), 'blocks' => NoteBlocks::present(NoteBlocks::section($note->content, $validated['section'])), ...$this->values($note)]);
+                return Response::structured([...$this->summary($note), 'blocks' => NoteBlocks::present(NoteBlocks::section($content, $validated['section'])), ...$this->values($note)]);
             }
 
             if (filled($validated['blocks'] ?? null)) {
-                return Response::structured([...$this->summary($note), 'blocks' => NoteBlocks::present(NoteBlocks::find($note->content, $validated['blocks'])), ...$this->values($note)]);
+                return Response::structured([...$this->summary($note), 'blocks' => NoteBlocks::present(NoteBlocks::find($content, $validated['blocks'])), ...$this->values($note)]);
             }
         } catch (NoteBlockProblem $problem) {
             return Response::error($problem->getMessage());
         }
 
-        $markdown = TiptapMarkdown::toMarkdown($note->content);
+        $markdown = TiptapMarkdown::toMarkdown($content);
 
         return Response::structured([
             ...$this->summary($note),
-            'outline' => NoteBlocks::outline($note->content),
+            'outline' => NoteBlocks::outline($content),
+            ...$this->linkedFrom($note, $request),
             ...(mb_strlen($markdown) <= self::WHOLE_UP_TO
                 ? ['markdown' => $markdown]
                 : ['more' => 'The note is long, so only its outline is here. Read parts of it with "section" or "blocks".']),
             ...$this->values($note),
         ]);
+    }
+
+    /**
+     * The notes that link to this one, among those its reader may see.
+     *
+     * @return array{linked_from?: list<array{ref_id: string, title: string}>}
+     */
+    private function linkedFrom(Note $note, Request $request): array
+    {
+        $notes = PageLinks::linkedFrom($note, $this->targetUser($request));
+
+        return $notes === [] ? [] : [
+            'linked_from' => array_map(fn (array $from) => ['ref_id' => $from['ref_id'], 'title' => $from['title']], $notes),
+        ];
     }
 
     /**

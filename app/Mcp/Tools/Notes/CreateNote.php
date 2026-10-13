@@ -5,13 +5,14 @@ namespace App\Mcp\Tools\Notes;
 use App\Mcp\Tools\NoteTool;
 use App\Models\Note\Note;
 use App\Support\Markdown\TiptapMarkdown;
+use App\Support\Note\PageLinks;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Attributes\Description;
 
-#[Description('Create a note. Content is Markdown: headings, lists, "- [ ]" to-dos, > quotes, ``` code (```mermaid for diagrams, ```circuit for a schematic drawn from lines like "R1: 10k" and "V1 -- R1 -- D1 -- V1"), GFM tables, ":::callout 💡 … :::" callouts, $…$ inline math and $$ … $$ math blocks (LaTeX), and "<!-- pagebreak -->" on a line of its own to start a new page in the PDF. Images go in as ![alt](url) on their own line -- upload the picture with upload-file first and use the "markdown" line it returns.')]
+#[Description('Create a note. Content is Markdown: headings, lists, "- [ ]" to-dos, > quotes, ``` code (```mermaid for diagrams, ```circuit for a schematic drawn from lines like "R1: 10k" and "V1 -- R1 -- D1 -- V1"), [[Title]] to link to another page of the same owner by its title -- no address needed; [[Title|shown words]] to show other words, [[board:Title]], [[table:Title]] or [[trip:Title]] for a page that is not a note --, GFM tables, ":::callout 💡 … :::" callouts, $…$ inline math and $$ … $$ math blocks (LaTeX), and "<!-- pagebreak -->" on a line of its own to start a new page in the PDF. Images go in as ![alt](url) on their own line -- upload the picture with upload-file first and use the "markdown" line it returns.')]
 class CreateNote extends NoteTool
 {
     protected function arguments(JsonSchema $schema): array
@@ -44,6 +45,6 @@ class CreateNote extends NoteTool
         $note->folder_id = $this->ensureFolderAt($owner, $validated['folder'] ?? '', $user)?->id;
         $note->save();
 
-        return Response::structured($this->answer($note->refresh()));
+        return Response::structured($this->answer($note->refresh(), PageLinks::report($note->content)));
     }
 }

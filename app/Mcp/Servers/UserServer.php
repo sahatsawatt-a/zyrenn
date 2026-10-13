@@ -72,7 +72,10 @@ Notes: bodies are read and written as Markdown (get-note, create-note, update-no
 live in folders addressed by path, e.g. "KT Plan/Lakeshore". Every block of a note -- a paragraph,
 heading, list, table -- has an id: get-note gives a long note as an outline of them, and reads just
 the blocks or section you ask for; edit-note replaces, inserts, moves or deletes blocks by id. For
-anything short of rewriting a note, read and change only the part you need.
+anything short of rewriting a note, read and change only the part you need. To link to another page,
+write [[its title]] -- or [[Title|other words]], or [[board:Title]], [[table:Title]], [[trip:Title]] for
+a page that is not a note: the page is found by title among the same owner's, so no address or ref_id
+is needed, and get-note lists the notes that link to this one as "linked_from".
 
 Boards: endless whiteboard canvases of shapes, sticky notes, connectors, pictures and 16:9 frames
 (list-boards, get-board, create-board, update-board, delete-board). A board is a list of items, each
