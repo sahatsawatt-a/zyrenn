@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ConnectionSignInController;
+use App\Http\Controllers\ConnectionWithdrawalController;
 use App\Http\Controllers\Drive\DriveFileController;
 use App\Http\Controllers\Workflow\HookController;
 use App\Support\Connections\SignIns;
@@ -15,9 +16,17 @@ Route::prefix('hooks')->name('hooks.')->middleware('throttle:hooks')->group(func
     Route::post('line/{connection}', [HookController::class, 'line'])->name('line');
     // Meta asks first, to be shown the address is the app's, then sends
     Route::match(['GET', 'POST'], 'whatsapp/{connection}', [HookController::class, 'whatsapp'])->name('whatsapp');
+    // A connection's ref, and never "signed-in": that is the way back from signing in, below
+    Route::match(['GET', 'POST'], 'instagram/{connection}', [HookController::class, 'instagram'])->where('connection', '[A-Za-z0-9]+')->name('instagram');
+    Route::match(['GET', 'POST'], 'threads/{connection}', [HookController::class, 'threads'])->where('connection', '[A-Za-z0-9]+')->name('threads');
     Route::match(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], 'w/{token}', [HookController::class, 'webhook'])
         ->where('token', '[A-Za-z0-9]{20,64}')
         ->name('webhook');
+
+    // Meta, when someone takes the app off their account, or asks for what it
+    // holds of them to be deleted: one address each for Facebook, Instagram and Threads
+    Route::post('meta/deauthorize', [ConnectionWithdrawalController::class, 'deauthorized'])->name('meta.deauthorize');
+    Route::post('meta/data-deletion', [ConnectionWithdrawalController::class, 'deletion'])->name('meta.data-deletion');
 
     // Back from signing a connection in on its service's own pages (SignIns),
     // at the one address the service is told of: passed on to where it set out

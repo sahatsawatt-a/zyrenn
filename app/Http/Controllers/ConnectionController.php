@@ -10,8 +10,11 @@ use App\Support\Audit\Audit;
 use App\Support\Chat\AiClient;
 use App\Support\Chat\AiFailed;
 use App\Support\Connections\ConnectionCheck;
+use App\Support\Connections\InstagramSignIn;
+use App\Support\Connections\Meta;
 use App\Support\Connections\Services;
 use App\Support\Connections\SignIns;
+use App\Support\Connections\ThreadsSignIn;
 use App\Support\Workflow\Inbound\Hooks;
 use App\Support\Workflow\Steps\WhatsAppApi;
 use Illuminate\Http\JsonResponse;
@@ -268,6 +271,17 @@ class ConnectionController extends Controller
                 'url' => Hooks::url("whatsapp/{$connection->ref_id}"),
                 'set' => 'by_hand',
                 'hint' => 'In the Meta app, under WhatsApp → Configuration → Webhook: paste it as the Callback URL, with the verify token '.WhatsAppApi::verifyToken($connection).', then subscribe to "messages".',
+            ],
+            // Signed in, an account's comments and messages and a profile's replies can start a workflow: where Meta is told to send them
+            $connection->service === Services::INSTAGRAM && ! InstagramSignIn::byFacebook($connection) && InstagramSignIn::signedIn($connection) !== null => [
+                'url' => Hooks::url("instagram/{$connection->ref_id}"),
+                'set' => 'by_hand',
+                'hint' => 'For a workflow to start on a comment or a message: in the Meta app, under Instagram → API setup with Instagram login → Configure webhooks, paste it as the Callback URL, with the verify token '.Meta::verifyToken($connection).', then subscribe to "comments" and "mentions", and for messages to "messages", "messaging_postbacks" and "message_reactions". Meta sends only once the app is live: from one not published yet, nothing but its own test arrives.',
+            ],
+            $connection->service === Services::THREADS && ThreadsSignIn::signedIn($connection) !== null => [
+                'url' => Hooks::url("threads/{$connection->ref_id}"),
+                'set' => 'by_hand',
+                'hint' => 'For a workflow to start on a reply: in the Meta app, under the Threads use case → Settings, with webhooks added, paste it as the Callback URL, with the verify token '.Meta::verifyToken($connection).', then subscribe to "replies". Meta sends only once the app is live.',
             ],
             $connection->service === 'line' => ['url' => Hooks::url("line/{$connection->ref_id}"), 'set' => 'by_hand'],
             $connection->service === 'telegram' && $connection->setting('receive') !== 'poll' => ['url' => Hooks::url("telegram/{$connection->ref_id}"), 'set' => 'by_app'],

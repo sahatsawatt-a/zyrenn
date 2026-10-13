@@ -2,6 +2,7 @@
 
 namespace App\Support\Connections;
 
+use App\Models\Connection;
 use Illuminate\Http\Client\Response;
 
 /**
@@ -19,6 +20,16 @@ final class Meta
 
     /** Threads counts its versions by itself. */
     public const THREADS = 'https://graph.threads.net/v1.0';
+
+    /**
+     * What Meta is given to prove a connection's webhook address is the
+     * app's: made from the connection, so it can be shown again whenever it
+     * is asked for.
+     */
+    public static function verifyToken(Connection $connection): string
+    {
+        return substr(hash_hmac('sha256', "{$connection->service}-verify:{$connection->ref_id}", (string) config('app.key')), 0, 32);
+    }
 
     /**
      * What Meta answered, as far as it says: its own words for the person

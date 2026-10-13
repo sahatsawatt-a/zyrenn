@@ -9,6 +9,7 @@ use App\Models\Workflow\Workflow;
 use App\Models\Workflow\WorkflowNodeRun;
 use App\Models\Workflow\WorkflowRun;
 use App\Models\Workflow\WorkflowVersion;
+use App\Support\Connections\Meta;
 use App\Support\Workflow\Engine;
 use App\Support\Workflow\Inbound\Envelope;
 use App\Support\Workflow\NodeStatus;
@@ -938,6 +939,90 @@ class WorkflowServicesTest extends TestCase
         $this->assertSame($before, Http::recorded()->count());
     }
 
+    public function test_instagram_makes_a_post_of_several_once_each_is_worked_through_and_a_video_story_is_a_story()
+    {
+        $asked = 0;
+        Http::fake(function (Request $request) use (&$asked) {
+            $path = (string) parse_url($request->url(), PHP_URL_PATH);
+
+            return match (true) {
+                str_ends_with($path, '/1789/media') => Http::response(['id' => 'box-'.(Http::recorded(fn (Request $made) => str_ends_with((string) parse_url($made->url(), PHP_URL_PATH), '/1789/media'))->count() + 1)]),
+                str_ends_with($path, '/1789/media_publish') => Http::response(['id' => '17900']),
+                // The video among the several is still being worked through the first time it is asked after
+                str_contains($path, '/box-') => Http::response(['status_code' => str_ends_with($path, '/box-2') && $asked++ === 0 ? 'IN_PROGRESS' : 'FINISHED']),
+                default => Http::response(['permalink' => 'https://www.instagram.com/p/AbC/']),
+            };
+        });
+        $user = User::factory()->create();
+        $as = Connection::factory()->instagram()->for($user)->create()->ref_id;
+        $photo = $this->file($user, 'front.jpg', 'image/jpeg');
+        $clip = $this->file($user, 'clip.mp4', 'video/mp4');
+        $made = fn () => Http::recorded(fn (Request $request) => $request->method() === 'POST' && str_ends_with($request->url(), '/1789/media'))->map(fn (array $pair) => $pair[0])->values();
+
+        $run = $this->runChain($user, [$this->node('swipe', 'instagram.post', ['connection' => $as, 'what' => 'several', 'files' => "{$photo->ref_id}, {$clip->ref_id}", 'caption' => 'Both'])], ['n' => 1]);
+
+        // Instagram makes no post of parts it is still working through: the step waits for them first
+        $this->assertSame([NodeStatus::Waiting, 'processing'], [$this->step($run, 'swipe')->status, $this->step($run, 'swipe')->waiting_for]);
+        $this->assertCount(2, $made());
+        $this->travel(15)->seconds();
+        $this->work();
+        $this->assertAllWentThrough($run->fresh());
+        // The parts made before it waited are the ones the post holds: none is handed over twice
+        $this->assertSame([3, 'CAROUSEL', 'box-1,box-2'], [$made()->count(), $made()[2]['media_type'], $made()[2]['children']]);
+
+        $run = $this->runChain($user, [$this->node('story', 'instagram.post', ['connection' => $as, 'what' => 'story', 'story' => $clip->ref_id])], ['n' => 1]);
+
+        $this->assertAllWentThrough($run);
+        // A video in a story is still a story
+        $this->assertSame('STORIES', $made()[3]['media_type']);
+        $this->assertStringStartsWith('https://hooks.example.test/hooks/files/', $made()[3]['video_url']);
+    }
+
+    public function test_instagram_signed_in_by_facebook_is_asked_at_facebooks_address_and_only_there_is_a_post_deleted()
+    {
+        Http::preventStrayRequests();
+        Http::fake(function (Request $request) {
+            $path = (string) parse_url($request->url(), PHP_URL_PATH);
+
+            return match (true) {
+                ! str_starts_with($request->url(), 'https://graph.facebook.com/v25.0/') => Http::response(['error' => ['message' => 'Asked at the wrong address']], 400),
+                str_ends_with($path, '/1789/media') && $request->method() === 'POST' => Http::response(['id' => 'box-1']),
+                str_ends_with($path, '/1789/media_publish') => Http::response(['id' => '17900']),
+                str_ends_with($path, '/box-1') => Http::response(['status_code' => 'FINISHED']),
+                str_ends_with($path, '/1789/media') => Http::response(['data' => [['id' => '17900', 'caption' => 'New in', 'media_type' => 'IMAGE', 'media_product_type' => 'FEED']]]),
+                str_ends_with($path, '/17900/comments') => Http::response(['id' => 'c2']),
+                str_ends_with($path, '/1789') => Http::response(['id' => '1789', 'username' => 'shop', 'followers_count' => 120]),
+                $request->method() === 'DELETE' => Http::response(['success' => true]),
+                default => Http::response(['permalink' => 'https://www.instagram.com/p/AbC/']),
+            };
+        });
+        $user = User::factory()->create();
+        $byFacebook = Connection::factory()->instagram()->for($user)->create(['settings' => ['by' => 'facebook', 'via' => 'facebook', 'client_id' => 'app-1', 'member' => '1789', 'member_name' => 'shop'], 'secrets' => ['client_secret' => 'app-secret', 'access_token' => 'page-token']]);
+        $on = fn (array $settings = []) => ['connection' => $byFacebook->ref_id, ...$settings];
+
+        $run = $this->runChain($user, [
+            $this->node('shown', 'instagram.post', $on(['what' => 'picture', 'picture' => $this->file($user, 'front.jpg', 'image/jpeg')->ref_id, 'caption' => 'New in'])),
+            $this->node('posts', 'instagram.posts', $on()),
+            $this->node('said', 'instagram.comment', $on(['post' => '{{ node("shown").id }}', 'text' => 'Thanks'])),
+            $this->node('who', 'instagram.me', $on()),
+            $this->node('gone', 'instagram.delete', $on(['post' => '{{ node("shown").id }}'])),
+        ], ['n' => 1]);
+
+        // Every call went to Facebook's address, as the account the Page is linked to and with the Page's token
+        $this->assertAllWentThrough($run);
+        $this->assertSame(['17900', 'https://www.instagram.com/p/AbC/', 'FEED', 'c2', '1789', 'shop', true], [$this->step($run, 'shown')->output['id'], $this->step($run, 'shown')->output['url'], $this->step($run, 'posts')->output['first']['kind'], $this->step($run, 'said')->output['id'], $this->step($run, 'who')->output['id'], $this->step($run, 'who')->output['username'], $this->step($run, 'gone')->output['done']]);
+        $calls = Http::recorded()->map(fn (array $pair) => $pair[0]->method().' '.str_replace('https://graph.facebook.com/v25.0', '', strtok($pair[0]->url(), '?')))->all();
+        $this->assertSame(['GET /1789/media', 'POST /17900/comments', 'GET /1789', 'DELETE /17900'], array_slice($calls, -4));
+        Http::assertSent(fn (Request $request) => $request->method() === 'DELETE' && $request->hasHeader('Authorization', 'Bearer page-token'));
+
+        // Signed in with Instagram there is no taking a post down: said before anything is asked
+        $own = Connection::factory()->instagram()->for($user)->create(['name' => 'Own login']);
+        $before = Http::recorded()->count();
+        $kept = $this->step($this->runChain($user, [$this->node('gone', 'instagram.delete', ['connection' => $own->ref_id, 'post' => '17900'])], ['n' => 1]), 'gone');
+        $this->assertStringContainsString('"Own login" signs in with Instagram: set "Sign in with" to Facebook', $kept->error['message']);
+        $this->assertSame($before, Http::recorded()->count());
+    }
+
     public function test_threads_posts_replies_reposts_deletes_and_reads()
     {
         Http::fake(function (Request $request) {
@@ -987,6 +1072,247 @@ class WorkflowServicesTest extends TestCase
 
         $long = $this->step($this->runChain($user, [$this->node('it', 'threads.post', $on(['text' => str_repeat('a', 501)]))], ['n' => 1]), 'it');
         $this->assertStringContainsString('at most 500 letters, and this is 501', $long->error['message']);
+    }
+
+    public function test_threads_makes_a_post_of_several_once_each_is_worked_through()
+    {
+        $asked = 0;
+        Http::fake(function (Request $request) use (&$asked) {
+            $path = (string) parse_url($request->url(), PHP_URL_PATH);
+
+            return match (true) {
+                str_ends_with($path, '/2456/threads') => Http::response(['id' => 'box-'.(Http::recorded(fn (Request $made) => str_ends_with((string) parse_url($made->url(), PHP_URL_PATH), '/2456/threads'))->count() + 1)]),
+                str_ends_with($path, '/threads_publish') => Http::response(['id' => '18000']),
+                // The video among the several is still being worked through the first time it is asked after
+                str_contains($path, '/box-') => Http::response(['status' => str_ends_with($path, '/box-2') && $asked++ === 0 ? 'IN_PROGRESS' : 'FINISHED']),
+                default => Http::response(['permalink' => 'https://www.threads.net/@shop/post/AbC']),
+            };
+        });
+        $user = User::factory()->create();
+        $as = Connection::factory()->threads()->for($user)->create()->ref_id;
+        $made = fn () => Http::recorded(fn (Request $request) => $request->method() === 'POST' && str_ends_with($request->url(), '/2456/threads'))->map(fn (array $pair) => $pair[0])->values();
+
+        $run = $this->runChain($user, [$this->node('swipe', 'threads.post', ['connection' => $as, 'text' => 'Both', 'with' => 'several', 'files' => $this->file($user, 'front.png')->ref_id.', '.$this->file($user, 'clip.mp4', 'video/mp4')->ref_id])], ['n' => 1]);
+
+        // Each is handed over and asked after before the post that holds them is made
+        $this->assertSame([NodeStatus::Waiting, 'processing'], [$this->step($run, 'swipe')->status, $this->step($run, 'swipe')->waiting_for]);
+        $this->assertSame(['IMAGE', 'VIDEO'], $made()->map(fn (Request $request) => $request['media_type'])->all());
+        $this->travel(15)->seconds();
+        $this->work();
+        $this->assertAllWentThrough($run->fresh());
+        // The parts made before it waited are the ones the post holds
+        $this->assertSame([3, 'CAROUSEL', 'box-1,box-2', 'Both'], [$made()->count(), $made()[2]['media_type'], $made()[2]['children'], $made()[2]['text']]);
+    }
+
+    public function test_an_instagram_comment_and_a_threads_reply_start_runs_by_metas_webhook()
+    {
+        config(['services.workflows.public_url' => 'https://hooks.example.test']);
+        Http::fake(fn (Request $request) => match (true) {
+            str_ends_with((string) parse_url($request->url(), PHP_URL_PATH), '/me/subscribed_apps') => Http::response(['success' => true]),
+            str_ends_with((string) parse_url($request->url(), PHP_URL_PATH), '/me') => Http::response(['id' => '3941', 'user_id' => '1789']),
+            default => Http::response(['id' => 'c9']),
+        });
+        $user = User::factory()->create();
+        $account = Connection::factory()->instagram()->for($user)->create();
+        $profile = Connection::factory()->threads()->for($user)->create();
+        $listening = function (array $nodes) use ($user): Workflow {
+            $workflow = Workflow::factory()->for($user)->steps($nodes, [$this->edge($nodes[0]['id'], $nodes[1]['id'])])->create();
+            $this->actingAs($user)->postJson(route('workflows.publish', $workflow), ['revision' => $workflow->revision])->assertOk();
+            $this->actingAs($user)->patchJson(route('workflows.enable', $workflow), ['enabled' => true])->assertOk();
+            auth()->logout();
+
+            return $workflow;
+        };
+        $send = fn (string $hook, array $body, string $secret) => $this->call('POST', $hook, [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', (string) json_encode($body), $secret),
+        ], (string) json_encode($body));
+
+        // --- Instagram: switched on, the account is subscribed to the Meta app, and known by both its ids
+        $comments = $listening([
+            $this->node('heard', 'trigger.instagram', ['connection' => $account->ref_id]),
+            $this->node('answer', 'instagram.reply', ['connection' => $account->ref_id, 'comment' => '{{ trigger.comment.id }}', 'text' => 'Thanks, {{ trigger.sender.name }}']),
+        ]);
+        Http::assertSent(fn (Request $request) => $request->method() === 'POST' && str_ends_with((string) parse_url($request->url(), PHP_URL_PATH), '/me/subscribed_apps') && $request['subscribed_fields'] === 'comments,mentions');
+        $this->assertSame('3941', $account->fresh()->setting('scoped_id'));
+
+        $hook = "/hooks/instagram/{$account->ref_id}";
+        $said = fn (string $to, string $by, string $id = 'c1') => ['object' => 'instagram', 'entry' => [['id' => $to, 'time' => 1749416383, 'changes' => [['field' => 'comments', 'value' => [
+            'id' => $id, 'text' => 'Love it', 'from' => ['id' => '77', 'username' => $by], 'media' => ['id' => '17900', 'media_product_type' => 'FEED'],
+        ]]]]]];
+
+        // Meta asks first whether the address is the app's: only the connection's own token is answered
+        $this->get($hook.'?hub.mode=subscribe&hub.challenge=1158201444&hub.verify_token='.Meta::verifyToken($account))->assertOk()->assertSee('1158201444');
+        $this->get($hook.'?hub.mode=subscribe&hub.challenge=1&hub.verify_token=guess')->assertForbidden();
+        // The way back from signing in keeps its own address
+        $this->get('/hooks/instagram/signed-in?code=x&state=y')->assertRedirect();
+
+        // Signed with another secret, for another account of the same app, or written by the account itself: nothing starts
+        $send($hook, $said('1789', 'bo'), 'someone-elses')->assertForbidden();
+        $send($hook, $said('999', 'bo'), 'ig-secret')->assertOk();
+        $send($hook, $said('1789', 'Shop'), 'ig-secret')->assertOk();
+        $this->assertSame(0, $comments->runs()->count());
+
+        // A comment starts a run, named by either id of the account, and the same one sent again starts nothing more
+        $send($hook, $said('1789', 'bo'), 'ig-secret')->assertOk();
+        $send($hook, $said('1789', 'bo'), 'ig-secret')->assertOk();
+        $send($hook, $said('3941', 'bo', 'c2'), 'ig-secret')->assertOk();
+        $this->work();
+        $this->assertSame(2, $comments->runs()->count());
+        $run = $comments->runs()->oldest('id')->first();
+        $this->assertAllWentThrough($run);
+        $heard = $run->trigger_data;
+        $this->assertSame(['instagram', 'comment', 'comment', 'c1', 'Love it', 'bo'], [$heard['service'], $heard['type'], $heard['kind'], $heard['id'], $heard['text'], $heard['sender']['name']]);
+        $this->assertSame([['id' => '17900', 'kind' => 'post', 'title' => null], ['id' => '17900', 'kind' => 'FEED'], ['id' => 'c1', 'parent' => null]], [$heard['chat'], $heard['post'], $heard['comment']]);
+        // What it read goes into the answer under that comment
+        Http::assertSent(fn (Request $request) => str_ends_with((string) parse_url($request->url(), PHP_URL_PATH), '/c1/replies') && $request['message'] === 'Thanks, bo');
+
+        // A mention is told of by ids alone, and a trigger set to comments does not take it
+        $mention = Envelope::instagram('mentions', ['media_id' => '17901', 'comment_id' => 'c7']);
+        $this->assertSame(['mention', 'comment', 'c7', '17901', ''], [$mention['type'], $mention['kind'], $mention['id'], $mention['post']['id'], $mention['text']]);
+        $this->assertTrue(Envelope::wanted('instagram', 'any', 'mention') && ! Envelope::wanted('instagram', 'comment', 'mention'));
+        $this->assertNull(Envelope::instagram('story_insights', []));
+
+        // --- Threads: Meta sends one thing at a time, in a shape of its own
+        $replies = $listening([
+            $this->node('heard', 'trigger.threads', ['connection' => $profile->ref_id]),
+            $this->node('note', 'data.set', ['fields' => [['name' => 'said', 'value' => '{{ trigger.text }}']]]),
+        ]);
+        $hook = "/hooks/threads/{$profile->ref_id}";
+        $replied = fn (string $to, string $by, string $field = 'replies') => ['app_id' => '1', 'topic' => 'moderate', 'target_id' => $to, 'time' => 1749416383, 'subscription_id' => '2', 'values' => ['field' => $field, 'value' => [
+            'id' => '18002', 'username' => $by, 'text' => 'When?', 'media_type' => 'TEXT_POST', 'permalink' => 'https://www.threads.net/@bo/post/AbC',
+            'replied_to' => ['id' => '18000'], 'root_post' => ['id' => '18000', 'owner_id' => '2456', 'username' => 'shop.th'], 'timestamp' => '2026-10-12T10:00:00+0000',
+        ]]];
+
+        $this->get($hook.'?hub.mode=subscribe&hub.challenge=42&hub.verify_token='.Meta::verifyToken($profile))->assertOk()->assertSee('42');
+        $this->assertNotSame(Meta::verifyToken($profile), Meta::verifyToken($account));
+        $send($hook, $replied('2456', 'bo'), 'guess')->assertForbidden();
+        // Another profile of the same app, the profile's own reply, or a post published when only replies are waited for
+        $send($hook, $replied('999', 'bo'), 'th-secret')->assertOk();
+        $send($hook, $replied('2456', 'Shop'), 'th-secret')->assertOk();
+        $send($hook, $replied('2456', 'shop', 'publish'), 'th-secret')->assertOk();
+        $this->assertSame(0, $replies->runs()->count());
+
+        $send($hook, $replied('2456', 'bo'), 'th-secret')->assertOk();
+        $this->work();
+        $heard = $replies->runs()->sole()->trigger_data;
+        $this->assertSame(['threads', 'reply', 'text_post', '18002', 'When?', 'bo', 'https://www.threads.net/@bo/post/AbC'], [$heard['service'], $heard['type'], $heard['kind'], $heard['id'], $heard['text'], $heard['sender']['name'], $heard['url']]);
+        $this->assertSame([['id' => '18000', 'kind' => 'post', 'title' => null], ['to' => '18002', 'quote' => '18000'], '2026-10-12T10:00:00.000+00:00'], [$heard['chat'], $heard['reply'], $heard['at']]);
+    }
+
+    public function test_an_instagram_message_starts_a_run_and_each_message_call_is_a_step()
+    {
+        $path = fn (Request $request) => (string) parse_url($request->url(), PHP_URL_PATH);
+        Http::fake(fn (Request $request) => match (true) {
+            str_ends_with($path($request), '/me/subscribed_apps') => Http::response(['success' => true]),
+            str_ends_with($path($request), '/me/messages') => Http::response(['recipient_id' => '1339', 'message_id' => 'mid.out']),
+            str_ends_with($path($request), '/me') => Http::response(['id' => '3941', 'user_id' => '1789']),
+            str_ends_with($path($request), '/1339') => Http::response(['id' => '1339', 'name' => 'Bo B', 'username' => 'bo', 'profile_pic' => 'https://cdn.example.test/bo.jpg', 'follower_count' => 12, 'is_verified_user' => false, 'is_user_follow_business' => true, 'is_business_follow_user' => false]),
+            default => Http::response(['error' => ['message' => 'Not faked']], 400),
+        });
+        $user = User::factory()->create();
+        $account = Connection::factory()->instagram()->for($user)->create();
+        $on = fn (array $settings = []) => ['connection' => $account->ref_id, ...$settings];
+        $listening = function (array $nodes) use ($user): Workflow {
+            $workflow = Workflow::factory()->for($user)->steps($nodes, array_map(fn (int $at) => $this->edge($nodes[$at - 1]['id'], $nodes[$at]['id']), range(1, count($nodes) - 1)))->create();
+            $this->actingAs($user)->postJson(route('workflows.publish', $workflow), ['revision' => $workflow->revision])->assertOk();
+            $this->actingAs($user)->patchJson(route('workflows.enable', $workflow), ['enabled' => true])->assertOk();
+            auth()->logout();
+
+            return $workflow;
+        };
+        $subscribed = fn () => Http::recorded(fn (Request $request) => $request->method() === 'POST' && str_ends_with($path($request), '/me/subscribed_apps'))->last()[0]['subscribed_fields'];
+
+        $workflow = $listening([
+            $this->node('heard', 'trigger.instagram_message', $on()),
+            $this->node('who', 'instagram.profile', $on()),
+            $this->node('say', 'instagram.send', $on(['text' => 'Hi {{ node("who").name }}: "{{ trigger.text }}"', 'buttons' => [['name' => 'Yes', 'value' => 'ok'], ['name' => 'No', 'value' => '']]])),
+            $this->node('show', 'instagram.send_file', $on(['file' => $this->file($user, 'front.jpg', 'image/jpeg')->ref_id])),
+            $this->node('heart', 'instagram.react', $on()),
+        ]);
+        // The account is subscribed to what listens and no more: messages are a permission of their own
+        $this->assertSame('messages,messaging_postbacks,message_reactions', $subscribed());
+        $comments = $listening([$this->node('heard', 'trigger.instagram', $on(['on' => 'any'])), $this->node('note', 'data.set', ['fields' => [['name' => 'said', 'value' => '{{ trigger.text }}']]])]);
+        $this->assertSame('comments,mentions,messages,messaging_postbacks,message_reactions', $subscribed());
+
+        $hook = "/hooks/instagram/{$account->ref_id}";
+        $said = fn (string $to, array $event) => ['object' => 'instagram', 'entry' => [['id' => $to, 'time' => 1749416383000, 'messaging' => [['sender' => ['id' => '1339'], 'recipient' => ['id' => $to], 'timestamp' => 1749416383000, ...$event]]]]];
+        $send = fn (array $body, string $secret = 'ig-secret') => $this->call('POST', $hook, [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', (string) json_encode($body), $secret),
+        ], (string) json_encode($body));
+        $words = ['message' => ['mid' => 'mid.in', 'text' => 'Open today?']];
+
+        // Signed with another secret, for another account, the account's own message told back, or one only seen: nothing starts
+        $send($said('1789', $words), 'someone-elses')->assertForbidden();
+        $send($said('999', $words))->assertOk();
+        $send($said('1789', ['message' => ['mid' => 'mid.out', 'text' => 'Hi', 'is_echo' => true]]))->assertOk();
+        $send($said('1789', ['sender' => ['id' => '1789'], 'message' => ['mid' => 'mid.own', 'text' => 'Hi']]))->assertOk();
+        $send($said('1789', ['read' => ['mid' => 'mid.out']]))->assertOk();
+        $this->assertSame(0, $workflow->runs()->count());
+
+        // A message starts a run, and the same one sent again starts nothing more
+        $send($said('1789', $words))->assertOk();
+        $send($said('1789', $words))->assertOk();
+        $this->work();
+        $run = $workflow->runs()->sole();
+        $this->assertAllWentThrough($run);
+        // A trigger for comments, set to take any of them, takes no message
+        $this->assertSame(0, $comments->runs()->count());
+
+        $heard = $run->trigger_data;
+        $this->assertSame(['instagram', 'message', 'text', 'mid.in', 'Open today?', []], [$heard['service'], $heard['type'], $heard['kind'], $heard['id'], $heard['text'], $heard['files']]);
+        $this->assertSame([['id' => '1339', 'kind' => 'private', 'title' => null], ['id' => '1339', 'name' => null], ['to' => 'mid.in', 'quote' => null], '2025-06-08T20:59:43.000+00:00'], [$heard['chat'], $heard['sender'], $heard['reply'], $heard['at']]);
+        $this->assertSame(['bo', 'Bo B', true, false], [$this->step($run, 'who')->output['username'], $this->step($run, 'who')->output['name'], $this->step($run, 'who')->output['follows'], $this->step($run, 'who')->output['followed']]);
+        $this->assertSame(['id' => 'mid.out', 'to' => '1339'], $this->step($run, 'say')->output);
+
+        $sent = Http::recorded(fn (Request $request) => str_ends_with($path($request), '/me/messages'))->map(fn (array $pair) => $pair[0])->values();
+        $this->assertTrue($sent[0]->hasHeader('Authorization', 'Bearer ig-token') && str_starts_with($sent[0]->url(), 'https://graph.instagram.com/'));
+        // Words with quick answers under them, to whoever wrote
+        $this->assertSame(['recipient' => ['id' => '1339'], 'message' => ['text' => 'Hi Bo B: "Open today?"', 'quick_replies' => [['content_type' => 'text', 'title' => 'Yes', 'payload' => 'ok'], ['content_type' => 'text', 'title' => 'No', 'payload' => 'No']]]], $sent[0]->data());
+        // A picture is not sent: Instagram is told where to fetch it, at the app's public address
+        $this->assertSame(['image', true], [$sent[1]['message']['attachment']['type'], str_starts_with($sent[1]['message']['attachment']['payload']['url'], 'https://hooks.example.test/hooks/files/')]);
+        $this->assertSame(['recipient' => ['id' => '1339'], 'sender_action' => 'react', 'payload' => ['message_id' => 'mid.in', 'reaction' => 'love']], $sent[2]->data());
+
+        // The Meta app's own test sends a message as a change, like a comment
+        $send(['object' => 'instagram', 'entry' => [['id' => '3941', 'time' => 1, 'changes' => [['field' => 'messages', 'value' => ['sender' => ['id' => '12334'], 'recipient' => ['id' => '3941'], 'timestamp' => '1527459824', 'message' => ['mid' => 'random_mid', 'text' => 'random_text']]]]]]])->assertOk();
+        $this->assertSame(2, $workflow->runs()->count());
+
+        // A quick answer tapped, a picture, a heart, a message taken back, a story answered: each read as what it is
+        $event = fn (array $event) => Envelope::instagramMessage(['sender' => ['id' => '1339'], 'timestamp' => 1749416383000, ...$event]);
+        $tapped = $event(['message' => ['mid' => 'm2', 'text' => 'Yes', 'quick_reply' => ['payload' => 'ok']]]);
+        $this->assertSame(['button', 'button', 'ok', 'Yes', ['id' => 'ok', 'title' => 'Yes']], [$tapped['type'], $tapped['kind'], $tapped['text'], $tapped['display'], $tapped['button']]);
+        $this->assertTrue(Envelope::wanted('instagram_message', null, 'button') && Envelope::wanted('instagram_message', 'button', 'button') && ! Envelope::wanted('instagram_message', 'button', 'message'));
+        $picture = $event(['message' => ['mid' => 'm3', 'attachments' => [['type' => 'image', 'payload' => ['url' => 'https://lookaside.fbsbx.com/ig/1']], ['type' => 'share', 'payload' => ['url' => 'https://www.instagram.com/p/AbC/']]], 'reply_to' => ['mid' => 'mid.out']]]);
+        $this->assertSame(['message', 'image', ['https://lookaside.fbsbx.com/ig/1'], 'mid.out'], [$picture['type'], $picture['kind'], $picture['files'], $picture['reply']['quote']]);
+        $heart = $event(['reaction' => ['mid' => 'mid.out', 'action' => 'react', 'reaction' => 'love', 'emoji' => '❤']]);
+        $this->assertSame(['reaction', ['message' => 'mid.out', 'emoji' => '❤']], [$heart['type'], $heart['reaction']]);
+        $this->assertNull($event(['reaction' => ['mid' => 'mid.out', 'action' => 'unreact']])['reaction']['emoji']);
+        $this->assertSame('unsend', $event(['message' => ['mid' => 'm4', 'is_deleted' => true]])['type']);
+        $story = $event(['message' => ['mid' => 'm5', 'text' => 'Nice', 'reply_to' => ['story' => ['id' => '179', 'url' => 'https://cdn.example.test/story']]]]);
+        $this->assertSame(['text', ['id' => '179', 'url' => 'https://cdn.example.test/story']], [$story['kind'], $story['story']]);
+    }
+
+    public function test_instagram_messages_say_what_stands_in_their_way()
+    {
+        Http::fake(['graph.instagram.com/*' => Http::response(['error' => ['message' => '(#10) This message is sent outside of allowed window.', 'type' => 'OAuthException', 'code' => 10, 'error_subcode' => 2534022]], 400)]);
+        $user = User::factory()->create();
+        $account = Connection::factory()->instagram()->for($user)->create()->ref_id;
+        $byFacebook = Connection::factory()->instagram()->for($user)->create(['name' => 'By its Page', 'settings' => ['by' => 'facebook', 'via' => 'facebook', 'client_id' => 'app-1', 'member' => '1789', 'member_name' => 'shop'], 'secrets' => ['client_secret' => 'app-secret', 'access_token' => 'page-token']])->ref_id;
+        $run = fn (string $type, array $settings) => $this->step($this->runChain($user, [$this->node('it', $type, ['connection' => $account, ...$settings])], ['n' => 1]), 'it')->error['message'];
+
+        // No one to write to, too many quick answers, a file Instagram shows in no chat, a sign-in by Facebook: said before anything is asked
+        $this->assertStringContainsString('There is no one to send to', $run('instagram.send', ['to' => '@bo', 'text' => 'Hi']));
+        $this->assertStringContainsString('at most 13 quick answers', $run('instagram.send', ['to' => '1339', 'text' => 'Hi', 'buttons' => array_map(fn (int $n) => ['name' => "B{$n}", 'value' => ''], range(1, 14))]));
+        $this->assertStringContainsString('at most 1,000 bytes', $run('instagram.send', ['to' => '1339', 'text' => str_repeat('ก', 400)]));
+        $this->assertStringContainsString('nothing Instagram shows in a chat', $run('instagram.send_file', ['to' => '1339', 'file' => $this->file($user, 'menu.pdf', 'application/pdf')->ref_id]));
+        $this->assertStringContainsString('"By its Page" signs in with Facebook: set "Sign in with" to Instagram', $run('instagram.send', ['connection' => $byFacebook, 'to' => '1339', 'text' => 'Hi']));
+        Http::assertNothingSent();
+
+        // Past the day since they last wrote, Instagram's refusal is said plainly -- and a commenter is named by the comment
+        $this->assertSame('Instagram takes a message only within 24 hours of the other\'s last one.', $run('instagram.send', ['to' => '1339', 'text' => 'Hi']));
+        $run('instagram.message_commenter', ['comment' => 'c1', 'text' => 'Thanks for asking']);
+        Http::assertSent(fn (Request $request) => $request->data() === ['recipient' => ['comment_id' => 'c1'], 'message' => ['text' => 'Thanks for asking']]);
     }
 
     // --- WhatsApp ---

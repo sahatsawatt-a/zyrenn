@@ -18,6 +18,8 @@ declare module '@inertiajs/core' {
     export interface InertiaConfig {
         sharedPageProps: {
             name: string;
+            // Whose the app is, as the LICENSE says: the notice at the foot of the public pages
+            copyright: string;
             auth: Auth;
             // The project the page is in; null on the user's own things
             project: CurrentProject | null;

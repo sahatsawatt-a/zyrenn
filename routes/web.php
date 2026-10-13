@@ -3,10 +3,17 @@
 use App\Http\Controllers\CollabController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GuideController;
+use App\Http\Controllers\LegalController;
 use App\Http\Middleware\VerifyCollabSecret;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'Welcome')->name('home');
+
+// What anyone may read without an account: how the app treats what it is
+// given, its terms, and how to have what it holds deleted
+Route::get('privacy', [LegalController::class, 'privacy'])->name('privacy');
+Route::get('terms', [LegalController::class, 'terms'])->name('terms');
+Route::get('data-deletion/{receipt?}', [LegalController::class, 'deletion'])->name('data-deletion');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     // Your own at /dashboard, a project's at /p/{project}/dashboard

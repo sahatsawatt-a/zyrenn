@@ -429,8 +429,9 @@ has not been tried.
 The four are Meta's, set up in one Meta app (developers.facebook.com), and
 their calls are written against one Graph API version (`Meta::VERSION`),
 which Meta answers to for about two years: move it on before then. Each call
-is a step of its own, in its service's group. None has been run against the
-real service yet; all of it against faked ones.
+is a step of its own, in its service's group. Instagram, signed in with its
+own login, and Threads have been run against the real service; the rest
+against faked ones.
 
 **WhatsApp** is a business number, by Meta's Cloud API -- not a person's own
 WhatsApp. The connection takes the number's ID and a token (WhatsApp → API
@@ -462,22 +463,98 @@ posts**, **a post's comments** and **the Page**. Nothing on Facebook starts
 a workflow yet: a schedule that asks for the newest comments does instead.
 
 **Instagram** posts as a professional account (a business's or a creator's;
-Instagram gives an app nothing of a personal one), signed in by Instagram's
-own login with the Instagram app's ID and secret. Steps: **Post on
-Instagram** (a picture, several to swipe through, a reel, a story), comment,
-answer a comment, delete a comment, **my posts**, **a post's comments**,
-**who I am**. Instagram is not sent a file: it is handed an address and
-fetches it, so posting needs `WORKFLOWS_PUBLIC_URL`, and a picture has to be
-a JPEG. A video is published once Instagram has worked through it; the step
-waits meanwhile, holding no worker, for up to five minutes. An app can
-publish and cannot take a post down again.
+Instagram gives an app nothing of a personal one). Steps: **Post on
+Instagram** (a picture, several to swipe through, a reel, a story), **Delete
+a post**, comment, answer a comment, delete a comment, **my posts**, **a
+post's comments**, **who I am**. Instagram is not sent a file: it is handed
+an address and fetches it, so posting needs `WORKFLOWS_PUBLIC_URL`, and a
+picture has to be a JPEG. A video is published once Instagram has worked
+through it -- each video of several first, then the post that holds them --
+and the step waits meanwhile, holding no worker, for up to five minutes.
+
+The connection signs in one of two ways ("Sign in with"):
+
+- **Instagram**, its own login, with the Instagram app's ID and secret
+  (Instagram → API setup with Instagram login). The sign-in lasts 60 days and
+  is made new unasked. An app signed in this way cannot take a post down.
+- **Facebook**, as someone who looks after the Page the account is linked
+  to, with the Meta app's own ID and secret. Instagram then answers at
+  Facebook's address with the Page's token, which does not run out, and
+  **Delete a post on Instagram** works -- it needs
+  `instagram_manage_contents`, which only this way has. The app asks for
+  `instagram_basic`, `instagram_content_publish`, `instagram_manage_comments`,
+  `instagram_manage_contents`, `pages_show_list`, `pages_read_engagement` and
+  `business_management`: each has to be added to the Meta app first. When
+  Facebook shares several Pages with an account linked, it is signed in again
+  sharing only the one. This way has been run against faked answers only.
+
+What a sign-in gave is good only the way it was given: a connection changed
+to sign in the other way is not signed in until it has.
+
+**Instagram comment** starts a run when someone comments under one of the
+account's posts, or names the account in a caption or comment of their own:
+`trigger.text`, `trigger.sender.name`, `trigger.post.id`, and
+`trigger.comment.id`, which **Answer a comment** takes. What the account
+writes itself starts nothing. It is for a connection signed in with
+Instagram: signed in, the connection shows its webhook address and a verify
+token, which go in the Meta app under Instagram → API setup with Instagram
+login → Configure webhooks, subscribed to "comments" and "mentions"; the
+account is subscribed to the app when a workflow listening is switched on.
+Meta signs what it sends with the Instagram app's secret, and sends only once
+the Meta app is live, with the comments permission reviewed and the business
+verified: before that, only the test the Meta app sends itself arrives.
+
+**Instagram message** starts a run when the account is sent a message: words,
+a picture or recording, a quick answer or a button tapped, a heart put on a
+message, a message taken back ("When" chooses). `trigger.chat.id` is who
+wrote, by the id Instagram gives this account for them -- there are no
+groups -- and it is what the message steps take as "To". A message carries no
+name: **Instagram: who wrote** asks for it. What was sent comes as the
+address Instagram keeps it at (`trigger.files`), which **Save to Drive**
+takes, where another service gives an id. What the account writes itself,
+which Instagram tells of too, starts nothing.
+
+- **Send on Instagram** (words, with up to 13 quick answers to tap under
+  them), **Send a file** (a picture, a video or a recording, which Instagram
+  fetches from the app as it does a post's), **React** (a heart, the one
+  reaction an app may give) and **Instagram: who wrote**.
+- Instagram takes a message only within 24 hours of the other's last one,
+  and has nothing like WhatsApp's templates for after. **Message a commenter**
+  is the one thing that reaches someone who has not written: one message for
+  each comment, named by the comment, within seven days of it.
+- Messages are a permission of their own (`instagram_business_manage_messages`),
+  asked for at sign-in: a connection signed in before it was has to sign in
+  again. They go by Instagram's own login only; signed in with Facebook, a
+  step says so. In the Meta app the same webhook is subscribed to "messages",
+  "messaging_postbacks" and "message_reactions" besides, and the account is
+  subscribed to what its switched-on workflows listen for and no more.
+- As with comments, Meta sends messages only once the Meta app is live
+  (published): from one that is not, nothing arrives but the test the Meta
+  app sends itself -- not even from an account with a role in it. Whether
+  one published without the messages permission reviewed is sent everyone's
+  messages, or only those of accounts with a role in it, has not been tried.
+- Sending has been run against the real service; the trigger against what
+  Meta's pages say it sends.
 
 **Threads** posts as a Threads profile -- anyone's -- signed in with the
 Threads app's ID and secret. Steps: **Post on Threads** (words up to 500
 letters, a link, a picture, a video, several; told which post it answers,
 a reply under it), repost, delete (100 a day), **my posts**, **a post's
 replies**, **who I am**. Pictures and videos are fetched from the app, as
-on Instagram.
+on Instagram, and each of several is worked through before the post that
+holds them is made.
+
+**Threads reply** starts a run when someone replies under one of the
+profile's posts, or when the profile publishes or deletes a post:
+`trigger.text`, `trigger.sender.name`, `trigger.url`, `trigger.post.id` (the
+post the thread began with) and `trigger.reply.to`, which **Post on Threads**
+takes as "In answer to". A reply the profile writes itself starts nothing; a
+workflow started by a post published, that posts itself, would start again
+each time. The connection shows its webhook address and verify token for the
+Threads use case's webhooks in the Meta app, subscribed to "replies". As on
+Instagram, Meta sends only once the app is live. Neither trigger has been
+sent anything by Meta itself yet: both were run against what its pages say
+it sends.
 
 Instagram's and Threads' sign-ins last 60 days and, unlike LinkedIn's, are
 made new unasked while they still hold -- when a step uses the connection or
@@ -485,6 +562,34 @@ it is tested with ten days or fewer left -- so one in use does not run out.
 Every sign-in comes back by the same public address as LinkedIn's
 (`/hooks/{service}/signed-in`), which the connection shows to be listed in
 the Meta app.
+
+**What a Meta app needs before it can be published.** Meta sends an app
+nothing by webhook until it is published, and will not publish one without a
+privacy policy and a way to have data deleted. The app has both, for anyone
+to read without an account: `/privacy`, `/terms` and `/data-deletion`, with
+the address in `APP_CONTACT_EMAIL` shown as where to write. They go in the
+Meta app under App settings → Basic (Privacy policy URL, Terms of Service
+URL, and User data deletion as "Data deletion instructions URL"), at the
+app's public address.
+
+Meta also tells an app when someone takes back what they gave it, at two
+addresses that Facebook Login for Business, Instagram's business login
+settings and the Threads use case's settings each ask for:
+
+- `/hooks/meta/deauthorize` -- they took the app off their account: the
+  connections signed in as them are signed out.
+- `/hooks/meta/data-deletion` -- they asked for their data to be deleted: the
+  same, and what came in through those connections and is still kept goes
+  too. Meta is answered with a receipt and the address of a page,
+  `/data-deletion/{receipt}`, that says it was done.
+
+One address serves all three: what Meta sends is signed with the secret of
+the app it came through, which is a connection's own, so it is matched to the
+connections of that app signed in as that person -- an Instagram account by
+either of its ids, a Page by whoever signed it in. Signing out lets go of
+what signing in gave (the token, who it is) and keeps what the connection's
+owner typed; the connection's record shows it. Both were run against requests
+signed as Meta signs them, not sent by Meta itself.
 
 ## SerpApi and Tavily
 

@@ -18,7 +18,7 @@ use Illuminate\Validation\Rule;
  * A service whose member signs in on its own pages (LinkedIn) is given what
  * that brings -- a token, who it is, until when -- beside what is typed:
  * 'granted' names those, and they are kept through every change of the rest.
- * @phpstan-type Service array{label: string, group: string, hint: string, testable: bool, settings: list<Field>, secrets: list<Field>, url?: string, key_required?: bool, v1?: bool, granted?: array{settings: list<string>, secrets: list<string>}, signs_in?: string}
+ * @phpstan-type Service array{label: string, group: string, hint: string, testable: bool, settings: list<Field>, secrets: list<Field>, url?: string, key_required?: bool, v1?: bool, granted?: array{settings: list<string>, secrets: list<string>}, signs_in?: string, signs_in_by?: array<string, string>}
  */
 final class Services
 {
@@ -218,23 +218,38 @@ final class Services
             'secrets' => [
                 ['name' => 'client_secret', 'label' => 'App secret', 'type' => 'secret', 'required' => true],
             ],
-            'granted' => ['settings' => ['page_id', 'page_name'], 'secrets' => ['page_token']],
+            'granted' => ['settings' => ['page_id', 'page_name', 'signer'], 'secrets' => ['page_token']],
             'signs_in' => 'Add it in the Meta app under Facebook Login → Settings → "Valid OAuth Redirect URIs", then sign in.',
         ];
 
         $services[self::INSTAGRAM] = [
             'label' => 'Instagram',
             'group' => self::SOCIAL,
-            'hint' => 'An Instagram professional account (a business\'s or a creator\'s; not a personal one), for workflows to post as. Both values are in a Meta app under Instagram → API setup with Instagram login: the Instagram app\'s own ID and secret, not the Meta app\'s. Save it, then sign in with Instagram.',
+            'hint' => 'An Instagram professional account (not a personal one), for workflows to post as. With Instagram, the ID and secret are the Instagram app\'s own, under Instagram → API setup with Instagram login. With Facebook, they are the Meta app\'s, under App settings → Basic, and the account has to be linked to a Facebook Page. Save it, then sign in.',
             'testable' => true,
             'settings' => [
-                ['name' => 'client_id', 'label' => 'Instagram app ID', 'type' => 'text', 'required' => true],
+                [
+                    'name' => 'by',
+                    'label' => 'Sign in with',
+                    'type' => 'choice',
+                    'required' => true,
+                    'default' => 'instagram',
+                    'options' => [
+                        'instagram' => 'Instagram',
+                        'facebook' => 'Facebook, as someone who looks after its Page (can delete posts)',
+                    ],
+                ],
+                ['name' => 'client_id', 'label' => 'App ID', 'type' => 'text', 'required' => true],
             ],
             'secrets' => [
-                ['name' => 'client_secret', 'label' => 'Instagram app secret', 'type' => 'secret', 'required' => true],
+                ['name' => 'client_secret', 'label' => 'App secret', 'type' => 'secret', 'required' => true],
             ],
-            'granted' => ['settings' => ['member', 'member_name', 'expires_at'], 'secrets' => ['access_token']],
+            'granted' => ['settings' => ['member', 'member_name', 'expires_at', 'via', 'scoped_id', 'signer'], 'secrets' => ['access_token']],
             'signs_in' => 'Add it in the Meta app under Instagram → API setup with Instagram login → Business login settings → "OAuth redirect URIs", then sign in.',
+            // Set to sign in another way ("by"), it is told of somewhere else
+            'signs_in_by' => [
+                'facebook' => 'Add it in the Meta app under Facebook Login for Business → Settings → "Valid OAuth Redirect URIs", then sign in. The app needs these permissions: '.str_replace(',', ', ', InstagramSignIn::FACEBOOK_SCOPES).'.',
+            ],
         ];
 
         $services[self::THREADS] = [

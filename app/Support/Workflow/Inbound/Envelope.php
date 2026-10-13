@@ -65,6 +65,21 @@ final class Envelope
             'button' => ['button'],
             'reaction' => ['reaction'],
         ],
+        'instagram' => [
+            'comment' => ['comment'],
+            'mention' => ['mention'],
+        ],
+        'instagram_message' => [
+            'message' => ['message', 'button'],
+            'button' => ['button'],
+            'reaction' => ['reaction'],
+            'unsend' => ['unsend'],
+        ],
+        'threads' => [
+            'reply' => ['reply'],
+            'publish' => ['publish'],
+            'delete' => ['delete'],
+        ],
     ];
 
     /**
@@ -411,6 +426,183 @@ final class Envelope
                 'reaction' => $kind !== 'reaction' ? null : ['message' => $message['reaction']['message_id'] ?? null, 'emoji' => $message['reaction']['emoji'] ?? null],
             ], fn ($part) => $part !== null),
             'raw' => ['message' => $message, 'metadata' => $value['metadata'] ?? null],
+        ];
+    }
+
+    /**
+     * Something that happened on an Instagram professional account, as
+     * Meta's webhook says it: a comment under one of its posts ("comments"),
+     * or the account named in someone else's caption or comment
+     * ("mentions"). Null for a field no trigger takes.
+     *
+     * Its "chat" is the post, so what comes quickly under one post can be
+     * kept in order. Beside the common shape: post { id, kind } and comment
+     * { id, parent } -- parent for an answer under another comment.
+     *
+     * @param  array<string, mixed>  $value
+     * @return array<string, mixed>|null
+     */
+    public static function instagram(string $field, array $value, mixed $time = null): ?array
+    {
+        if (! in_array($field, ['comments', 'mentions'], true)) {
+            return null;
+        }
+
+        $mention = $field === 'mentions';
+        $post = (string) ($mention ? ($value['media_id'] ?? '') : ($value['media']['id'] ?? ''));
+        $comment = (string) ($mention ? ($value['comment_id'] ?? '') : ($value['id'] ?? ''));
+        $parent = isset($value['parent_id']) ? (string) $value['parent_id'] : null;
+        $text = (string) ($value['text'] ?? '');
+
+        return [
+            'service' => 'instagram',
+            'type' => $mention ? 'mention' : 'comment',
+            // Where it was written: a comment, an answer under one, or a caption
+            'kind' => match (true) {
+                $comment === '' => 'caption',
+                $parent !== null => 'reply',
+                default => 'comment',
+            },
+            'id' => $comment !== '' ? $comment : $post,
+            'at' => is_numeric($time) ? Carbon::createFromTimestamp((int) $time)->format('Y-m-d\TH:i:s.vP') : null,
+            'chat' => ['id' => $post, 'kind' => 'post', 'title' => null],
+            'sender' => ['id' => isset($value['from']['id']) ? (string) $value['from']['id'] : null, 'name' => $value['from']['username'] ?? null],
+            'text' => $text,
+            'display' => $text,
+            'files' => [],
+            'reply' => ['to' => $comment !== '' ? $comment : null, 'quote' => $parent],
+            'post' => ['id' => $post, 'kind' => $value['media']['media_product_type'] ?? null],
+            'comment' => ['id' => $comment !== '' ? $comment : null, 'parent' => $parent],
+            'raw' => $value,
+        ];
+    }
+
+    /**
+     * Something said to an Instagram professional account in its messages,
+     * as Meta's webhook says it: a message, a quick answer or a button
+     * tapped, a heart put on a message or taken off, a message taken back.
+     * Null for what no trigger takes -- that a message was seen, and what
+     * the account sent itself, which Instagram tells of too.
+     *
+     * Its "chat" is the person, by the id Instagram gives this account for
+     * them: there are no groups. A message carries no name ("Instagram: who
+     * wrote" asks), and a picture or recording comes as the address
+     * Instagram keeps it at, where another service gives an id. Beside the
+     * common shape: button { id, title } for a tap; reaction { message,
+     * emoji }; story { id, url } when it answers or names a story.
+     *
+     * @param  array<string, mixed>  $event
+     * @return array<string, mixed>|null
+     */
+    public static function instagramMessage(array $event): ?array
+    {
+        $message = is_array($event['message'] ?? null) ? $event['message'] : [];
+        $reaction = is_array($event['reaction'] ?? null) ? $event['reaction'] : null;
+        $from = (string) ($event['sender']['id'] ?? '');
+        // A quick answer under a message of one's own, or a button of a card
+        $pressed = match (true) {
+            is_array($message['quick_reply'] ?? null) => ['id' => (string) ($message['quick_reply']['payload'] ?? ''), 'title' => (string) ($message['text'] ?? '')],
+            is_array($event['postback'] ?? null) => ['id' => (string) ($event['postback']['payload'] ?? ''), 'title' => (string) ($event['postback']['title'] ?? '')],
+            default => null,
+        };
+        $id = (string) ($message['mid'] ?? $event['postback']['mid'] ?? $reaction['mid'] ?? '');
+
+        if ($from === '' || ($message['is_echo'] ?? false) === true || ($message === [] && $pressed === null && $reaction === null)) {
+            return null;
+        }
+
+        $sent = array_values(array_filter((array) ($message['attachments'] ?? []), is_array(...)));
+        $first = strtolower((string) ($sent[0]['type'] ?? ''));
+        // The story it answers, or the one of theirs that names the account
+        $story = match (true) {
+            is_array($message['reply_to']['story'] ?? null) => $message['reply_to']['story'],
+            $first === 'story_mention' && is_array($sent[0]['payload'] ?? null) => $sent[0]['payload'],
+            default => null,
+        };
+        $text = (string) ($pressed['id'] ?? $message['text'] ?? $reaction['emoji'] ?? '');
+
+        return [
+            'service' => 'instagram',
+            'type' => match (true) {
+                $pressed !== null => 'button',
+                $reaction !== null => 'reaction',
+                ($message['is_deleted'] ?? false) === true => 'unsend',
+                default => 'message',
+            },
+            // What was sent: text, image, video, audio, file, share (a post passed on), reel, story_mention; a tap is a button
+            'kind' => match (true) {
+                $pressed !== null => 'button',
+                $reaction !== null => 'reaction',
+                $first !== '' => $first === 'ig_reel' ? 'reel' : $first,
+                isset($message['text']) => 'text',
+                default => 'other',
+            },
+            'id' => $id,
+            'at' => is_numeric($event['timestamp'] ?? null) ? Carbon::createFromTimestampMs($event['timestamp'])->format('Y-m-d\TH:i:s.vP') : null,
+            'chat' => ['id' => $from, 'kind' => 'private', 'title' => null],
+            'sender' => ['id' => $from, 'name' => null],
+            'text' => $text,
+            'display' => $pressed !== null ? $pressed['title'] : $text,
+            // Where Instagram keeps what was sent, to be fetched from there
+            'files' => array_values(array_filter(array_map(
+                fn (array $one) => in_array(strtolower((string) ($one['type'] ?? '')), ['image', 'video', 'audio', 'file'], true) ? ($one['payload']['url'] ?? null) : null,
+                $sent,
+            ))),
+            'reply' => ['to' => $id !== '' ? $id : null, 'quote' => $message['reply_to']['mid'] ?? null],
+            ...array_filter([
+                'button' => $pressed,
+                'reaction' => $reaction === null ? null : ['message' => $reaction['mid'] ?? null, 'emoji' => ($reaction['action'] ?? 'react') === 'unreact' ? null : ($reaction['emoji'] ?? $reaction['reaction'] ?? null)],
+                'story' => $story === null ? null : ['id' => isset($story['id']) ? (string) $story['id'] : null, 'url' => $story['url'] ?? null],
+            ], fn ($part) => $part !== null),
+            'raw' => $event,
+        ];
+    }
+
+    /**
+     * Something that happened on a Threads profile, as Meta's webhook says
+     * it: a reply under one of its posts ("replies"), a post of its own
+     * published ("publish") or deleted ("delete"). Null for a field no
+     * trigger takes.
+     *
+     * Its "chat" is the post the thread began with. Beside the common shape:
+     * post { id, owner } for that post, and url, where what was written is.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>|null
+     */
+    public static function threads(array $payload): ?array
+    {
+        $type = ['replies' => 'reply', 'publish' => 'publish', 'delete' => 'delete'][(string) ($payload['values']['field'] ?? '')] ?? null;
+        $value = $payload['values']['value'] ?? null;
+
+        if ($type === null || ! is_array($value)) {
+            return null;
+        }
+
+        $id = (string) ($value['id'] ?? '');
+        $at = $value['timestamp'] ?? $payload['time'] ?? null;
+        $text = (string) ($value['text'] ?? '');
+
+        return [
+            'service' => 'threads',
+            'type' => $type,
+            // What was posted: text_post, image, video, carousel_album ...
+            'kind' => strtolower((string) ($value['media_type'] ?? '')) ?: 'other',
+            'id' => $id,
+            'at' => match (true) {
+                is_numeric($at) => Carbon::createFromTimestamp((int) $at)->format('Y-m-d\TH:i:s.vP'),
+                is_string($at) && strtotime($at) !== false => Carbon::parse($at)->format('Y-m-d\TH:i:s.vP'),
+                default => null,
+            },
+            'chat' => ['id' => (string) ($value['root_post']['id'] ?? $id), 'kind' => 'post', 'title' => null],
+            'sender' => ['id' => isset($value['owner']['owner_id']) ? (string) $value['owner']['owner_id'] : null, 'name' => $value['username'] ?? null],
+            'text' => $text,
+            'display' => $text,
+            'files' => [],
+            'reply' => ['to' => $id !== '' ? $id : null, 'quote' => isset($value['replied_to']['id']) ? (string) $value['replied_to']['id'] : null],
+            'post' => ['id' => (string) ($value['root_post']['id'] ?? $id), 'owner' => $value['root_post']['username'] ?? null],
+            'url' => $value['permalink'] ?? null,
+            'raw' => $value,
         ];
     }
 

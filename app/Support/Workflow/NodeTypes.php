@@ -567,6 +567,94 @@ final class NodeTypes
                 ],
             ],
 
+            [
+                'type' => 'trigger.instagram',
+                'version' => 1,
+                'label' => 'Instagram comment',
+                'group' => 'instagram',
+                'icon' => 'message-square',
+                'description' => 'Starts a run when someone comments under one of the account\'s posts, or names the account in a caption or comment of their own. Later steps read trigger.text, trigger.sender.name, trigger.post.id and trigger.comment.id, which "Answer a comment on Instagram" takes. What the account writes itself starts nothing.',
+                'trigger' => true,
+                'inputs' => [],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'connection', 'label' => 'Account', 'type' => 'connection', 'required' => true, 'services' => ['instagram'], 'help' => 'One signed in with Instagram. Its webhook address, shown on the connection, has to be set in the Meta app, and Meta sends only once that app is live.'],
+                    [
+                        'name' => 'on',
+                        'label' => 'When',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'comment',
+                        'options' => [
+                            'comment' => 'Someone comments under a post',
+                            'mention' => 'The account is mentioned',
+                            'any' => 'Either of these',
+                        ],
+                        'help' => 'trigger.type says which it was; trigger.kind where it was written: comment, reply (under another comment, trigger.comment.parent) or caption. A mention brings no words: only trigger.post.id and trigger.comment.id.',
+                    ],
+                ],
+            ],
+
+            [
+                'type' => 'trigger.instagram_message',
+                'version' => 1,
+                'label' => 'Instagram message',
+                'group' => 'instagram',
+                'icon' => 'message-circle',
+                'description' => 'Starts a run when the account is sent a message on Instagram. Later steps read trigger.text and trigger.chat.id (who wrote, by the id Instagram gives this account for them), which "Send on Instagram" takes; "Instagram: who wrote" finds their name. A picture or recording it carried comes as its address (trigger.files), which "Save to Drive" takes. What the account writes itself starts nothing.',
+                'trigger' => true,
+                'inputs' => [],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'connection', 'label' => 'Account', 'type' => 'connection', 'required' => true, 'services' => ['instagram'], 'help' => 'One signed in with Instagram, allowed its messages. Its webhook address, shown on the connection, has to be set in the Meta app, subscribed to "messages", and Meta sends only once that app is live.'],
+                    [
+                        'name' => 'on',
+                        'label' => 'When',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'message',
+                        'options' => [
+                            'message' => 'A message is sent, or a quick answer tapped',
+                            'button' => 'A quick answer or a button is tapped',
+                            'reaction' => 'Someone reacts to a message',
+                            'unsend' => 'A message is taken back',
+                            'any' => 'Any of these',
+                        ],
+                        'help' => 'A tap reads as trigger.text and trigger.button; a reaction, trigger.reaction; a story answered or naming the account, trigger.story. trigger.type says which it was, and trigger.kind what was sent: text, image, video, audio, file, share, reel, story_mention.',
+                    ],
+                    self::PER_CHAT,
+                ],
+            ],
+
+            [
+                'type' => 'trigger.threads',
+                'version' => 1,
+                'label' => 'Threads reply',
+                'group' => 'threads',
+                'icon' => 'message-square',
+                'description' => 'Starts a run when someone replies under one of the profile\'s posts, or when the profile publishes or deletes a post. Later steps read trigger.text, trigger.sender.name, trigger.url, trigger.post.id (the post the thread began with) and trigger.reply.to, which "Post on Threads" takes as "In answer to". A reply the profile writes itself starts nothing.',
+                'trigger' => true,
+                'inputs' => [],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'connection', 'label' => 'Profile', 'type' => 'connection', 'required' => true, 'services' => ['threads'], 'help' => 'Its webhook address, shown on the connection, has to be set in the Meta app, and Meta sends only once that app is live.'],
+                    [
+                        'name' => 'on',
+                        'label' => 'When',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'reply',
+                        'options' => [
+                            'reply' => 'Someone replies under a post',
+                            'publish' => 'The profile publishes a post',
+                            'delete' => 'A post of the profile\'s is deleted',
+                            'any' => 'Any of these',
+                        ],
+                        'help' => 'trigger.type says which it was. Started by a post published, a workflow that posts on Threads itself would start again each time.',
+                    ],
+                ],
+            ],
+
             // --- Chat ---
             [
                 'type' => 'chat.room',
@@ -1227,12 +1315,13 @@ final class NodeTypes
                 'The Page' => ['facebook.me'],
             ],
             'instagram' => [
-                'Posts' => ['instagram.post', 'instagram.posts'],
-                'Comments' => ['instagram.comment', 'instagram.reply', 'instagram.comment_delete', 'instagram.comments'],
+                'Posts' => ['instagram.post', 'instagram.delete', 'instagram.posts'],
+                'Comments' => ['trigger.instagram', 'instagram.comment', 'instagram.reply', 'instagram.comment_delete', 'instagram.comments'],
+                'Messages' => ['trigger.instagram_message', 'instagram.send', 'instagram.send_file', 'instagram.message_commenter', 'instagram.react', 'instagram.profile'],
                 'The account' => ['instagram.me'],
             ],
             'threads' => [
-                'Posts' => ['threads.post', 'threads.repost', 'threads.delete', 'threads.posts', 'threads.replies'],
+                'Posts' => ['trigger.threads', 'threads.post', 'threads.repost', 'threads.delete', 'threads.posts', 'threads.replies'],
                 'The profile' => ['threads.me'],
             ],
             'linkedin' => [

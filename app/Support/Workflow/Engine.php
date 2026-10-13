@@ -28,6 +28,7 @@ use App\Support\Workflow\Steps\GivenTrigger;
 use App\Support\Workflow\Steps\HttpRequest;
 use App\Support\Workflow\Steps\IfCondition;
 use App\Support\Workflow\Steps\InstagramCall;
+use App\Support\Workflow\Steps\InstagramChat;
 use App\Support\Workflow\Steps\InstagramPost;
 use App\Support\Workflow\Steps\LineCall;
 use App\Support\Workflow\Steps\LineFile;
@@ -125,6 +126,9 @@ final class Engine
         'trigger.telegram' => GivenTrigger::class,
         'trigger.line' => GivenTrigger::class,
         'trigger.whatsapp' => GivenTrigger::class,
+        'trigger.instagram' => GivenTrigger::class,
+        'trigger.instagram_message' => GivenTrigger::class,
+        'trigger.threads' => GivenTrigger::class,
         'line.profile' => LineProfile::class,
         'line.file' => LineFile::class,
         'telegram.file' => TelegramFile::class,
@@ -177,9 +181,15 @@ final class Engine
         'instagram.comment' => InstagramCall::class,
         'instagram.reply' => InstagramCall::class,
         'instagram.comment_delete' => InstagramCall::class,
+        'instagram.delete' => InstagramCall::class,
         'instagram.posts' => InstagramCall::class,
         'instagram.comments' => InstagramCall::class,
         'instagram.me' => InstagramCall::class,
+        'instagram.send' => InstagramChat::class,
+        'instagram.send_file' => InstagramChat::class,
+        'instagram.message_commenter' => InstagramChat::class,
+        'instagram.react' => InstagramChat::class,
+        'instagram.profile' => InstagramChat::class,
         'threads.post' => ThreadsPost::class,
         'threads.repost' => ThreadsCall::class,
         'threads.delete' => ThreadsCall::class,

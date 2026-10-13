@@ -5,6 +5,8 @@ namespace App\Support\Workflow\Inbound;
 use App\Models\Connection;
 use App\Models\Workflow\Workflow;
 use App\Models\Workflow\WorkflowListener;
+use App\Support\Connections\InstagramSignIn;
+use App\Support\Connections\Meta;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -14,11 +16,19 @@ use Throwable;
  * Telling Telegram and LINE where to send a bot's or channel's messages, once
  * a switched-on workflow listens for them. Telegram may instead be asked
  * for them (a connection set to "poll"), which needs no public address.
+ * Meta's are told the address by hand, in the Meta app; an Instagram account
+ * has to be subscribed to that app besides, which is done here.
  * Failing to tell them is reported, and never stops a workflow being
  * published: the connection page shows how the bot stands.
  */
 final class Hooks
 {
+    /** What Instagram is asked to tell of, by what listens: a listener's kind => Meta's names for it. */
+    private const INSTAGRAM_FIELDS = [
+        'instagram' => ['comments', 'mentions'],
+        'instagram_message' => ['messages', 'messaging_postbacks', 'message_reactions'],
+    ];
+
     /**
      * The public address of a hook, or null when none is set up.
      */
@@ -35,7 +45,7 @@ final class Hooks
     public static function register(Workflow $workflow): void
     {
         $refs = WorkflowListener::where('workflow_id', $workflow->id)
-            ->whereIn('kind', ['telegram', 'line'])
+            ->whereIn('kind', ['telegram', 'line', ...array_keys(self::INSTAGRAM_FIELDS)])
             ->pluck('key')
             ->unique();
 
@@ -44,6 +54,7 @@ final class Hooks
                 match ($connection->service) {
                     'telegram' => self::telegram($connection),
                     'line' => self::line($connection),
+                    'instagram' => self::instagram($connection),
                     default => null,
                 };
             } catch (Throwable $e) {
@@ -103,6 +114,43 @@ final class Hooks
         Http::timeout(10)->withToken($token)
             ->put('https://api.line.me/v2/bot/channel/webhook/endpoint', ['endpoint' => $url])
             ->throw();
+    }
+
+    /**
+     * Instagram sends an account's comments, mentions and messages to the
+     * Meta app's webhook once the account is subscribed to the app -- to
+     * what its switched-on workflows listen for and no more, since messages
+     * are a permission of their own that an older sign-in was not given.
+     * Signed in by Facebook it is the Page that would be subscribed, which
+     * is not done: such a connection starts nothing.
+     */
+    public static function instagram(Connection $connection): void
+    {
+        $token = $connection->secret('access_token');
+        $fields = WorkflowListener::where('key', $connection->ref_id)
+            ->whereIn('kind', array_keys(self::INSTAGRAM_FIELDS))
+            ->pluck('kind')
+            ->unique()
+            ->sort()
+            ->flatMap(fn (string $kind) => self::INSTAGRAM_FIELDS[$kind]);
+
+        if ($token === null || $fields->isEmpty() || InstagramSignIn::byFacebook($connection)) {
+            return;
+        }
+
+        Http::timeout(10)->withToken($token)
+            ->post(Meta::INSTAGRAM.'/me/subscribed_apps', ['subscribed_fields' => $fields->implode(',')])
+            ->throw();
+
+        // What is sent names the account by either of its two ids: the other is kept, to know it by
+        if ($connection->setting('scoped_id') === null) {
+            $id = Http::timeout(10)->withToken($token)->get(Meta::INSTAGRAM.'/me', ['fields' => 'id'])->json('id');
+
+            if (is_scalar($id) && (string) $id !== '') {
+                $connection->settings = [...($connection->settings ?? []), 'scoped_id' => (string) $id];
+                $connection->save();
+            }
+        }
     }
 
     /**

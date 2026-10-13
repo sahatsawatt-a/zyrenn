@@ -121,6 +121,8 @@ final class MetaApi
             $response->status() === 429 || in_array($code, self::BUSY, true) => new StepFailed("{$service} asked to slow down.", retryable: true, retryAfter: 60),
             // Outside the day after their last message, only a template may be sent
             $code === 131047 => new StepFailed('WhatsApp takes words of one\'s own only within 24 hours of the other\'s last message: "Send a template on WhatsApp" reaches them after that.'),
+            // Instagram's own number for the same thing
+            $code === 10 && ($error['error_subcode'] ?? null) === 2534022 => new StepFailed("{$service} takes a message only within 24 hours of the other's last one."),
             default => new StepFailed("{$service} said: ".Meta::said($response), retryable: $response->serverError() || (is_array($error) && ($error['is_transient'] ?? false) === true)),
         };
     }

@@ -5,6 +5,9 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        {{-- Whose the app is, as the LICENSE says --}}
+        <meta name="author" content="{{ App\Support\Copyright::holder() }}">
+        <meta name="copyright" content="{{ App\Support\Copyright::line() }}">
 
         {{-- Inline script to detect system dark mode preference and apply it immediately --}}
         <script>

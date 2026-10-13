@@ -40,7 +40,7 @@ final class WhatsAppApi
      */
     public static function verifyToken(Connection $number): string
     {
-        return substr(hash_hmac('sha256', "whatsapp-verify:{$number->ref_id}", (string) config('app.key')), 0, 32);
+        return Meta::verifyToken($number);
     }
 
     /**

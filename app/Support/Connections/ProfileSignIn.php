@@ -83,7 +83,7 @@ abstract class ProfileSignIn implements SignsIn
                 return "{$name} signed it in, but would not keep it so: ".Meta::said($kept);
             }
 
-            $who = Http::timeout(15)->acceptJson()->get(static::GRAPH.'/me', ['fields' => static::ID.',username', 'access_token' => $token]);
+            $who = Http::timeout(15)->acceptJson()->get(static::GRAPH.'/me', ['fields' => implode(',', array_unique(['id', static::ID, 'username'])), 'access_token' => $token]);
         } catch (ConnectionException) {
             return "Could not reach {$name}.";
         }
@@ -99,6 +99,8 @@ abstract class ProfileSignIn implements SignsIn
             'member' => (string) $id,
             'member_name' => (string) ($who->json('username') ?? ''),
             'expires_at' => now()->addSeconds((int) ($kept->json('expires_in') ?? 0))->toIso8601String(),
+            // Instagram names an account by two ids, and may use either when it writes to the app about it
+            ...static::ID !== 'id' && is_scalar($who->json('id')) ? ['scoped_id' => (string) $who->json('id')] : [],
         ];
         $connection->secrets = [...$connection->secrets ?? [], 'access_token' => $token];
 

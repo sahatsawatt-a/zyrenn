@@ -20,55 +20,39 @@ final class FacebookSignIn implements SignsIn
 
     public static function address(Connection $connection, string $state): string
     {
+        return self::dialog($connection, $state, Services::FACEBOOK, self::SCOPES);
+    }
+
+    /**
+     * Facebook's own page for saying yes, for the service that asks: an
+     * Instagram connection may sign in here too (InstagramSignIn).
+     */
+    public static function dialog(Connection $connection, string $state, string $service, string $scopes): string
+    {
         return 'https://www.facebook.com/'.Meta::VERSION.'/dialog/oauth?'.http_build_query([
             'client_id' => $connection->setting('client_id'),
-            'redirect_uri' => SignIns::callback(Services::FACEBOOK),
+            'redirect_uri' => SignIns::callback($service),
             'state' => $state,
             'response_type' => 'code',
-            'scope' => self::SCOPES,
+            'scope' => $scopes,
         ]);
     }
 
     public static function grant(Connection $connection, string $code): ?string
     {
-        $app = ['client_id' => $connection->setting('client_id'), 'client_secret' => $connection->secret('client_secret')];
+        $pages = self::pages($connection, $code, Services::FACEBOOK, 'id,name,access_token');
 
-        try {
-            $traded = Http::timeout(15)->acceptJson()->get(Meta::FACEBOOK.'/oauth/access_token', [
-                ...$app, 'redirect_uri' => SignIns::callback(Services::FACEBOOK), 'code' => $code,
-            ]);
-
-            if (! $traded->successful() || ! is_string($traded->json('access_token'))) {
-                return 'Facebook did not sign it in: '.Meta::said($traded);
-            }
-
-            // A sign-in good for two months, so the Page's token made from it does not run out
-            $kept = Http::timeout(15)->acceptJson()->get(Meta::FACEBOOK.'/oauth/access_token', [
-                ...$app, 'grant_type' => 'fb_exchange_token', 'fb_exchange_token' => $traded->json('access_token'),
-            ]);
-
-            if (! $kept->successful() || ! is_string($kept->json('access_token'))) {
-                return 'Facebook signed it in, but would not keep it so: '.Meta::said($kept);
-            }
-
-            $looked = Http::timeout(15)->acceptJson()->withToken($kept->json('access_token'))
-                ->get(Meta::FACEBOOK.'/me/accounts', ['fields' => 'id,name,access_token', 'limit' => 100]);
-        } catch (ConnectionException) {
-            return 'Could not reach Facebook.';
+        if (is_string($pages)) {
+            return $pages;
         }
 
-        if (! $looked->successful()) {
-            return 'Facebook signed it in, but would not say which Pages it looks after: '.Meta::said($looked);
-        }
-
-        $pages = array_values(array_filter((array) $looked->json('data'), fn ($page) => is_array($page) && isset($page['id'], $page['access_token'])));
         $page = self::chosen($pages, trim((string) $connection->setting('page')));
 
         if (is_string($page)) {
             return $page;
         }
 
-        $connection->settings = [...$connection->settings ?? [], 'page_id' => (string) $page['id'], 'page_name' => (string) ($page['name'] ?? '')];
+        $connection->settings = [...$connection->settings ?? [], 'page_id' => (string) $page['id'], 'page_name' => (string) ($page['name'] ?? ''), ...filled($page['signer'] ?? null) ? ['signer' => (string) $page['signer']] : []];
         $connection->secrets = [...$connection->secrets ?? [], 'page_token' => (string) $page['access_token']];
 
         return null;
@@ -84,6 +68,51 @@ final class FacebookSignIn implements SignsIn
     public static function refused(string $error, string $description): ?string
     {
         return $error === 'access_denied' ? 'Signing in to Facebook was cancelled.' : null;
+    }
+
+    /**
+     * The Pages whoever signed in looks after and shared with the app, each
+     * with its own token: the code is traded for a sign-in, that for one
+     * good for two months, and the Pages' tokens made from it do not run out.
+     *
+     * @return list<array<string, mixed>>|string the Pages, or what went wrong
+     */
+    public static function pages(Connection $connection, string $code, string $service, string $fields): array|string
+    {
+        $app = ['client_id' => $connection->setting('client_id'), 'client_secret' => $connection->secret('client_secret')];
+
+        try {
+            $traded = Http::timeout(15)->acceptJson()->get(Meta::FACEBOOK.'/oauth/access_token', [
+                ...$app, 'redirect_uri' => SignIns::callback($service), 'code' => $code,
+            ]);
+
+            if (! $traded->successful() || ! is_string($traded->json('access_token'))) {
+                return 'Facebook did not sign it in: '.Meta::said($traded);
+            }
+
+            $kept = Http::timeout(15)->acceptJson()->get(Meta::FACEBOOK.'/oauth/access_token', [
+                ...$app, 'grant_type' => 'fb_exchange_token', 'fb_exchange_token' => $traded->json('access_token'),
+            ]);
+
+            if (! $kept->successful() || ! is_string($kept->json('access_token'))) {
+                return 'Facebook signed it in, but would not keep it so: '.Meta::said($kept);
+            }
+
+            $looked = Http::timeout(15)->acceptJson()->withToken($kept->json('access_token'))
+                ->get(Meta::FACEBOOK.'/me/accounts', ['fields' => $fields, 'limit' => 100]);
+        } catch (ConnectionException) {
+            return 'Could not reach Facebook.';
+        }
+
+        if (! $looked->successful()) {
+            return 'Facebook signed it in, but would not say which Pages it looks after: '.Meta::said($looked);
+        }
+
+        // Who signed in, by the id Facebook gives this app for them: how word from Facebook that they took the app off is matched (Withdrawal)
+        $signer = rescue(fn () => Http::timeout(15)->acceptJson()->withToken($kept->json('access_token'))->get(Meta::FACEBOOK.'/me', ['fields' => 'id'])->json('id'), null, false);
+        $pages = array_filter((array) $looked->json('data'), fn ($page) => is_array($page) && isset($page['id'], $page['access_token']));
+
+        return array_values(array_map(fn (array $page) => [...$page, 'signer' => is_scalar($signer) ? (string) $signer : ''], $pages));
     }
 
     /**

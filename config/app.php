@@ -17,6 +17,34 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Contact Address
+    |--------------------------------------------------------------------------
+    |
+    | Where anyone may write about their data or the terms: shown on the
+    | privacy, terms and data deletion pages. Left empty, they name none.
+    |
+    */
+
+    'contact' => env('APP_CONTACT_EMAIL'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Copyright
+    |--------------------------------------------------------------------------
+    |
+    | Who holds the copyright, and the year the app was first published: as
+    | the LICENSE file says. Shown at the foot of the public pages and named
+    | in the head of every page (App\Support\Copyright).
+    |
+    */
+
+    'copyright' => [
+        'holder' => 'Sahatsawatt Anankatham',
+        'since' => 2026,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     |

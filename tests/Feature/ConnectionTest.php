@@ -6,6 +6,7 @@ use App\Models\Chat\ChatRoom;
 use App\Models\Connection;
 use App\Models\Project;
 use App\Models\User;
+use App\Support\Connections\Meta;
 use App\Support\Workflow\Steps\WhatsAppApi;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
@@ -747,6 +748,7 @@ class ConnectionTest extends TestCase
             str_contains($request->url(), 'fb_exchange_token') => Http::response(['access_token' => 'long-user-token', 'expires_in' => 5184000]),
             str_contains($request->url(), '/oauth/access_token') => Http::response(['access_token' => 'short-user-token', 'token_type' => 'bearer', 'expires_in' => 5000]),
             str_contains($request->url(), '/me/accounts') => Http::response(['data' => $pages]),
+            str_contains($request->url(), '/me?fields=id') => Http::response(['id' => '9001']),
             default => Http::response(['error' => ['message' => 'Not faked']], 400),
         });
         $user = User::factory()->create();
@@ -772,6 +774,8 @@ class ConnectionTest extends TestCase
         // The Page's own token is what is kept, made from a sign-in that lasts
         $connection->refresh();
         $this->assertSame(['1002', 'Side Project', 'side-token'], [$connection->setting('page_id'), $connection->setting('page_name'), $connection->secret('page_token')]);
+        // And who signed it in, by the id Facebook gives the app for them: how word that they took the app off is matched
+        $this->assertSame('9001', $connection->setting('signer'));
         Http::assertSent(fn (Request $request) => str_contains($request->url(), '/me/accounts') && $request->hasHeader('Authorization', 'Bearer long-user-token'));
         $this->actingAs($user)->get(route('connections.index'))->assertInertia(fn (Assert $page) => $page
             ->where('connections.0.sign_in.detail', 'Signed in as Side Project')
@@ -793,7 +797,7 @@ class ConnectionTest extends TestCase
             str_contains($request->url(), 'ig_exchange_token') => Http::response(['access_token' => 'ig-long', 'token_type' => 'bearer', 'expires_in' => 5184000]),
             str_contains($request->url(), 'th_exchange_token') => Http::response(['access_token' => 'th-long', 'token_type' => 'bearer', 'expires_in' => 5184000]),
             str_contains($request->url(), 'ig_refresh_token') => Http::response(['access_token' => 'ig-renewed', 'token_type' => 'bearer', 'expires_in' => 5184000]),
-            str_starts_with($request->url(), 'https://graph.instagram.com/v25.0/me') => Http::response(['user_id' => '1789', 'username' => 'shop']),
+            str_starts_with($request->url(), 'https://graph.instagram.com/v25.0/me') => Http::response(['id' => '3941', 'user_id' => '1789', 'username' => 'shop']),
             str_starts_with($request->url(), 'https://graph.threads.net/v1.0/me') => Http::response(['id' => '2456', 'username' => 'shop.th']),
             default => Http::response(['error' => ['message' => 'Not faked']], 400),
         });
@@ -810,9 +814,10 @@ class ConnectionTest extends TestCase
 
         [$to, $asked] = $signIn($instagram = $make('instagram'));
         $this->assertStringStartsWith('https://www.instagram.com/oauth/authorize?', $to);
-        $this->assertSame(['the-app', 'instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments'], [$asked['client_id'], $asked['scope']]);
+        $this->assertSame(['the-app', 'instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments,instagram_business_manage_messages'], [$asked['client_id'], $asked['scope']]);
         $instagram->refresh();
-        $this->assertSame(['1789', 'shop', '2026-12-11T09:00:00+00:00', 'ig-long'], [$instagram->setting('member'), $instagram->setting('member_name'), $instagram->setting('expires_at'), $instagram->secret('access_token')]);
+        // Instagram names the account by two ids: both are kept
+        $this->assertSame(['1789', '3941', 'shop', '2026-12-11T09:00:00+00:00', 'ig-long'], [$instagram->setting('member'), $instagram->setting('scoped_id'), $instagram->setting('member_name'), $instagram->setting('expires_at'), $instagram->secret('access_token')]);
 
         [$to, $asked] = $signIn($threads = $make('threads'));
         $this->assertStringStartsWith('https://threads.com/oauth/authorize?', $to);
@@ -828,6 +833,149 @@ class ConnectionTest extends TestCase
         $this->travelTo('2026-12-05 09:00:00');
         $this->actingAs($user)->getJson(route('connections.test', $instagram))->assertJson(['ok' => true, 'message' => 'Works: signed in as shop until Wed, Feb 3, 2027.']);
         $this->assertSame(['ig-renewed', '2027-02-03T09:00:00+00:00'], [$instagram->fresh()->secret('access_token'), $instagram->fresh()->setting('expires_at')]);
+    }
+
+    public function test_an_instagram_connection_signs_in_by_facebook_as_the_account_its_page_is_linked_to()
+    {
+        config(['services.workflows.public_url' => 'https://hooks.example.test']);
+        Http::preventStrayRequests();
+        $pages = [['id' => '1001', 'name' => 'Shop', 'access_token' => 'shop-token', 'instagram_business_account' => ['id' => '1789', 'username' => 'shop']], ['id' => '1002', 'name' => 'Side Project', 'access_token' => 'side-token']];
+        Http::fake(function (Request $request) use (&$pages) {
+            return match (true) {
+                str_contains($request->url(), 'fb_exchange_token') => Http::response(['access_token' => 'long-user-token', 'expires_in' => 5184000]),
+                str_contains($request->url(), '/oauth/access_token') => Http::response(['access_token' => 'short-user-token', 'token_type' => 'bearer', 'expires_in' => 5000]),
+                str_contains($request->url(), '/me/accounts') => Http::response(['data' => $pages]),
+                str_starts_with($request->url(), 'https://graph.facebook.com/v25.0/1789') => Http::response(['username' => 'shop', 'id' => '1789']),
+                default => Http::response(['error' => ['message' => 'Not faked']], 400),
+            };
+        });
+        $user = User::factory()->create();
+        $connection = Connection::factory()->for($user)->create(['name' => 'Shop', 'service' => 'instagram', 'settings' => ['by' => 'facebook', 'client_id' => 'app-1'], 'secrets' => ['client_secret' => 'app-secret']]);
+        $signIn = function () use ($user, $connection) {
+            $to = (string) $this->actingAs($user)->get("http://localhost/settings/connections/{$connection->ref_id}/sign-in")->headers->get('Location');
+            parse_str((string) parse_url($to, PHP_URL_QUERY), $asked);
+
+            return [$to, $asked, $this->actingAs($user)->get("http://localhost/settings/connections/signed-in?code=the-code&state={$asked['state']}")];
+        };
+
+        // To Facebook, for what Instagram lets an app do there -- taking a post down among it -- and back by Instagram's own address
+        [$to, $asked, $back] = $signIn();
+        $this->assertStringStartsWith('https://www.facebook.com/v25.0/dialog/oauth?', $to);
+        $this->assertSame(['app-1', 'https://hooks.example.test/hooks/instagram/signed-in'], [$asked['client_id'], $asked['redirect_uri']]);
+        $this->assertStringContainsString('instagram_manage_contents', $asked['scope']);
+        $back->assertInertiaFlash('toast.message', 'Signed in to Instagram as @shop.');
+
+        // The account is the one linked to a Page, kept with that Page's token, which does not run out
+        $connection->refresh();
+        $this->assertSame(['1789', 'shop', 'facebook', null, 'shop-token'], [$connection->setting('member'), $connection->setting('member_name'), $connection->setting('via'), $connection->setting('expires_at'), $connection->secret('access_token')]);
+        Http::assertSent(fn (Request $request) => str_contains($request->url(), '/me/accounts') && str_contains(urldecode($request->url()), 'instagram_business_account{id,username}'));
+
+        // It is asked after at Facebook's address, as the account and not as "me", who there is the Page
+        $this->actingAs($user)->getJson(route('connections.test', $connection))->assertJson(['ok' => true, 'message' => 'Works: signed in as shop.']);
+        Http::assertSent(fn (Request $request) => str_starts_with($request->url(), 'https://graph.facebook.com/v25.0/1789?'));
+
+        // Saved again it keeps what signing in gave; set to sign in with Instagram, that sign-in is not this one's
+        $this->actingAs($user)->patch(route('connections.update', $connection), ['name' => 'Shop', 'service' => 'instagram', 'settings' => ['by' => 'facebook', 'client_id' => 'app-1'], 'secrets' => []])->assertRedirect();
+        $this->actingAs($user)->get(route('connections.index'))->assertInertia(fn (Assert $page) => $page
+            ->where('connections.0.sign_in.detail', 'Signed in as @shop')
+            // Where its address is listed is said for the way it signs in
+            ->where('connections.0.sign_in.hint', fn (string $hint) => str_contains($hint, 'Facebook Login for Business') && str_contains($hint, 'instagram_manage_contents')));
+        $this->actingAs($user)->patch(route('connections.update', $connection), ['name' => 'Shop', 'service' => 'instagram', 'settings' => ['by' => 'instagram', 'client_id' => 'app-1'], 'secrets' => []])->assertRedirect();
+        $this->actingAs($user)->get(route('connections.index'))->assertInertia(fn (Assert $page) => $page
+            ->where('connections.0.sign_in.detail', 'Not signed in yet')
+            ->where('connections.0.sign_in.hint', fn (string $hint) => str_contains($hint, 'API setup with Instagram login')));
+
+        // What Facebook shared is said, so what is missing shows: no Page, a Page with no account, or more than one account
+        $this->actingAs($user)->patch(route('connections.update', $connection), ['name' => 'Shop', 'service' => 'instagram', 'settings' => ['by' => 'facebook', 'client_id' => 'app-1'], 'secrets' => []]);
+        $all = $pages;
+        $pages = [];
+        $signIn()[2]->assertInertiaFlash('toast.message', 'Facebook shared no Page with the app. Sign in again and, where Facebook asks what to share, choose the Page the Instagram account is linked to, and the account.');
+        $pages = [$all[1]];
+        $signIn()[2]->assertInertiaFlash('toast.message', 'Facebook shared the Page "Side Project", and showed no Instagram account linked to it. Link the account to its Page on Facebook, then sign in again and share both the Page and the account.');
+        // A Page may name its account the other way
+        $pages = [['id' => '1001', 'access_token' => 'a', 'instagram_business_account' => ['id' => '1789', 'username' => 'shop']], ['id' => '1003', 'access_token' => 'b', 'connected_instagram_account' => ['id' => '1790', 'username' => 'cafe']]];
+        $signIn()[2]->assertInertiaFlash('toast.message', 'Facebook shared 2 Instagram accounts: @shop, @cafe. Sign in again and share only the one to post as.');
+        $this->assertSame('shop-token', $connection->fresh()->secret('access_token'));
+    }
+
+    public function test_a_signed_in_instagram_or_threads_connection_shows_where_meta_sends_what_happens_there()
+    {
+        config(['services.workflows.public_url' => 'https://hooks.example.test']);
+        $user = User::factory()->create();
+        $instagram = Connection::factory()->instagram()->for($user)->create(['name' => 'A']);
+        $threads = Connection::factory()->threads()->for($user)->create(['name' => 'B']);
+        // Signed in by Facebook, or not signed in at all, there is nothing to send to
+        Connection::factory()->instagram()->for($user)->create(['name' => 'C', 'settings' => ['by' => 'facebook', 'via' => 'facebook', 'client_id' => 'app-1', 'member' => '1789', 'member_name' => 'shop']]);
+        Connection::factory()->for($user)->create(['name' => 'D', 'service' => 'threads', 'settings' => ['client_id' => 'th-app'], 'secrets' => ['client_secret' => 'th-secret']]);
+
+        $shown = collect($this->actingAs($user)->get(route('connections.index'))->viewData('page')['props']['connections'])->keyBy('name');
+
+        $this->assertSame(["https://hooks.example.test/hooks/instagram/{$instagram->ref_id}", "https://hooks.example.test/hooks/threads/{$threads->ref_id}", null, null], [$shown['A']['hook']['url'], $shown['B']['hook']['url'], $shown['C']['hook'], $shown['D']['hook']]);
+        // Each with the verify token Meta is to be given, its own
+        $this->assertStringContainsString('verify token '.Meta::verifyToken($instagram).',', $shown['A']['hook']['hint']);
+        $this->assertStringContainsString('verify token '.Meta::verifyToken($threads).',', $shown['B']['hook']['hint']);
+    }
+
+    public function test_meta_taking_a_sign_in_back_signs_the_connection_out_and_a_deletion_is_confirmed_where_anyone_may_read_it()
+    {
+        config(['services.workflows.public_url' => 'https://hooks.example.test', 'app.contact' => 'privacy@example.test']);
+        $user = User::factory()->create();
+        $instagram = Connection::factory()->instagram()->for($user)->create();
+        $instagram->update(['settings' => [...$instagram->settings, 'scoped_id' => '3941']]);
+        $threads = Connection::factory()->threads()->for($user)->create();
+        $page = Connection::factory()->for($user)->create(['name' => 'Page', 'service' => 'facebook', 'settings' => ['client_id' => 'app-1', 'page_id' => '55', 'page_name' => 'Shop', 'signer' => '9001'], 'secrets' => ['client_secret' => 'app-secret', 'page_token' => 'page-token']]);
+        // As Meta signs what it sends: what is said, and its signature before it, both in the base64 of addresses
+        $part = fn (string $bytes) => rtrim(strtr(base64_encode($bytes), '+/', '-_'), '=');
+        $signed = function (string $who, string $secret) use ($part) {
+            $said = $part((string) json_encode(['algorithm' => 'HMAC-SHA256', 'issued_at' => 1791860000, 'user_id' => $who]));
+
+            return $part(hash_hmac('sha256', $said, $secret, true)).'.'.$said;
+        };
+        $threadsSecret = (string) $threads->secret('client_secret');
+        $threadsMember = (string) $threads->setting('member');
+
+        // Signed by no app a connection here is of, or saying nothing: refused, and nothing is touched
+        $this->post('/hooks/meta/deauthorize', ['signed_request' => $signed('1789', 'someone-elses')])->assertForbidden();
+        $this->post('/hooks/meta/data-deletion', ['signed_request' => 'nonsense'])->assertForbidden();
+        $this->assertSame('ig-token', $instagram->fresh()->secret('access_token'));
+
+        // The app taken off the account on Instagram, which names it by its other id: signed out, what its owner typed kept
+        $this->post('/hooks/meta/deauthorize', ['signed_request' => $signed('3941', 'ig-secret')])->assertOk();
+        $instagram->refresh();
+        $this->assertSame([null, null, null, 'ig-app', 'ig-secret'], [$instagram->setting('member'), $instagram->setting('scoped_id'), $instagram->secret('access_token'), $instagram->setting('client_id'), $instagram->secret('client_secret')]);
+        $this->assertSame($threadsMember, $threads->fresh()->setting('member'));
+        $this->assertDatabaseHas('audit_events', ['action' => 'connection.signed_out', 'subject_ref' => $instagram->ref_id, 'actor_id' => null]);
+
+        // Whoever signed a Page in is known by the id Facebook gives the app for them
+        $this->post('/hooks/meta/deauthorize', ['signed_request' => $signed('9001', 'app-secret')])->assertOk();
+        $this->assertSame([null, null, 'app-secret'], [$page->fresh()->secret('page_token'), $page->fresh()->setting('page_id'), $page->fresh()->secret('client_secret')]);
+
+        // A deletion asked for: signed out, what came in through it let go, and where to see that it was done given back
+        DB::table('inbound_events')->insert([
+            ['source' => "threads:{$threads->ref_id}", 'event_id' => 'reply:1', 'envelope' => '{}', 'received_at' => now()],
+            ['source' => "instagram:{$instagram->ref_id}", 'event_id' => 'comment:1', 'envelope' => '{}', 'received_at' => now()],
+        ]);
+        $answer = $this->post('/hooks/meta/data-deletion', ['signed_request' => $signed($threadsMember, $threadsSecret)])->assertOk()->json();
+        $this->assertSame("https://hooks.example.test/data-deletion/{$answer['confirmation_code']}", $answer['url']);
+        $this->assertSame([null, null], [$threads->fresh()->setting('member'), $threads->fresh()->secret('access_token')]);
+        $this->assertSame(["instagram:{$instagram->ref_id}"], DB::table('inbound_events')->pluck('source')->all());
+
+        // That page is read without an account, by the receipt alone; one the app never gave is no page
+        $this->get("/data-deletion/{$answer['confirmation_code']}")->assertOk()->assertInertia(fn (Assert $shown) => $shown
+            ->component('legal/DataDeletion')
+            ->where('done.receipt', $answer['confirmation_code'])
+            ->where('done.removed', 1)
+            ->where('contact', 'privacy@example.test'));
+        $this->get('/data-deletion/1791860000-1-0123456789abcdef')->assertNotFound();
+
+        // Asked again with nothing of theirs left, it is still Meta asking: answered, with nothing to remove
+        $again = $this->post('/hooks/meta/data-deletion', ['signed_request' => $signed($threadsMember, $threadsSecret)])->assertOk()->json('confirmation_code');
+        $this->get("/data-deletion/{$again}")->assertInertia(fn (Assert $shown) => $shown->where('done.removed', 0));
+
+        // How the app treats what it is given, its terms, and how to have it deleted: for anyone to read
+        $this->get('/privacy')->assertOk()->assertInertia(fn (Assert $shown) => $shown->component('legal/Privacy')->where('contact', 'privacy@example.test')->has('updated'));
+        $this->get('/terms')->assertOk()->assertInertia(fn (Assert $shown) => $shown->component('legal/Terms'));
+        $this->get('/data-deletion')->assertOk()->assertInertia(fn (Assert $shown) => $shown->component('legal/DataDeletion')->where('done', null));
     }
 
     public function test_a_whatsapp_number_is_tried_with_its_token_and_shows_where_meta_sends_its_messages()

@@ -4,7 +4,7 @@ namespace App\Support\Workflow\Steps;
 
 use App\Models\Connection;
 use App\Models\Drive\DriveFile;
-use App\Support\Connections\Meta;
+use App\Support\Connections\InstagramSignIn;
 
 /**
  * Post on Instagram, as a professional account: a picture, several pictures
@@ -13,8 +13,9 @@ use App\Support\Connections\Meta;
  * reachable from outside, and a video is published once Instagram has
  * worked through it (Containers).
  *
- * Publishing is recorded and never simply repeated. Instagram lets an app
- * publish, and not take a post down again.
+ * Publishing is recorded and never simply repeated. Taking a post down
+ * again is a step of its own, for a connection signed in by Facebook
+ * (InstagramCall).
  */
 final class InstagramPost implements Step
 {
@@ -27,8 +28,10 @@ final class InstagramPost implements Step
     {
         $account = MetaApi::account($step, 'instagram');
         $as = fn (int $timeout = 60) => MetaApi::as($account->secret('access_token'), $timeout);
-        $me = Meta::INSTAGRAM.'/'.$account->setting('member');
+        $graph = InstagramSignIn::graph($account);
+        $me = $graph.'/'.$account->setting('member');
         $caption = trim($step->text('caption'));
+        $several = ($step->setting('what') ?: 'picture') === 'several';
 
         if (mb_strlen($caption) > self::MAX_CAPTION) {
             throw new StepFailed('An Instagram caption is at most '.number_format(self::MAX_CAPTION).' letters, and this is '.number_format(mb_strlen($caption)).'.');
@@ -37,40 +40,44 @@ final class InstagramPost implements Step
         return Containers::publish(
             $step,
             self::NAME,
-            fn () => (string) MetaApi::call(self::NAME, fn () => $as()->post("{$me}/media", self::post($step, $account, $caption)))->json('id'),
-            function (string $made) use ($as) {
-                $stands = MetaApi::call(self::NAME, fn () => $as(20)->get(Meta::INSTAGRAM."/{$made}", ['fields' => 'status_code,status']));
+            fn (array $parts) => (string) MetaApi::call(self::NAME, fn () => $as()->post("{$me}/media", self::post($step, $caption, $parts)))->json('id'),
+            function (string $made) use ($as, $graph) {
+                $stands = MetaApi::call(self::NAME, fn () => $as(20)->get("{$graph}/{$made}", ['fields' => 'status_code,status']));
 
                 return [(string) $stands->json('status_code'), $stands->json('status')];
             },
-            function (string $made) use ($step, $account, $as, $me) {
+            function (string $made) use ($step, $account, $as, $me, $graph) {
                 $id = (string) MetaApi::send($step, self::NAME, (string) $account->setting('member'), fn () => $as()->post("{$me}/media_publish", ['creation_id' => $made]))->json('id');
 
                 return [
                     'id' => $id,
                     // Where it is, asked after: a post that is up is not failed for want of its address
-                    'url' => rescue(fn () => MetaApi::call(self::NAME, fn () => $as(20)->get(Meta::INSTAGRAM."/{$id}", ['fields' => 'permalink']))->json('permalink'), null, false),
+                    'url' => rescue(fn () => MetaApi::call(self::NAME, fn () => $as(20)->get("{$graph}/{$id}", ['fields' => 'permalink']))->json('permalink'), null, false),
                     'as' => $account->setting('member_name'),
                 ];
             },
+            // Each of several is handed over first, and worked through before the post that holds them
+            $several ? fn () => self::each($step, $account) : null,
         );
     }
 
     /**
-     * What Instagram is handed for the post: what it is, where its file is,
-     * and its caption.
+     * What Instagram is handed for the post: what it is, where its file is
+     * -- or, of several, what Instagram calls each -- and its caption.
      *
+     * @param  list<string>  $parts
      * @return array<string, mixed>
      */
-    private static function post(StepContext $step, Connection $account, string $caption): array
+    private static function post(StepContext $step, string $caption, array $parts): array
     {
         $what = (string) ($step->setting('what') ?: 'picture');
         $with = array_filter(['caption' => $caption]);
 
         return match ($what) {
             'reel' => ['media_type' => 'REELS', 'video_url' => DriveSteps::publicUrl(self::video(DriveSteps::file($step, 'video'))), ...$with],
-            'story' => ['media_type' => 'STORIES', ...self::shown(DriveSteps::file($step, 'story'))],
-            'several' => ['media_type' => 'CAROUSEL', 'children' => implode(',', self::each($step, $account)), ...$with],
+            // A story whatever it shows: a video would otherwise say it is only a video
+            'story' => [...self::shown(DriveSteps::file($step, 'story')), 'media_type' => 'STORIES'],
+            'several' => ['media_type' => 'CAROUSEL', 'children' => implode(',', $parts), ...$with],
             default => [...self::shown(self::picture(DriveSteps::file($step, 'picture'))), ...$with],
         };
     }
@@ -92,7 +99,7 @@ final class InstagramPost implements Step
         $shown = array_map(self::shown(...), $files);
 
         return array_map(fn (array $one) => (string) MetaApi::call(self::NAME, fn () => MetaApi::as($account->secret('access_token'), 60)
-            ->post(Meta::INSTAGRAM.'/'.$account->setting('member').'/media', [...$one, 'is_carousel_item' => true]))->json('id'), $shown);
+            ->post(InstagramSignIn::graph($account).'/'.$account->setting('member').'/media', [...$one, 'is_carousel_item' => true]))->json('id'), $shown);
     }
 
     /**

@@ -38,7 +38,7 @@ class ConnectionCheck
             Services::FACEBOOK => $this->signedIn($connection, fn () => Http::timeout(10)->acceptJson()->withToken($connection->secret('page_token') ?? '')
                 ->get(Meta::FACEBOOK.'/'.$connection->setting('page_id'), ['fields' => 'name']), 'name'),
             Services::INSTAGRAM => $this->signedIn($connection, fn () => Http::timeout(10)->acceptJson()
-                ->get(Meta::INSTAGRAM.'/me', ['fields' => 'username', 'access_token' => $connection->secret('access_token')]), 'username'),
+                ->get(InstagramSignIn::account($connection), ['fields' => 'username', 'access_token' => $connection->secret('access_token')]), 'username'),
             Services::THREADS => $this->signedIn($connection, fn () => Http::timeout(10)->acceptJson()
                 ->get(Meta::THREADS.'/me', ['fields' => 'username', 'access_token' => $connection->secret('access_token')]), 'username'),
             Services::WHATSAPP => $this->whatsapp($connection),

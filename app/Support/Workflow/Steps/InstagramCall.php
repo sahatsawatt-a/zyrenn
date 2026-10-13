@@ -3,13 +3,17 @@
 namespace App\Support\Workflow\Steps;
 
 use App\Models\Connection;
+use App\Support\Connections\InstagramSignIn;
 use App\Support\Connections\Meta;
 
 /**
  * Instagram's other calls, each a kind of step of its own (ServiceKinds
  * names them; this runs them): commenting, answering a comment, taking one
- * away, and reading -- the account's posts, a post's comments, and the
- * account itself.
+ * away, taking a post down, and reading -- the account's posts, a post's
+ * comments, and the account itself.
+ *
+ * Instagram answers where the connection signed in: at its own address, or
+ * at Facebook's (InstagramSignIn::graph). Only there may a post be deleted.
  */
 final class InstagramCall implements Step
 {
@@ -23,6 +27,7 @@ final class InstagramCall implements Step
             'instagram.comment' => self::write($step, $account, MetaApi::thing($step, 'post', 'post'), 'comments'),
             'instagram.reply' => self::write($step, $account, MetaApi::thing($step, 'comment', 'comment'), 'replies'),
             'instagram.comment_delete' => self::delete($step, $account),
+            'instagram.delete' => self::remove($step, $account),
             'instagram.posts' => self::posts($step, $account),
             'instagram.comments' => self::comments($step, $account),
             'instagram.me' => self::me($account),
@@ -41,7 +46,7 @@ final class InstagramCall implements Step
         $text = MetaApi::needs($step, 'text', 'comment: it came to nothing');
 
         $made = MetaApi::send($step, self::NAME, $on, fn () => MetaApi::as($account->secret('access_token'))
-            ->post(Meta::INSTAGRAM."/{$on}/{$as}", ['message' => $text]));
+            ->post(InstagramSignIn::graph($account)."/{$on}/{$as}", ['message' => $text]));
 
         return ['id' => (string) $made->json('id'), 'on' => $on];
     }
@@ -53,7 +58,27 @@ final class InstagramCall implements Step
     {
         $comment = MetaApi::thing($step, 'comment', 'comment');
 
-        MetaApi::call(self::NAME, fn () => MetaApi::as($account->secret('access_token'))->delete(Meta::INSTAGRAM."/{$comment}"));
+        MetaApi::call(self::NAME, fn () => MetaApi::as($account->secret('access_token'))->delete(InstagramSignIn::graph($account)."/{$comment}"));
+
+        return ['done' => true];
+    }
+
+    /**
+     * Take a post, a reel or a story down, or several as the one post they
+     * are. Instagram lets an app do so only by way of Facebook, so a
+     * connection signed in with Instagram is told before anything is asked.
+     *
+     * @return array{done: true}
+     */
+    private static function remove(StepContext $step, Connection $account): array
+    {
+        $post = MetaApi::thing($step, 'post', 'post');
+
+        if (! InstagramSignIn::byFacebook($account)) {
+            throw new StepFailed("Instagram lets an app delete a post only by way of Facebook, and \"{$account->name}\" signs in with Instagram: set \"Sign in with\" to Facebook on the connection, and sign in again.");
+        }
+
+        MetaApi::call(self::NAME, fn () => MetaApi::as($account->secret('access_token'))->delete(Meta::FACEBOOK."/{$post}"));
 
         return ['done' => true];
     }
@@ -64,7 +89,7 @@ final class InstagramCall implements Step
     private static function posts(StepContext $step, Connection $account): array
     {
         $found = MetaApi::call(self::NAME, fn () => MetaApi::as($account->secret('access_token'))
-            ->get(Meta::INSTAGRAM.'/'.$account->setting('member').'/media', [
+            ->get(InstagramSignIn::graph($account).'/'.$account->setting('member').'/media', [
                 'fields' => 'id,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count',
                 'limit' => MetaApi::count($step),
             ]));
@@ -90,7 +115,7 @@ final class InstagramCall implements Step
     {
         $on = MetaApi::thing($step, 'post', 'post');
         $found = MetaApi::call(self::NAME, fn () => MetaApi::as($account->secret('access_token'))
-            ->get(Meta::INSTAGRAM."/{$on}/comments", ['fields' => 'id,text,username,timestamp,like_count', 'limit' => MetaApi::count($step, 25)]));
+            ->get(InstagramSignIn::graph($account)."/{$on}/comments", ['fields' => 'id,text,username,timestamp,like_count', 'limit' => MetaApi::count($step, 25)]));
 
         $comments = array_map(fn (array $comment) => [
             'id' => (string) ($comment['id'] ?? ''),
@@ -108,11 +133,12 @@ final class InstagramCall implements Step
      */
     private static function me(Connection $account): array
     {
+        // Its own login names the account user_id and says what kind it is; Facebook's does neither
         $who = MetaApi::call(self::NAME, fn () => MetaApi::as($account->secret('access_token'))
-            ->get(Meta::INSTAGRAM.'/me', ['fields' => 'user_id,username,name,account_type,profile_picture_url,followers_count,follows_count,media_count']));
+            ->get(InstagramSignIn::account($account), ['fields' => (InstagramSignIn::byFacebook($account) ? 'id' : 'user_id,account_type').',username,name,profile_picture_url,followers_count,follows_count,media_count']));
 
         return [
-            'id' => $who->json('user_id'),
+            'id' => $who->json('user_id') ?? $who->json('id'),
             'username' => $who->json('username'),
             'name' => $who->json('name'),
             'kind' => $who->json('account_type'),

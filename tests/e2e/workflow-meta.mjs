@@ -83,7 +83,7 @@ await runBoard(
         ];
         check(
             'each of the four has its steps in a group of its own',
-            counted.join() === '8,8,7,6',
+            counted.join() === '8,8,15,7',
             counted.join(', '),
         );
 

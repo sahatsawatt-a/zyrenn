@@ -27,6 +27,9 @@ final class Listeners
         'trigger.telegram' => 'telegram',
         'trigger.line' => 'line',
         'trigger.whatsapp' => 'whatsapp',
+        'trigger.instagram' => 'instagram',
+        'trigger.instagram_message' => 'instagram_message',
+        'trigger.threads' => 'threads',
     ];
 
     public static function rebuild(Workflow $workflow): void
@@ -58,7 +61,7 @@ final class Listeners
                     'key' => match ($kind) {
                         'chat_room' => (string) ($node['config']['room'] ?? ''),
                         'webhook' => (string) ($node['config']['token'] ?? ''),
-                        'telegram', 'line', 'whatsapp' => (string) ($node['config']['connection'] ?? ''),
+                        'telegram', 'line', 'whatsapp', 'instagram', 'instagram_message', 'threads' => (string) ($node['config']['connection'] ?? ''),
                         default => '',
                     },
                     'settings' => $node['config'],

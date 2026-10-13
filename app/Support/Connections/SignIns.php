@@ -63,12 +63,13 @@ final class SignIns
         $who = $signIn::signedIn($connection);
         $until = $who['until'] ?? null;
         $day = $until?->isoFormat('D MMM YYYY');
+        $service = Services::get($connection->service) ?? [];
 
         return [
             'url' => route('connections.sign-in', $connection),
             'callback' => self::callback($connection->service),
             'service' => $connection->label(),
-            'hint' => Services::get($connection->service)['signs_in'] ?? '',
+            'hint' => $service['signs_in_by'][$connection->setting('by')] ?? $service['signs_in'] ?? '',
             // 'no' before it ever was, 'over' once its time has run out
             'state' => match (true) {
                 $who === null => 'no',

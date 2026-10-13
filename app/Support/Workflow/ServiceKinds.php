@@ -623,9 +623,12 @@ final class ServiceKinds
         $post = ['name' => 'post', 'label' => 'Post', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("post").id }}', 'help' => 'Its id, as "Post on Instagram" or "Instagram: my posts" gives it -- not its link.'];
         $comment = ['name' => 'comment', 'label' => 'Comment', 'type' => 'template', 'required' => true, 'placeholder' => '{{ item(node("comments").comments, 1).id }}', 'help' => 'Its id, as a step gives it.'];
         $fetched = 'Instagram fetches it from the app, so the app needs its public address.';
+        $chats = [...$account, 'help' => 'An Instagram connection, signed in with Instagram and allowed its messages.'];
+        $to = ['name' => 'to', 'label' => 'To', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.chat.id }}', 'help' => 'Who, by the id Instagram gives the account for them, as a message from them carries it -- not their @name.'];
+        $window = 'Only within 24 hours of their last message.';
 
         return [
-            self::kind('instagram.post', 'Post on Instagram', 'megaphone', 'Posts as an Instagram professional account: a picture, several to swipe through, a reel, or a story. Gives out the post\'s id and its address as url. Instagram lets an app post, and not take a post down again.', [
+            self::kind('instagram.post', 'Post on Instagram', 'megaphone', 'Posts as an Instagram professional account: a picture, several to swipe through, a reel, or a story. Gives out the post\'s id and its address as url. Taking one down again is "Delete a post on Instagram".', [
                 $account,
                 ['name' => 'what', 'label' => 'What', 'type' => 'choice', 'required' => true, 'default' => 'picture', 'options' => ['picture' => 'A picture', 'several' => 'Several pictures or videos, to swipe through', 'reel' => 'A reel', 'story' => 'A story']],
                 ['name' => 'picture', 'label' => 'Picture', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'drive' => 'image', 'help' => 'A JPEG in the Drive, by its ref_id. '.$fetched, 'when' => ['what' => 'picture']],
@@ -634,6 +637,10 @@ final class ServiceKinds
                 ['name' => 'story', 'label' => 'Picture or video', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("save").ref_id }}', 'help' => 'A JPEG, an MP4 or a MOV in the Drive, by its ref_id. '.$fetched, 'when' => ['what' => 'story']],
                 ['name' => 'caption', 'label' => 'Caption', 'type' => 'template', 'required' => false, 'help' => 'At most 2,200 letters.', 'when' => ['what' => ['picture', 'several', 'reel']]],
             ], sends: true),
+            self::kind('instagram.delete', 'Delete a post on Instagram', 'trash-2', 'Takes one of the account\'s posts, reels or stories down for good -- several to swipe through go as the one post they are. Instagram lets an app do this only for a connection signed in with Facebook.', [
+                ['name' => 'connection', 'label' => 'As', 'type' => 'connection', 'required' => true, 'services' => ['instagram'], 'help' => 'An Instagram connection, signed in with Facebook.'],
+                $post,
+            ]),
             self::kind('instagram.comment', 'Comment on Instagram', 'message-square', 'Writes a comment under one of the account\'s posts, as the account. Gives out the comment\'s id.', [
                 $account,
                 $post,
@@ -653,6 +660,32 @@ final class ServiceKinds
                 $account,
                 $post,
                 ['name' => 'count', 'label' => 'How many', 'type' => 'number', 'required' => false, 'default' => 25, 'help' => 'At most 100.'],
+            ]),
+            self::kind('instagram.send', 'Send on Instagram', 'send', 'Sends words from the account to someone who wrote to it, with quick answers to tap under them when any are named. Gives out the message\'s id. '.$window, [
+                $chats,
+                $to,
+                ['name' => 'text', 'label' => 'Message', 'type' => 'template', 'required' => true, 'help' => 'At most 1,000 bytes: about that many letters in English, a third as many in Thai.'],
+                ['name' => 'buttons', 'label' => 'Quick answers', 'type' => 'fields', 'required' => false, 'default' => [], 'labels' => true, 'help' => 'Up to 13, each at most 20 letters: what it says, and what a tap sends back as trigger.text -- its own words when left empty. They are gone once the chat moves on.'],
+            ], sends: true),
+            self::kind('instagram.send_file', 'Send a file on Instagram', 'file-up', 'Sends a picture (JPEG, PNG or GIF, at most 8 MB), a video or a recording (25 MB) from the Drive to someone who wrote to the account. '.$fetched.' '.$window, [
+                $chats,
+                $to,
+                ['name' => 'file', 'label' => 'File', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("save").ref_id }}', 'help' => 'A file in the Drive, by its ref_id.'],
+            ], sends: true),
+            self::kind('instagram.message_commenter', 'Message a commenter on Instagram', 'reply', 'Sends a message to whoever wrote a comment under one of the account\'s posts: the one thing that reaches someone who has not written to it. Once for each comment, within seven days of it; more only after they answer.', [
+                $chats,
+                ['name' => 'comment', 'label' => 'Comment', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.comment.id }}', 'help' => 'Its id, as "Instagram comment" gives it.'],
+                ['name' => 'text', 'label' => 'Message', 'type' => 'template', 'required' => true],
+            ], sends: true),
+            self::kind('instagram.react', 'React on Instagram', 'smile', 'Puts a heart on a message someone sent the account, or takes it off again.', [
+                $chats,
+                $to,
+                ['name' => 'message', 'label' => 'On message', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.reply.to }}', 'help' => 'The message\'s id.'],
+                ['name' => 'reaction', 'label' => 'Reaction', 'type' => 'choice', 'required' => true, 'default' => 'love', 'options' => ['love' => 'A heart', 'none' => 'None: take it off']],
+            ]),
+            self::kind('instagram.profile', 'Instagram: who wrote', 'user-search', 'Asks Instagram about someone who wrote to the account: a message carries only their id. Gives out id, username, name, picture, followers, verified, and whether they follow the account (follows) and it them (followed).', [
+                $chats,
+                ['name' => 'user', 'label' => 'Who', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.sender.id }}', 'help' => 'Their id, as a message from them gives it.'],
             ]),
             self::kind('instagram.me', 'Instagram: who I am', 'badge-check', 'Asks Instagram about the account the connection is signed in as. Gives out id, username, name, kind, picture, followers, following and posts.', [$account]),
         ];

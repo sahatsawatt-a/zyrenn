@@ -32,6 +32,7 @@ const SAID: Record<string, string> = {
     'connection.added': 'added',
     'connection.changed': 'changed',
     'connection.removed': 'removed',
+    'connection.signed_out': 'signed out',
 };
 
 function said(item: Activity): string {
@@ -46,6 +47,13 @@ function said(item: Activity): string {
         Array.isArray(item.details.fields)
     ) {
         return `changed ${(item.details.fields as string[]).join(', ').replaceAll('_', ' ')}`;
+    }
+
+    // Signed out by word from its service, where whoever signed it in took that back
+    if (item.action === 'connection.signed_out') {
+        return item.details.why === 'deletion'
+            ? `signed out: its account asked ${item.details.by ?? 'the service'} for its data to be deleted`
+            : `signed out: the app was removed from its account on ${item.details.by ?? 'the service'}`;
     }
 
     return what;

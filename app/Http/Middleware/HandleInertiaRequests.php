@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\Chat\ChatRoom;
 use App\Models\Project;
+use App\Support\Copyright;
 use App\Support\Live\Collab;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -42,6 +43,8 @@ class HandleInertiaRequests extends Middleware
         return [
             ...parent::share($request),
             'name' => config('app.name'),
+            // Whose the app is, for the foot of the pages anyone may read
+            'copyright' => Copyright::line(),
             'auth' => [
                 'user' => $request->user(),
             ],

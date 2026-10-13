@@ -5,11 +5,11 @@ namespace App\Http\Controllers\Workflow;
 use App\Http\Controllers\Controller;
 use App\Models\Connection;
 use App\Models\Workflow\WorkflowListener;
+use App\Support\Connections\Meta;
 use App\Support\Workflow\Inbound\Envelope;
 use App\Support\Workflow\Ingest;
 use App\Support\Workflow\Listeners;
 use App\Support\Workflow\References;
-use App\Support\Workflow\Steps\WhatsAppApi;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -118,15 +118,10 @@ class HookController extends Controller
         $number = Connection::where('ref_id', $connection)->where('service', 'whatsapp')->first();
 
         if ($request->isMethod('GET')) {
-            return $number !== null && $request->query('hub_mode') === 'subscribe' && hash_equals(WhatsAppApi::verifyToken($number), (string) $request->query('hub_verify_token'))
-                ? response((string) $request->query('hub_challenge'), 200, ['Content-Type' => 'text/plain'])
-                : response()->json(['ok' => false], 403);
+            return self::asked($request, $number);
         }
 
-        $secret = $number?->secret('app_secret');
-        $signed = 'sha256='.hash_hmac('sha256', $request->getContent(), (string) $secret);
-
-        if ($number === null || $secret === null || ! hash_equals($signed, (string) $request->header('X-Hub-Signature-256'))) {
+        if ($number === null || ! self::fromMeta($request, $number->secret('app_secret'))) {
             return response()->json(['ok' => false], 403);
         }
 
@@ -154,6 +149,113 @@ class HookController extends Controller
                     );
                 }
             }
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * What happens on an Instagram professional account, by Meta's webhook:
+     * a comment under one of its posts, the account named by someone else,
+     * or something said to it in its messages. Asked and signed as
+     * WhatsApp's is, with the secret the connection signs in with. One
+     * address takes everything the Meta app is told of, so only this
+     * account's is taken -- and nothing the account wrote itself, or the
+     * answer a workflow gave would start it again.
+     */
+    public function instagram(Request $request, string $connection): JsonResponse|Response
+    {
+        $account = Connection::where('ref_id', $connection)->where('service', 'instagram')->first();
+
+        if ($request->isMethod('GET')) {
+            return self::asked($request, $account);
+        }
+
+        if ($account === null || ! self::fromMeta($request, $account->secret('client_secret'))) {
+            return response()->json(['ok' => false], 403);
+        }
+
+        // Meta names the account by either of its two ids
+        $ids = array_filter([(string) $account->setting('member'), (string) $account->setting('scoped_id')]);
+
+        foreach ((array) $request->json('entry', []) as $entry) {
+            if (! is_array($entry) || ! in_array((string) ($entry['id'] ?? ''), $ids, true)) {
+                continue;
+            }
+
+            foreach ((array) ($entry['changes'] ?? []) as $change) {
+                $envelope = is_array($change) && is_array($change['value'] ?? null)
+                    ? Envelope::instagram((string) ($change['field'] ?? ''), $change['value'], $entry['time'] ?? null)
+                    : null;
+
+                if ($envelope === null || self::own($account, $envelope)) {
+                    continue;
+                }
+
+                Ingest::fire(
+                    "instagram:{$account->ref_id}",
+                    "{$envelope['type']}:{$envelope['id']}",
+                    $envelope,
+                    Listeners::for('instagram', $account->ref_id),
+                    fn (WorkflowListener $listener) => Envelope::wanted('instagram', $listener->settings['on'] ?? null, $envelope['type']),
+                );
+            }
+
+            // Messages come in a list of their own -- or, from the Meta app's own test, as a change like the rest
+            $said = [...(array) ($entry['messaging'] ?? []), ...array_column(array_filter((array) ($entry['changes'] ?? []), is_array(...)), 'value')];
+
+            foreach ($said as $event) {
+                $envelope = is_array($event) && isset($event['sender']) ? Envelope::instagramMessage($event) : null;
+
+                if ($envelope === null || in_array($envelope['sender']['id'], $ids, true)) {
+                    continue;
+                }
+
+                Ingest::fire(
+                    "instagram:{$account->ref_id}",
+                    // A heart put on, taken off and put on again is three things, told apart by when
+                    "{$envelope['type']}:{$envelope['id']}".($envelope['type'] === 'reaction' ? ':'.($event['timestamp'] ?? '') : ''),
+                    $envelope,
+                    Listeners::for('instagram_message', $account->ref_id),
+                    fn (WorkflowListener $listener) => Envelope::wanted('instagram_message', $listener->settings['on'] ?? null, $envelope['type']),
+                );
+            }
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * What happens on a Threads profile, by Meta's webhook: a reply under
+     * one of its posts, or a post of its own published or deleted. Asked
+     * and signed as Instagram's is; a reply the profile wrote itself starts
+     * nothing.
+     */
+    public function threads(Request $request, string $connection): JsonResponse|Response
+    {
+        $profile = Connection::where('ref_id', $connection)->where('service', 'threads')->first();
+
+        if ($request->isMethod('GET')) {
+            return self::asked($request, $profile);
+        }
+
+        if ($profile === null || ! self::fromMeta($request, $profile->secret('client_secret'))) {
+            return response()->json(['ok' => false], 403);
+        }
+
+        $payload = $request->json()->all();
+        $envelope = Envelope::threads($payload);
+        // One address takes every profile the Meta app is told of: only this one's is taken
+        $ours = ! isset($payload['target_id']) || (string) $payload['target_id'] === (string) $profile->setting('member');
+
+        if ($envelope !== null && $ours && ! ($envelope['type'] === 'reply' && self::own($profile, $envelope))) {
+            Ingest::fire(
+                "threads:{$profile->ref_id}",
+                "{$envelope['type']}:{$envelope['id']}",
+                $envelope,
+                Listeners::for('threads', $profile->ref_id),
+                fn (WorkflowListener $listener) => Envelope::wanted('threads', $listener->settings['on'] ?? null, $envelope['type']),
+            );
         }
 
         return response()->json(['ok' => true]);
@@ -199,6 +301,38 @@ class HookController extends Controller
         );
 
         return response()->json(['ok' => true], 202);
+    }
+
+    /**
+     * Meta asking, once, when a webhook is set up in its app: only the
+     * connection's own verify token is answered, with what Meta sent to be
+     * given back.
+     */
+    private static function asked(Request $request, ?Connection $connection): JsonResponse|Response
+    {
+        return $connection !== null && $request->query('hub_mode') === 'subscribe' && hash_equals(Meta::verifyToken($connection), (string) $request->query('hub_verify_token'))
+            ? response((string) $request->query('hub_challenge'), 200, ['Content-Type' => 'text/plain'])
+            : response()->json(['ok' => false], 403);
+    }
+
+    /**
+     * Whether Meta sent it: signed with the secret of the Meta app the connection is of.
+     */
+    private static function fromMeta(Request $request, ?string $secret): bool
+    {
+        return $secret !== null && hash_equals('sha256='.hash_hmac('sha256', $request->getContent(), $secret), (string) $request->header('X-Hub-Signature-256'));
+    }
+
+    /**
+     * Whether the account wrote it itself.
+     *
+     * @param  array<string, mixed>  $envelope
+     */
+    private static function own(Connection $account, array $envelope): bool
+    {
+        $name = mb_strtolower((string) ($envelope['sender']['name'] ?? ''));
+
+        return $name !== '' && $name === mb_strtolower((string) $account->setting('member_name'));
     }
 
     /**

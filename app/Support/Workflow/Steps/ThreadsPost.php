@@ -28,6 +28,7 @@ final class ThreadsPost implements Step
         $as = fn (int $timeout = 60) => MetaApi::as($account->secret('access_token'), $timeout);
         $me = Meta::THREADS.'/'.$account->setting('member');
         $text = trim($step->text('text'));
+        $several = ($step->setting('with') ?: 'none') === 'several';
 
         if (mb_strlen($text) > self::MAX_LETTERS) {
             throw new StepFailed('A Threads post is at most '.self::MAX_LETTERS.' letters, and this is '.number_format(mb_strlen($text)).'.');
@@ -36,7 +37,7 @@ final class ThreadsPost implements Step
         return Containers::publish(
             $step,
             self::NAME,
-            fn () => (string) MetaApi::call(self::NAME, fn () => $as()->post("{$me}/threads", self::post($step, $account, $text)))->json('id'),
+            fn (array $parts) => (string) MetaApi::call(self::NAME, fn () => $as()->post("{$me}/threads", self::post($step, $text, $parts)))->json('id'),
             function (string $made) use ($as) {
                 $stands = MetaApi::call(self::NAME, fn () => $as(20)->get(Meta::THREADS."/{$made}", ['fields' => 'status,error_message']));
 
@@ -51,15 +52,18 @@ final class ThreadsPost implements Step
                     'as' => $account->setting('member_name'),
                 ];
             },
+            // Each of several is handed over first: Threads makes no post of parts it does not yet know
+            $several ? fn () => self::each($step, $account) : null,
         );
     }
 
     /**
-     * What Threads is handed for the post.
+     * What Threads is handed for the post -- of several, what Threads calls each.
      *
+     * @param  list<string>  $parts
      * @return array<string, mixed>
      */
-    private static function post(StepContext $step, Connection $account, string $text): array
+    private static function post(StepContext $step, string $text, array $parts): array
     {
         $with = (string) ($step->setting('with') ?: 'none');
         $said = array_filter([
@@ -70,7 +74,7 @@ final class ThreadsPost implements Step
 
         return match ($with) {
             'picture', 'video' => [...self::shown(DriveSteps::file($step, $with), $with === 'video'), ...$said],
-            'several' => ['media_type' => 'CAROUSEL', 'children' => implode(',', self::each($step, $account)), ...$said],
+            'several' => ['media_type' => 'CAROUSEL', 'children' => implode(',', $parts), ...$said],
             'link' => ['media_type' => 'TEXT', 'link_attachment' => self::link($step), ...self::worded($said)],
             default => ['media_type' => 'TEXT', ...self::worded($said)],
         };
