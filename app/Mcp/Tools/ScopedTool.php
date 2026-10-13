@@ -10,7 +10,6 @@ use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\JsonSchema\Types\Type;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Laravel\Mcp\Request;
 
@@ -67,32 +66,6 @@ abstract class ScopedTool extends UserTool
         }
 
         return $project;
-    }
-
-    /**
-     * One of the user's projects, by ref_id or, failing that, by name.
-     */
-    private function projectNamed(User $user, string $named): Project
-    {
-        $project = $user->projects()->where('projects.ref_id', $named)->first();
-
-        if ($project) {
-            return $project;
-        }
-
-        $matches = $user->projects()
-            ->where(DB::raw('lower(projects.name)'), mb_strtolower($named))
-            ->get();
-
-        return match ($matches->count()) {
-            1 => $matches->first(),
-            0 => throw ValidationException::withMessages([
-                'project' => "The user is in no project \"{$named}\". See list-projects.",
-            ]),
-            default => throw ValidationException::withMessages([
-                'project' => "The user is in several projects called \"{$named}\"; pass one's ref_id instead (see list-projects).",
-            ]),
-        };
     }
 
     /**

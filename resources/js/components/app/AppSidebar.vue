@@ -16,6 +16,7 @@ import {
     ChartNoAxesCombined,
     Presentation,
     Settings,
+    Ticket,
     Workflow,
 } from '@lucide/vue';
 import { computed } from 'vue';
@@ -58,6 +59,7 @@ import { index as projectNotesIndex } from '@/routes/projects/notes';
 import { index as mapsIndex } from '@/routes/maps';
 import { index as projectMapsIndex } from '@/routes/projects/maps';
 import { index as projectTablesIndex } from '@/routes/projects/tables';
+import { index as projectTicketsIndex } from '@/routes/projects/tickets';
 import { index as projectTripsIndex } from '@/routes/projects/trips';
 import { index as projectWorkflowsIndex } from '@/routes/projects/workflows';
 import { index as tablesIndex } from '@/routes/tables';
@@ -132,6 +134,16 @@ const mainNavItems = computed<NavItem[]>(() => {
                       badge: unread.value,
                   },
               ]),
+        // What the project has been asked to fix or add: a project's alone
+        ...(project
+            ? [
+                  {
+                      title: 'Tickets',
+                      href: projectTicketsIndex(project.ref_id),
+                      icon: Ticket,
+                  },
+              ]
+            : []),
         ...(project
             ? [
                   {

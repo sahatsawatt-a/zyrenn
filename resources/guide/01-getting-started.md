@@ -24,6 +24,7 @@ What you make is yours alone until you put it in a **project**. A project is a s
 - Switch between your own space and a project at the top of the sidebar.
 - Everyone in a project is an **owner**, an **editor** or a **viewer**. Viewers can read; owners and editors can change things.
 - A note or board in a project can be edited by several people at once.
+- A project has **Tickets**: the bugs to fix and features to add it has been asked for. File one from a short form, read them as a list or as a board of columns, and move each along from open to done. **Discuss** opens a chat for that ticket.
 
 ## Folders and search
 

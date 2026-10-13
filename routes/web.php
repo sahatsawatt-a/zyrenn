@@ -50,6 +50,7 @@ require __DIR__.'/features/chats.php';
 require __DIR__.'/features/workflows.php';
 require __DIR__.'/hooks.php';
 require __DIR__.'/features/projects.php';
+require __DIR__.'/features/tickets.php';
 require __DIR__.'/features/links.php';
 
 // ---------------------------------

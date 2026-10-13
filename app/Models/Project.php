@@ -7,6 +7,7 @@ use App\Models\Concerns\HasRefId;
 use App\Models\Concerns\OwnsContent;
 use App\Models\Drive\DriveFile;
 use App\Models\Table\Table;
+use App\Models\Ticket\Ticket;
 use Database\Factories\ProjectFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -96,6 +97,16 @@ class Project extends Model implements Owner
     public function chatRooms(): HasMany
     {
         return $this->hasMany(ChatRoom::class);
+    }
+
+    /**
+     * What the project has been asked to fix or to add.
+     *
+     * @return HasMany<Ticket, $this>
+     */
+    public function tickets(): HasMany
+    {
+        return $this->hasMany(Ticket::class);
     }
 
     /**

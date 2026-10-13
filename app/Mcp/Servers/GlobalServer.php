@@ -33,6 +33,10 @@ use App\Mcp\Tools\Tables\GetTable;
 use App\Mcp\Tools\Tables\ListTableFolders;
 use App\Mcp\Tools\Tables\ListTables;
 use App\Mcp\Tools\Tables\UpdateTable;
+use App\Mcp\Tools\Tickets\CreateTicket;
+use App\Mcp\Tools\Tickets\GetTicket;
+use App\Mcp\Tools\Tickets\ListTickets;
+use App\Mcp\Tools\Tickets\UpdateTicket;
 use App\Mcp\Tools\Trips\CreateTrip;
 use App\Mcp\Tools\Trips\DeleteTrip;
 use App\Mcp\Tools\Trips\GetTrip;
@@ -68,6 +72,12 @@ rather than to whoever made them. list-projects shows the ones a user is in, wit
 and create-project starts one. Pass a project's ref_id or name as "project" to any other tool to work
 in it as that user; leave it out for the user's own content. A viewer can only read a project; its
 owners and editors can change it.
+
+Tickets: what a project has been asked to fix or to add (list-tickets, get-ticket, create-ticket,
+update-ticket), each a "bug" or a "feature" with a number in its project, a title, the part ("unit") it
+is about, a body, a priority and a status: open, in_progress, done, or dropped. They always take
+"project". Asked to work through a project's tickets: list-tickets, get-ticket for each, set it
+"in_progress" while it is being done and "done" when it is.
 
 Notes: bodies are read and written as Markdown (get-note, create-note, update-note, edit-note). Notes
 live in folders addressed by path, e.g. "KT Plan/Lakeshore". Every block of a note -- a paragraph,
@@ -169,6 +179,10 @@ class GlobalServer extends Server
             new ListUsers,
             new ListProjects(global: true),
             new CreateProject(global: true),
+            new ListTickets(global: true),
+            new GetTicket(global: true),
+            new CreateTicket(global: true),
+            new UpdateTicket(global: true),
             new ListNotes(global: true),
             new ListFolders(global: true),
             new GetNote(global: true),
