@@ -3,7 +3,7 @@
 // (Thai, written without spaces, counted by word too), moves it to a folder
 // and deletes it. Makes a note over MCP and a folder with `docker exec` into
 // E2E_APP_CONTAINER (zyrenn-app-1), and takes both away again.
-import { SHOTS, makeNote, runBoard, tinker } from './harness.mjs';
+import { SHOTS, makeNote, runBoard, tinker, open } from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);
 const USER = `App\\Models\\User::where('email', '${process.env.E2E_EMAIL ?? 'test@example.com'}')->first()`;
@@ -11,7 +11,7 @@ const USER = `App\\Models\\User::where('email', '${process.env.E2E_EMAIL ?? 'tes
 await runBoard(
     '/notes',
     async (ctx) => {
-        const { page, check, afterwards } = ctx;
+        const { page, check, soon, afterwards } = ctx;
         const filler = Array.from(
             { length: 40 },
             (_, i) => `Filler line ${i} of the note.`,
@@ -31,13 +31,11 @@ await runBoard(
         );
 
         const base = new URL(page.url()).origin;
-        await page.goto(`${base}/notes/${ref}`, { waitUntil: 'networkidle' });
+        await open(page, `${base}/notes/${ref}`);
         await page.waitForSelector('[data-test="note-toolbar"]');
-        await page.waitForTimeout(1000);
         const bar = page.locator('[data-test="note-toolbar"]');
 
-        check(
-            'status says it is saved',
+        await soon('status says it is saved', async () =>
             /Saved/.test(
                 await page.locator('[data-test="note-status"]').innerText(),
             ),
@@ -45,12 +43,11 @@ await runBoard(
 
         // ------------------------------------------------ Stays in reach
         await page.mouse.wheel(0, 2500);
-        await page.waitForTimeout(500);
-        const top = (await bar.boundingBox()).y;
-        check(
+        let top;
+        await soon(
             'the bar stays at the top as the note scrolls',
-            Math.abs(top) < 2,
-            `top ${top}`,
+            async () => Math.abs((top = (await bar.boundingBox()).y)) < 2,
+            () => `top ${top}`,
         );
         await page.screenshot({ path: `${SHOTS}/note-toolbar-scrolled.png` });
         await page.mouse.wheel(0, -5000);
@@ -75,17 +72,18 @@ await runBoard(
         const narrow = await width();
         await page.locator('[data-test="note-wide"]').click();
         await page.keyboard.press('Escape');
-        await page.waitForTimeout(400);
-        check(
+        await soon(
             'full width widens the page',
-            (await width()) > narrow + 100,
-            `${narrow} → ${await width()}`,
+            async () => (await width()) > narrow + 100,
+            async () => `${narrow} → ${await width()}`,
         );
         await page.locator('[data-test="note-more"]').click();
         await page.locator('[data-test="note-wide"]').click();
         await page.keyboard.press('Escape');
-        await page.waitForTimeout(400);
-        check('and back', Math.abs((await width()) - narrow) < 2);
+        await soon(
+            'and back',
+            async () => Math.abs((await width()) - narrow) < 2,
+        );
 
         // ------------------------------------------------ Copy reference
         await page.locator('[data-test="note-more"]').click();

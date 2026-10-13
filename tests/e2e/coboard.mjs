@@ -10,6 +10,7 @@ import {
     SHOTS,
     boardOn,
     deleteProject,
+    open,
     runBoard,
     shareProject,
     signIn,
@@ -40,7 +41,7 @@ const settle = async (board, count, within = 4000) => {
 await runBoard(
     '/notes',
     async (owner) => {
-        const { browser, page, check, afterwards } = owner;
+        const { browser, page, check, soon, afterwards } = owner;
         const { project, base } = await shareProject(
             page,
             `Coboard ${RUN}`,
@@ -70,7 +71,7 @@ await runBoard(
             MEMBER,
         );
         afterwards(() => context.close());
-        await otherPage.goto(boardUrl, { waitUntil: 'networkidle' });
+        await open(otherPage, boardUrl);
         const member = { ...boardOn(otherPage), page: otherPage };
         await member.ready();
         await otherPage.waitForFunction(
@@ -105,14 +106,14 @@ await runBoard(
             box.y + box.height * 0.6,
             { steps: 4 },
         );
-        await otherPage.waitForTimeout(800);
-        check(
+        await soon(
             'the member sees the owner’s pointer, by name',
-            (await otherPage
-                .locator('[data-test="board-pointer"]', {
-                    hasText: 'Test User',
-                })
-                .count()) === 1,
+            async () =>
+                (await otherPage
+                    .locator('[data-test="board-pointer"]', {
+                        hasText: 'Test User',
+                    })
+                    .count()) === 1,
         );
         await otherPage.screenshot({ path: `${SHOTS}/coboard-1-member.png` });
 
@@ -127,27 +128,39 @@ await runBoard(
         await otherPage
             .locator('[data-test="board-title"]')
             .fill(`Site map ${RUN}`);
-        await page.waitForTimeout(1200);
-        check(
+        await soon(
             'a title one gives it reaches the other',
-            (await page.locator('[data-test="board-title"]').inputValue()) ===
-                `Site map ${RUN}`,
+            async () =>
+                (await page
+                    .locator('[data-test="board-title"]')
+                    .inputValue()) === `Site map ${RUN}`,
         );
 
         // ------------------------------------------ Kept, for search and MCP
-        await page.waitForTimeout(3500);
-        const [title, count, hasState] = JSON.parse(
-            tinker(
-                `$b = App\\Models\\Board\\Board::where('ref_id', '${ref}')->first(); echo json_encode([$b->title, count($b->content['items'] ?? []), $b->ydoc !== null]);`,
-            )
-                .trim()
-                .split('\n')
-                .pop(),
-        );
-        check(
+        // (the collaboration server hands it to the app a moment after)
+        let title;
+        let count;
+        let hasState;
+        await soon(
             'the app keeps the board as it now is',
-            title === `Site map ${RUN}` && count === start + 1 && hasState,
-            `${title} | ${count} items`,
+            () => {
+                [title, count, hasState] = JSON.parse(
+                    tinker(
+                        `$b = App\\Models\\Board\\Board::where('ref_id', '${ref}')->first(); echo json_encode([$b->title, count($b->content['items'] ?? []), $b->ydoc !== null]);`,
+                    )
+                        .trim()
+                        .split('\n')
+                        .pop(),
+                );
+
+                return (
+                    title === `Site map ${RUN}` &&
+                    count === start + 1 &&
+                    hasState
+                );
+            },
+            () => `${title} | ${count} items`,
+            { timeout: 15000, every: 300 },
         );
 
         // ------------------------- Opening it never undoes what was just done
@@ -157,13 +170,14 @@ await runBoard(
         await page.mouse.click(owner.at(0.25, 0.36).x, owner.at(0.25, 0.36).y);
         await page.waitForTimeout(300);
         const moved = (await owner.fields()).x + 300;
-        await page.locator('[data-test="prop-x"]').fill(String(moved));
-        await page.locator('[data-test="prop-x"]').press('Enter');
+        await owner.setField('x', moved);
         // A second tab: leaving a page saves the board, so opening one
         // alongside is what finds the saved copy a step behind
         const late = await context.newPage();
-        await late.goto(boardUrl, { waitUntil: 'networkidle' });
+        await open(late, boardUrl);
         await boardOn(late).ready();
+        // (long enough for the late page to have written its older copy over
+        // the board, were it going to)
         await page.waitForTimeout(3000);
         await late.close();
         check(

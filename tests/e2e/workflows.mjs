@@ -2,7 +2,13 @@
 // palette and joined by dragging between their dots, each set up beside the
 // canvas. It saves itself; what stands in the way of publishing is shown on
 // the steps, and Publish freezes it. After a reload it is all still there.
-import { SHOTS, runBoard, tinker } from './harness.mjs';
+import {
+    SHOTS,
+    runBoard,
+    tinker,
+    open as openPage,
+    reopen,
+} from './harness.mjs';
 
 const TITLE = `e2e flow ${Date.now().toString().slice(-6)}`;
 
@@ -348,7 +354,7 @@ await runBoard(
         );
 
         // --- all there after a reload ---
-        await page.reload({ waitUntil: 'networkidle' });
+        await reopen(page);
         await step('if').waitFor();
         check(
             'after a reload every step, connection and setting is still there',
@@ -369,9 +375,7 @@ await runBoard(
         );
 
         // --- and in the list ---
-        await page.goto(new URL('/workflows', page.url()).href, {
-            waitUntil: 'networkidle',
-        });
+        await openPage(page, new URL('/workflows', page.url()).href);
         const listed = await page
             .getByText(TITLE)
             .locator('xpath=ancestor::*[contains(., "steps")][1]')

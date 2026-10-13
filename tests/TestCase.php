@@ -2,6 +2,7 @@
 
 namespace Tests;
 
+use App\Support\RemoteDownload;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Fortify\Features;
@@ -21,6 +22,26 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
 
         Storage::fake('local');
+
+        // No test waits on DNS: a name out in the world is a public address at
+        // once. One this machine answers for itself -- localhost, or a number
+        // written as a host -- is still asked for, since that is what a fetch
+        // from the server's own network has to be caught by.
+        RemoteDownload::resolveUsing(fn (string $host) => $host === 'localhost' || ! str_contains($host, '.')
+            ? gethostbynamel($host)
+            : ['93.184.215.14']);
+    }
+
+    /**
+     * Runs whatever is queued, to the end.
+     *
+     * A worker that finds nothing sleeps before it looks at --stop-when-empty,
+     * three seconds unless told otherwise -- which was nine tenths of the whole
+     * suite's time. A job that should come due later is moved to with travel().
+     */
+    protected function work(): void
+    {
+        $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0])->assertSuccessful();
     }
 
     /**

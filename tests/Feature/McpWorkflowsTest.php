@@ -44,11 +44,6 @@ class McpWorkflowsTest extends TestCase
         config(['queue.default' => 'database']);
     }
 
-    private function work(): void
-    {
-        $this->artisan('queue:work', ['--stop-when-empty' => true, '--tries' => 1])->assertSuccessful();
-    }
-
     private function node(string $key, string $type, array $config = []): array
     {
         return ['id' => $key, 'key' => $key, 'type' => $type, 'position' => ['x' => 0, 'y' => 0], 'config' => $config];

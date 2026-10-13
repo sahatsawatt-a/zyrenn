@@ -3,7 +3,7 @@
 // source needs, and its folder is chosen from a dropdown of the Drive's own
 // folders -- or written as a path, made when it isn't there. Run, the file is
 // in the Drive and a later step reads it back.
-import { SHOTS, runBoard, tinker } from './harness.mjs';
+import { SHOTS, runBoard, tinker, open } from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);
 const TITLE = `e2e files ${RUN}`;
@@ -14,7 +14,7 @@ const user = `App\\Models\\User::where('email', '${process.env.E2E_EMAIL ?? 'tes
 
 await runBoard(
     '/workflows',
-    async ({ page, check, afterwards }) => {
+    async ({ page, check, soon, afterwards }) => {
         afterwards(() =>
             tinker(
                 `$u = ${user}; $u->workflows()->where('title', '${TITLE}')->delete(); $u->driveFiles()->whereIn('name', ['${NAME}', '${PICTURE}'])->get()->each->delete(); $u->driveFolders()->where('name', 'Deeper')->delete(); $u->driveFolders()->where('name', '${FOLDER}')->delete();`,
@@ -419,18 +419,17 @@ await runBoard(
                 `$u = ${user}; App\\Models\\Chat\\ChatRoom::where('ref_id', '${roomRef}')->delete(); $u->driveFiles()->where('name', '${NAME}.png')->get()->each->delete(); $l = $u->placeLists()->where('name', 'e2e list ${RUN}')->first(); if ($l) { $l->places()->delete(); $l->delete(); }`,
             ),
         );
-        await page.goto(new URL(`/chats/${roomRef}`, page.url()).href, {
-            waitUntil: 'networkidle',
-        });
+        await open(page, new URL(`/chats/${roomRef}`, page.url()).href);
         const picture = page
             .locator('[data-chat-workflow] button[data-chat-file] img')
             .first();
         await picture.waitFor({ timeout: 10000 });
-        check(
+        await soon(
             'a file a workflow wrote in a chat is shown under its sender, a picture as a picture',
-            (await picture.evaluate(
-                (img) => img.complete && img.naturalWidth > 0,
-            )) &&
+            async () =>
+                (await picture.evaluate(
+                    (img) => img.complete && img.naturalWidth > 0,
+                )) &&
                 (
                     await page
                         .locator('[data-chat-workflow]')
@@ -802,9 +801,7 @@ await runBoard(
         );
 
         // --- "Open in Maps" on a place's card: the map opens on it, pinned ---
-        await page.goto(new URL(inMaps, page.url()).href, {
-            waitUntil: 'networkidle',
-        });
+        await open(page, new URL(inMaps, page.url()).href);
         const placeCard = page.locator('[data-test="place-card"]');
         await placeCard.waitFor({ timeout: 20000 });
         const pinned = await page.evaluate(() => {

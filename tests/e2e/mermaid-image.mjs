@@ -2,7 +2,14 @@
 // as a PNG or an SVG, or saved to the Drive. The picture is light on white, whichever
 // mode the app is in, and its labels are plain SVG text.
 import { readFile } from 'node:fs/promises';
-import { SHOTS, makeNote, removeAt, runBoard } from './harness.mjs';
+import {
+    SHOTS,
+    makeNote,
+    removeAt,
+    runBoard,
+    open,
+    reopen,
+} from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);
 
@@ -29,7 +36,7 @@ await runBoard(
 
         // Dark, to show the picture is light regardless
         await page.emulateMedia({ colorScheme: 'dark' });
-        await page.goto(`${base}/notes/${ref}`, { waitUntil: 'networkidle' });
+        await open(page, `${base}/notes/${ref}`);
         await page.evaluate(() =>
             document.documentElement.classList.add('dark'),
         );
@@ -166,7 +173,7 @@ await runBoard(
 
         // ------------------------------------------------- Download an SVG
         await page.keyboard.press('Escape');
-        await page.reload({ waitUntil: 'networkidle' });
+        await reopen(page);
         await page.waitForSelector('.mermaid-svg svg', { timeout: 15000 });
         await saveMenu(sequence);
         check(

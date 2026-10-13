@@ -3,30 +3,33 @@
 // turned into: a picture that fills its box its own way, a full-screen show,
 // a PDF and a PNG.
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
-import { SHOTS, removeAt, runBoard } from './harness.mjs';
+import { SHOTS, boardKept, removeAt, runBoard } from './harness.mjs';
 
 const SAMPLE = `${SHOTS}/labels-sample.png`;
 
 await mkdir(SHOTS, { recursive: true });
-// Colour bars, so there is a picture to see fitted (needs ffmpeg)
-execFileSync('ffmpeg', [
-    '-loglevel',
-    'error',
-    '-y',
-    '-f',
-    'lavfi',
-    '-i',
-    'testsrc2=size=320x160',
-    '-frames:v',
-    '1',
-    SAMPLE,
-]);
+// Colour bars, so there is a picture to see fitted (needs ffmpeg), made once
+if (!existsSync(SAMPLE)) {
+    execFileSync('ffmpeg', [
+        '-loglevel',
+        'error',
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=size=320x160',
+        '-frames:v',
+        '1',
+        SAMPLE,
+    ]);
+}
 
 await runBoard(
     '/boards',
     async (b) => {
-        const { page, check, ready, draw, screenOf, afterwards } = b;
+        const { page, check, soon, ready, draw, screenOf, afterwards } = b;
 
         await page
             .getByRole('button', { name: /new board/i })
@@ -37,22 +40,11 @@ await runBoard(
         afterwards(() => removeAt(page, `/boards/${ref}`));
         await ready();
 
-        /** The board as the app has saved it, by item id. */
-        const saved = async () => {
-            await page.waitForTimeout(2200);
-
-            return page.evaluate(async (ref) => {
-                const board = await (
-                    await fetch(`/boards/${ref}/content`, {
-                        headers: { Accept: 'application/json' },
-                    })
-                ).json();
-
-                return Object.fromEntries(
-                    (board.items ?? []).map((item) => [item.id, item]),
-                );
-            }, ref);
-        };
+        /** The board's one item of a kind, as the app has it kept. */
+        const kept = async (kind) =>
+            Object.values(await boardKept(page, ref)).find(
+                (item) => item.kind === kind,
+            );
 
         // A slide to hold it all, and a card on it -- the layers put away,
         // since it starts where they float
@@ -89,28 +81,34 @@ await runBoard(
         );
 
         // --- its face, its size and the room round it
-        await page.locator('[data-test="font-serif"]').click();
+        await page.locator('[data-test="prop-font"]').selectOption('serif');
         await page.locator('[data-test="prop-font-size"]').fill('20');
         await page.locator('[data-test="prop-font-size"]').press('Enter');
         await page.locator('[data-test="prop-padding"]').fill('28');
         await page.locator('[data-test="prop-padding"]').press('Enter');
 
-        const rect = Object.values(await saved()).find(
-            (item) => item.kind === 'rect',
-        );
-        check(
+        let rect;
+        await soon(
             'the card keeps what it was given',
-            rect?.rich === true &&
-                rect.fontFamily === 'serif' &&
-                rect.fontSize === 20 &&
-                rect.padding === 28 &&
-                rect.text.startsWith('# Why it matters\n- **First**'),
-            JSON.stringify({
-                rich: rect?.rich,
-                font: rect?.fontFamily,
-                size: rect?.fontSize,
-                padding: rect?.padding,
-            }),
+            async () => {
+                rect = await kept('rect');
+
+                return (
+                    rect?.rich === true &&
+                    rect.fontFamily === 'serif' &&
+                    rect.fontSize === 20 &&
+                    rect.padding === 28 &&
+                    rect.text.startsWith('# Why it matters\n- **First**')
+                );
+            },
+            () =>
+                JSON.stringify({
+                    rich: rect?.rich,
+                    font: rect?.fontFamily,
+                    size: rect?.fontSize,
+                    padding: rect?.padding,
+                }),
+            { timeout: 20000, every: 300 },
         );
         await page.screenshot({ path: `${SHOTS}/labels-rich.png` });
 
@@ -118,29 +116,27 @@ await runBoard(
         await page.keyboard.press('Escape');
         await page.locator('[data-test="open-image-picker"]').click();
         await page.locator('input[type="file"]').setInputFiles(SAMPLE);
-        await page.waitForTimeout(2500);
+        // (there to be clicked once the picture is up and on the board)
         await page.locator('[data-test="fit-contain"]').click();
-        const picture = Object.values(await saved()).find(
-            (item) => item.kind === 'image',
-        );
-        check(
+        await soon(
             'a picture can be fitted inside its box',
-            picture?.fit === 'contain',
+            async () => (await kept('image'))?.fit === 'contain',
+            '',
+            { timeout: 20000, every: 300 },
         );
 
         // --- the show takes the whole screen, and Esc ends it
         await page.keyboard.press('Escape');
         await page.getByRole('button', { name: /present/i }).click();
-        await page.waitForTimeout(1200);
-        check(
-            'presenting fills the screen',
-            await page.evaluate(() => !!document.fullscreenElement),
+        await soon('presenting fills the screen', () =>
+            page.evaluate(() => !!document.fullscreenElement),
         );
         await page.keyboard.press('Escape');
-        await page.waitForTimeout(800);
-        check(
+        await soon(
             'and Esc ends the show',
-            (await page.locator('[data-test="exit-present"]').count()) === 0,
+            async () =>
+                (await page.locator('[data-test="exit-present"]').count()) ===
+                0,
         );
 
         // --- a second frame, so there are pictures to be had one by one
@@ -241,11 +237,10 @@ await runBoard(
         const all = [];
         page.on('download', (each) => all.push(each.suggestedFilename()));
         await page.locator('[data-test="pdf-preview-download"]').click();
-        await page.waitForTimeout(2500);
-        check(
+        await soon(
             'and Download all hands over every one',
-            all.length === 2,
-            all.join(', '),
+            () => all.length === 2,
+            () => all.join(', '),
         );
         await page.keyboard.press('Escape');
         await page.waitForTimeout(400);

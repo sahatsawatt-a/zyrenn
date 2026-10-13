@@ -72,7 +72,7 @@ class WorkflowLiveTest extends TestCase
     {
         $workflow = $this->workflow();
         $run = Engine::start($workflow, $workflow->freeze(WorkflowVersion::TEST, $workflow->user), $workflow->user);
-        $this->artisan('queue:work', ['--stop-when-empty' => true])->assertSuccessful();
+        $this->work();
 
         $told = $this->told();
         $last = $told->last();
@@ -153,7 +153,7 @@ class WorkflowLiveTest extends TestCase
         ], [['id' => 'a', 'source' => 'start', 'target' => 'ask']])->create();
 
         $run = Engine::start($workflow, $workflow->freeze(WorkflowVersion::TEST, $user), $user);
-        $this->artisan('queue:work', ['--stop-when-empty' => true])->assertSuccessful();
+        $this->work();
 
         $written = Bus::dispatched(BroadcastEvent::class)
             ->filter(fn (BroadcastEvent $job) => $job->event instanceof WorkflowRunText)

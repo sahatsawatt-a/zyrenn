@@ -5,7 +5,7 @@
 // A model answering in a room is a workflow's: tests/e2e/workflow-steps.mjs
 // (a chat answered by a workflow) and tests/e2e/workflow-ai.mjs (Ask AI).
 import { writeFileSync } from 'node:fs';
-import { SHOTS, runBoard, tinker } from './harness.mjs';
+import { SHOTS, runBoard, tinker, reopen, open } from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);
 const SAID = `Note to self ${RUN}: buy coffee`;
@@ -48,7 +48,7 @@ await runBoard(
                 (await page.locator('[data-chat-streaming]').count()) === 0,
         );
 
-        await page.reload({ waitUntil: 'networkidle' });
+        await reopen(page);
         await page.waitForSelector('[data-chat-user]');
         check(
             'after a reload it is still there',
@@ -200,9 +200,7 @@ await runBoard(
         const chatLink = page
             .locator('[data-sidebar="menu"]')
             .getByRole('link', { name: 'Chat', exact: true });
-        await page.goto(new URL('/notes', page.url()).href, {
-            waitUntil: 'networkidle',
-        });
+        await open(page, new URL('/notes', page.url()).href);
         check('your own sidebar has Chat', (await chatLink.count()) === 1);
     },
     { canvas: false },

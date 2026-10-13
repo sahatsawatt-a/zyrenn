@@ -8,6 +8,8 @@
 //     HEADED=0 node tests/e2e/board.mjs # quietly
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 
 const APP = process.env.APP_URL ?? 'http://127.0.0.1:8001';
@@ -20,10 +22,153 @@ const WHO = {
 
 export const SHOTS = process.env.E2E_SHOTS ?? '/tmp/zyrenn-e2e';
 
+// What one run leaves for the next -- who is signed in, how long each suite
+// took -- kept with the app, where a restart of the machine doesn't lose it
+export const KEPT =
+    process.env.E2E_KEPT ??
+    join(
+        dirname(fileURLToPath(import.meta.url)),
+        '../../storage/framework/testing/e2e',
+    );
+
+/**
+ * Asks `read` again and again until it answers something true, and answers
+ * with that -- or, when `timeout` runs out, with the last thing it said. For
+ * whatever arrives when it arrives: a save, an upload, the other person's
+ * change. A fixed wait is either too long or, on a busy machine, too short.
+ */
+export async function until(read, { timeout = 8000, every = 100 } = {}) {
+    const end = Date.now() + timeout;
+
+    for (;;) {
+        let answer;
+
+        try {
+            answer = await read();
+        } catch {
+            // Not there to be read yet
+        }
+
+        if (answer || Date.now() >= end) {
+            return answer;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, every));
+    }
+}
+
+/**
+ * Asks `read` until it answers the same thing twice running, and answers with
+ * that: for something still finding its place -- a picture taking its size,
+ * a board fitting itself to the window.
+ */
+export async function steady(read, { timeout = 8000, every = 150 } = {}) {
+    let before;
+
+    return until(
+        async () => {
+            const now = await read();
+            const same =
+                now != null && JSON.stringify(now) === JSON.stringify(before);
+            before = now;
+
+            return same ? now : null;
+        },
+        { timeout, every },
+    );
+}
+
+/** The page's app is up: its first screen is drawn, and can be clicked. */
+export const mounted = (page) =>
+    page.waitForFunction(
+        () => document.getElementById('app')?.childElementCount > 0,
+    );
+
+/**
+ * Opens `url` and waits for the app to be up -- not for the network to fall
+ * quiet, which is half a second of nothing after every page.
+ */
+export async function open(page, url) {
+    await page.goto(url, { waitUntil: 'load' });
+    await mounted(page);
+}
+
+/** The same, for the page it is already on. */
+export async function reopen(page) {
+    await page.reload({ waitUntil: 'load' });
+    await mounted(page);
+}
+
+/** A board's items as the app itself has them kept, by id. */
+export const boardKept = (page, ref) =>
+    page.evaluate(async (ref) => {
+        const board = await (
+            await fetch(`/boards/${ref}/content`, {
+                headers: { Accept: 'application/json' },
+            })
+        ).json();
+
+        return Object.fromEntries(
+            (board.items ?? []).map((item) => [item.id, item]),
+        );
+    }, ref);
+
+/**
+ * Types a slash command into the note and takes what the menu finds for it,
+ * once the menu has caught up with the typing. `title` is what the menu calls
+ * it, where that is not the word typed ("pagebreak" finds "Page break").
+ */
+export async function slash(page, word, title = word) {
+    await page.keyboard.type(`/${word}`);
+
+    const found = page.locator(
+        '.notion-dropdown .dropdown-item.is-active .item-title',
+    );
+    await found.waitFor();
+    await until(
+        async () =>
+            (await found.innerText())
+                .toLowerCase()
+                .includes(title.toLowerCase()),
+        { timeout: 600, every: 30 },
+    );
+    await page.keyboard.press('Enter');
+}
+
+/**
+ * Waits for the note, board or table on the page to say it is saved: enough
+ * before leaving the page or loading it again. Call it once the page shows
+ * the change itself.
+ *
+ * A note or board the collaboration server keeps says "Saved" when that
+ * server has the change, and the app is given it a couple of seconds later --
+ * so whatever then reads what the app has kept (boardKept(), MCP, tinker, a
+ * board shown in a note) asks until() it is there.
+ */
+export async function saved(page, timeout = 15000) {
+    await page.evaluate(
+        () =>
+            new Promise((resolve) =>
+                requestAnimationFrame(() => requestAnimationFrame(resolve)),
+            ),
+    );
+    await page
+        .locator(
+            '[data-test="note-status"], [data-test="board-status"], [data-test="table-status"]',
+        )
+        .filter({ hasText: /^\s*Saved/ })
+        .first()
+        .waitFor({ timeout });
+}
+
 // What Chrome says of itself, never of the app: its graphics drawing without a
 // GPU, headless, and the dev server's font preloads on a busy machine
 const BROWSER_NOISE =
     /GL Driver Message|GPU stall due to ReadPixels|WebGL: CONTEXT_LOST_WEBGL: loseContext|__laravel_vite_plugin__\/fonts\/.* was preloaded using link preload but not used/;
+
+// What the dev server's own client says when a file is edited while a suite
+// runs -- someone else at work in the same checkout, not the app going wrong
+const DEV_SERVER_NOISE = /\/@vite\/client|^\[vite\] /;
 
 /**
  * A page signed in as `email`, by a session kept from the last time -- the
@@ -42,7 +187,8 @@ async function signedIn(
     deviceScaleFactor = 1,
 ) {
     mkdirSync(SHOTS, { recursive: true });
-    const kept = `${SHOTS}/.session-${email}.json`;
+    mkdirSync(KEPT, { recursive: true });
+    const kept = `${KEPT}/session-${email}.json`;
     const screen = { viewport, deviceScaleFactor };
     let context;
 
@@ -54,7 +200,7 @@ async function signedIn(
 
     const page = await context.newPage();
     watch(page);
-    await page.goto(`${base}${path}`, { waitUntil: 'networkidle' });
+    await open(page, `${base}${path}`);
 
     if (new URL(page.url()).pathname === '/login') {
         await page.getByLabel('Email address').fill(email);
@@ -63,7 +209,7 @@ async function signedIn(
         // Back to where it was going, or the dashboard
         await page.waitForURL((url) => url.pathname !== '/login');
         await context.storageState({ path: kept });
-        await page.goto(`${base}${path}`, { waitUntil: 'networkidle' });
+        await open(page, `${base}${path}`);
     }
 
     return { context, page };
@@ -94,21 +240,45 @@ export async function openBoard(path = '/demo/konva', size = {}) {
                 if (
                     (message.type() === 'error' ||
                         message.type() === 'warning') &&
-                    !BROWSER_NOISE.test(message.text())
+                    !BROWSER_NOISE.test(message.text()) &&
+                    !DEV_SERVER_NOISE.test(message.text())
                 ) {
+                    // (a resource that failed to load is named: the message
+                    // only ever says that one did)
+                    const from = /Failed to load resource/.test(message.text())
+                        ? ` (${message.location().url.slice(0, 140)})`
+                        : '';
+
                     problems.push(
-                        `console.${message.type()}: ${message.text().slice(0, 160)}`,
+                        `console.${message.type()}: ${message.text().slice(0, 160)}${from}`,
                     );
                 }
             });
-            page.on('pageerror', (error) =>
-                problems.push(`pageerror: ${error.message.slice(0, 160)}`),
-            );
+            // (with where it was thrown, which the message alone never says)
+            page.on('pageerror', (error) => {
+                if (DEV_SERVER_NOISE.test(error.stack ?? '')) {
+                    return;
+                }
+
+                problems.push(
+                    `pageerror: ${error.message.slice(0, 160)}${
+                        (error.stack ?? '').split('\n')[1]
+                            ? ` (${error.stack.split('\n')[1].trim().slice(0, 140)})`
+                            : ''
+                    }`,
+                );
+            });
         },
         size.scale,
     );
 
+    // How long each check took to get to, since the one before it
+    const gaps = [];
+    let last = Date.now();
+
     const check = (label, passed, detail = '') => {
+        gaps.push({ label, took: Date.now() - last });
+        last = Date.now();
         results.push(
             `${passed ? 'PASS' : 'FAIL'}  ${label}${detail ? ` — ${detail}` : ''}`,
         );
@@ -116,6 +286,23 @@ export async function openBoard(path = '/demo/konva', size = {}) {
         if (!passed) {
             problems.push(label);
         }
+    };
+
+    /**
+     * A check of something that arrives when it arrives: `read` is asked until
+     * it answers true, and fails only once it has had long enough. `detail`
+     * may be a function, asked once the waiting is over.
+     */
+    const soon = async (label, read, detail = '', options) => {
+        const answer = await until(read, options);
+
+        check(
+            label,
+            !!answer,
+            typeof detail === 'function' ? await detail() : detail,
+        );
+
+        return answer;
     };
 
     const board = boardOn(page);
@@ -141,6 +328,18 @@ export async function openBoard(path = '/demo/konva', size = {}) {
 
         await browser.close();
         console.log(results.join('\n'));
+
+        // E2E_TIMES=1: where this suite's time went, the slowest stretches first
+        if (process.env.E2E_TIMES === '1') {
+            for (const { label, took } of gaps
+                .sort((a, b) => b.took - a.took)
+                .slice(0, 6)) {
+                console.log(
+                    `TIME  ${(took / 1000).toFixed(1)}s  up to: ${label}`,
+                );
+            }
+        }
+
         console.log(
             'problems:',
             problems.length ? problems.join('; ') : 'none',
@@ -155,6 +354,7 @@ export async function openBoard(path = '/demo/konva', size = {}) {
         results,
         problems,
         check,
+        soon,
         ...board,
         afterwards,
         done,
@@ -172,7 +372,28 @@ export function boardOn(page) {
 
     const ready = async () => {
         await page.waitForSelector('canvas');
-        await page.waitForTimeout(900);
+
+        // The board fits itself to the window a moment after it opens: it is
+        // ready once the camera has stopped moving
+        let seen = null;
+        let since = Date.now();
+
+        await until(
+            async () => {
+                const now = await page
+                    .locator('[data-camera]')
+                    .first()
+                    .getAttribute('data-camera');
+
+                if (now !== seen) {
+                    seen = now;
+                    since = Date.now();
+                }
+
+                return Date.now() - since >= 350;
+            },
+            { every: 50 },
+        );
         view.box = await page.locator('[data-zoom]').boundingBox();
 
         return view.box;
@@ -236,15 +457,39 @@ export function boardOn(page) {
         );
 
     /** The selection's x, y, width and height, as the inspector shows them. */
+    // They are kept in a fold, shut unless somebody wants them: read, they
+    // answer shut or open
     const fields = async () => {
-        const inputs = page.locator(
-            '[data-test="inspector"] input[type="number"]',
-        );
         const [x, y, width, height] = await Promise.all(
-            [0, 1, 2, 3].map((index) => inputs.nth(index).inputValue()),
+            ['x', 'y', 'width', 'height'].map((name) =>
+                page.locator(`[data-test="prop-${name}"]`).inputValue(),
+            ),
         );
 
         return { x: +x, y: +y, w: +width, h: +height };
+    };
+
+    /** Types one of them -- "x", "y", "width", "height" -- opening the fold first. */
+    const setField = async (name, value) => {
+        const fold = page.locator('[data-test="geometry"]');
+
+        if (!(await fold.evaluate((details) => details.open))) {
+            await fold.locator('summary').click();
+            // The panel is drawn again once it has opened, and what was
+            // typed before that would be drawn over
+            await page.evaluate(
+                () =>
+                    new Promise((resolve) =>
+                        requestAnimationFrame(() =>
+                            requestAnimationFrame(resolve),
+                        ),
+                    ),
+            );
+        }
+
+        const input = page.locator(`[data-test="prop-${name}"]`);
+        await input.fill(String(value));
+        await input.press('Enter');
     };
 
     /** How much of the canvas is painted -- a cheap "did anything change". */
@@ -397,6 +642,7 @@ export function boardOn(page) {
         link,
         itemCount,
         fields,
+        setField,
         painted,
         shot,
         draw,
@@ -448,38 +694,25 @@ export async function signIn(
 }
 
 /**
- * A new project made from the switcher, with `email` added in `role`. Answers
- * with its ref_id and the app's origin; deleteProject() takes it away again.
+ * A new project of the signed-in account's, with `email` in it in `role`.
+ * Answers with its ref_id and the app's origin; deleteProject() takes it away
+ * again. Made behind the scenes, since for the suites that call this it is
+ * only where they start: projects.mjs and members.mjs are the ones that make
+ * a project and add to it the way a person does.
  */
 export async function shareProject(page, name, email, role = 'editor') {
-    await page.locator('[data-test="project-switcher"]').click();
-    await page.locator('[data-test="new-project"]').click();
-    await page.getByPlaceholder('Name').fill(name);
-    await page.getByRole('button', { name: 'Create' }).click();
-    await page.waitForURL(/\/p\/\w+\/notes$/);
+    const project = tinker(
+        `$p = App\\Models\\Project::start(App\\Models\\User::where('email', '${WHO.email}')->firstOrFail(), '${name}'); $p->members()->attach(App\\Models\\User::where('email', '${email}')->firstOrFail(), ['role' => '${role}']); echo $p->getRouteKey();`,
+    );
 
-    const project = page.url().match(/\/p\/(\w+)\//)[1];
-    const base = new URL(page.url()).origin;
-
-    await page.goto(`${base}/p/${project}/settings`);
-    const addForm = page.locator('[data-test="add-member"]');
-    await addForm.getByPlaceholder('Their email address').fill(email);
-    await addForm.locator('select').selectOption(role);
-    await addForm.getByRole('button', { name: 'Add' }).click();
-    await page.getByText(email).waitFor();
-
-    return { project, base };
+    return { project, base: new URL(page.url()).origin };
 }
 
-/** Deletes a project from its settings, as its owner. */
+/** Deletes a project made by shareProject(). */
 export async function deleteProject(page, base, project) {
-    await page.goto(`${base}/p/${project}/settings`);
-    await page.locator('[data-test="delete-project"]').click();
-    await page
-        .getByRole('dialog')
-        .getByRole('button', { name: 'Delete' })
-        .click();
-    await page.waitForURL((url) => new URL(url).pathname === '/notes');
+    tinker(
+        `App\\Models\\Project::where((new App\\Models\\Project)->getRouteKeyName(), '${project}')->first()?->delete(); echo 'ok';`,
+    );
 }
 
 /**

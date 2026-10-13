@@ -1,6 +1,6 @@
 // The guide: reached from the sidebar, a topic drawn as a note that cannot be
 // written in, moving between topics, and all of it inside a phone's width.
-import { SHOTS, runBoard } from './harness.mjs';
+import { SHOTS, runBoard, open } from './harness.mjs';
 
 await runBoard(
     '/dashboard',
@@ -60,9 +60,7 @@ await runBoard(
         check('the one before is a step back', true);
 
         await page.setViewportSize({ width: 390, height: 844 });
-        await page.goto(page.url().replace('/notes', '/workflows'), {
-            waitUntil: 'networkidle',
-        });
+        await open(page, page.url().replace('/notes', '/workflows'));
         await topic.locator('.tiptap table').first().waitFor();
         const wide = await page.evaluate(
             () => document.documentElement.scrollWidth,

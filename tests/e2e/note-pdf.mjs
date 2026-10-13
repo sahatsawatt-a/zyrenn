@@ -6,24 +6,22 @@
 // service (docker/chrome), and pdftotext and pdfinfo on the machine running
 // the suite.
 import { execFileSync } from 'node:child_process';
-import { SHOTS, makeNote, runBoard } from './harness.mjs';
+import { SHOTS, makeNote, runBoard, open, saved, slash } from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);
 
 await runBoard(
     '/notes',
     async (ctx) => {
-        const { page, check } = ctx;
+        const { page, check, soon } = ctx;
         const ref = await makeNote(
             ctx,
             `Note PDF ${RUN}`,
             `Kept paragraph ${RUN}.\n\nDraft paragraph ${RUN}.\n\n## Heading ${RUN}\n\nLast paragraph ${RUN}.\n`,
         );
-        await page.goto(`${new URL(page.url()).origin}/notes/${ref}`, {
-            waitUntil: 'networkidle',
-        });
+        await open(page, `${new URL(page.url()).origin}/notes/${ref}`);
         await page.waitForSelector('.ProseMirror');
-        await page.waitForTimeout(1200);
+        await saved(page);
 
         const draft = page.locator('.ProseMirror p', {
             hasText: `Draft paragraph ${RUN}`,
@@ -32,12 +30,8 @@ await runBoard(
         await page.waitForTimeout(300);
         await page.locator('[data-test="block-grip"]').click();
         await page.locator('[data-test="block-pdf-toggle"]').click();
-        await page.waitForTimeout(400);
-        check(
-            'block marked hidden on screen',
-            await draft.evaluate((el) =>
-                el.classList.contains('is-pdf-hidden'),
-            ),
+        await soon('block marked hidden on screen', () =>
+            draft.evaluate((el) => el.classList.contains('is-pdf-hidden')),
         );
         check(
             'faded, not removed',
@@ -75,10 +69,8 @@ await runBoard(
         await page.keyboard.press('End');
         await page.keyboard.press('Enter');
         // The slash menu stops at a space: "/page" or "/pagebreak" finds it
-        await page.keyboard.type('/pagebreak');
-        await page.waitForTimeout(300);
-        await page.keyboard.press('Enter');
-        await page.waitForTimeout(300);
+        await slash(page, 'pagebreak', 'page break');
+        await page.locator('.ProseMirror .page-break').first().waitFor();
         // ...and one below the last paragraph, with nothing after it to print
         const last = page.locator('.ProseMirror p', {
             hasText: `Last paragraph ${RUN}`,
@@ -87,9 +79,11 @@ await runBoard(
         await page.waitForTimeout(300);
         await page.locator('[data-test="block-grip"]').click();
         await page.locator('[data-test="block-page-break"]').click();
-        await page.waitForTimeout(400);
         const breaks = page.locator('.ProseMirror .page-break');
-        check('two page breaks on screen', (await breaks.count()) === 2);
+        await soon(
+            'two page breaks on screen',
+            async () => (await breaks.count()) === 2,
+        );
         check(
             'the one at the end is idle, the first is not',
             (await breaks
@@ -107,6 +101,7 @@ await runBoard(
         await frame.waitFor({ timeout: 60000 });
         const src = await frame.getAttribute('src');
         check('preview shows a printed PDF', src?.startsWith('blob:'), src);
+        // (a moment for the viewer to draw the page, for the picture's sake)
         await page.waitForTimeout(1500);
         await page.screenshot({ path: `${SHOTS}/pdf-preview.png` });
 

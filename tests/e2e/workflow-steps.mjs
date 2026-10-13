@@ -3,7 +3,7 @@
 // typed -- and answers in the chat as the workflow. Published and switched
 // on, it runs when someone writes in the chat, and the chat shows its answer
 // as it comes.
-import { SHOTS, runBoard, tinker } from './harness.mjs';
+import { SHOTS, runBoard, tinker, open as openPage } from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);
 const TITLE = `e2e steps ${RUN}`;
@@ -187,9 +187,7 @@ await runBoard(
         check('switched on, it listens', true);
 
         // --- someone writes in the chat ---
-        await page.goto(new URL(`/chats/${roomRef}`, page.url()).href, {
-            waitUntil: 'networkidle',
-        });
+        await openPage(page, new URL(`/chats/${roomRef}`, page.url()).href);
         await page.locator('[data-chat-input]').fill('two coffees');
         await page.locator('[data-chat-input]').press('Enter');
         await page.locator('[data-chat-workflow]').waitFor({ timeout: 20000 });
@@ -212,7 +210,7 @@ await runBoard(
         );
 
         // --- set up from what came: that run's data, beside a step ---
-        await page.goto(editor, { waitUntil: 'networkidle' });
+        await openPage(page, editor);
         await open('write_in_a_room');
         const data = page.locator('[data-test-data]');
         const part = data.locator('[data-sample="trigger.text"]');

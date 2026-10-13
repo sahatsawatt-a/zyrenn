@@ -1,6 +1,6 @@
 // Importing a Mermaid diagram: whatever kind it is, it lands as one picture --
 // light on white, its labels drawn -- that moves and resizes like any other.
-import { SHOTS, runBoard } from './harness.mjs';
+import { SHOTS, runBoard, steady, until } from './harness.mjs';
 
 const CHART = `flowchart TD
     A[Order placed] --> B{In stock?}
@@ -9,16 +9,24 @@ const CHART = `flowchart TD
     C --> E([Shipped])`;
 
 await runBoard('/demo/konva', async (b) => {
-    const { page, check, itemCount, inspectorTitle, fields, shot } = b;
+    const { page, check, soon, itemCount, inspectorTitle, fields, shot } = b;
 
+    /** Pastes a diagram, and waits for what comes of it: a picture, or why not. */
     const paste = async (source) => {
+        const items = await itemCount();
+        const toasts = await page.locator('[data-sonner-toast]').count();
+
         await page.locator('[data-test="open-image-picker"]').click();
-        await page.waitForTimeout(400);
+        await page.getByRole('heading', { name: 'Add image' }).waitFor();
         await page.getByRole('button', { name: 'Mermaid' }).click();
-        await page.waitForTimeout(300);
         await page.locator('[data-test="mermaid-source"]').fill(source);
         await page.locator('[data-test="mermaid-add"]').click();
-        await page.waitForTimeout(2500);
+        await until(
+            async () =>
+                (await itemCount()) !== items ||
+                (await page.locator('[data-sonner-toast]').count()) > toasts,
+            { timeout: 20000 },
+        );
     };
 
     /** How many distinct colours a board box is painted in. */
@@ -65,22 +73,22 @@ await runBoard('/demo/konva', async (b) => {
         (await inspectorTitle()).toLowerCase() === 'image',
         await inspectorTitle(),
     );
-    const picture = await fields();
+    const picture = await steady(fields);
     check(
         'sized to the diagram',
         picture.h > picture.w,
         `${picture.w}×${picture.h} (a top-down chart is taller than wide)`,
     );
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(300);
-    check(
+    await soon(
         'with its boxes and labels drawn',
-        (await colours({
-            x: picture.x,
-            y: picture.y,
-            w: picture.w,
-            h: picture.h,
-        })) > 4,
+        async () =>
+            (await colours({
+                x: picture.x,
+                y: picture.y,
+                w: picture.w,
+                h: picture.h,
+            })) > 4,
     );
     await page.screenshot({ path: `${SHOTS}/mermaid-imported.png` });
 

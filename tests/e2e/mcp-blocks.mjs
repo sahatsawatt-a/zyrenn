@@ -5,7 +5,7 @@
 // the test account through `docker exec` into E2E_APP_CONTAINER (zyrenn-app-1),
 // and taken away again after.
 import { execFileSync } from 'node:child_process';
-import { SHOTS, runBoard } from './harness.mjs';
+import { SHOTS, open, runBoard, until } from './harness.mjs';
 
 const APP_CONTAINER = process.env.E2E_APP_CONTAINER ?? 'zyrenn-app-1';
 const RUN = Date.now().toString().slice(-6);
@@ -23,7 +23,16 @@ const tinker = (php) =>
 
 await runBoard(
     '/notes',
-    async ({ page, check, afterwards, ready, draw, screenOf, itemCount }) => {
+    async ({
+        page,
+        check,
+        soon,
+        afterwards,
+        ready,
+        draw,
+        screenOf,
+        itemCount,
+    }) => {
         const base = new URL(page.url()).origin;
         const token = tinker(
             `echo App\\Models\\User::where('email', '${process.env.E2E_EMAIL ?? 'test@example.com'}')->first()->createToken('${TOKEN_NAME}', ['mcp'])->plainTextToken;`,
@@ -80,19 +89,30 @@ await runBoard(
         await page.keyboard.type('Second paragraph.');
         await page.keyboard.press('Enter');
         await page.keyboard.type('Third paragraph');
-        await page.waitForTimeout(800);
 
         // --------------------------------------------- MCP reads it as blocks
-        const read = await mcp('get-note', { ref_id: ref });
-        const outline = read.structuredContent?.outline ?? [];
-        const onPage = await page
-            .locator('.ProseMirror > p[data-id]')
-            .evaluateAll((nodes) => nodes.map((node) => node.dataset.id));
-        check(
+        // (once the app has been given what was typed)
+        let outline = [];
+        await soon(
             'get-note gives the note as blocks, with the ids the editor gave them',
-            outline.length === 3 &&
-                outline.every((block, at) => block.id === onPage[at]),
-            outline.map((block) => `${block.id}:${block.text}`).join(' | '),
+            async () => {
+                const read = await mcp('get-note', { ref_id: ref });
+                outline = read.structuredContent?.outline ?? [];
+                const onPage = await page
+                    .locator('.ProseMirror > p[data-id]')
+                    .evaluateAll((nodes) =>
+                        nodes.map((node) => node.dataset.id),
+                    );
+
+                return (
+                    outline.length === 3 &&
+                    outline.every((block, at) => block.id === onPage[at]) &&
+                    outline[2].text === 'Third paragraph'
+                );
+            },
+            () =>
+                outline.map((block) => `${block.id}:${block.text}`).join(' | '),
+            { timeout: 15000, every: 300 },
         );
 
         // ------------------- One block changed while another is being typed in
@@ -111,18 +131,20 @@ await runBoard(
             ],
         });
         await typing;
-        await page.waitForTimeout(1200);
 
-        const text = await editor.innerText();
         check(
             'edit-note answers with the block it changed',
             edited.structuredContent?.changed?.[0] === outline[0].id,
         );
-        check(
-            'the change arrives in the open note',
-            text.includes(`First, rewritten by MCP ${RUN}.`) &&
-                !text.includes('First paragraph.'),
-        );
+        let text;
+        await soon('the change arrives in the open note', async () => {
+            text = await editor.innerText();
+
+            return (
+                text.includes(`First, rewritten by MCP ${RUN}.`) &&
+                !text.includes('First paragraph.')
+            );
+        });
         check(
             'and what was being typed elsewhere in it is kept',
             text.includes('Second paragraph.') &&
@@ -159,11 +181,18 @@ await runBoard(
         );
         await draw('rect', 0.2, 0.3);
         await draw('rect', 0.5, 0.3);
-        await page.waitForTimeout(800);
 
-        const outlined = (
-            await mcp('get-board', { ref_id: board, outline: true })
-        ).structuredContent;
+        // (once the app has been given both)
+        const outlined = await until(
+            async () => {
+                const now = (
+                    await mcp('get-board', { ref_id: board, outline: true })
+                ).structuredContent;
+
+                return now.items.length === 2 ? now : null;
+            },
+            { timeout: 15000, every: 300 },
+        );
         const [first, second] = outlined.items;
         check(
             'get-board gives the board in outline, without colours',
@@ -187,11 +216,25 @@ await runBoard(
         });
         await page.mouse.move(grab.x + 140, grab.y + 90, { steps: 6 });
         await page.mouse.up();
-        await page.waitForTimeout(2500);
 
-        const after = (await mcp('get-board', { ref_id: board, outline: true }))
-            .structuredContent.items;
-        const byId = Object.fromEntries(after.map((item) => [item.id, item]));
+        // (once the app has been given where the drag ended)
+        let after = [];
+        let byId = {};
+        await until(
+            async () => {
+                after = (
+                    await mcp('get-board', { ref_id: board, outline: true })
+                ).structuredContent.items;
+                byId = Object.fromEntries(after.map((item) => [item.id, item]));
+
+                return (
+                    after.length === 3 &&
+                    byId[second.id]?.x > second.x + 50 &&
+                    (await itemCount()) === 3
+                );
+            },
+            { timeout: 15000, every: 300 },
+        );
         check(
             'update-board answers with what it added and changed, not the board',
             changed.structuredContent?.changed?.[0] === first.id &&
@@ -239,16 +282,13 @@ await runBoard(
             ),
         );
 
-        await page.goto(`${base}/notes/${valueNote}`, {
-            waitUntil: 'networkidle',
-        });
+        await open(page, `${base}/notes/${valueNote}`);
         const chip = page.locator('[data-test="note-value"]');
         await chip.first().waitFor();
-        await page.waitForTimeout(800);
-        check(
+        await soon(
             'a live value shows what its formula comes to',
-            (await chip.first().innerText()).trim() === '500',
-            await chip.first().innerText(),
+            async () => (await chip.first().innerText()).trim() === '500',
+            () => chip.first().innerText(),
         );
 
         // The table changes elsewhere; the open note follows without reloading
@@ -257,25 +297,32 @@ await runBoard(
                 .structuredContent.tables[0].ref_id,
             update_rows: [{ id: 1, values: { CNY: 200 } }],
         });
-        await page.waitForTimeout(2500);
-        check(
+        await soon(
             'and follows the table it reads as it changes',
-            (await chip.first().innerText()).trim() === '1,000',
-            await chip.first().innerText(),
+            async () => (await chip.first().innerText()).trim() === '1,000',
+            () => chip.first().innerText(),
         );
 
         // Typed out in full, {{ … }} becomes a value
         await page.locator('.ProseMirror p').first().click();
         await page.keyboard.press('End');
         await page.keyboard.type(' and {{ 2 * 21 }}');
-        await page.waitForTimeout(1500);
-        const line = (await page.locator('.ProseMirror p').first().innerText())
-            .replace(/\s+/g, ' ')
-            .trim();
-        check(
+        let line;
+        await soon(
             'a value typed out becomes one, braces and all',
-            (await chip.count()) === 2 && line === 'Spent 1,000 baht and 42',
-            line,
+            async () => {
+                line = (
+                    await page.locator('.ProseMirror p').first().innerText()
+                )
+                    .replace(/\s+/g, ' ')
+                    .trim();
+
+                return (
+                    (await chip.count()) === 2 &&
+                    line === 'Spent 1,000 baht and 42'
+                );
+            },
+            () => line,
         );
         // Clicked, a value opens its formula to change
         await chip.nth(1).click();
@@ -283,24 +330,30 @@ await runBoard(
             .locator('[data-test="note-value-expression"]')
             .fill('6 * 7 + 1');
         await page.locator('[data-test="note-value-save"]').click();
-        await page.waitForTimeout(1200);
-        check(
+        await soon(
             'a value clicked can be given another formula',
-            (await chip.nth(1).innerText()).trim() === '43',
-            await chip.nth(1).innerText(),
+            async () => (await chip.nth(1).innerText()).trim() === '43',
+            () => chip.nth(1).innerText(),
         );
         await page.screenshot({ path: `${SHOTS}/note-values.png` });
 
-        await page.waitForTimeout(2500);
-        const valuesRead = (await mcp('get-note', { ref_id: valueNote }))
-            .structuredContent;
-        check(
+        // (once the app has been given the note as it now stands)
+        let valuesRead;
+        await soon(
             'get-note gives the formulas, and what each comes to',
-            valuesRead.markdown?.trim() ===
-                `Spent {{ sum(table("${TABLE}").thb) }} baht and {{ 6 * 7 + 1 }}` &&
-                valuesRead.values?.['6 * 7 + 1'] === '43' &&
-                valuesRead.values?.[`sum(table("${TABLE}").thb)`] === '1000',
-            JSON.stringify(valuesRead.values),
+            async () => {
+                valuesRead = (await mcp('get-note', { ref_id: valueNote }))
+                    .structuredContent;
+
+                return (
+                    valuesRead.markdown?.trim() ===
+                        `Spent {{ sum(table("${TABLE}").thb) }} baht and {{ 6 * 7 + 1 }}` &&
+                    valuesRead.values?.['6 * 7 + 1'] === '43' &&
+                    valuesRead.values?.[`sum(table("${TABLE}").thb)`] === '1000'
+                );
+            },
+            () => JSON.stringify(valuesRead.values),
+            { timeout: 15000, every: 300 },
         );
     },
     { canvas: false },

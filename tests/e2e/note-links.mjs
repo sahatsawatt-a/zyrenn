@@ -8,12 +8,20 @@
 // so those checks need the internet -- like tests/e2e/maps.mjs.
 //
 //     node tests/e2e/note-links.mjs
-import { makeNote, runBoard, SHOTS, tinker } from './harness.mjs';
+import {
+    makeNote,
+    runBoard,
+    SHOTS,
+    tinker,
+    open,
+    reopen,
+    saved,
+} from './harness.mjs';
 
 await runBoard(
     '/notes',
     async (ctx) => {
-        const { page, check } = ctx;
+        const { page, check, soon } = ctx;
         const byTest = (id) => page.locator(`[data-test="${id}"]`);
         const base = new URL(page.url()).origin;
 
@@ -22,9 +30,9 @@ await runBoard(
             `Links ${Date.now().toString().slice(-6)}`,
             'Read [the guide](https://example.com/guide) and [this](javascript:alert(1)).\n\nEnd.\n',
         );
-        await page.goto(`${base}/notes/${ref}`, { waitUntil: 'networkidle' });
+        await open(page, `${base}/notes/${ref}`);
         await page.waitForSelector('.ProseMirror');
-        await page.waitForTimeout(1200);
+        await saved(page);
         const editor = page.locator('.ProseMirror');
 
         /** Pastes text as the clipboard would, where the caret is. */
@@ -316,15 +324,16 @@ await runBoard(
 
         // ---- kept ----
 
-        await page.waitForTimeout(2500);
-        await page.reload({ waitUntil: 'networkidle' });
+        await saved(page);
+        await reopen(page);
         await page.waitForSelector('.ProseMirror');
-        await page.waitForTimeout(1500);
-        check(
+        await soon(
             'the cards and both maps are still there after a reload',
-            (await byTest('link-card').count()) === 2 &&
+            async () =>
+                (await byTest('link-card').count()) === 2 &&
                 (await byTest('map-block').count()) === 2,
-            `${await byTest('link-card').count()} card, ${await byTest('map-block').count()} maps`,
+            async () =>
+                `${await byTest('link-card').count()} card, ${await byTest('map-block').count()} maps`,
         );
 
         // As the server keeps it, and hands it to Markdown and MCP

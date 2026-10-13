@@ -11,6 +11,8 @@ import {
     shareProject,
     signIn,
     tinker,
+    open,
+    reopen,
 } from './harness.mjs';
 
 const MEMBER = process.env.E2E_MEMBER ?? 'e2e-member@example.com';
@@ -48,7 +50,7 @@ const definition = {
 
 await runBoard(
     '/notes',
-    async ({ browser, page, check, afterwards }) => {
+    async ({ browser, page, check, soon, afterwards }) => {
         const { project, base } = await shareProject(
             page,
             `Live flow ${RUN}`,
@@ -57,9 +59,7 @@ await runBoard(
         );
         afterwards(() => deleteProject(page, base, project));
 
-        await page.goto(`${base}/p/${project}/workflows`, {
-            waitUntil: 'networkidle',
-        });
+        await open(page, `${base}/p/${project}/workflows`);
         await page
             .getByRole('button', { name: /new workflow/i })
             .first()
@@ -71,16 +71,17 @@ await runBoard(
         tinker(
             `App\\Models\\Workflow\\Workflow::where('ref_id', '${ref}')->first()->update(['definition' => json_decode('${JSON.stringify(definition)}', true)]);`,
         );
-        await page.reload({ waitUntil: 'networkidle' });
+        await reopen(page);
 
         const { context, page: other } = await signIn(browser, base, MEMBER);
-        await other.goto(url, { waitUntil: 'networkidle' });
-        await page.waitForTimeout(1500);
+        await open(other, url);
 
-        check(
+        await soon(
             'each sees the other with the workflow open',
-            (await page.locator('[data-test="presence-member"]').count()) ===
-                1 &&
+            async () =>
+                (await page
+                    .locator('[data-test="presence-member"]')
+                    .count()) === 1 &&
                 (await other
                     .locator('[data-test="presence-member"]')
                     .count()) === 1,
@@ -135,10 +136,10 @@ await runBoard(
             `Renamed live ${RUN}`,
             { timeout: 8000 },
         );
-        await page.waitForTimeout(500);
-        check(
+        await soon(
             'a draft saved by one shows up for the other, who had nothing unsaved, connections and all',
-            (await page.locator('.vue-flow__node').count()) === 3 &&
+            async () =>
+                (await page.locator('.vue-flow__node').count()) === 3 &&
                 (await page.locator('.vue-flow__edge').count()) === 2,
         );
 

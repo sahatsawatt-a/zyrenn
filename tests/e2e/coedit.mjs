@@ -9,9 +9,12 @@ import { execFileSync } from 'node:child_process';
 import {
     SHOTS,
     deleteProject,
+    open,
+    reopen,
     runBoard,
     shareProject,
     signIn,
+    until,
 } from './harness.mjs';
 
 const MEMBER = process.env.E2E_MEMBER ?? 'e2e-member@example.com';
@@ -30,7 +33,7 @@ const tinker = (php) =>
 
 await runBoard(
     '/notes',
-    async ({ browser, page, check, afterwards }) => {
+    async ({ browser, page, check, soon, afterwards }) => {
         const { project, base } = await shareProject(
             page,
             `Coedit ${RUN}`,
@@ -48,7 +51,7 @@ await runBoard(
         const ref = noteUrl.match(/\/notes\/(\w+)$/)[1];
 
         const { context, page: other } = await signIn(browser, base, MEMBER);
-        await other.goto(noteUrl, { waitUntil: 'networkidle' });
+        await open(other, noteUrl);
 
         const editor = (who) => who.locator('.ProseMirror');
         // What the note says: the others' cursors, and the names over them,
@@ -98,54 +101,70 @@ await runBoard(
         await other.keyboard.press('Control+End');
         await other.keyboard.press('Enter');
         await other.keyboard.type(`Member added this ${RUN}.`);
-        await page.waitForTimeout(1200);
 
-        const ownerSees = await words(page);
-        check(
+        let ownerSees;
+        await soon(
             'and what the member types appears for the owner, both kept',
-            ownerSees.includes(`Owner wrote this ${RUN}.`) &&
-                ownerSees.includes(`Member added this ${RUN}.`),
-            ownerSees.replace(/\s+/g, ' ').slice(0, 90),
+            async () => {
+                ownerSees = await words(page);
+
+                return (
+                    ownerSees.includes(`Owner wrote this ${RUN}.`) &&
+                    ownerSees.includes(`Member added this ${RUN}.`)
+                );
+            },
+            () => ownerSees.replace(/\s+/g, ' ').slice(0, 90),
         );
-        check(
+        await soon(
             'the owner sees where the member is typing, by name',
-            (await page
-                .locator('.collaboration-carets__label', {
-                    hasText: 'E2E Member',
-                })
-                .count()) === 1,
+            async () =>
+                (await page
+                    .locator('.collaboration-carets__label', {
+                        hasText: 'E2E Member',
+                    })
+                    .count()) === 1,
         );
 
         await other.getByPlaceholder('Untitled').fill(`Shared plan ${RUN}`);
-        await page.waitForTimeout(1200);
-        check(
+        await soon(
             'a title one gives it reaches the other',
-            (await page.getByPlaceholder('Untitled').inputValue()) ===
+            async () =>
+                (await page.getByPlaceholder('Untitled').inputValue()) ===
                 `Shared plan ${RUN}`,
         );
         await page.screenshot({ path: `${SHOTS}/coedit-1-owner.png` });
 
         // ------------------------------------------- Kept, for search and MCP too
-        await page.waitForTimeout(3500);
-        const saved = tinker(
-            `$n = App\\Models\\Note\\Note::where('ref_id', '${ref}')->first(); echo json_encode([$n->title, $n->plain_text, $n->ydoc !== null, $n->updated_by !== null]);`,
-        );
-        const [title, text, hasState, hasEditor] = JSON.parse(
-            saved.trim().split('\n').pop(),
-        );
-        check(
+        // (the collaboration server hands it to the app a moment after)
+        let title;
+        let text;
+        let hasState;
+        let hasEditor;
+        await soon(
             'the app keeps the title and both people’s words',
-            title === `Shared plan ${RUN}` &&
-                text.includes(`Owner wrote this ${RUN}.`) &&
-                text.includes(`Member added this ${RUN}.`),
-            `${title} | ${text.replace(/\s+/g, ' ').slice(0, 70)}`,
+            () => {
+                const saved = tinker(
+                    `$n = App\\Models\\Note\\Note::where('ref_id', '${ref}')->first(); echo json_encode([$n->title, $n->plain_text, $n->ydoc !== null, $n->updated_by !== null]);`,
+                );
+                [title, text, hasState, hasEditor] = JSON.parse(
+                    saved.trim().split('\n').pop(),
+                );
+
+                return (
+                    title === `Shared plan ${RUN}` &&
+                    text.includes(`Owner wrote this ${RUN}.`) &&
+                    text.includes(`Member added this ${RUN}.`)
+                );
+            },
+            () => `${title} | ${text.replace(/\s+/g, ' ').slice(0, 70)}`,
+            { timeout: 15000, every: 300 },
         );
         check(
             'with the shared state and who changed it last',
             hasState && hasEditor,
         );
 
-        await other.reload({ waitUntil: 'networkidle' });
+        await reopen(other);
         await other.waitForFunction(
             () => /Saved/.test(document.body.innerText),
             null,
@@ -162,7 +181,9 @@ await runBoard(
         await editor(other).click();
         await other.keyboard.press('Control+End');
         await other.keyboard.type(` Last words ${RUN}.`);
-        await page.waitForTimeout(400);
+        await until(async () =>
+            (await words(page)).includes(`Last words ${RUN}.`),
+        );
 
         // Export prints into the preview; the file shown is what downloads
         await page.locator('[data-test="note-export"]').click();
@@ -202,16 +223,15 @@ await runBoard(
         tinker(
             `$n = App\\Models\\Note\\Note::where('ref_id', '${ref}')->first(); $n->update(['title' => 'Renamed by MCP ${RUN}', 'content' => ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Rewritten by MCP ${RUN}']]]]]]);`,
         );
-        await page.waitForTimeout(1500);
-        check(
+        await soon(
             'a change made over MCP reaches the open note',
-            (await words(page)).includes(`Rewritten by MCP ${RUN}`) &&
+            async () =>
+                (await words(page)).includes(`Rewritten by MCP ${RUN}`) &&
                 (await page.getByPlaceholder('Untitled').inputValue()) ===
                     `Renamed by MCP ${RUN}`,
-            (await words(page)).slice(0, 60),
+            async () => (await words(page)).slice(0, 60),
         );
-        check(
-            'for everyone who has it open',
+        await soon('for everyone who has it open', async () =>
             (await words(other)).includes(`Rewritten by MCP ${RUN}`),
         );
         await other.screenshot({ path: `${SHOTS}/coedit-2-member.png` });
@@ -222,13 +242,18 @@ await runBoard(
             .locator('[data-test="note-version"]', { hasText: 'Shared draft' })
             .locator('[data-test="note-version-restore"]')
             .click();
-        await other.waitForTimeout(2000);
-        const restored = await words(other);
-        check(
+        let restored;
+        await soon(
             'a version restored by the owner comes back in the member’s open note',
-            restored.includes(`Member added this ${RUN}.`) &&
-                !restored.includes(`Rewritten by MCP ${RUN}`),
-            restored.replace(/\s+/g, ' ').slice(0, 80),
+            async () => {
+                restored = await words(other);
+
+                return (
+                    restored.includes(`Member added this ${RUN}.`) &&
+                    !restored.includes(`Rewritten by MCP ${RUN}`)
+                );
+            },
+            () => restored.replace(/\s+/g, ' ').slice(0, 80),
         );
 
         await context.close();

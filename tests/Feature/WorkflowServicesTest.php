@@ -43,11 +43,6 @@ class WorkflowServicesTest extends TestCase
         Http::preventStrayRequests();
     }
 
-    private function work(): void
-    {
-        $this->artisan('queue:work', ['--stop-when-empty' => true])->assertSuccessful();
-    }
-
     private function node(string $key, string $type, array $config = []): array
     {
         return ['id' => $key, 'key' => $key, 'type' => $type, 'position' => ['x' => 0, 'y' => 0], 'config' => $config];

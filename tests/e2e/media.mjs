@@ -21,6 +21,7 @@ await runBoard('/demo/konva', async (b) => {
     const {
         page,
         check,
+        soon,
         draw,
         screenOf,
         label,
@@ -31,7 +32,7 @@ await runBoard('/demo/konva', async (b) => {
 
     const openPicker = async () => {
         await page.locator('[data-test="open-image-picker"]').click();
-        await page.waitForTimeout(400);
+        await page.getByRole('heading', { name: 'Add image' }).waitFor();
     };
 
     const lastPictureSrc = () =>
@@ -56,57 +57,55 @@ await runBoard('/demo/konva', async (b) => {
             .count()) >= 4,
     );
     await page.locator('input[type="file"]').setInputFiles(SAMPLE);
-    await page.waitForTimeout(2500);
-    check(
+    await soon(
         'a picture from this machine lands on the board',
-        (await itemCount()) === before + 1,
-        `${before} → ${await itemCount()}`,
+        async () => (await itemCount()) === before + 1,
+        async () => `${before} → ${await itemCount()}`,
+        { timeout: 20000 },
     );
-    check(
+    await soon(
         'and it is a picture',
-        (await inspectorTitle()).toLowerCase() === 'image',
-        await inspectorTitle(),
+        async () => (await inspectorTitle()).toLowerCase() === 'image',
+        inspectorTitle,
     );
-    check(
+    await soon(
         'kept in the Drive, not stuffed into the board',
-        /\/drive\/files\//.test(await lastPictureSrc()),
-        (await lastPictureSrc()).slice(0, 52),
+        async () => /\/drive\/files\//.test(await lastPictureSrc()),
+        async () => (await lastPictureSrc()).slice(0, 52),
     );
 
     // --- from the Drive
     before = await itemCount();
     await openPicker();
     await page.getByRole('button', { name: 'From Drive' }).click();
-    await page.waitForTimeout(1200);
     const thumbnail = page.locator('button img').first();
-    check(
+    await soon(
         'the Drive tab lists what is already there',
-        (await thumbnail.count()) > 0,
+        async () => (await thumbnail.count()) > 0,
     );
     await thumbnail.click();
-    await page.waitForTimeout(300);
     await page
         .getByRole('button', { name: /^Insert/ })
         .first()
         .click();
-    await page.waitForTimeout(900);
-    check(
+    await soon(
         'one chosen from the Drive lands on the board',
-        (await itemCount()) === before + 1,
-        `${before} → ${await itemCount()}`,
+        async () => (await itemCount()) === before + 1,
+        async () => `${before} → ${await itemCount()}`,
+        { timeout: 20000 },
     );
 
     // --- as SVG markup
     before = await itemCount();
     await openPicker();
     await page.getByRole('button', { name: 'SVG' }).click();
-    await page.waitForTimeout(300);
     await page.locator('[data-test="svg-markup"]').fill('just some words');
-    await page.waitForTimeout(250);
-    check(
+    await soon(
         'markup that is not SVG is refused',
-        await page.locator('[data-test="svg-add"]').isDisabled(),
-        await page.locator('[data-test="svg-problem"]').innerText(),
+        async () =>
+            (await page.locator('[data-test="svg-add"]').isDisabled()) &&
+            (await page.locator('[data-test="svg-problem"]').count()) > 0,
+        () => page.locator('[data-test="svg-problem"]').innerText(),
     );
     await page
         .locator('[data-test="svg-markup"]')
@@ -114,21 +113,19 @@ await runBoard('/demo/konva', async (b) => {
             '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#ef4444" stroke-width="2"><circle cx="12" cy="12" r="9" /></svg>',
         );
     await page.locator('[data-test="svg-add"]').click();
-    await page.waitForTimeout(800);
-    check(
+    await soon(
         'a drawing pasted as markup lands on the board',
-        (await itemCount()) === before + 1,
-        `${before} → ${await itemCount()}`,
+        async () => (await itemCount()) === before + 1,
+        async () => `${before} → ${await itemCount()}`,
+        { timeout: 20000 },
     );
 
     const box = await fields();
-    await page.locator('[data-test="prop-width"]').fill('320');
-    await page.locator('[data-test="prop-width"]').press('Enter');
-    await page.waitForTimeout(350);
-    check(
+    await b.setField('width', 320);
+    await soon(
         'a picture resizes like any other shape',
-        (await fields()).w === 320,
-        `${box.w} → ${(await fields()).w}`,
+        async () => (await fields()).w === 320,
+        async () => `${box.w} → ${(await fields()).w}`,
     );
 
     // --- a pasted screenshot goes to the Drive too
@@ -149,14 +146,13 @@ await runBoard('/demo/konva', async (b) => {
             new ClipboardEvent('paste', { clipboardData: data, bubbles: true }),
         );
     });
-    await page.waitForTimeout(2500);
-    check(
+    await soon(
         'a pasted screenshot lands on the board',
-        (await itemCount()) === before + 1,
-        `${before} → ${await itemCount()}`,
+        async () => (await itemCount()) === before + 1,
+        async () => `${before} → ${await itemCount()}`,
+        { timeout: 20000 },
     );
-    check(
-        'and goes to the Drive rather than into the board',
+    await soon('and goes to the Drive rather than into the board', async () =>
         /\/drive\/files\//.test(await lastPictureSrc()),
     );
     await page.screenshot({ path: `${SHOTS}/media-pictures.png` });
@@ -168,9 +164,8 @@ await runBoard('/demo/konva', async (b) => {
         (await inspectorTitle()).toLowerCase() === 'math',
         await inspectorTitle(),
     );
-    await page.waitForTimeout(900);
     const set = page.locator('.math-item .katex').first();
-    check('KaTeX sets it', (await set.count()) > 0);
+    await soon('KaTeX sets it', async () => (await set.count()) > 0);
     check(
         'and it reads as mathematics, not as LaTeX',
         !/\^/.test(await set.innerText()),
@@ -182,9 +177,7 @@ await runBoard('/demo/konva', async (b) => {
         formula.y + formula.h / 2,
     );
     await label(middle, '\\frac{1}{2}\\int_0^\\infty e^{-x^2}\\,dx');
-    await page.waitForTimeout(600);
-    check(
-        'typing new LaTeX re-sets it',
+    await soon('typing new LaTeX re-sets it', async () =>
         /∫/.test(
             (
                 await page.locator('.math-item .katex').first().innerText()
@@ -201,13 +194,13 @@ await runBoard('/demo/konva', async (b) => {
 
     const wide = (await page.locator('.math-item').first().boundingBox()).width;
     await page.locator('[data-test="zoom-in"]').click();
-    await page.waitForTimeout(900);
-    check(
+    await soon(
         'the formula follows the camera',
-        Math.abs(
-            (await page.locator('.math-item').first().boundingBox()).width -
-                wide,
-        ) > 2,
+        async () =>
+            Math.abs(
+                (await page.locator('.math-item').first().boundingBox()).width -
+                    wide,
+            ) > 2,
     );
     await page.screenshot({ path: `${SHOTS}/media-formula.png` });
 });

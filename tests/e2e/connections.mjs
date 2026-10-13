@@ -12,6 +12,8 @@ import {
     shareProject,
     signIn,
     tinker,
+    open,
+    reopen,
 } from './harness.mjs';
 
 const HOST = process.env.E2E_OLLAMA ?? 'http://ollama:11434';
@@ -177,7 +179,7 @@ await runBoard(
         tinker(
             `$c = ${user}->connections()->where('name', '${MEMBER_NAME}')->first(); $c->settings = [...$c->settings, 'member' => 'e2e', 'member_name' => 'E2E Member', 'expires_at' => now()->addDays(60)->toIso8601String()]; $c->secrets = [...$c->secrets, 'access_token' => 'e2e-token']; $c->save();`,
         );
-        await page.reload({ waitUntil: 'networkidle' });
+        await reopen(page);
         check(
             'signed in, it says who as and until when, and asks for nothing more',
             /Signed in as E2E Member until \S/.test(
@@ -323,7 +325,7 @@ await runBoard(
 
             await page.keyboard.press('Escape');
             await page.waitForTimeout(300);
-            await page.reload({ waitUntil: 'networkidle' });
+            await reopen(page);
             await page.locator('[data-connection-add]').click();
             await sheet.locator('[data-service="openrouter"]').click();
             await sheet.locator('[data-connection-test]').click();
@@ -435,7 +437,7 @@ await runBoard(
                 `${user}->connections()->where('name', 'e2e line ${RUN}')->delete();`,
             ),
         );
-        await page.reload({ waitUntil: 'networkidle' });
+        await reopen(page);
         const hook = row(`e2e line ${RUN}`).locator('[data-connection-hook]');
         const said = await hook.innerText();
         check(
@@ -462,9 +464,7 @@ await runBoard(
         );
         afterwards(() => deleteProject(page, base, project));
 
-        await page.goto(`${base}/p/${project}/settings`, {
-            waitUntil: 'networkidle',
-        });
+        await open(page, `${base}/p/${project}/settings`);
         await page.locator('[data-test="project-connections"]').click();
         await page.waitForURL(/\/p\/\w+\/settings\/connections$/);
         check(
@@ -505,9 +505,7 @@ await runBoard(
             MEMBER,
         );
         try {
-            await viewer.goto(`${base}/p/${project}/settings/connections`, {
-                waitUntil: 'networkidle',
-            });
+            await open(viewer, `${base}/p/${project}/settings/connections`);
             check(
                 'a viewer sees it, and nothing to change it with',
                 (await viewer

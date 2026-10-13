@@ -1,7 +1,7 @@
 // The MCP settings page: pick a client, get the right snippet for it, with a
 // freshly made token filled in.
 import { chromium } from 'playwright-core';
-import { signIn } from './harness.mjs';
+import { signIn, open, reopen } from './harness.mjs';
 
 const base = process.env.APP_URL ?? 'http://localhost:8001';
 const fail = [];
@@ -23,9 +23,9 @@ const { page, context } = await signIn(
 
 const byTest = (id) => page.locator(`[data-test="${id}"]`);
 
-await page.goto(`${base}/settings/mcp`, { waitUntil: 'networkidle' });
+await open(page, `${base}/settings/mcp`);
 await page.evaluate(() => localStorage.clear());
-await page.reload({ waitUntil: 'networkidle' });
+await reopen(page);
 
 await page.getByLabel('Token name').fill('e2e-mcp-settings');
 await page.getByRole('button', { name: 'Create token' }).click();
@@ -89,7 +89,7 @@ check(
 );
 
 await pick('gemini');
-await page.reload({ waitUntil: 'networkidle' });
+await reopen(page);
 check(
     (await byTest('client-gemini').getAttribute('aria-pressed')) === 'true',
     'the chosen client is remembered',

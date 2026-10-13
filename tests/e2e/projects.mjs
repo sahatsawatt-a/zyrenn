@@ -1,6 +1,6 @@
 // A project as a place: made from the switcher, filled like one's own notes,
 // kept apart from them, renamed and deleted from its settings.
-import { SHOTS, runBoard } from './harness.mjs';
+import { SHOTS, runBoard, saved } from './harness.mjs';
 
 // Named for this run, so one left behind by an earlier run is never mistaken for it
 const RUN = Date.now().toString().slice(-6);
@@ -9,7 +9,7 @@ const NOTE = `Site survey ${RUN}`;
 
 await runBoard(
     '/notes',
-    async ({ page, check }) => {
+    async ({ page, check, soon }) => {
         const switcher = page.locator('[data-test="project-switcher"]');
         // A whole path, so /boards is never matched by /p/{project}/boards
         const at = (path) => (url) => new URL(url).pathname === path;
@@ -45,10 +45,10 @@ await runBoard(
         await page.getByRole('button', { name: 'New folder' }).click();
         await page.getByPlaceholder('Name').fill('Surveys');
         await page.getByRole('button', { name: 'Create' }).click();
-        await page.waitForTimeout(600);
-        check(
+        await soon(
             'a folder is made in the project',
-            (await page.getByText('Surveys', { exact: true }).count()) > 0,
+            async () =>
+                (await page.getByText('Surveys', { exact: true }).count()) > 0,
         );
 
         await page
@@ -60,7 +60,7 @@ await runBoard(
             .getByPlaceholder(/untitled/i)
             .first()
             .fill(NOTE);
-        await page.waitForTimeout(1500);
+        await saved(page);
 
         const crumb = page.locator('nav[aria-label="breadcrumb"] a', {
             hasText: 'Notes',
@@ -111,9 +111,7 @@ await runBoard(
 
         await page.locator('#name').fill(`${NAME} (renamed)`);
         await page.getByRole('button', { name: 'Save' }).click();
-        await page.waitForTimeout(800);
-        check(
-            'the new name reaches the switcher',
+        await soon('the new name reaches the switcher', async () =>
             (await switcher.innerText()).includes(`${NAME} (renamed)`),
         );
         await page.screenshot({ path: `${SHOTS}/projects-3-settings.png` });
@@ -124,9 +122,7 @@ await runBoard(
             .getByRole('button', { name: 'Delete' })
             .click();
         await page.waitForURL(at('/notes'));
-        await page.waitForTimeout(500);
-        check(
-            'deleting it goes back to your own notes',
+        await soon('deleting it goes back to your own notes', async () =>
             /Personal/.test(await switcher.innerText()),
         );
 

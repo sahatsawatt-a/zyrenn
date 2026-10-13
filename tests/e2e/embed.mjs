@@ -1,13 +1,22 @@
 // A board shown inside a note: two dropdowns on top, the board below, and a
 // reference that survives being saved and reopened.
-import { SHOTS, runBoard } from './harness.mjs';
+import {
+    SHOTS,
+    boardKept,
+    open,
+    runBoard,
+    saved,
+    slash,
+    steady,
+    until,
+} from './harness.mjs';
 
 const APP = process.env.APP_URL ?? 'http://127.0.0.1:8001';
 
 await runBoard(
     '/boards',
     async (b) => {
-        const { page, check, at, ready } = b;
+        const { page, check, soon, at, ready } = b;
 
         // --- a board worth showing: two frames with something on each
         await page
@@ -55,45 +64,41 @@ await runBoard(
         await page.mouse.move(at(0.3, 0.35).x, at(0.3, 0.35).y, { steps: 6 });
         await page.mouse.move(at(0.37, 0.34).x, at(0.37, 0.34).y, { steps: 6 });
         await page.mouse.up();
-        await page.waitForTimeout(600);
 
-        await page.waitForTimeout(2200);
+        await saved(page);
         check(
             'the board saved itself',
             /Saved/i.test(await page.locator('body').innerText()),
         );
 
-        const kinds = await page.evaluate(async () => {
-            const ref = location.pathname.split('/').pop();
-            const board = await (
-                await fetch(`/boards/${ref}/content`, {
-                    headers: { Accept: 'application/json' },
-                })
-            ).json();
-
-            return (board.items ?? []).map((item) => item.kind).join(',');
-        });
-        check(
+        // (kept by the app a moment later: the note draws it from there)
+        let kinds;
+        await soon(
             'the board has a line joining two shapes',
-            kinds.includes('arrow'),
-            kinds,
+            async () => {
+                kinds = Object.values(
+                    await boardKept(page, boardUrl.split('/').pop()),
+                )
+                    .map((item) => item.kind)
+                    .join(',');
+
+                return kinds.includes('arrow');
+            },
+            () => kinds,
         );
 
         // --- a note showing it
-        await page.goto(`${APP}/notes`, { waitUntil: 'networkidle' });
+        await open(page, `${APP}/notes`);
         await page.getByRole('button', { name: /new note/i }).click();
         await page.waitForURL(/notes\/\w+/);
         await page.waitForSelector('.tiptap');
-        await page.waitForTimeout(700);
 
         await page.locator('.tiptap').click();
-        await page.keyboard.type('/board');
-        await page.waitForTimeout(700);
-        await page.keyboard.press('Enter');
-        await page.waitForTimeout(1200);
-        check(
+        await slash(page, 'board');
+        await soon(
             'the slash menu inserts a board block',
-            (await page.locator('[data-test="board-block"]').count()) === 1,
+            async () =>
+                (await page.locator('[data-test="board-block"]').count()) === 1,
         );
         check(
             'with a dropdown for the board',
@@ -107,10 +112,12 @@ await runBoard(
         await page
             .locator('[data-test="board-choose"]')
             .selectOption({ label: title });
-        await page.waitForTimeout(2000);
-        check(
+        await soon(
             'choosing a board draws it in the note',
-            (await page.locator('[data-test="board-view"] canvas').count()) > 0,
+            async () =>
+                (await page
+                    .locator('[data-test="board-view"] canvas')
+                    .count()) > 0,
         );
 
         // what is drawn in the note's own stage, by kind
@@ -127,16 +134,17 @@ await runBoard(
                 };
             });
 
-        check(
+        await soon(
             'the lines are drawn too, not only the shapes',
-            (await drawnIn()).lines > 0,
-            JSON.stringify(await drawnIn()),
+            async () => (await drawnIn()).lines > 0,
+            async () => JSON.stringify(await drawnIn()),
         );
         await page.screenshot({ path: `${SHOTS}/embed-whole.png` });
 
-        const frames = await page
-            .locator('[data-test="frame-choose"] option')
-            .allInnerTexts();
+        const options = () =>
+            page.locator('[data-test="frame-choose"] option').allInnerTexts();
+        await until(async () => (await options()).length > 1);
+        const frames = await options();
         check(
             'the frames of that board are offered',
             frames.length > 1,
@@ -145,37 +153,43 @@ await runBoard(
         await page
             .locator('[data-test="frame-choose"]')
             .selectOption({ index: 1 });
-        await page.waitForTimeout(1200);
+        // (drawn again, as that frame alone)
+        await steady(drawnIn);
         check(
             'choosing a frame keeps it drawn',
             (await page.locator('[data-test="board-view"] canvas').count()) > 0,
         );
-        check(
+        await soon(
             'and keeps the lines on that frame',
-            (await drawnIn()).lines > 0,
-            JSON.stringify(await drawnIn()),
+            async () => (await drawnIn()).lines > 0,
+            async () => JSON.stringify(await drawnIn()),
         );
         await page.screenshot({ path: `${SHOTS}/embed-frame.png` });
 
         // --- it survives a reload, because it is kept as two lines in the note
-        await page.waitForTimeout(2200);
+        await saved(page);
         const noteUrl = page.url();
-        await page.goto(noteUrl, { waitUntil: 'networkidle' });
+        await open(page, noteUrl);
         await page.waitForSelector('.tiptap');
-        await page.waitForTimeout(2500);
-        check(
+        await soon(
             'the block comes back after a reload',
-            (await page.locator('[data-test="board-block"]').count()) === 1,
+            async () =>
+                (await page.locator('[data-test="board-block"]').count()) === 1,
         );
-        check(
+        await soon(
             'still pointing at the same board',
-            (await page.locator('[data-test="board-choose"]').inputValue()) ===
-                boardUrl.split('/').pop(),
-            await page.locator('[data-test="board-choose"]').inputValue(),
+            async () =>
+                (await page
+                    .locator('[data-test="board-choose"]')
+                    .inputValue()) === boardUrl.split('/').pop(),
+            () => page.locator('[data-test="board-choose"]').inputValue(),
         );
-        check(
+        await soon(
             'and still drawing it',
-            (await page.locator('[data-test="board-view"] canvas').count()) > 0,
+            async () =>
+                (await page
+                    .locator('[data-test="board-view"] canvas')
+                    .count()) > 0,
         );
         await page.screenshot({ path: `${SHOTS}/embed-reloaded.png` });
     },

@@ -3,7 +3,7 @@
 //
 // Needs a second account to add, E2E_MEMBER (e2e-member@example.com by default)
 // with the password "password".
-import { SHOTS, runBoard, signIn } from './harness.mjs';
+import { SHOTS, runBoard, saved, signIn, open } from './harness.mjs';
 
 const MEMBER = process.env.E2E_MEMBER ?? 'e2e-member@example.com';
 
@@ -14,7 +14,15 @@ const NOTE = `Brief ${RUN}`;
 
 await runBoard(
     '/notes',
-    async ({ browser, page, check }) => {
+    async ({ browser, page, check, soon }) => {
+        /** Does something that is sent to the app, and waits for its answer. */
+        const sent = (act) =>
+            Promise.all([
+                page.waitForResponse(
+                    (response) => response.request().method() !== 'GET',
+                ),
+                act(),
+            ]);
         const at = (path) => (url) => new URL(url).pathname === path;
         const switcher = page.locator('[data-test="project-switcher"]');
 
@@ -37,7 +45,7 @@ await runBoard(
             .getByPlaceholder(/untitled/i)
             .first()
             .fill(NOTE);
-        await page.waitForTimeout(1500);
+        await saved(page);
 
         await page.goto(`${base}/p/${project}/boards`);
         await page
@@ -101,9 +109,7 @@ await runBoard(
         );
 
         await other.goto(noteUrl);
-        await other.waitForTimeout(800);
-        check(
-            'the note is view only',
+        await soon('the note is view only', async () =>
             /View only/.test(await other.locator('body').innerText()),
         );
         check(
@@ -118,11 +124,12 @@ await runBoard(
         );
 
         await other.goto(boardUrl);
-        await other.waitForTimeout(800);
-        check(
+        await soon(
             'the board is drawn but not editable',
-            (await other.locator('[data-test="board-read-only"]').count()) ===
-                1 &&
+            async () =>
+                (await other
+                    .locator('[data-test="board-read-only"]')
+                    .count()) === 1 &&
                 (await other.locator('[data-test="tool-sticky"]').count()) ===
                     0,
         );
@@ -139,13 +146,9 @@ await runBoard(
         const theirRole = page
             .locator('li', { hasText: MEMBER })
             .locator('[data-test="member-role"]');
-        await theirRole.selectOption('editor');
-        // Until the change is saved
-        await page.waitForLoadState('networkidle');
+        await sent(() => theirRole.selectOption('editor'));
 
-        await other.goto(`${base}/p/${project}/notes`, {
-            waitUntil: 'networkidle',
-        });
+        await open(other, `${base}/p/${project}/notes`);
         await other
             .getByRole('button', { name: /new note/i })
             .first()
@@ -160,15 +163,18 @@ await runBoard(
         // ---------------------------------------------- Handing it over
         await page.locator('[data-test="leave-project"]').click();
         await page.locator('[data-test="confirm-remove"]').click();
-        await page.waitForTimeout(800);
-        check(
+        await soon(
             'the only owner can’t leave',
-            (await page.getByText('only owner').count()) > 0 &&
+            async () =>
+                (await page.getByText('only owner').count()) > 0 &&
                 at(`/p/${project}/settings`)(page.url()),
         );
 
-        await theirRole.selectOption('owner');
-        await page.waitForTimeout(800);
+        // (that question put away, before it is asked again)
+        await page
+            .locator('[data-test="confirm-remove"]')
+            .waitFor({ state: 'hidden' });
+        await sent(() => theirRole.selectOption('owner'));
         await page.locator('[data-test="leave-project"]').click();
         await page.locator('[data-test="confirm-remove"]').click();
         await page.waitForURL(at('/notes'));
@@ -181,9 +187,12 @@ await runBoard(
 
         // ----------------------------------- The new owner runs it, and cleans up
         await other.goto(`${base}/p/${project}/settings`);
-        check(
+        await soon(
             'the new owner can delete it',
-            (await other.locator('[data-test="delete-project"]').count()) === 1,
+            async () =>
+                (await other
+                    .locator('[data-test="delete-project"]')
+                    .count()) === 1,
         );
         await other.screenshot({ path: `${SHOTS}/members-3-new-owner.png` });
         await other.locator('[data-test="delete-project"]').click();

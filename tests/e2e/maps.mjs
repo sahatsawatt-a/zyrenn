@@ -9,7 +9,17 @@
 // part of `npm run test:e2e`.
 //
 //     node tests/e2e/maps.mjs
-import { openBoard, removeAt, SHOTS, tinker } from './harness.mjs';
+import {
+    openBoard,
+    removeAt,
+    SHOTS,
+    tinker,
+    open,
+    reopen,
+    saved as pageSaved,
+    slash,
+    until,
+} from './harness.mjs';
 
 const app = await openBoard('/maps', { canvas: false });
 const { page, check, afterwards } = app;
@@ -80,7 +90,7 @@ const request = (path, method, body) =>
 try {
     // ---- the map ----
 
-    await page.goto(`${base}/maps`, { waitUntil: 'networkidle' });
+    await open(page, `${base}/maps`);
     const mapReady = () =>
         page.waitForFunction(
             () =>
@@ -241,7 +251,7 @@ try {
         }, value);
     await appearance('dark');
     afterwards(() => appearance('system').catch(() => {}));
-    await page.reload({ waitUntil: 'networkidle' });
+    await reopen(page);
     await mapReady();
     check(
         'saved places come back from the server',
@@ -370,7 +380,7 @@ try {
     );
     afterwards(() => removeAt(page, tripPath));
 
-    await page.goto(`${base}${tripPath}`, { waitUntil: 'networkidle' });
+    await open(page, `${base}${tripPath}`);
     const tripReady = () =>
         page.waitForFunction(() => window.__trip?.map()?.loaded(), null, {
             timeout: 30000,
@@ -590,7 +600,7 @@ try {
         'it saves itself',
         (await byTest('save-status').getAttribute('data-status')) === 'saved',
     );
-    await page.reload({ waitUntil: 'networkidle' });
+    await reopen(page);
     await tripReady();
     const kept = await page.evaluate(() => {
         const days = window.__trip.plan.trip.days;
@@ -669,17 +679,15 @@ try {
     // ---- the trip shown in a note ----
 
     const tripRef = tripPath.split('/').pop();
-    await page.goto(`${base}/notes`, { waitUntil: 'networkidle' });
+    await open(page, `${base}/notes`);
     await page.getByRole('button', { name: /new note/i }).click();
     await page.waitForURL(/notes\/\w+/);
     const notePath = new URL(page.url()).pathname;
     afterwards(() => removeAt(page, notePath));
     await page.waitForSelector('.tiptap');
-    await page.waitForTimeout(700);
+    await pageSaved(page);
     await page.locator('.tiptap').click();
-    await page.keyboard.type('/trip');
-    await page.waitForTimeout(700);
-    await page.keyboard.press('Enter');
+    await slash(page, 'trip');
     await byTest('trip-block')
         .waitFor({ timeout: 5000 })
         .catch(() => {});
@@ -747,12 +755,17 @@ try {
 
     // Kept as two lines in the note, so it is there after a reload
     const chosenDay = await byTest('day-choose').inputValue();
-    await page.waitForTimeout(2500);
-    await page.goto(`${base}${notePath}`, { waitUntil: 'networkidle' });
+    await pageSaved(page);
+    await open(page, `${base}${notePath}`);
     await byTest('trip-block')
         .waitFor({ timeout: 10000 })
         .catch(() => {});
-    await page.waitForTimeout(1500);
+    // (the block reads its trip, then says which day it was left on)
+    await until(
+        async () =>
+            (await byTest('trip-choose').inputValue()) === tripRef &&
+            (await byTest('day-choose').inputValue()) === chosenDay,
+    );
     check(
         'it comes back after a reload, on the same trip and day',
         (await byTest('trip-choose').inputValue()) === tripRef &&
@@ -775,7 +788,7 @@ try {
         })
     ).json.place;
 
-    await page.goto(`${base}${tripPath}`, { waitUntil: 'networkidle' });
+    await open(page, `${base}${tripPath}`);
     await tripReady();
     await byTest('day-3').click();
     const addSearch = page.locator('[data-test="place-search"]').first();
@@ -816,7 +829,7 @@ try {
     await request(`/places/${linked.ref_id}`, 'PATCH', {
         name: 'Xintiandi (renamed)',
     });
-    await page.reload({ waitUntil: 'networkidle' });
+    await reopen(page);
     await tripReady();
     check(
         'renamed on the map, the trip follows',
@@ -878,7 +891,7 @@ try {
         }
     }
 
-    await page.goto(`${base}${tablePath}`, { waitUntil: 'networkidle' });
+    await open(page, `${base}${tablePath}`);
     check(
         'a table with a place in it offers a map',
         (await byTest('table-view').count()) === 1,
@@ -904,7 +917,7 @@ try {
         .locator('li', { hasText: '黄浦区' })
         .first()
         .click();
-    await page.waitForTimeout(800);
+    await until(async () => /黄浦区/.test(await cells.nth(2).innerText()));
     check(
         'a place chosen in the cell is kept',
         /外滩|Bund/.test(await cells.nth(2).innerText()) &&
@@ -918,9 +931,14 @@ try {
     const savedOption = byTest('place-suggestions').locator('li').first();
     await savedOption.waitFor({ timeout: 15000 }).catch(() => {});
     await savedOption.click();
-    await page.waitForTimeout(800);
-    const cellRows = tinker(
-        `echo json_encode(App\\Support\\Table\\TableStorage::rows(App\\Models\\Table\\Table::where('ref_id', '${tableRef}')->first()));`,
+    // (once the table has saved the cell)
+    let cellRows;
+    await until(() =>
+        String(
+            (cellRows = tinker(
+                `echo json_encode(App\\Support\\Table\\TableStorage::rows(App\\Models\\Table\\Table::where('ref_id', '${tableRef}')->first()));`,
+            )),
+        ).includes(`"place":"${linked.ref_id}"`),
     );
     check(
         'a saved place chosen in a cell keeps which place it is',

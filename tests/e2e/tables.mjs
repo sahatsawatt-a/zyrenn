@@ -1,6 +1,12 @@
 // A table of one's own: made from the list, given columns and rows, typed
 // into, and all of it still there on the way back.
-import { SHOTS, runBoard } from './harness.mjs';
+import {
+    SHOTS,
+    reopen,
+    runBoard,
+    saved as pageSaved,
+    until,
+} from './harness.mjs';
 
 // Named for this run, so a table left behind by an earlier one is never
 // mistaken for this one
@@ -8,7 +14,7 @@ const TITLE = `Budget ${Date.now().toString().slice(-6)}`;
 
 await runBoard(
     '/tables',
-    async ({ page, check, problems }) => {
+    async ({ page, check, soon, problems }) => {
         const rows = page.locator('[data-test="table-row"]');
         const cell = (row, column) =>
             rows.nth(row).locator(`[data-column="${column}"] input`).first();
@@ -24,11 +30,16 @@ await runBoard(
             await page.locator('[data-test="column-label"]').fill(label);
             await page.locator(`[data-test="column-type-${type}"]`).click();
             await page.locator('[data-test="column-save"]').click();
-            await page.waitForTimeout(600);
+            await page
+                .locator(
+                    `[data-test="column-header"]:has-text(${JSON.stringify(label)})`,
+                )
+                .waitFor();
         };
 
+        /** What the page says once it has saved what was just done. */
         const saved = async () => {
-            await page.waitForTimeout(1600);
+            await pageSaved(page).catch(() => {});
 
             return (
                 await page.locator('[data-test="table-status"]').innerText()
@@ -54,10 +65,12 @@ await runBoard(
         );
 
         await page.locator('[data-test="add-row"]').first().click();
-        await page.waitForTimeout(500);
+        await until(async () => (await rows.count()) === 1);
         await page.locator('[data-test="add-row"]').first().click();
-        await page.waitForTimeout(500);
-        check('two rows are added', (await rows.count()) === 2);
+        await soon(
+            'two rows are added',
+            async () => (await rows.count()) === 2,
+        );
 
         await cell(0, 'owner').fill('Ada');
         await cell(1, 'owner').fill('Grace');
@@ -70,10 +83,12 @@ await runBoard(
         check('it says it saved itself', status.startsWith('Saved'), status);
 
         await page.locator('[data-test="table-search"]').fill('Grace');
-        await page.waitForTimeout(300);
-        check('search narrows the rows', (await rows.count()) === 1);
+        await soon(
+            'search narrows the rows',
+            async () => (await rows.count()) === 1,
+        );
         await page.locator('[data-test="table-search"]').fill('');
-        await page.waitForTimeout(300);
+        await until(async () => (await rows.count()) === 2);
 
         await page
             .locator('[data-test="column-header"][data-column="budget"]')
@@ -84,12 +99,13 @@ await runBoard(
             )
             .click();
         await page.getByText(/sort ascending/i).click();
-        await page.waitForTimeout(300);
-        check(
+        await soon(
             'sorting puts the smaller budget first',
-            (await cell(0, 'budget').inputValue()) === '120',
-            await cell(0, 'budget').inputValue(),
+            async () => (await cell(0, 'budget').inputValue()) === '120',
+            () => cell(0, 'budget').inputValue(),
         );
+        // (that menu gone, before the next column's is opened)
+        await page.getByText(/sort ascending/i).waitFor({ state: 'hidden' });
 
         // A field is renamed, and offered only kinds its values are kept as
         const kind = (type) =>
@@ -112,6 +128,7 @@ await runBoard(
         await page.locator('[data-test="column-label"]').fill('Lead');
         await kind('email').click();
         await page.locator('[data-test="column-save"]').click();
+        await until(async () => (await headers()).includes('Lead'));
         const edited = await saved();
         check(
             'editing a field saves it',
@@ -121,8 +138,9 @@ await runBoard(
 
         await page.screenshot({ path: `${SHOTS}/tables-filled.png` });
 
-        await page.reload({ waitUntil: 'networkidle' });
+        await reopen(page);
         await page.waitForSelector('[data-test="table-workspace"]');
+        await rows.first().waitFor();
         check(
             'the title survives a reload',
             (await page.locator('[data-test="table-title"]').inputValue()) ===
@@ -143,11 +161,15 @@ await runBoard(
         await rows.nth(0).hover();
         await rows.nth(0).locator('[data-test="select-row"]').click();
         await page.locator('[data-test="bulk-delete"]').click();
-        await page.waitForTimeout(800);
-        check('a selected row can be deleted', (await rows.count()) === 1);
+        await soon(
+            'a selected row can be deleted',
+            async () => (await rows.count()) === 1,
+        );
+        await saved();
 
-        await page.reload({ waitUntil: 'networkidle' });
+        await reopen(page);
         await page.waitForSelector('[data-test="table-workspace"]');
+        await rows.first().waitFor();
         check(
             'and stays deleted',
             (await rows.count()) === 1 &&
@@ -162,7 +184,7 @@ await runBoard(
             await page.locator('[data-test="parameter-name"]').fill(name);
             await page.locator('[data-test="parameter-new-value"]').fill(value);
             await page.locator('[data-test="parameter-save"]').click();
-            await page.waitForTimeout(1200);
+            await page.locator(`[data-test="parameter-${name}"]`).waitFor();
         };
 
         await parameter('rate', '5');
@@ -181,13 +203,17 @@ await runBoard(
             .locator('[data-test="column-expression"]')
             .fill('budget * fx');
         await page.locator('[data-test="column-save"]').click();
-        await page.waitForTimeout(800);
-        const refusal = await page
-            .locator('[data-test="column-expression-error"]')
-            .innerText()
-            .catch(() => '');
+        const refusal =
+            (await until(() =>
+                page
+                    .locator('[data-test="column-expression-error"]')
+                    .innerText({ timeout: 500 }),
+            )) ?? '';
         // The refusal is a 422, which the browser reports; it was asked for
-        const asked = problems.findIndex((problem) => problem.includes('422'));
+        const told = () =>
+            problems.findIndex((problem) => problem.includes('422'));
+        await until(() => told() !== -1, { timeout: 2000 });
+        const asked = told();
 
         if (asked !== -1) {
             problems.splice(asked, 1);
@@ -204,37 +230,34 @@ await runBoard(
             .fill('budget * rate');
         await page.locator('[data-test="column-summary-sum"]').click();
         await page.locator('[data-test="column-save"]').click();
-        await page.waitForTimeout(1500);
-        check(
+        await soon(
             'a formula column works out every row',
-            (await formula(0, 'in_baht')).trim() === '600',
-            await formula(0, 'in_baht'),
+            async () => (await formula(0, 'in_baht')).trim() === '600',
+            () => formula(0, 'in_baht'),
         );
 
         // Typed into, the row's formula follows without reloading
         await cell(0, 'budget').fill('200');
         await cell(0, 'budget').press('Tab');
-        await page.waitForTimeout(2000);
-        check(
+        await soon(
             'and follows a value as it is typed',
-            (await formula(0, 'in_baht')).trim() === '1,000',
-            await formula(0, 'in_baht'),
+            async () => (await formula(0, 'in_baht')).trim() === '1,000',
+            () => formula(0, 'in_baht'),
         );
 
         // The parameter moves once; the row and the total follow
         await page.locator('[data-test="parameter-rate"]').click();
         await page.locator('[data-test="parameter-value"]').fill('2');
         await page.locator('[data-test="parameter-value"]').press('Enter');
-        await page.waitForTimeout(1500);
+        await soon(
+            'changing a parameter works every row out again',
+            async () => (await formula(0, 'in_baht')).trim() === '400',
+            () => formula(0, 'in_baht'),
+        );
         const total = await page
             .locator('[data-test="table-footer"] [data-total="in_baht"]')
             .innerText()
             .catch(() => '');
-        check(
-            'changing a parameter works every row out again',
-            (await formula(0, 'in_baht')).trim() === '400',
-            await formula(0, 'in_baht'),
-        );
         check(
             'and the footer sums it',
             total.replace(/\s+/g, ' ').trim().toLowerCase() === 'sum 400',
@@ -242,8 +265,10 @@ await runBoard(
         );
         await page.screenshot({ path: `${SHOTS}/tables-formulas.png` });
 
-        await page.reload({ waitUntil: 'networkidle' });
+        await saved();
+        await reopen(page);
         await page.waitForSelector('[data-test="table-workspace"]');
+        await rows.first().waitFor();
         check(
             'formulas, parameters and totals survive a reload',
             (await formula(0, 'in_baht')).trim() === '400' &&
@@ -257,10 +282,10 @@ await runBoard(
         await page.locator('[data-test="delete-table"]').click();
         await page.getByRole('button', { name: /^delete table$/i }).click();
         await page.waitForURL(/\/tables(\?|$)/);
-        await page.waitForTimeout(500);
-        check(
+        await soon(
             'deleting it takes it off the list',
-            !(await page.locator('body').innerText()).includes(TITLE),
+            async () =>
+                !(await page.locator('body').innerText()).includes(TITLE),
         );
     },
     { canvas: false },

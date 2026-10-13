@@ -7,7 +7,10 @@ import {
     makeNote,
     shareProject,
     deleteProject,
+    open,
+    saved,
     SHOTS,
+    until,
 } from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);
@@ -21,7 +24,7 @@ await runBoard(
             `Dash todos ${RUN}`,
             `- [ ] Personal task ${RUN}\n- [x] Done task ${RUN}\n`,
         );
-        await page.goto(page.url(), { waitUntil: 'networkidle' });
+        await open(page, page.url());
         const todos = await page.locator('[data-test="todos"]').innerText();
         check(
             'own to-do listed (Postgres)',
@@ -37,7 +40,7 @@ await runBoard(
         );
         afterwards(() => deleteProject(page, base, project));
 
-        await page.goto(`${base}/p/${project}`, { waitUntil: 'networkidle' });
+        await open(page, `${base}/p/${project}`);
         check(
             'project opens on its dashboard',
             page.url().endsWith(`/p/${project}/dashboard`),
@@ -61,15 +64,27 @@ await runBoard(
         await page.locator('[data-test="new-note"]').click();
         await page.waitForURL(/\/notes\/\w+$/);
         await page.waitForSelector('.ProseMirror');
-        await page.waitForTimeout(800);
+        // (the note is in step with the others before it is typed into)
+        await saved(page);
         await page.locator('.ProseMirror').click();
         await page.keyboard.type(`[ ] Project task ${RUN}`);
-        await page.waitForTimeout(3000); // autosave / collab store
+        await page
+            .locator('.ProseMirror', { hasText: `Project task ${RUN}` })
+            .waitFor();
+        await saved(page);
 
-        await page.goto(`${base}/p/${project}/dashboard`, {
-            waitUntil: 'networkidle',
-        });
-        const ptodos = await page.locator('[data-test="todos"]').innerText();
+        // The dashboard reads what the app has kept, which is a moment after
+        // the note says it is saved: it is opened until the task is on it
+        let ptodos;
+        await until(
+            async () => {
+                await open(page, `${base}/p/${project}/dashboard`);
+                ptodos = await page.locator('[data-test="todos"]').innerText();
+
+                return ptodos.includes(`Project task ${RUN}`);
+            },
+            { timeout: 15000, every: 400 },
+        );
         check(
             'project to-do listed',
             ptodos.includes(`Project task ${RUN}`),
@@ -86,7 +101,11 @@ await runBoard(
 
         await page.locator('[data-test="project-switcher"]').click();
         await page.getByRole('menuitem', { name: /Personal/ }).click();
-        await page.waitForTimeout(1000);
+        await page
+            .waitForURL((url) => url.pathname === '/dashboard', {
+                timeout: 8000,
+            })
+            .catch(() => {});
         check(
             'switcher keeps to the dashboard',
             new URL(page.url()).pathname === '/dashboard',

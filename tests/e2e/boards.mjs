@@ -1,6 +1,6 @@
 // A board of one's own: made from the list, saved as it is drawn, and still
 // there on the way back.
-import { SHOTS, runBoard } from './harness.mjs';
+import { SHOTS, open, reopen, runBoard, saved, until } from './harness.mjs';
 
 // Named for this run, so a board left behind by an earlier one is never
 // mistaken for this one
@@ -9,7 +9,7 @@ const TITLE = `Launch plan ${Date.now().toString().slice(-6)}`;
 await runBoard(
     '/boards',
     async (b) => {
-        const { page, check, at, layerNames, ready } = b;
+        const { page, check, soon, at, layerNames, ready } = b;
 
         await page
             .getByRole('button', { name: /new board/i })
@@ -47,7 +47,7 @@ await runBoard(
             await page.keyboard.press('Enter');
         }
 
-        await page.waitForTimeout(2200);
+        await saved(page);
         const status = await page.locator('body').innerText();
         check(
             'it says it saved itself',
@@ -56,20 +56,22 @@ await runBoard(
         );
 
         const url = page.url();
-        await page.goto(url, { waitUntil: 'networkidle' }, { canvas: false });
+        await open(page, url);
         await page.waitForSelector('canvas');
-        await page.waitForTimeout(900);
-        check(
+        await soon(
             'the title survives a reload',
-            (await page.locator('[data-test="board-title"]').inputValue()) ===
-                TITLE,
+            async () =>
+                (await page
+                    .locator('[data-test="board-title"]')
+                    .inputValue()) === TITLE,
         );
-        check(
+        await soon(
             'and so does what was drawn',
-            (await layerNames()).some((name) =>
-                name.includes('Pick the launch date'),
-            ),
-            (await layerNames()).slice(0, 2).join(' | '),
+            async () =>
+                (await layerNames()).some((name) =>
+                    name.includes('Pick the launch date'),
+                ),
+            async () => (await layerNames()).slice(0, 2).join(' | '),
         );
         await page.screenshot(
             { path: `${SHOTS}/boards-reloaded.png` },
@@ -81,8 +83,24 @@ await runBoard(
             .filter({ hasText: 'Boards' })
             .first()
             .click();
-        await page.waitForTimeout(800);
-        const listed = await page.locator('main').innerText();
+        await page.waitForURL(/boards$/);
+        // The list reads what the app has kept, a moment after the board
+        // said it was saved: it is opened again until the board is on it
+        let listed;
+        await until(
+            async () => {
+                listed = await page.locator('main').innerText();
+
+                if (listed.includes(TITLE)) {
+                    return true;
+                }
+
+                await reopen(page);
+
+                return false;
+            },
+            { timeout: 15000, every: 400 },
+        );
         check('the list shows the board', listed.includes(TITLE), TITLE);
         check(
             'and says how much is on it',
@@ -92,16 +110,14 @@ await runBoard(
 
         // tidy up after ourselves
         await page.getByRole('link', { name: TITLE }).first().click();
-        await page.waitForSelector('canvas');
-        await page.waitForTimeout(600);
+        await ready();
         await page.locator('[data-test="delete-board"]').click();
-        await page.waitForTimeout(400);
         await page.getByRole('button', { name: /delete board/i }).click();
         await page.waitForURL(/boards$/, { timeout: 15000 });
-        await page.waitForTimeout(900);
-        check(
+        await soon(
             'and it can be deleted again',
-            !(await page.locator('main').innerText()).includes(TITLE),
+            async () =>
+                !(await page.locator('main').innerText()).includes(TITLE),
         );
     },
     { canvas: false },

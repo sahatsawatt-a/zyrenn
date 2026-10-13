@@ -3,7 +3,15 @@
 //
 // The note is made over the app's own MCP endpoint (see makeNote) and taken
 // away again after.
-import { SHOTS, makeNote, runBoard } from './harness.mjs';
+import {
+    SHOTS,
+    makeNote,
+    runBoard,
+    open,
+    reopen,
+    saved,
+    until,
+} from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);
 
@@ -69,7 +77,7 @@ await runBoard(
         await page
             .context()
             .grantPermissions(['clipboard-read', 'clipboard-write']);
-        await page.goto(`${base}/notes/${ref}`, { waitUntil: 'networkidle' });
+        await open(page, `${base}/notes/${ref}`);
         await page.waitForSelector('.mermaid-svg svg', { timeout: 15000 });
 
         const sqlBlocks = () =>
@@ -125,9 +133,9 @@ await runBoard(
                 .then((text) => text.includes('Insert SQL below')),
         );
         await page.locator('[data-test="mermaid-sql-insert"]').click();
-        await page.waitForTimeout(500);
 
-        let blocks = await sqlBlocks();
+        let blocks;
+        await until(async () => (blocks = await sqlBlocks()).length === 1);
         check(
             'a SQL block lands under the diagram',
             blocks.length === 1 &&
@@ -169,9 +177,10 @@ await runBoard(
         );
         await page.screenshot({ path: `${SHOTS}/er-sql-menu.png` });
         await page.locator('[data-test="mermaid-sql-insert"]').click();
-        await page.waitForTimeout(500);
 
-        blocks = await sqlBlocks();
+        await until(async () =>
+            (blocks = await sqlBlocks())[0]?.includes('(MySQL)'),
+        );
         check(
             'the same block now holds MySQL',
             blocks.length === 1 &&
@@ -183,9 +192,11 @@ await runBoard(
 
         // ---------------------------------------------------------- Copy it
         await menu('mermaid-sql-copy');
-        await page.waitForTimeout(300);
-        const copied = await page.evaluate(() =>
-            navigator.clipboard.readText(),
+        let copied;
+        await until(async () =>
+            (copied = await page.evaluate(() =>
+                navigator.clipboard.readText(),
+            )).startsWith('-- Generated'),
         );
         check(
             'Copy SQL puts the script on the clipboard',
@@ -194,8 +205,8 @@ await runBoard(
         );
 
         // --------------------------------------- Saved, as the note's own
-        await page.waitForTimeout(1500);
-        await page.reload({ waitUntil: 'networkidle' });
+        await saved(page);
+        await reopen(page);
         await page.waitForSelector('.mermaid-svg svg', { timeout: 15000 });
         blocks = await sqlBlocks();
         check(
@@ -215,9 +226,7 @@ await runBoard(
             `ER markers ${RUN}`,
             `\`\`\`mermaid\n${CROWDED}\n\`\`\``,
         );
-        await page.goto(`${base}/notes/${crowded}`, {
-            waitUntil: 'networkidle',
-        });
+        await open(page, `${base}/notes/${crowded}`);
         await page.waitForSelector('.mermaid-svg svg', { timeout: 15000 });
         const stretches = await page.evaluate(() =>
             [

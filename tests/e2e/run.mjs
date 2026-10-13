@@ -11,18 +11,19 @@
 //     node tests/e2e/run.mjs workflows chat   # only these
 //     E2E_LANES=1 node tests/e2e/run.mjs      # one at a time
 //     node tests/e2e/run.mjs --headed         # watch them
+//     E2E_TIMES=1 node tests/e2e/run.mjs maps # and where each one's time went
 //
 // workflow-workers scales the queue workers up and down, so it runs only when
 // named. The app serves 4 requests at a time (PHP_CLI_SERVER_WORKERS); more
 // than 3 lanes mostly wait on it.
 import { spawn } from 'node:child_process';
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SHOTS, tinker } from './harness.mjs';
+import { KEPT, tinker } from './harness.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const TIMINGS = join(SHOTS, 'timings.json');
+const TIMINGS = join(KEPT, 'timings.json');
 const ALONE = ['workflow-workers', 'workflow-load'];
 // Suites that fail at full speed for a reason of the app's, run as slowly as
 // before until it is fixed. note-links: the "Show as" menu of a pasted link
@@ -123,6 +124,12 @@ function runOne(name, lane) {
                         : `  ${(output.match(/^problems: (.*)$/m)?.[1] ?? `exited ${code}`).slice(0, 140)}`
                 }`,
             );
+
+            // E2E_TIMES=1: each suite says where its time went
+            for (const line of output.match(/^TIME .*$/gm) ?? []) {
+                console.log(`    ${line.slice(6)}`);
+            }
+
             resolve();
         });
     });
@@ -144,6 +151,7 @@ for (const { name, took } of finished.filter((suite) => suite.passed)) {
     timings[name] = Math.round(took / 100) / 10;
 }
 
+mkdirSync(KEPT, { recursive: true });
 writeFileSync(TIMINGS, JSON.stringify(timings, null, 2));
 
 const failed = finished.filter((suite) => !suite.passed);

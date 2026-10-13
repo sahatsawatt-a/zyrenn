@@ -28,6 +28,22 @@ class RemoteDownload
     private const CHUNK_BYTES = 1024 * 1024;
 
     /**
+     * What answers for a host's addresses in place of the machine's resolver --
+     * the tests' own, so that none of them waits on DNS.
+     *
+     * @var (\Closure(string): (list<string>|false))|null
+     */
+    private static ?\Closure $resolver = null;
+
+    /**
+     * @param  (\Closure(string): (list<string>|false))|null  $resolver  null for the machine's own again
+     */
+    public static function resolveUsing(?\Closure $resolver): void
+    {
+        self::$resolver = $resolver;
+    }
+
+    /**
      * @param  array<string, string>  $headers  sent to the URL itself, never on to where it redirects
      * @return array{path: string, name: string, type: string} a temporary file the caller deletes, a name for it, and its Content-Type
      *
@@ -169,7 +185,7 @@ class RemoteDownload
 
         // Anything else gethostbynamel turns into an IPv4 address -- including
         // spellings like "2130706433" for 127.0.0.1 -- so it is checked as one
-        $ips = filter_var($literal, FILTER_VALIDATE_IP) ? [$literal] : gethostbynamel($host);
+        $ips = filter_var($literal, FILTER_VALIDATE_IP) ? [$literal] : (self::$resolver ? (self::$resolver)($host) : gethostbynamel($host));
 
         if (! $ips) {
             throw new RemoteDownloadFailed("Could not find {$host}.");

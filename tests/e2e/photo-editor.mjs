@@ -3,12 +3,22 @@
 // original kept, the edit picked up again where it was left, and undone.
 //
 //     node tests/e2e/photo-editor.mjs
-import { makeNote, runBoard, SHOTS, tinker } from './harness.mjs';
+import {
+    makeNote,
+    open,
+    reopen,
+    runBoard,
+    saved,
+    SHOTS,
+    steady,
+    tinker,
+    until,
+} from './harness.mjs';
 
 const me = `App\\Models\\User::where('email', '${process.env.E2E_EMAIL ?? 'test@example.com'}')->first()`;
 
 await runBoard('/demo/konva', async (ctx) => {
-    const { page, check, afterwards, inspectorTitle } = ctx;
+    const { page, check, soon, afterwards, inspectorTitle } = ctx;
     const base = new URL(page.url()).origin;
     const byTest = (id) => page.locator(`[data-test="${id}"]`);
 
@@ -116,10 +126,11 @@ await runBoard('/demo/konva', async (ctx) => {
         mimeType: 'image/png',
         buffer: quarters,
     });
-    await page.waitForTimeout(2500);
-    check(
+    await soon(
         'a picture on the board is chosen',
-        (await inspectorTitle()).toLowerCase() === 'image',
+        async () => (await inspectorTitle()).toLowerCase() === 'image',
+        '',
+        { timeout: 20000 },
     );
 
     const picture = () =>
@@ -132,14 +143,19 @@ await runBoard('/demo/konva', async (ctx) => {
                 height: Math.round(node.height()),
             };
         });
-    const original = await picture();
+    // (once it has come up from the Drive, at the size it will keep)
+    const original = await steady(async () => {
+        const now = await picture();
+
+        return now.src && now.width > 0 ? now : null;
+    });
 
     await byTest('edit-photo').click();
     await byTest('photo-crop').waitFor();
-    await page.waitForTimeout(400);
-    check(
+    await soon(
         'the editor opens on the picture, nothing cut off',
-        (await byTest('photo-save').isDisabled()) &&
+        async () =>
+            (await byTest('photo-save').isDisabled()) &&
             (await byTest('photo-crop').getAttribute('style')).includes(
                 'width: 100%',
             ),
@@ -148,20 +164,21 @@ await runBoard('/demo/konva', async (ctx) => {
     await byTest('turn-right').click();
     await byTest('flip-x').click();
     await byTest('ratio-1:1').click();
-    await page.waitForTimeout(300);
     const cropStyle = () => byTest('photo-crop').getAttribute('style');
-    const squared = await cropStyle();
+    const squared = await steady(cropStyle);
 
     // Undone, and done again
     await page.keyboard.press('Control+z');
-    await page.waitForTimeout(200);
-    const undone = await cropStyle();
+    const undone = await until(async () => {
+        const now = await cropStyle();
+
+        return /height: 100%/.test(now) ? now : null;
+    });
     await byTest('photo-redo').click();
-    await page.waitForTimeout(200);
-    check(
+    await soon(
         'Ctrl+Z undoes the crop, and redo puts it back',
-        /height: 100%/.test(undone) && (await cropStyle()) === squared,
-        `${undone} → ${await cropStyle()}`,
+        async () => !!undone && (await cropStyle()) === squared,
+        async () => `${undone} → ${await cropStyle()}`,
     );
 
     // Held up against the original: not turned, nothing cropped
@@ -185,9 +202,13 @@ await runBoard('/demo/konva', async (ctx) => {
     await page.screenshot({ path: `${SHOTS}/photo-editor-board.png` });
     await byTest('photo-save').click();
     await byTest('photo-editor').waitFor({ state: 'detached' });
-    await page.waitForTimeout(1500);
 
-    const edited = await picture();
+    // (the copy goes up to the Drive, and the board takes its shape)
+    const edited = await steady(async () => {
+        const now = await picture();
+
+        return now.src && now.src !== original.src ? now : null;
+    });
     const made = await read(edited.src);
     check(
         'the board shows a new picture from the Drive',
@@ -211,15 +232,22 @@ await runBoard('/demo/konva', async (ctx) => {
     // Opened again: the whole original, with the same edit to carry on from
     await byTest('edit-photo').click();
     await byTest('photo-crop').waitFor();
-    await page.waitForTimeout(500);
-    const crop = await byTest('photo-crop').getAttribute('style');
-    const stage = await byTest('photo-crop')
-        .locator('..')
-        .evaluate((element) => [element.offsetWidth, element.offsetHeight]);
-    check(
+    let crop;
+    let stage;
+    await soon(
         'the edit is picked up where it was left, on the whole picture',
-        /height: 50%/.test(crop) && stage[1] > stage[0],
-        `${crop} on ${stage.join('×')}`,
+        async () => {
+            crop = await byTest('photo-crop').getAttribute('style');
+            stage = await byTest('photo-crop')
+                .locator('..')
+                .evaluate((element) => [
+                    element.offsetWidth,
+                    element.offsetHeight,
+                ]);
+
+            return /height: 50%/.test(crop) && stage[1] > stage[0];
+        },
+        () => `${crop} on ${stage.join('×')}`,
     );
 
     // Arrow keys move the crop box, each press a step undo takes back
@@ -231,19 +259,18 @@ await runBoard('/demo/konva', async (ctx) => {
     for (let i = 0; i < 3; i++) {
         await page.keyboard.press('Control+z');
     }
-    await page.waitForTimeout(150);
-    check(
+    await soon(
         'arrow keys nudge the crop, and undo takes the nudges back',
-        !/top: 25%/.test(nudged) && /top: 25%/.test(await cropStyle()),
+        async () =>
+            !/top: 25%/.test(nudged) && /top: 25%/.test(await cropStyle()),
         nudged,
     );
     await byTest('photo-reset').click();
     await byTest('photo-save').click();
     await byTest('photo-editor').waitFor({ state: 'detached' });
-    await page.waitForTimeout(1200);
-    check(
+    await soon(
         'undone to the original, it is the original again',
-        (await picture()).src === original.src,
+        async () => (await picture()).src === original.src,
     );
 
     // ---- in a note ----
@@ -253,17 +280,17 @@ await runBoard('/demo/konva', async (ctx) => {
         `Photo editor ${Date.now().toString().slice(-6)}`,
         `A picture:\n\n![quarters](${original.src.replace(base, '')})\n`,
     );
-    await page.goto(`${base}/notes/${ref}`, { waitUntil: 'networkidle' });
+    await open(page, `${base}/notes/${ref}`);
     await page.waitForSelector('.ProseMirror img');
-    await page.waitForTimeout(1200);
     const noteImage = page.locator('.ProseMirror img').first();
+    // (its tools come up over it once it has its size)
+    await steady(() => noteImage.boundingBox());
     await noteImage.hover();
     await byTest('edit-photo').click();
     await byTest('photo-crop').waitFor();
-    await page.waitForTimeout(400);
 
     // A handle dragged in by half the picture's width
-    const handle = await byTest('crop-e').boundingBox();
+    const handle = await steady(() => byTest('crop-e').boundingBox());
     const frame = await byTest('photo-crop').boundingBox();
     await page.mouse.move(handle.x + 7, handle.y + 7);
     await page.mouse.down();
@@ -281,10 +308,11 @@ await runBoard('/demo/konva', async (ctx) => {
 
     await byTest('ratio-16:9').click();
     await byTest('look-mono').click();
-    await page.waitForTimeout(300);
-    check(
+    await soon(
         'a look sets the light, and shows as chosen',
-        (await byTest('look-mono').getAttribute('aria-pressed')) === 'true' &&
+        async () =>
+            (await byTest('look-mono').getAttribute('aria-pressed')) ===
+                'true' &&
             (await byTest('light-saturation').inputValue()) === '0' &&
             (await byTest('look-mono').locator('img').count()) === 1,
     );
@@ -297,9 +325,12 @@ await runBoard('/demo/konva', async (ctx) => {
     await page.screenshot({ path: `${SHOTS}/photo-editor-note.png` });
     await byTest('photo-save').click();
     await byTest('photo-editor').waitFor({ state: 'detached' });
-    await page.waitForTimeout(1500);
 
-    const noteSrc = await noteImage.getAttribute('src');
+    const noteSrc = await until(async () => {
+        const now = await noteImage.getAttribute('src');
+
+        return now !== original.src.replace(base, '') ? now : null;
+    });
     const grey = await read(noteSrc);
     check(
         'the note shows the picture cropped 16:9, black and white, its corners darkened',
@@ -311,8 +342,8 @@ await runBoard('/demo/konva', async (ctx) => {
     );
 
     // Kept with the note
-    await page.waitForTimeout(2500);
-    await page.reload({ waitUntil: 'networkidle' });
+    await saved(page);
+    await reopen(page);
     await page.waitForSelector('.ProseMirror img');
     check(
         'and the note keeps it after a reload',
@@ -322,7 +353,7 @@ await runBoard('/demo/konva', async (ctx) => {
 
     // ---- in the Drive ----
 
-    await page.goto(`${base}/drive`, { waitUntil: 'networkidle' });
+    await open(page, `${base}/drive`);
     const card = (name) =>
         page.locator('div.group', {
             has: page.locator(`[title="${name}"]`),
@@ -348,17 +379,41 @@ await runBoard('/demo/konva', async (ctx) => {
     await byTest('turn-left').click();
     await byTest('photo-save').click();
     await byTest('photo-editor').waitFor({ state: 'detached' });
-    await page.waitForTimeout(1500);
-    check(
+    await soon(
         'a picture is edited from the Drive, and its copy is listed',
-        /3 edited copies/.test(
-            await card('quarters.png')
-                .locator('[data-test="edit-count"]')
-                .innerText(),
-        ) &&
+        async () =>
+            /3 edited copies/.test(
+                await card('quarters.png')
+                    .locator('[data-test="edit-count"]')
+                    .innerText(),
+            ) &&
             (await page.evaluate(() => document.body.style.pointerEvents)) !==
                 'none',
     );
+
+    /** The edited copy the Drive lists first. */
+    const newest = () =>
+        page
+            .locator('div.group', {
+                has: page.locator('[data-test="edited-from"]'),
+            })
+            .first()
+            .locator('img')
+            .getAttribute('src');
+
+    /** Saves the edit, and answers with the copy the Drive then lists for it. */
+    const saveCopy = async () => {
+        const before = await newest();
+
+        await byTest('photo-save').click();
+        await byTest('photo-editor').waitFor({ state: 'detached' });
+
+        return until(async () => {
+            const now = await newest();
+
+            return now !== before ? now : null;
+        });
+    };
     await page.screenshot({ path: `${SHOTS}/photo-editor-drive.png` });
 
     // ---- hiding an area ----
@@ -369,11 +424,10 @@ await runBoard('/demo/konva', async (ctx) => {
         .click();
     await byTest('edit-photo').click();
     await byTest('photo-crop').waitFor();
-    await page.waitForTimeout(400);
 
     // A black box, dragged onto the red quarter
     await byTest('hide-fill').click();
-    const area = await byTest('hidden-0').boundingBox();
+    const area = await steady(() => byTest('hidden-0').boundingBox());
     const whole = await byTest('photo-picture').boundingBox();
     await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
     await page.mouse.down();
@@ -407,25 +461,18 @@ await runBoard('/demo/konva', async (ctx) => {
 
     // It goes round with the picture: top left, turned right, is top right
     await byTest('turn-right').click();
-    await page.waitForTimeout(300);
-    const turnedArea = await byTest('hidden-0').getAttribute('style');
-    check(
+    let turnedArea;
+    await soon(
         'the hidden area turns with the picture',
-        Number(turnedArea.match(/left: ([\d.]+)%/)[1]) > 50,
-        turnedArea,
+        async () => {
+            turnedArea = await byTest('hidden-0').getAttribute('style');
+
+            return Number(turnedArea.match(/left: ([\d.]+)%/)[1]) > 50;
+        },
+        () => turnedArea,
     );
     await page.screenshot({ path: `${SHOTS}/photo-editor-hide.png` });
-    await byTest('photo-save').click();
-    await byTest('photo-editor').waitFor({ state: 'detached' });
-    await page.waitForTimeout(1500);
-
-    const hiddenCopy = await page
-        .locator('div.group', {
-            has: page.locator('[data-test="edited-from"]'),
-        })
-        .first()
-        .locator('img')
-        .getAttribute('src');
+    const hiddenCopy = await saveCopy();
     // The box was 120×40 round the red quarter's middle; turned right, its
     // corner is at 84% across, 11% down -- outside the oval
     const covered = await read(hiddenCopy, [[0.84, 0.11]]);
@@ -445,39 +492,26 @@ await runBoard('/demo/konva', async (ctx) => {
         .click();
     await byTest('edit-photo').click();
     await byTest('photo-crop').waitFor();
-    await page.waitForTimeout(400);
     await byTest('straighten').evaluate((input) => {
         input.value = '10';
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await byTest('shape-circle').click();
-    await page.waitForTimeout(400);
-    check(
+    await soon(
         'a circle crops square, and the crop box shows the circle',
-        (await byTest('ratio-1:1').getAttribute('class')).includes(
-            'bg-primary',
-        ) &&
+        async () =>
+            (await byTest('ratio-1:1').getAttribute('class')).includes(
+                'bg-primary',
+            ) &&
             /border-radius: 50%/.test(
                 await byTest('photo-crop').getAttribute('style'),
             ),
     );
     await page.screenshot({ path: `${SHOTS}/photo-editor-circle.png` });
-    await byTest('photo-save').click();
-    await byTest('photo-editor').waitFor({ state: 'detached' });
-    await page.waitForTimeout(1500);
-
-    const newest = () =>
-        page
-            .locator('div.group', {
-                has: page.locator('[data-test="edited-from"]'),
-            })
-            .first()
-            .locator('img')
-            .getAttribute('src');
     // Turned 10° clockwise about the middle, the line between red and green
     // leans right at the top: just right of the middle, near the top, is red
-    const round = await read(await newest(), [[0.525, 0.12]]);
+    const round = await read(await saveCopy(), [[0.525, 0.12]]);
     check(
         'straightened clockwise, and cut to a see-through circle',
         round.size === '200×200' &&
@@ -511,7 +545,7 @@ await runBoard('/demo/konva', async (ctx) => {
 
         return (await response.json()).files[0].name;
     });
-    await page.reload({ waitUntil: 'networkidle' });
+    await reopen(page);
     await card(large).hover();
     await card(large).getByRole('button', { name: 'File actions' }).click();
     await byTest('edit-photo').click();
@@ -519,10 +553,7 @@ await runBoard('/demo/konva', async (ctx) => {
     await byTest('save-size').click();
     const smallOption = await byTest('save-size-1024').innerText();
     await byTest('save-size-1024').click();
-    await byTest('photo-save').click();
-    await byTest('photo-editor').waitFor({ state: 'detached' });
-    await page.waitForTimeout(1500);
-    const small = await read(await newest());
+    const small = await read(await saveCopy());
     check(
         'saved smaller, at the size the choice said',
         small.size === '1024×512' && /1024 × 512/.test(smallOption),

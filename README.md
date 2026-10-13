@@ -152,6 +152,9 @@ npm run test:e2e                           # every part of the app, in a real br
 `composer ci:check` is the one to run before pushing. It fails on lint
 **warnings**, not only errors, which is what CI checks too.
 
+Before adding a test of either kind, read [tests/README.md](tests/README.md):
+how to keep the PHP suite and the browser suites as fast as they are.
+
 The browser suites in `tests/e2e` drive the running app with Playwright and
 system Chrome, because a canvas can type-check perfectly and still refuse to
 draw. They need the app up and the database seeded (`php artisan db:seed`
