@@ -75,7 +75,6 @@ const {
     }),
     url: () => index.url(),
     filterParam: 'type',
-    defaultSort: 'newest',
     folder: () => props.folder?.ref_id ?? null,
 });
 

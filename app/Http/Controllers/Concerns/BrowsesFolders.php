@@ -6,6 +6,7 @@ use App\Models\Folder;
 use App\Models\Owner;
 use App\Models\Project;
 use App\Support\Folders;
+use App\Support\ListSorts;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -75,7 +76,8 @@ trait BrowsesFolders
         $folder = Folders::open(static::folderModel(), $owner, $filters['folder'] ?? null);
         $query = trim($filters['q'] ?? '');
         $searching = $query !== '';
-        $sort = $filters['sort'] ?? 'edited';
+        // Each folder stays in the order this person last put it in
+        $sort = ListSorts::settle($request->user(), static::folderModel(), $owner, $folder, $filters['sort'] ?? null, array_keys(self::$sorts), 'edited');
         $edited = $filters['edited'] ?? null;
         [$column, $direction] = self::$sorts[$sort];
 

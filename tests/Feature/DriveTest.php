@@ -359,7 +359,10 @@ class DriveTest extends TestCase
         $this->assertSame(['a.png', 'b.png', 'c.pdf'], $names(['sort' => 'name']));
         $this->assertSame(['a.png', 'c.pdf', 'b.png'], $names(['sort' => 'size']));
         $this->assertSame(['c.pdf'], $names(['type' => 'pdf']));
-        $this->assertSame(['b.png', 'a.png'], $names(['type' => 'image']));
+        // Left in the order last asked for, largest first, until another is
+        $this->assertSame(['a.png', 'b.png'], $names(['type' => 'image']));
+        $this->assertSame(['b.png', 'a.png'], $names(['type' => 'image', 'sort' => 'newest']));
+        $this->assertSame(['c.pdf', 'b.png', 'a.png'], $names([]));
     }
 
     // ---- the photo editor ----

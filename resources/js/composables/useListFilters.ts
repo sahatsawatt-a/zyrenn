@@ -13,13 +13,16 @@ export type ListFilters = {
  * Search / sort / filter state for a folder view, kept in the URL so a
  * reload or a shared link shows the same list. Typing is debounced; picking
  * a sort or filter applies at once.
+ *
+ * The sort is also remembered by the server, for each folder and each person
+ * (App\Support\ListSorts): a folder opened by a link that says nothing of
+ * sorting comes back in the order it was left in.
  */
 export function useListFilters(options: {
     current: () => ListFilters;
     url: () => string;
     // Name of the filter's query parameter, e.g. "edited" or "type"
     filterParam: string;
-    defaultSort: string;
     // The folder being browsed, kept while filtering
     folder: () => string | null;
 }) {
@@ -37,7 +40,9 @@ export function useListFilters(options: {
 
         if (folder) params.folder = folder;
         if (q) params.q = q;
-        if (state.sort !== options.defaultSort) params.sort = state.sort;
+        // Always said, the usual order too: left out, the folder would come
+        // back in the order remembered for it, which may be another
+        params.sort = state.sort;
         if (state.filter) params[options.filterParam] = state.filter;
 
         router.get(options.url(), params, {

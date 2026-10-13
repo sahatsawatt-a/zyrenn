@@ -121,7 +121,6 @@ const {
     }),
     url: () => index.url(),
     filterParam: 'edited',
-    defaultSort: 'edited',
     folder: () => props.folder?.ref_id ?? null,
 });
 

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Note\Note;
 use App\Models\Note\NoteFolder;
+use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -264,6 +265,55 @@ class NoteFolderTest extends TestCase
         $this->assertSame([$old->ref_id, $new->ref_id], array_column($order('edited'), 'ref_id'));
         $this->assertSame([$new->ref_id, $old->ref_id], array_column($order('created'), 'ref_id'));
         $this->assertSame([$new->ref_id, $old->ref_id], array_column($order('title'), 'ref_id'));
+    }
+
+    public function test_a_folder_stays_in_the_order_it_was_last_put_in()
+    {
+        $user = User::factory()->create();
+        $folder = NoteFolder::factory()->for($user)->create();
+        $other = NoteFolder::factory()->for($user)->create();
+
+        $sortOf = fn (array $query = [], ?User $as = null) => $this->actingAs($as ?? $user)
+            ->get(route('notes.index', $query))
+            ->viewData('page')['props']['filters']['sort'];
+
+        // Sorted by title, the folder is still by title when opened with nothing said
+        $this->assertSame('title', $sortOf(['folder' => $folder->ref_id, 'sort' => 'title']));
+        $this->assertSame('title', $sortOf(['folder' => $folder->ref_id]));
+
+        // Each folder its own, and the top level apart from both
+        $this->assertSame('edited', $sortOf(['folder' => $other->ref_id]));
+        $this->assertSame('edited', $sortOf());
+        $this->assertSame('created', $sortOf(['sort' => 'created']));
+        $this->assertSame('created', $sortOf());
+        $this->assertSame('title', $sortOf(['folder' => $folder->ref_id]));
+
+        // Put back the usual way, it stays that way too
+        $this->assertSame('edited', $sortOf(['folder' => $folder->ref_id, 'sort' => 'edited']));
+        $this->assertSame('edited', $sortOf(['folder' => $folder->ref_id]));
+
+        // It is this person's order, not everybody's
+        $this->assertSame('edited', $sortOf([], User::factory()->create()));
+    }
+
+    public function test_in_a_project_each_member_sorts_a_folder_their_own_way()
+    {
+        $owner = User::factory()->create();
+        $member = User::factory()->create();
+        $project = Project::factory()->create();
+        $project->members()->attach($owner, ['role' => Project::OWNER]);
+        $project->members()->attach($member, ['role' => Project::EDITOR]);
+
+        $sortOf = fn (User $as, array $query = []) => $this->actingAs($as)
+            ->get(route('projects.notes.index', [$project, ...$query]))
+            ->viewData('page')['props']['filters']['sort'];
+
+        $this->assertSame('title', $sortOf($owner, ['sort' => 'title']));
+        $this->assertSame('title', $sortOf($owner));
+        $this->assertSame('edited', $sortOf($member));
+
+        // ...and the project's top level is not the owner's own
+        $this->assertSame('edited', $this->actingAs($owner)->get(route('notes.index'))->viewData('page')['props']['filters']['sort']);
     }
 
     public function test_notes_can_be_filtered_by_when_they_were_edited()

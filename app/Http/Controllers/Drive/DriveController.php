@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Drive\DriveFile;
 use App\Models\Drive\DriveFolder;
 use App\Support\Folders;
+use App\Support\ListSorts;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -47,7 +48,8 @@ class DriveController extends Controller
         $folder = Folders::open(DriveFolder::class, $owner, $filters['folder'] ?? null);
         $query = trim($filters['q'] ?? '');
         $searching = $query !== '';
-        $sort = $filters['sort'] ?? 'newest';
+        // Each folder stays in the order this person last put it in
+        $sort = ListSorts::settle($request->user(), DriveFolder::class, $owner, $folder, $filters['sort'] ?? null, array_keys(self::SORTS), 'newest');
         $type = $filters['type'] ?? null;
         [$column, $direction] = self::SORTS[$sort];
 
