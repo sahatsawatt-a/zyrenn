@@ -1,6 +1,17 @@
 import type Konva from 'konva';
 import type { Ref } from 'vue';
 import { computed, nextTick, ref, useTemplateRef } from 'vue';
+import {
+    LABEL_LINE,
+    LABEL_SIZE,
+    isSymbol,
+    labelBounds,
+    labelWidth,
+    symbolLabels,
+    symbolOf,
+    withWords,
+    wordsOf,
+} from '@/features/boards/circuit/symbols';
 import { isSwept, midpointOf } from './connectors';
 import type { Item } from './items';
 import { hasText, isConnector } from './items';
@@ -37,6 +48,10 @@ export function useLabelEditor({
     const editingId = ref<string | null>(null);
     const editorText = ref('');
     const editor = useTemplateRef<HTMLTextAreaElement>('editor');
+
+    /** A part with a designator: what is typed on it is its value. */
+    const valued = (item: Item) =>
+        isSymbol(item) && !!symbolOf(item.symbol)?.prefix;
 
     const editingItem = computed(() =>
         editingId.value
@@ -82,6 +97,39 @@ export function useLabelEditor({
             };
         }
 
+        // A symbol's words are written beside it, where they will stay
+        if (isSymbol(item)) {
+            const typed = editorText.value || '0';
+            const labels = symbolLabels({
+                ...item,
+                text: valued(item)
+                    ? withWords(wordsOf(item).name || '?', typed)
+                    : typed,
+            });
+            const spot = labels[labels.length - 1];
+
+            if (spot) {
+                const wide = Math.max(64, labelWidth(typed) + 20);
+                const box = labelBounds(spot);
+                const left =
+                    spot.align === 'left'
+                        ? spot.x
+                        : spot.align === 'right'
+                          ? spot.x - wide
+                          : spot.x - wide / 2;
+
+                return {
+                    left: `${left * scale + x}px`,
+                    top: `${box.y * scale + y}px`,
+                    width: `${wide * scale}px`,
+                    height: `${LABEL_LINE * scale}px`,
+                    fontSize: `${LABEL_SIZE * scale}px`,
+                    fontWeight: valued(item) ? 'normal' : '600',
+                    textAlign: spot.align,
+                };
+            }
+        }
+
         // Typing wraps and lines up the way the finished label will: in the
         // same box, at the same size and weight
         const box = labelBox(item);
@@ -108,7 +156,8 @@ export function useLabelEditor({
         }
 
         editingId.value = id;
-        editorText.value = item.text;
+        // On a part, only its value: its name is kept as it is
+        editorText.value = valued(item) ? wordsOf(item).value : item.text;
 
         void nextTick(() => {
             editor.value?.focus();
@@ -119,8 +168,15 @@ export function useLabelEditor({
     const stopEditing = (keep = true) => {
         const id = editingId.value;
 
-        if (id && keep) {
-            board.setText(id, editorText.value);
+        const item = id ? board.byId.value.get(id) : null;
+
+        if (id && item && keep) {
+            board.setText(
+                id,
+                valued(item)
+                    ? withWords(wordsOf(item).name, editorText.value)
+                    : editorText.value,
+            );
         }
 
         editingId.value = null;

@@ -104,14 +104,14 @@ final class LabelFit
 
     /**
      * Whether the label runs out of the box it has: the canvas then draws it
-     * past the item's edge. Frames, connectors, formulae and ink are left
-     * out; their words are laid out on other terms.
+     * past the item's edge. Frames, connectors, formulae, ink and symbols
+     * are left out; their words are laid out on other terms.
      *
      * @param  array<string, mixed>  $item
      */
     public static function overflows(array $item): bool
     {
-        if (in_array($item['kind'] ?? '', ['frame', 'arrow', 'math', 'draw', 'video'], true)) {
+        if (in_array($item['kind'] ?? '', ['frame', 'arrow', 'math', 'draw', 'video', 'symbol'], true)) {
             return false;
         }
 

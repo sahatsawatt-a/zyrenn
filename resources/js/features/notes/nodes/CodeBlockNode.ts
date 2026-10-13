@@ -22,6 +22,8 @@ import plaintext from 'highlight.js/lib/languages/plaintext';
 import CodeBlockView from '@/features/notes/components/CodeBlockView.vue';
 // Newly created Interactive Graphic Render Canvas Component
 import MermaidBlock from '@/features/notes/components/MermaidBlock.vue';
+// A circuit drawn from a few lines of text, with a board's own symbols
+import CircuitBlock from '@/features/notes/components/CircuitBlock.vue';
 // A board shown in the note, chosen from two dropdowns
 import BoardBlock from '@/features/notes/components/BoardBlock.vue';
 // A trip shown in the note, the whole of it or one day
@@ -48,6 +50,7 @@ lowlight.register('rust', rust);
 lowlight.register('plaintext', plaintext);
 // Mermaid source has no highlight.js grammar; keep it from being auto-detected as another language
 lowlight.register('mermaid', plaintext);
+lowlight.register('circuit', plaintext);
 // Nor does a board or a trip reference, a place, or a card's link: they are
 // "key: value" lines naming what to show
 lowlight.register('board', plaintext);
@@ -63,7 +66,14 @@ export const CodeBlockNode = CodeBlockLowlight.configure({
     },
 }).extend({
     addNodeView() {
-        const EMBEDS = ['mermaid', 'board', 'trip', 'map', 'link'] as const;
+        const EMBEDS = [
+            'mermaid',
+            'circuit',
+            'board',
+            'trip',
+            'map',
+            'link',
+        ] as const;
         const kindOf = (
             node: ProseMirrorNode,
         ): (typeof EMBEDS)[number] | 'code' =>
@@ -84,6 +94,7 @@ export const CodeBlockNode = CodeBlockLowlight.configure({
         return (props) => {
             const views = {
                 mermaid: MermaidBlock,
+                circuit: CircuitBlock,
                 board: BoardBlock,
                 trip: TripBlock,
                 map: MapBlock,

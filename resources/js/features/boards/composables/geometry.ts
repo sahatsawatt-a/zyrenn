@@ -1,10 +1,17 @@
 // The shapes of things on the board: the box each item occupies, the anchors
 // around it, and which of them faces a point.
+import { isSymbol, pinsOf, symbolBox } from '@/features/boards/circuit/symbols';
 import type { Item, ItemKind, Side } from './items';
 import { isStroke } from './items';
 
 /** The box an item occupies, including stroke items built from points. */
 export const boundsOf = (item: Item) => {
+    // A part is turned on end as often as not, and its pins with it: its box
+    // is the one it covers as turned
+    if (isSymbol(item)) {
+        return symbolBox(item);
+    }
+
     if (!isStroke(item)) {
         return {
             x: item.x,
@@ -150,8 +157,39 @@ export const isFlatSide = (item: Item, side: Side): boolean => {
     }
 };
 
-export const anchorsOf = (item: Item) =>
-    SIDES.map((side) => ({ side, ...anchorAt(item, side) }));
+/** One of the dots a connector can hold on to: a face, or a symbol's pin. */
+export type Anchor = {
+    side: Side | null;
+    pin?: string;
+    x: number;
+    y: number;
+};
+
+/** Where a connector can hold on: a shape's four faces, a symbol's pins. */
+export const anchorsOf = (item: Item): Anchor[] =>
+    isSymbol(item)
+        ? pinsOf(item).map((pin) => ({
+              side: pin.side,
+              pin: pin.name,
+              x: pin.x,
+              y: pin.y,
+          }))
+        : SIDES.map((side) => ({ side, ...anchorAt(item, side) }));
+
+/** The way from one point to another, as the face that looks that way. */
+export const sideTowards = (
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+): Side => {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+
+    if (Math.abs(dx) >= Math.abs(dy)) {
+        return dx >= 0 ? 'right' : 'left';
+    }
+
+    return dy >= 0 ? 'bottom' : 'top';
+};
 
 /** The anchor of `item` closest to a point -- what a connector should grab. */
 export const nearestSide = (

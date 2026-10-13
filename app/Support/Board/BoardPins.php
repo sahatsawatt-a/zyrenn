@@ -35,6 +35,19 @@ class BoardPins
                 : (is_array($item[$end] ?? null) ? $item[$end] : null);
         }
 
+        // Where an end that names a pin is: what the other end turns to face
+        $named = [];
+
+        foreach (['from', 'to'] as $end) {
+            $host = $boxes[$ends[$end]['item'] ?? ''] ?? null;
+            $symbol = ($host['kind'] ?? '') === BoardItems::SYMBOL ? Symbols::find((string) ($host['symbol'] ?? '')) : null;
+            $pin = $symbol === null ? null : Symbols::pinName($symbol, (string) ($ends[$end]['pin'] ?? ''));
+
+            if ($pin !== null) {
+                $named[$end] = Symbols::pins($host)[$pin];
+            }
+        }
+
         foreach (['from' => 'to', 'to' => 'from'] as $end => $other) {
             $host = $ends[$end]['item'] ?? null;
 
@@ -42,12 +55,31 @@ class BoardPins
                 continue;
             }
 
-            $facing = self::centreOf($boxes[$ends[$other]['item'] ?? ''] ?? null)
+            $facing = $named[$other]
+                ?? self::centreOf($boxes[$ends[$other]['item'] ?? ''] ?? null)
                 ?? ['x' => $ends[$other]['x'] ?? 0.0, 'y' => $ends[$other]['y'] ?? 0.0];
 
             $chosen = in_array($ends[$end]['side'] ?? null, self::SIDES, true)
                 ? $ends[$end]['side']
                 : null;
+
+            // On a symbol an end is on a pin: the one it names, or failing
+            // that the one nearest the far end. Which pins a wire joins is
+            // the circuit, so the pin is kept and never worked out again.
+            $symbol = ($boxes[$host]['kind'] ?? '') === BoardItems::SYMBOL
+                ? Symbols::find((string) ($boxes[$host]['symbol'] ?? ''))
+                : null;
+
+            if ($symbol !== null) {
+                $pin = Symbols::pinName($symbol, (string) ($ends[$end]['pin'] ?? ''))
+                    ?? Symbols::nearestPin($boxes[$host], $facing);
+
+                if ($pin !== null) {
+                    $ends[$end] = ['item' => $host, 'side' => $chosen, 'pin' => $pin, ...Symbols::pins($boxes[$host])[$pin]];
+
+                    continue;
+                }
+            }
 
             // Without a side of its own the end follows the shapes, turning to
             // face whatever is at the other end; the point is worked out the
@@ -84,6 +116,7 @@ class BoardPins
             'side' => in_array($end['side'] ?? null, self::SIDES, true) ? $end['side'] : null,
             'x' => is_numeric($end['x'] ?? null) ? (float) $end['x'] : 0.0,
             'y' => is_numeric($end['y'] ?? null) ? (float) $end['y'] : 0.0,
+            ...(is_string($end['pin'] ?? null) && $end['pin'] !== '' ? ['pin' => $end['pin']] : []),
         ];
     }
 
@@ -98,9 +131,14 @@ class BoardPins
             return null;
         }
 
-        return is_string($end['item'] ?? null)
-            ? ['item' => $end['item'], 'side' => $end['side'] ?? null]
-            : ['x' => self::round($end['x'] ?? 0), 'y' => self::round($end['y'] ?? 0)];
+        if (! is_string($end['item'] ?? null)) {
+            return ['x' => self::round($end['x'] ?? 0), 'y' => self::round($end['y'] ?? 0)];
+        }
+
+        // On a symbol, the pin is what says where the end is
+        return is_string($end['pin'] ?? null)
+            ? ['item' => $end['item'], 'pin' => $end['pin'], ...(isset($end['side']) ? ['side' => $end['side']] : [])]
+            : ['item' => $end['item'], 'side' => $end['side'] ?? null];
     }
 
     /** The item id an end names, if it names one. */

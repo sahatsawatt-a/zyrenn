@@ -15,6 +15,7 @@ import {
     useDebounceFn,
     useElementSize,
     useEventListener,
+    useIntervalFn,
     useLocalStorage,
 } from '@vueuse/core';
 import Konva from 'konva';
@@ -53,6 +54,8 @@ import MediaPickerDialog from '@/components/media/MediaPickerDialog.vue';
 import MediaViewer from '@/components/media/MediaViewer.vue';
 import BoardOverlay from './BoardOverlay.vue';
 import BoardFormulae from './BoardFormulae.vue';
+import BoardCircuit from './BoardCircuit.vue';
+import CircuitTextDialog from './CircuitTextDialog.vue';
 import BoardShortcuts from './BoardShortcuts.vue';
 import BoardVideoControls from './BoardVideoControls.vue';
 import ShapeLibrary from './ShapeLibrary.vue';
@@ -68,6 +71,18 @@ import {
     fitOnBoard,
     overlaps,
 } from '@/features/boards/composables/geometry';
+import {
+    hasLogic,
+    isOperable,
+    newMemory,
+    simulate,
+} from '@/features/boards/circuit/logic';
+import {
+    isSymbol,
+    snapped,
+    symbolOf,
+    turned,
+} from '@/features/boards/circuit/symbols';
 import { alignmentFor } from '@/features/boards/composables/guides';
 import {
     hasText,
@@ -84,11 +99,13 @@ import {
 import { usePresenting } from '@/features/boards/composables/usePresenting';
 import { useConnectorEnds } from '@/features/boards/composables/useConnectorEnds';
 import { useDrawing } from '@/features/boards/composables/useDrawing';
+import { useGestures } from '@/features/boards/composables/useGestures';
 import { useShortcuts } from '@/features/boards/composables/useShortcuts';
 import { usePictures } from '@/features/boards/composables/usePictures';
 import { useVideos } from '@/features/boards/composables/useVideos';
 import { useVideoControls } from '@/features/boards/composables/useVideoControls';
 import { useBoard } from '@/features/boards/composables/useBoard';
+import { provideBoardTheme } from '@/features/boards/composables/useBoardTheme';
 import { useCamera } from '@/features/boards/composables/useCamera';
 import {
     useBoardPointers,
@@ -126,6 +143,9 @@ const props = withDefaults(
 const emit = defineEmits<{ change: [Item[]] }>();
 
 const board = useBoard(props.items);
+
+// Light, or dark with the rest of the app: everything drawn below follows it
+const theme = provideBoardTheme(() => board.items.value);
 
 if (props.shared) {
     useBoardSync(board, props.shared.document, props.shared.synced);
@@ -350,6 +370,7 @@ const {
     onPointerDown,
     onPointerMove,
     onPointerUp,
+    cancelPointer,
     onItemDragStart,
     onItemDragMove,
     onItemDragEnd,
@@ -374,20 +395,23 @@ const {
         hoveredAnchor.value = null;
     },
     startEditing: (id) => startEditing(id),
+    connectorPath: (item) => connectorPath(item),
 });
 
-// A drag that wanders over a panel laid on the canvas still belongs to the
-// canvas: without this, letting go over one is never heard, and a marquee or a
-// half-drawn shape is left hanging from the pointer
-const onStagePointerDown = (event: Konva.KonvaEventObject<PointerEvent>) => {
-    onPointerDown(event);
-
-    try {
-        stage()?.content.setPointerCapture(event.evt.pointerId);
-    } catch {
-        // a pointer already gone: nothing to hold on to
-    }
-};
+// Which pointer that is, where there are several: a pen, the hand resting
+// beside it, and the fingers that slide and pinch the board
+const { onStagePointerDown, onStagePointerMove } = useGestures({
+    stage,
+    surface: canvas,
+    camera,
+    tool,
+    panning,
+    select: board.select,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    cancelPointer,
+});
 
 // --------------------------------------------------- A frame, right-clicked
 const frameMenu = ref<{ frame: Item; x: number; y: number } | null>(null);
@@ -449,13 +473,34 @@ const {
 // The panels on the right and on the left, open or put away; remembered across
 // boards, since it is how a person likes to work rather than something about
 // this board
-const panelOpen = useLocalStorage('board.panel', true);
-const layersOpen = useLocalStorage('board.layers', true);
+const panelKept = useLocalStorage('board.panel', true);
+const layersKept = useLocalStorage('board.layers', true);
+
+// On a phone the canvas is all there is room for: the panels start put away
+// whatever a wider screen remembers, come up over the bottom of the board
+// one at a time, and are not remembered there
+const compact = computed(() => width.value > 0 && width.value < 720);
+const sheet = ref<'layers' | 'panel' | null>(null);
+
+const openable = (name: 'layers' | 'panel', kept: typeof panelKept) =>
+    computed({
+        get: () => (compact.value ? sheet.value === name : kept.value),
+        set: (open: boolean) => {
+            if (compact.value) {
+                sheet.value = open ? name : null;
+            } else {
+                kept.value = open;
+            }
+        },
+    });
+
+const panelOpen = openable('panel', panelKept);
+const layersOpen = openable('layers', layersKept);
 
 // The part of the canvas the floating panels and the tool bar leave uncovered
 const uncovered = () => ({
-    left: layersOpen.value ? 256 : 0,
-    right: panelOpen.value ? 280 : 0,
+    left: layersOpen.value && !compact.value ? 256 : 0,
+    right: panelOpen.value && !compact.value ? 280 : 0,
     bottom: 56,
 });
 
@@ -505,6 +550,120 @@ const resizeSelection = (change: {
     if (change.height !== undefined) item.height = Math.max(12, change.height);
 };
 
+// ----------------------------------------------------------------- Circuits
+// Shown once there is a circuit to read: a board of sticky notes has none
+const hasCircuit = computed(() => board.items.value.some(isSymbol));
+
+/** A quarter turn for each selected part, about its own middle. */
+const turnSelection = () => {
+    const parts = board.selected.value.filter(isSymbol);
+
+    if (!parts.length) {
+        return false;
+    }
+
+    board.commit();
+    parts.forEach((item) => {
+        Object.assign(item, turned(item));
+        // A turn can leave pins between grid points: back onto it
+        Object.assign(item, snapped(item));
+    });
+
+    return true;
+};
+
+// -------------------------------------------------------------- Live parts
+// Some things on a board do something: a logic input is a switch, a clock
+// ticks, and the gates between them work out what follows. They answer a
+// click directly -- while the board is being drawn as well as while it is
+// presented -- so there is no mode to turn on first. What is high is worked
+// out all the time, and a circuit shows what it does while it is being built.
+const logical = computed(() => hasLogic(board.items.value));
+const beat = ref(false);
+const memory = newMemory();
+
+const signals = computed(() =>
+    logical.value
+        ? simulate(board.items.value, { clock: beat.value, memory })
+        : null,
+);
+
+// The beat only runs while some clock is switched on
+const ticking = computed(() =>
+    board.items.value.some(
+        (item) => item.on && symbolOf(item.symbol)?.logic === 'clock',
+    ),
+);
+
+useIntervalFn(() => {
+    if (ticking.value) {
+        beat.value = !beat.value;
+    }
+}, 500);
+
+/** The switch or clock under the pointer, if that is what is there. */
+const operableAt = (event: Konva.KonvaEventObject<MouseEvent>) => {
+    const id = event.target.id() || event.target.getParent()?.id();
+    const item = id ? board.byId.value.get(id) : undefined;
+
+    return item && !item.locked && isOperable(item) ? item : null;
+};
+
+const onStageClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
+    // A click flips a switch, or starts and stops a clock. With Shift it is
+    // only adding to the selection, and with a tool in hand it is drawing
+    const item =
+        (presenting.value || tool.value === 'select') && !event.evt.shiftKey
+            ? operableAt(event)
+            : null;
+
+    // Flipped, and left where it is: a switch is not picked up by being
+    // used. It is moved by dragging it, and chosen with Shift or a box
+    if (item) {
+        item.on = !item.on;
+
+        return;
+    }
+
+    onClick(event);
+};
+
+// The pointer says so, over anything that answers a click
+const onStageHover = (event: Konva.KonvaEventObject<MouseEvent>) => {
+    const container = stage()?.container();
+
+    if (container) {
+        container.style.cursor =
+            event.type === 'mouseover' && operableAt(event) ? 'pointer' : '';
+    }
+};
+
+const writingCircuit = ref(false);
+
+/** A circuit laid out from text, put down in the middle of what is in view. */
+const placeCircuit = (items: Item[]) => {
+    const box = boundsOfAll(items.filter((item) => !isConnector(item)));
+    const middle = camera.toBoard({ x: width.value / 2, y: height.value / 2 });
+
+    if (!box) {
+        return;
+    }
+
+    // Moved by whole grid steps, so its pins stay on the grid
+    const step = 20;
+    const dx = Math.round((middle.x - box.x - box.width / 2) / step) * step;
+    const dy = Math.round((middle.y - box.y - box.height / 2) / step) * step;
+
+    board.place(
+        items.map((item) =>
+            isConnector(item)
+                ? item
+                : { ...item, x: item.x + dx, y: item.y + dy },
+        ),
+    );
+    tool.value = 'select';
+};
+
 useShortcuts({
     board,
     tool,
@@ -516,6 +675,7 @@ useShortcuts({
     showFrame,
     stopPresenting,
     removeSelection,
+    turnSelection,
 });
 
 // vue-konva components render a fragment, so Vue cannot inherit listeners onto
@@ -579,9 +739,20 @@ onMounted(() => {
 
     // The undo step is taken before the first frame changes anything
     transformer?.on('transformstart', () => board.commit());
-    transformer?.on('transform', applyTransform);
+    transformer?.on('transform', () => {
+        applyTransform();
+        // Konva measures its handles straight after this, before the shape
+        // has been drawn at its new size, and works the next frame out from
+        // that stale box: the shape then ran ahead of the pointer and back,
+        // like a shaking hand. Measured again once it is drawn, they agree.
+        void nextTick(() => transformer.forceUpdate());
+    });
     transformer?.on('transformend', () => {
         applyTransform();
+        // A part let go of goes back onto the grid its pins belong on
+        board.selected.value
+            .filter(isSymbol)
+            .forEach((item) => Object.assign(item, snapped(item)));
         // A frame stretched over things already there would hide them
         board.settle();
     });
@@ -657,7 +828,7 @@ const connectorPath = (item: Item) =>
                     </h1>
                 </slot>
                 <span
-                    v-if="status"
+                    v-if="status && !compact"
                     class="text-muted-foreground truncate text-xs"
                     data-test="board-status"
                     >{{ status }}</span
@@ -667,7 +838,10 @@ const connectorPath = (item: Item) =>
             <div class="ml-auto flex shrink-0 items-center gap-1">
                 <slot name="actions" />
 
-                <BoardShortcuts />
+                <BoardCircuit v-if="hasCircuit" :items="board.items.value" />
+
+                <!-- Nothing to press on a phone -->
+                <BoardShortcuts v-if="!compact" />
 
                 <button
                     type="button"
@@ -682,7 +856,7 @@ const connectorPath = (item: Item) =>
                     @click="startPresenting"
                 >
                     <Play class="size-3.5" />
-                    Present
+                    <span v-if="!compact">Present</span>
                 </button>
             </div>
         </div>
@@ -695,7 +869,8 @@ const connectorPath = (item: Item) =>
             @pointermove="onCanvasPointer"
             @pointerleave="pointers?.point(null)"
             :data-camera="`${camera.position.value.x},${camera.position.value.y},${camera.scale.value}`"
-            class="relative min-h-[420px] flex-1 overflow-hidden bg-white"
+            class="relative min-h-[420px] flex-1 overflow-hidden"
+            :style="{ backgroundColor: theme.paper }"
             :class="{ 'cursor-grab': panning }"
         >
             <div
@@ -707,12 +882,18 @@ const connectorPath = (item: Item) =>
                 ref="stageRef"
                 :config="stageConfig"
                 @wheel="onWheel"
+                @dragmove="
+                    onStageDragEnd /* the camera follows the board as it is dragged, not only once it is let go */
+                "
                 @dragend="onStageDragEnd"
                 @pointerdown="onStagePointerDown"
-                @pointermove="onPointerMove"
-                @pointerup="onPointerUp"
-                @click="onClick"
+                @pointermove="onStagePointerMove"
+                @click="onStageClick"
+                @tap="onStageClick"
+                @mouseover="onStageHover"
+                @mouseout="onStageHover"
                 @dblclick="onDoubleClick"
+                @dbltap="onDoubleClick"
                 @contextmenu="onContextMenu"
             >
                 <Layer ref="contentLayer">
@@ -728,6 +909,7 @@ const connectorPath = (item: Item) =>
                         :image="imageFor(item)"
                         :video="videos.videoFor(item)"
                         :playing="videos.isPlaying(item.id)"
+                        :level="signals?.levels.get(item.id)"
                         :path-of="connectorPath"
                         :snap="snapWhileDragging"
                     />
@@ -754,6 +936,10 @@ const connectorPath = (item: Item) =>
                         ref="transformerRef"
                         :config="{
                             rotateEnabled: true,
+                            // Turning catches lightly at the quarter turns:
+                            // square again, for any shape
+                            rotationSnaps: [0, 90, 180, 270],
+                            rotationSnapTolerance: 6,
                             keepRatio: false,
                             borderStroke: '#6366f1',
                             anchorStroke: '#6366f1',
@@ -815,7 +1001,7 @@ const connectorPath = (item: Item) =>
                 ref="editor"
                 v-model="editorText"
                 class="board-editor"
-                :style="editorStyle"
+                :style="[editorStyle, { color: theme.inkOn(editingItem) }]"
                 data-test="text-editor"
                 @blur="stopEditing()"
                 @keydown.enter.exact.prevent="stopEditing()"
@@ -831,7 +1017,7 @@ const connectorPath = (item: Item) =>
             <!-- The tools, along the bottom middle so the sides keep the panels -->
             <div
                 v-show="!presenting"
-                class="board-float bottom-3 left-1/2 -translate-x-1/2"
+                class="board-float board-tools bottom-3 left-1/2 -translate-x-1/2"
             >
                 <ShapeLibrary
                     :tool="tool"
@@ -840,6 +1026,7 @@ const connectorPath = (item: Item) =>
                     @update:tool="tool = $event"
                     @add-picture="startImport('image')"
                     @add-video="startImport('video')"
+                    @circuit-text="writingCircuit = true"
                     @undo="board.undo"
                     @redo="board.redo"
                 />
@@ -849,7 +1036,8 @@ const connectorPath = (item: Item) =>
                  leaves an icon in the corner to bring it back -->
             <div
                 v-show="!presenting && layersOpen"
-                class="board-float top-3 left-3"
+                class="board-float"
+                :class="compact ? 'board-sheet' : 'top-3 left-3'"
             >
                 <LayersPanel
                     :items="board.items.value"
@@ -875,12 +1063,13 @@ const connectorPath = (item: Item) =>
             <!-- What is selected, and everything about it, down the right -->
             <div
                 v-show="!presenting && panelOpen"
-                class="board-float top-3 right-3 bottom-16"
+                class="board-float"
+                :class="compact ? 'board-sheet' : 'top-3 right-3 bottom-16'"
             >
                 <InspectorPanel
                     :selection="board.selected.value"
-                    :fill="fillColour"
-                    :stroke="strokeColour"
+                    :fill="board.selected.value[0]?.fill ?? fillColour"
+                    :stroke="board.selected.value[0]?.stroke ?? strokeColour"
                     :item-count="board.items.value.length"
                     :frame-count="board.frames.value.length"
                     :link="connectorLink"
@@ -891,6 +1080,7 @@ const connectorPath = (item: Item) =>
                     @remove="removeSelection"
                     @reorder="board.reorder"
                     @update="board.updateSelected"
+                    @turn="turnSelection"
                     @close="panelOpen = false"
                 />
             </div>
@@ -907,10 +1097,14 @@ const connectorPath = (item: Item) =>
             </button>
 
             <!-- How close in, and the way back to everything -->
-            <div v-show="!presenting" class="board-pill right-3 bottom-3">
+            <div
+                v-show="!presenting && !(compact && sheet)"
+                class="board-pill right-3"
+                :class="compact ? 'is-compact bottom-16' : 'bottom-3'"
+            >
                 <button
                     type="button"
-                    class="board-zoom"
+                    class="board-zoom board-zoom-step"
                     title="Zoom out"
                     data-test="zoom-out"
                     @click="camera.zoomBy(0.8, { x: width / 2, y: height / 2 })"
@@ -928,7 +1122,7 @@ const connectorPath = (item: Item) =>
                 </button>
                 <button
                     type="button"
-                    class="board-zoom"
+                    class="board-zoom board-zoom-step"
                     title="Zoom in"
                     data-test="zoom-in"
                     @click="
@@ -937,10 +1131,10 @@ const connectorPath = (item: Item) =>
                 >
                     <Plus class="size-3.5" />
                 </button>
-                <span class="bg-border mx-0.5 h-4 w-px" />
+                <span class="board-zoom-step bg-border mx-0.5 h-4 w-px" />
                 <button
                     type="button"
-                    class="board-zoom"
+                    class="board-zoom board-zoom-step"
                     title="Fit everything"
                     data-test="fit"
                     @click="fitAll()"
@@ -1000,6 +1194,11 @@ const connectorPath = (item: Item) =>
             @mermaid="addMermaid"
         />
 
+        <CircuitTextDialog
+            v-model:open="writingCircuit"
+            @insert="placeCircuit"
+        />
+
         <MediaViewer />
     </div>
 </template>
@@ -1015,7 +1214,6 @@ const connectorPath = (item: Item) =>
     font-family: Arial, sans-serif;
     font-weight: 600;
     line-height: 1.3;
-    color: #0f172a;
     background: transparent;
     border: none;
     outline: 2px solid var(--primary);
@@ -1028,10 +1226,21 @@ const connectorPath = (item: Item) =>
     display: flex;
     align-items: center;
     gap: 0.75rem;
+    min-width: 0;
     height: 3rem;
     flex-shrink: 0;
     padding: 0 0.75rem 0 0.5rem;
     border-bottom: 1px solid var(--border);
+}
+
+/* The canvas takes every touch itself: left to the browser, a finger or a
+   pen drawing on it starts to scroll the page instead, and the stroke stops
+   a few points in */
+[data-camera] :deep(.konvajs-content) {
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
 }
 
 /* Anything laid over the canvas: above the stage and the editors on it */
@@ -1046,6 +1255,34 @@ const connectorPath = (item: Item) =>
 .board-float > :deep(*) {
     min-height: 0;
     overflow-y: auto;
+}
+
+/* The tools never run off the canvas: on a narrow one they are slid along */
+.board-tools {
+    max-width: calc(100% - 1rem);
+}
+.board-tools > :deep(*) {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+}
+
+/* On a phone a panel comes up over the bottom of the board, as wide as it,
+   clear of the tools */
+.board-sheet {
+    right: 0.5rem;
+    bottom: 4rem;
+    left: 0.5rem;
+    max-height: min(55%, 24rem);
+}
+.board-sheet > :deep(*) {
+    width: 100%;
+}
+
+/* Two fingers zoom a phone: the pill is only how far in, and the way back */
+.board-pill.is-compact .board-zoom-step {
+    display: none;
 }
 
 .board-pill {

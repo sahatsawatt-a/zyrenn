@@ -262,9 +262,11 @@ await runBoard('/demo/konva', async (b) => {
     );
     await page.screenshot({ path: `${SHOTS}/panels-picked.png` });
 
-    // --- the swatches are your own: keep a colour, take one off, reset
+    // --- the swatches are your own: keep a colour, take one off, reset.
+    // Each colour is a chip, opened for its swatches
     await loose().nth(0).click();
     await page.waitForTimeout(250);
+    await page.locator('[data-test="fill-chip"]').click();
     const swatches = () =>
         page
             .locator('[data-test="colour-picker"]')
@@ -280,6 +282,8 @@ await runBoard('/demo/konva', async (b) => {
         (await swatches()) === start + 1,
         `${start} → ${await swatches()}`,
     );
+    await page.keyboard.press('Escape');
+    await page.locator('[data-test="stroke-chip"]').click();
     check(
         'and the line picker has it too',
         (await page
@@ -287,6 +291,12 @@ await runBoard('/demo/konva', async (b) => {
             .locator('[data-test="palette-swatch"][title="#123456"]')
             .count()) === 1,
     );
+    await page.keyboard.press('Escape');
+    check(
+        'closing the swatches leaves the shape chosen',
+        (await page.locator('[data-test="fill-chip"]').count()) === 1,
+    );
+    await page.locator('[data-test="fill-chip"]').click();
     check(
         'it is remembered',
         (

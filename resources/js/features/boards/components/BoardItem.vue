@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type Konva from 'konva';
+import { computed } from 'vue';
 import {
     Circle,
     Ellipse,
@@ -19,6 +20,14 @@ import {
     midpointOf,
     trimmedPoints,
 } from '@/features/boards/composables/connectors';
+import {
+    LABEL_LINE,
+    LABEL_SIZE,
+    inItem,
+    pinTexts,
+    symbolLabels,
+    symbolOf,
+} from '@/features/boards/circuit/symbols';
 import { polygonPoints } from '@/features/boards/composables/geometry';
 import type { Item } from '@/features/boards/composables/items';
 import {
@@ -37,6 +46,7 @@ import {
     labelHeight,
     labelStyle,
 } from '@/features/boards/composables/labels';
+import { useBoardTheme } from '@/features/boards/composables/useBoardTheme';
 import { FRAME_TITLE } from '@/features/boards/composables/useLabelEditor';
 import { VIDEO_PLAY } from '@/features/boards/composables/useVideos';
 
@@ -58,9 +68,32 @@ const props = defineProps<{
     // A video's player, once it has a frame to show, and whether it plays
     video?: HTMLVideoElement;
     playing?: boolean;
+    // In a logic circuit: whether this wire, input or lamp is high just now
+    level?: 0 | 1 | null;
     // A connector's path, worked out from what it is pinned to
     path: number[];
 }>();
+
+// What is high in a running logic circuit is drawn in this
+const LIVE = '#16a34a';
+
+// On a dark board, a line in the board's ink is drawn light where it lies
+// on the board itself; every other colour is drawn as it was chosen
+const theme = useBoardTheme();
+const shown = (colour: string) => theme.value.drawn(colour, props.item);
+
+const SELECTED = '#6366f1';
+
+/**
+ * A shape's edge: its own line at its own weight -- none at all, at 0 -- or
+ * the selection's colour over it, heavy enough to see.
+ */
+const edge = computed(() => ({
+    stroke: props.selected ? SELECTED : shown(props.item.stroke),
+    strokeWidth: props.selected
+        ? Math.max(2, props.item.lineWidth)
+        : props.item.lineWidth,
+}));
 
 /** The video's own shape, as large as fits the item, with bars round it. */
 const fitted = (item: Item, video: HTMLVideoElement) => {
@@ -170,6 +203,55 @@ const label = (item: Item) => {
     return { ...box, height: Math.max(box.height, labelHeight(item)) };
 };
 
+/** How much a symbol is drawn larger than the library has it. */
+const symbolScale = (item: Item) => {
+    const symbol = symbolOf(item.symbol);
+
+    return symbol
+        ? (item.width / symbol.width + item.height / symbol.height) / 2
+        : 1;
+};
+
+/**
+ * Draws a symbol's words -- its name and value beside it, a module's pin
+ * names inside it. They are placed on the board, the right way up whichever
+ * way the part is turned, so each is put back into the part's own turned
+ * space and turned the other way to match.
+ *
+ * One shape of no size draws them all: words that were items of their own
+ * were measured into the part's box, and stretched the frame drawn round a
+ * selected part out to wherever they were.
+ */
+const drawWords = (item: Item, ink: string) => (context: Konva.Context) => {
+    const upright = (-item.rotation * Math.PI) / 180;
+
+    context.setAttr('fillStyle', ink);
+    context.setAttr('textBaseline', 'middle');
+
+    for (const label of [...symbolLabels(item), ...pinTexts(item)]) {
+        const at = inItem(item, label);
+
+        context.save();
+        context.translate(at.x, at.y);
+        context.rotate(upright);
+        context.setAttr(
+            'font',
+            `${label.name ? '600 ' : ''}${label.size ?? LABEL_SIZE}px Arial`,
+        );
+        context.setAttr('textAlign', label.align);
+        context.fillText(
+            label.text,
+            0,
+            label.baseline === 'top'
+                ? LABEL_LINE / 2
+                : label.baseline === 'bottom'
+                  ? -LABEL_LINE / 2
+                  : 0,
+        );
+        context.restore();
+    }
+};
+
 // Close enough for a backing chip: Konva would have to measure the text to do
 // better, and this only has to keep the line out of the words.
 const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
@@ -186,7 +268,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             width: item.width,
             height: item.height,
             fill: item.fill,
-            stroke: selected ? '#6366f1' : item.stroke,
+            stroke: selected ? SELECTED : shown(item.stroke),
             strokeWidth: 1,
             shadowColor: 'black',
             shadowOpacity: 0.06,
@@ -234,8 +316,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             width: item.width,
             height: item.height,
             fill: item.fill,
-            stroke: selected ? '#6366f1' : item.stroke,
-            strokeWidth: selected ? 2 : 1.5,
+            ...edge,
             cornerRadius: 8,
         }"
     />
@@ -256,7 +337,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             :config="{
                 width: item.width,
                 height: item.height,
-                stroke: item.stroke,
+                stroke: shown(item.stroke),
                 strokeWidth: item.lineWidth,
                 listening: false,
             }"
@@ -341,11 +422,82 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             width: item.width,
             height: item.height,
             fill: item.fill,
-            stroke: selected ? '#6366f1' : item.stroke,
-            strokeWidth: selected ? 2 : 1.5,
+            ...edge,
             cornerRadius: 6,
         }"
     />
+
+    <!-- A part of a circuit: the library's drawing of it, fitted to the
+         box, with its name and value beside it -->
+    <template v-else-if="item.kind === 'symbol'">
+        <!-- The whole box takes the pointer: the drawing is thin lines -->
+        <Rect
+            :config="{
+                width: item.width,
+                height: item.height,
+                fill: 'rgba(0,0,0,0)',
+            }"
+        />
+        <!-- A logic input that is set, a lamp that is fed: filled in -->
+        <Path
+            v-if="symbolOf(item.symbol)?.lit && level === 1"
+            :config="{
+                data: symbolOf(item.symbol)!.lit,
+                scaleX: item.width / symbolOf(item.symbol)!.width,
+                scaleY: item.height / symbolOf(item.symbol)!.height,
+                fill: LIVE,
+                opacity: 0.55,
+                listening: false,
+            }"
+        />
+        <Path
+            v-if="symbolOf(item.symbol)?.path"
+            :config="{
+                data: symbolOf(item.symbol)!.path,
+                scaleX: item.width / symbolOf(item.symbol)!.width,
+                scaleY: item.height / symbolOf(item.symbol)!.height,
+                stroke: selected ? SELECTED : shown(item.stroke),
+                // As heavy as a wire, at any zoom: the line is drawn in
+                // board units, made up for whatever the part is scaled by
+                strokeWidth: 2 / symbolScale(item),
+                lineCap: 'round',
+                lineJoin: 'round',
+                listening: false,
+            }"
+        />
+        <!-- A switch's knob: at one end while off, the other while on -->
+        <Path
+            v-if="symbolOf(item.symbol)?.states"
+            :config="{
+                data: symbolOf(item.symbol)!.states![
+                    level === 1 ? 'on' : 'off'
+                ],
+                scaleX: item.width / symbolOf(item.symbol)!.width,
+                scaleY: item.height / symbolOf(item.symbol)!.height,
+                fill: shown('#ffffff'),
+                stroke: selected ? SELECTED : shown(item.stroke),
+                strokeWidth: 2 / symbolScale(item),
+                listening: false,
+            }"
+        />
+        <Path
+            v-if="symbolOf(item.symbol)?.fill"
+            :config="{
+                data: symbolOf(item.symbol)!.fill,
+                scaleX: item.width / symbolOf(item.symbol)!.width,
+                scaleY: item.height / symbolOf(item.symbol)!.height,
+                fill: selected ? SELECTED : shown(item.stroke),
+                listening: false,
+            }"
+        />
+        <Shape
+            :config="{
+                sceneFunc: drawWords(item, shown(INK)),
+                listening: false,
+                opacity: editing ? 0 : 1,
+            }"
+        />
+    </template>
 
     <Path
         v-else-if="isPath(item.kind)"
@@ -354,8 +506,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             scaleX: item.width / 100,
             scaleY: item.height / 100,
             fill: item.fill,
-            stroke: selected ? '#6366f1' : item.stroke,
-            strokeWidth: selected ? 2 : 1.5,
+            ...edge,
             strokeScaleEnabled: false,
         }"
     />
@@ -366,8 +517,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             width: item.width,
             height: item.height,
             fill: item.fill,
-            stroke: selected ? '#6366f1' : item.stroke,
-            strokeWidth: selected ? 2 : 1.5,
+            ...edge,
             cornerRadius: Math.min(item.width, item.height) / 2,
         }"
     />
@@ -378,8 +528,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             points: polygonPoints(item),
             closed: true,
             fill: item.fill,
-            stroke: selected ? '#6366f1' : item.stroke,
-            strokeWidth: selected ? 2 : 1.5,
+            ...edge,
             lineJoin: 'round',
         }"
     />
@@ -393,8 +542,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             innerRadius: Math.min(item.width, item.height) / 4,
             outerRadius: Math.min(item.width, item.height) / 2,
             fill: item.fill,
-            stroke: selected ? '#6366f1' : item.stroke,
-            strokeWidth: selected ? 2 : 1.5,
+            ...edge,
         }"
     />
 
@@ -406,8 +554,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             radiusX: item.width / 2,
             radiusY: item.height / 2,
             fill: item.fill,
-            stroke: selected ? '#6366f1' : item.stroke,
-            strokeWidth: selected ? 2 : 1.5,
+            ...edge,
         }"
     />
 
@@ -415,7 +562,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
         v-else-if="item.kind === 'draw'"
         :config="{
             points: item.points,
-            stroke: selected ? '#6366f1' : item.stroke,
+            stroke: selected ? SELECTED : shown(item.stroke),
             strokeWidth: 3,
             lineCap: 'round',
             lineJoin: 'round',
@@ -430,7 +577,11 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
         <Line
             :config="{
                 points: trimmedPoints(item, path),
-                stroke: selected ? '#6366f1' : item.stroke,
+                stroke: selected
+                    ? SELECTED
+                    : level === 1
+                      ? LIVE
+                      : shown(item.stroke),
                 strokeWidth: item.lineWidth,
                 dash: dashFor(item.lineStyle),
                 bezier: isSwept(item, path),
@@ -448,7 +599,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
                     x: head.x,
                     y: head.y,
                     radius: item.headSize * 0.4,
-                    fill: selected ? '#6366f1' : item.stroke,
+                    fill: selected ? SELECTED : shown(item.stroke),
                     listening: false,
                 }"
             />
@@ -463,10 +614,10 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
                     fill:
                         head.type === 'arrow' || head.type === 'diamond'
                             ? selected
-                                ? '#6366f1'
-                                : item.stroke
+                                ? SELECTED
+                                : shown(item.stroke)
                             : undefined,
-                    stroke: selected ? '#6366f1' : item.stroke,
+                    stroke: selected ? SELECTED : shown(item.stroke),
                     strokeWidth: item.lineWidth,
                     lineCap: 'round',
                     lineJoin: 'round',
@@ -486,7 +637,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
                 y: midpointOf(path, isSwept(item, path)).y - 11,
                 width: labelWidth(item),
                 height: 22,
-                fill: '#ffffff',
+                fill: theme.behind(item),
                 cornerRadius: 4,
                 listening: false,
                 opacity: editing ? 0 : 1,
@@ -505,7 +656,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
                 // wrapped onto a second line off the chip
                 width: labelWidth(item),
                 fontSize: 13,
-                fill: '#0f172a',
+                fill: theme.inkOver(theme.behind(item)),
                 align: 'center',
                 listening: false,
                 opacity: editing ? 0 : 1,
@@ -516,7 +667,12 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
     <!-- A label sits inside every shape except plain text,
      which is the label. Double-click any of them. -->
     <template
-        v-if="hasText(item) && item.kind !== 'frame' && item.kind !== 'math'"
+        v-if="
+            hasText(item) &&
+            item.kind !== 'frame' &&
+            item.kind !== 'math' &&
+            item.kind !== 'symbol'
+        "
     >
         <!-- Rich: headings, bullets and bold words, laid out line by line -->
         <Shape
@@ -524,9 +680,9 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             :config="{
                 name: 'rich-label',
                 ...label(item),
-                sceneFunc: drawRich(item),
+                sceneFunc: drawRich(item, theme.inkOn(item)),
                 hitFunc: labelHit,
-                fill: INK,
+                fill: theme.inkOn(item),
                 listening: item.kind === 'text',
                 opacity: editing ? 0 : 1,
             }"
@@ -541,7 +697,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
                 fontFamily: fontOf(item),
                 fontStyle: labelStyle(item),
                 lineHeight: LINE_HEIGHT,
-                fill: INK,
+                fill: theme.inkOn(item),
                 align: item.align,
                 verticalAlign: item.verticalAlign,
                 // A text item has no shape behind it, so

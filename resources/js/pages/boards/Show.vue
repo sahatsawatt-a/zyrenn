@@ -455,6 +455,7 @@ const statusLabel = computed(() => {
             <Button
                 variant="ghost"
                 size="sm"
+                class="hidden sm:inline-flex"
                 :title="`Copy this board's reference (${props.board.ref_id})`"
                 @click="copyRefId"
             >
@@ -470,7 +471,7 @@ const statusLabel = computed(() => {
                 @click="openExport"
             >
                 <FileDown />
-                Export
+                <span class="hidden sm:inline">Export</span>
             </Button>
 
             <Dialog>
@@ -525,6 +526,9 @@ const statusLabel = computed(() => {
 <style scoped>
 .board-title {
     width: 14rem;
+    /* On a phone it gives way to what is beside it */
+    min-width: 0;
+    flex-shrink: 1;
     height: 2rem;
     padding: 0 0.5rem;
     font-size: 0.875rem;

@@ -1,0 +1,1698 @@
+{
+    "grid": 20,
+    "symbols": [
+        {
+            "id": "resistor",
+            "label": "Resistor",
+            "group": "Passive",
+            "prefix": "R",
+            "aliases": ["res"],
+            "unit": "Ω",
+            "hint": "10 kΩ",
+            "width": 80,
+            "height": 40,
+            "inset": 8,
+            "labels": "split",
+            "path": "M0,20 H20 M60,20 H80 M20,12 H60 V28 H20 Z",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left"
+                },
+                {
+                    "name": "2",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right"
+                }
+            ]
+        },
+        {
+            "id": "resistor_us",
+            "label": "Resistor (zigzag)",
+            "group": "Passive",
+            "prefix": "R",
+            "aliases": ["zigzag"],
+            "unit": "Ω",
+            "hint": "10 kΩ",
+            "width": 80,
+            "height": 40,
+            "inset": 8,
+            "labels": "split",
+            "path": "M0,20 H16 L20,12 L28,28 L36,12 L44,28 L52,12 L60,28 L64,20 H80",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left"
+                },
+                {
+                    "name": "2",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right"
+                }
+            ]
+        },
+        {
+            "id": "potentiometer",
+            "label": "Potentiometer",
+            "group": "Passive",
+            "prefix": "RV",
+            "aliases": ["pot", "trimmer"],
+            "unit": "Ω",
+            "hint": "10 kΩ",
+            "width": 80,
+            "height": 60,
+            "inset": 8,
+            "labels": "bottom",
+            "path": "M0,40 H20 M60,40 H80 M20,32 H60 V48 H20 Z M40,0 V24",
+            "fill": "M40,32 L36,23 L44,23 Z",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 0,
+                    "y": 40,
+                    "side": "left"
+                },
+                {
+                    "name": "2",
+                    "x": 80,
+                    "y": 40,
+                    "side": "right"
+                },
+                {
+                    "name": "w",
+                    "x": 40,
+                    "y": 0,
+                    "side": "top",
+                    "aliases": ["3", "wiper"]
+                }
+            ]
+        },
+        {
+            "id": "capacitor",
+            "label": "Capacitor",
+            "group": "Passive",
+            "prefix": "C",
+            "aliases": ["cap"],
+            "unit": "F",
+            "hint": "100 nF",
+            "width": 80,
+            "height": 40,
+            "inset": 3,
+            "labels": "split",
+            "path": "M0,20 H36 M44,20 H80 M36,6 V34 M44,6 V34",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left"
+                },
+                {
+                    "name": "2",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right"
+                }
+            ]
+        },
+        {
+            "id": "capacitor_polarized",
+            "label": "Capacitor, polarised",
+            "group": "Passive",
+            "prefix": "C",
+            "aliases": ["electrolytic", "ecap", "polarized", "polarised"],
+            "unit": "F",
+            "hint": "100 µF",
+            "width": 80,
+            "height": 40,
+            "inset": 3,
+            "labels": "split",
+            "path": "M0,20 H36 M44,20 H80 M36,6 V34 M44,6 V34 M22,9 H30 M26,5 V13",
+            "pins": [
+                {
+                    "name": "+",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1"]
+                },
+                {
+                    "name": "-",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right",
+                    "aliases": ["2"]
+                }
+            ]
+        },
+        {
+            "id": "inductor",
+            "label": "Inductor",
+            "group": "Passive",
+            "prefix": "L",
+            "aliases": ["ind", "choke"],
+            "unit": "H",
+            "hint": "10 mH",
+            "width": 80,
+            "height": 40,
+            "inset": 10,
+            "labels": "split",
+            "path": "M0,20 H16 a6,6 0 0,1 12,0 a6,6 0 0,1 12,0 a6,6 0 0,1 12,0 a6,6 0 0,1 12,0 H80",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left"
+                },
+                {
+                    "name": "2",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right"
+                }
+            ]
+        },
+        {
+            "id": "transformer",
+            "label": "Transformer",
+            "group": "Passive",
+            "prefix": "T",
+            "aliases": ["xfmr"],
+            "hint": "230/12 V",
+            "width": 80,
+            "height": 80,
+            "inset": 10,
+            "labels": "split",
+            "path": "M0,20 H28 a5,5 0 0,1 0,10 a5,5 0 0,1 0,10 a5,5 0 0,1 0,10 a5,5 0 0,1 0,10 H0 M80,20 H52 a5,5 0 0,0 0,10 a5,5 0 0,0 0,10 a5,5 0 0,0 0,10 a5,5 0 0,0 0,10 H80 M38,16 V64 M42,16 V64",
+            "pins": [
+                {
+                    "name": "p1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1"]
+                },
+                {
+                    "name": "p2",
+                    "x": 0,
+                    "y": 60,
+                    "side": "left",
+                    "aliases": ["2"]
+                },
+                {
+                    "name": "s1",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right",
+                    "aliases": ["3"]
+                },
+                {
+                    "name": "s2",
+                    "x": 80,
+                    "y": 60,
+                    "side": "right",
+                    "aliases": ["4"]
+                }
+            ]
+        },
+        {
+            "id": "crystal",
+            "label": "Crystal",
+            "group": "Passive",
+            "prefix": "Y",
+            "aliases": ["xtal"],
+            "unit": "Hz",
+            "hint": "16 MHz",
+            "width": 80,
+            "height": 40,
+            "inset": 4,
+            "labels": "split",
+            "path": "M0,20 H30 M50,20 H80 M30,8 V32 M50,8 V32 M35,9 H45 V31 H35 Z",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left"
+                },
+                {
+                    "name": "2",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right"
+                }
+            ]
+        },
+        {
+            "id": "vsource",
+            "label": "Voltage source",
+            "group": "Sources",
+            "prefix": "V",
+            "aliases": ["dc", "source", "voltage", "supply"],
+            "unit": "V",
+            "hint": "12 V",
+            "source": true,
+            "width": 40,
+            "height": 80,
+            "inset": 2,
+            "labels": "left",
+            "path": "M20,0 V24 M20,56 V80 M36,40 a16,16 0 1,0 -32,0 a16,16 0 1,0 32,0 M16,33 H24 M20,29 V37 M16,48 H24",
+            "pins": [
+                {
+                    "name": "-",
+                    "x": 20,
+                    "y": 80,
+                    "side": "bottom",
+                    "aliases": ["1", "n"]
+                },
+                {
+                    "name": "+",
+                    "x": 20,
+                    "y": 0,
+                    "side": "top",
+                    "aliases": ["2", "p"]
+                }
+            ]
+        },
+        {
+            "id": "battery",
+            "label": "Battery",
+            "group": "Sources",
+            "prefix": "BT",
+            "aliases": ["bat", "cell"],
+            "unit": "V",
+            "hint": "9 V",
+            "source": true,
+            "width": 40,
+            "height": 80,
+            "inset": 4,
+            "labels": "left",
+            "path": "M20,0 V35 M20,45 V80 M6,35 H34 M27,24 H33 M30,21 V27",
+            "fill": "M12,43.5 H28 V46.5 H12 Z",
+            "pins": [
+                {
+                    "name": "-",
+                    "x": 20,
+                    "y": 80,
+                    "side": "bottom",
+                    "aliases": ["1", "n"]
+                },
+                {
+                    "name": "+",
+                    "x": 20,
+                    "y": 0,
+                    "side": "top",
+                    "aliases": ["2", "p"]
+                }
+            ]
+        },
+        {
+            "id": "isource",
+            "label": "Current source",
+            "group": "Sources",
+            "prefix": "I",
+            "aliases": ["current"],
+            "unit": "A",
+            "hint": "1 mA",
+            "source": true,
+            "width": 40,
+            "height": 80,
+            "inset": 2,
+            "labels": "left",
+            "path": "M20,0 V24 M20,56 V80 M36,40 a16,16 0 1,0 -32,0 a16,16 0 1,0 32,0 M20,50 V35",
+            "fill": "M20,29 L16,37 L24,37 Z",
+            "pins": [
+                {
+                    "name": "-",
+                    "x": 20,
+                    "y": 80,
+                    "side": "bottom",
+                    "aliases": ["1", "in"]
+                },
+                {
+                    "name": "+",
+                    "x": 20,
+                    "y": 0,
+                    "side": "top",
+                    "aliases": ["2", "out"]
+                }
+            ]
+        },
+        {
+            "id": "ac",
+            "label": "AC source",
+            "group": "Sources",
+            "prefix": "V",
+            "aliases": ["mains", "vac", "acsource"],
+            "unit": "V",
+            "hint": "230 V",
+            "source": true,
+            "width": 40,
+            "height": 80,
+            "inset": 2,
+            "labels": "left",
+            "path": "M20,0 V24 M20,56 V80 M36,40 a16,16 0 1,0 -32,0 a16,16 0 1,0 32,0 M11,40 q4.5,-10 9,0 t9,0",
+            "pins": [
+                {
+                    "name": "n",
+                    "x": 20,
+                    "y": 80,
+                    "side": "bottom",
+                    "aliases": ["1", "-"]
+                },
+                {
+                    "name": "l",
+                    "x": 20,
+                    "y": 0,
+                    "side": "top",
+                    "aliases": ["2", "+"]
+                }
+            ]
+        },
+        {
+            "id": "diode",
+            "label": "Diode",
+            "group": "Semiconductors",
+            "prefix": "D",
+            "aliases": ["rectifier"],
+            "hint": "1N4148",
+            "width": 80,
+            "height": 40,
+            "inset": 4,
+            "labels": "split",
+            "path": "M0,20 H28 M52,20 H80 M28,8 V32 L52,20 Z M52,8 V32",
+            "pins": [
+                {
+                    "name": "a",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1", "anode", "+"]
+                },
+                {
+                    "name": "k",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right",
+                    "aliases": ["2", "cathode", "c", "-"]
+                }
+            ]
+        },
+        {
+            "id": "led",
+            "label": "LED",
+            "group": "Semiconductors",
+            "prefix": "D",
+            "prefixes": ["LED"],
+            "aliases": [],
+            "hint": "red",
+            "width": 80,
+            "height": 40,
+            "inset": 0,
+            "labels": "split",
+            "path": "M0,20 H28 M52,20 H80 M28,8 V32 L52,20 Z M52,8 V32 M57,10 L65,2 M61,2 H65 V6 M64,15 L72,7 M68,7 H72 V11",
+            "pins": [
+                {
+                    "name": "a",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1", "anode", "+"]
+                },
+                {
+                    "name": "k",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right",
+                    "aliases": ["2", "cathode", "c", "-"]
+                }
+            ]
+        },
+        {
+            "id": "zener",
+            "label": "Zener diode",
+            "group": "Semiconductors",
+            "prefix": "D",
+            "prefixes": ["ZD"],
+            "aliases": [],
+            "hint": "5.1 V",
+            "width": 80,
+            "height": 40,
+            "inset": 4,
+            "labels": "split",
+            "path": "M0,20 H28 M52,20 H80 M28,8 V32 L52,20 Z M47,8 H52 V32 H57",
+            "pins": [
+                {
+                    "name": "a",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1", "anode", "+"]
+                },
+                {
+                    "name": "k",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right",
+                    "aliases": ["2", "cathode", "c", "-"]
+                }
+            ]
+        },
+        {
+            "id": "npn",
+            "label": "Transistor, NPN",
+            "group": "Semiconductors",
+            "prefix": "Q",
+            "aliases": ["bjt", "transistor"],
+            "hint": "BC547",
+            "width": 60,
+            "height": 80,
+            "inset": 2,
+            "labels": "right",
+            "path": "M0,40 H22 M22,24 V56 M22,32 L40,20 V0 M22,48 L40,60 V80 M56,40 a26,26 0 1,0 -52,0 a26,26 0 1,0 52,0",
+            "fill": "M38.3,58.9 L29.7,57.3 L33.5,51.5 Z",
+            "pins": [
+                {
+                    "name": "b",
+                    "x": 0,
+                    "y": 40,
+                    "side": "left",
+                    "aliases": ["1", "base"]
+                },
+                {
+                    "name": "c",
+                    "x": 40,
+                    "y": 0,
+                    "side": "top",
+                    "aliases": ["2", "collector"]
+                },
+                {
+                    "name": "e",
+                    "x": 40,
+                    "y": 80,
+                    "side": "bottom",
+                    "aliases": ["3", "emitter"]
+                }
+            ]
+        },
+        {
+            "id": "pnp",
+            "label": "Transistor, PNP",
+            "group": "Semiconductors",
+            "prefix": "Q",
+            "aliases": [],
+            "hint": "BC557",
+            "width": 60,
+            "height": 80,
+            "inset": 2,
+            "labels": "right",
+            "path": "M0,40 H22 M22,24 V56 M22,32 L40,20 V0 M22,48 L40,60 V80 M56,40 a26,26 0 1,0 -52,0 a26,26 0 1,0 52,0",
+            "fill": "M24.5,49.7 L33.1,51.2 L29.2,57 Z",
+            "pins": [
+                {
+                    "name": "b",
+                    "x": 0,
+                    "y": 40,
+                    "side": "left",
+                    "aliases": ["1", "base"]
+                },
+                {
+                    "name": "c",
+                    "x": 40,
+                    "y": 0,
+                    "side": "top",
+                    "aliases": ["2", "collector"]
+                },
+                {
+                    "name": "e",
+                    "x": 40,
+                    "y": 80,
+                    "side": "bottom",
+                    "aliases": ["3", "emitter"]
+                }
+            ]
+        },
+        {
+            "id": "nmos",
+            "label": "MOSFET, N-channel",
+            "group": "Semiconductors",
+            "prefix": "Q",
+            "aliases": ["mosfet", "fet", "nfet"],
+            "hint": "2N7000",
+            "width": 60,
+            "height": 80,
+            "inset": 14,
+            "labels": "right",
+            "path": "M0,40 H18 M18,26 V54 M24,24 V56 M24,30 H40 V0 M24,50 H40 V80",
+            "fill": "M37,50 L29,46 L29,54 Z",
+            "pins": [
+                {
+                    "name": "g",
+                    "x": 0,
+                    "y": 40,
+                    "side": "left",
+                    "aliases": ["1", "gate"]
+                },
+                {
+                    "name": "d",
+                    "x": 40,
+                    "y": 0,
+                    "side": "top",
+                    "aliases": ["2", "drain"]
+                },
+                {
+                    "name": "s",
+                    "x": 40,
+                    "y": 80,
+                    "side": "bottom",
+                    "aliases": ["3", "source"]
+                }
+            ]
+        },
+        {
+            "id": "pmos",
+            "label": "MOSFET, P-channel",
+            "group": "Semiconductors",
+            "prefix": "Q",
+            "aliases": ["pfet"],
+            "hint": "BS250",
+            "width": 60,
+            "height": 80,
+            "inset": 14,
+            "labels": "right",
+            "path": "M0,40 H18 M18,26 V54 M24,24 V56 M24,30 H40 V0 M24,50 H40 V80",
+            "fill": "M26,50 L34,46 L34,54 Z",
+            "pins": [
+                {
+                    "name": "g",
+                    "x": 0,
+                    "y": 40,
+                    "side": "left",
+                    "aliases": ["1", "gate"]
+                },
+                {
+                    "name": "d",
+                    "x": 40,
+                    "y": 0,
+                    "side": "top",
+                    "aliases": ["2", "drain"]
+                },
+                {
+                    "name": "s",
+                    "x": 40,
+                    "y": 80,
+                    "side": "bottom",
+                    "aliases": ["3", "source"]
+                }
+            ]
+        },
+        {
+            "id": "opamp",
+            "label": "Op-amp",
+            "group": "Semiconductors",
+            "prefix": "U",
+            "aliases": ["op-amp", "amplifier", "comparator"],
+            "hint": "LM358",
+            "width": 80,
+            "height": 80,
+            "inset": 2,
+            "labels": "split",
+            "path": "M10,4 V76 L70,40 Z M0,20 H10 M0,60 H10 M70,40 H80 M15,20 H23 M15,60 H23 M19,56 V64",
+            "pins": [
+                {
+                    "name": "+",
+                    "x": 0,
+                    "y": 60,
+                    "side": "left",
+                    "aliases": ["1", "in+", "p"]
+                },
+                {
+                    "name": "-",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["2", "in-", "n"]
+                },
+                {
+                    "name": "out",
+                    "x": 80,
+                    "y": 40,
+                    "side": "right",
+                    "aliases": ["3", "o"]
+                }
+            ]
+        },
+        {
+            "id": "switch",
+            "label": "Switch",
+            "group": "Switching",
+            "prefix": "SW",
+            "prefixes": ["S"],
+            "aliases": ["spst", "sw"],
+            "hint": "",
+            "width": 80,
+            "height": 40,
+            "inset": 4,
+            "labels": "split",
+            "path": "M0,20 H21 M61,20 H80 M27,20 a3,3 0 1,0 -6,0 a3,3 0 1,0 6,0 M61,20 a3,3 0 1,0 -6,0 a3,3 0 1,0 6,0 M26.5,18 L56,6",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left"
+                },
+                {
+                    "name": "2",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right"
+                }
+            ]
+        },
+        {
+            "id": "button",
+            "label": "Push button",
+            "group": "Switching",
+            "prefix": "PB",
+            "aliases": ["pushbutton", "push"],
+            "hint": "",
+            "width": 80,
+            "height": 40,
+            "inset": 0,
+            "labels": "split",
+            "path": "M0,20 H21 M59,20 H80 M27,20 a3,3 0 1,0 -6,0 a3,3 0 1,0 6,0 M59,20 a3,3 0 1,0 -6,0 a3,3 0 1,0 6,0 M22,12 H58 M40,12 V3 M33,3 H47",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left"
+                },
+                {
+                    "name": "2",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right"
+                }
+            ]
+        },
+        {
+            "id": "coil",
+            "label": "Relay coil",
+            "group": "Switching",
+            "prefix": "K",
+            "aliases": ["relay", "contactor"],
+            "hint": "",
+            "width": 80,
+            "height": 40,
+            "inset": 3,
+            "labels": "split",
+            "path": "M0,20 H26 M54,20 H80 M26,6 H54 V34 H26 Z",
+            "pins": [
+                {
+                    "name": "a1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1"]
+                },
+                {
+                    "name": "a2",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right",
+                    "aliases": ["2"]
+                }
+            ]
+        },
+        {
+            "id": "contact_nc",
+            "label": "Contact, normally closed",
+            "group": "Switching",
+            "prefix": "K",
+            "aliases": ["nc"],
+            "hint": "",
+            "width": 80,
+            "height": 40,
+            "inset": 4,
+            "labels": "split",
+            "path": "M0,20 H24 M56,20 H80 M24,20 L59,9 M56,20 V7",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left"
+                },
+                {
+                    "name": "2",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right"
+                }
+            ]
+        },
+        {
+            "id": "breaker",
+            "label": "Circuit breaker",
+            "group": "Switching",
+            "prefix": "CB",
+            "prefixes": ["QF"],
+            "aliases": ["cb", "mcb", "mccb"],
+            "unit": "A",
+            "hint": "16 A",
+            "width": 80,
+            "height": 40,
+            "inset": 4,
+            "labels": "split",
+            "path": "M0,20 H24 M56,20 H80 M24,20 L54,7 M52,16 L60,24 M52,24 L60,16",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left"
+                },
+                {
+                    "name": "2",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right"
+                }
+            ]
+        },
+        {
+            "id": "fuse",
+            "label": "Fuse",
+            "group": "Switching",
+            "prefix": "F",
+            "aliases": [],
+            "unit": "A",
+            "hint": "2 A",
+            "width": 80,
+            "height": 40,
+            "inset": 8,
+            "labels": "split",
+            "path": "M0,20 H80 M20,12 H60 V28 H20 Z",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left"
+                },
+                {
+                    "name": "2",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right"
+                }
+            ]
+        },
+        {
+            "id": "lamp",
+            "label": "Lamp",
+            "group": "Loads & meters",
+            "prefix": "H",
+            "prefixes": ["EL", "LP"],
+            "aliases": ["bulb", "light"],
+            "hint": "",
+            "width": 80,
+            "height": 40,
+            "inset": 3,
+            "labels": "split",
+            "path": "M0,20 H26 M54,20 H80 M54,20 a14,14 0 1,0 -28,0 a14,14 0 1,0 28,0 M30.1,10.1 L49.9,29.9 M30.1,29.9 L49.9,10.1",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left"
+                },
+                {
+                    "name": "2",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right"
+                }
+            ]
+        },
+        {
+            "id": "motor",
+            "label": "Motor",
+            "group": "Loads & meters",
+            "prefix": "M",
+            "aliases": [],
+            "hint": "",
+            "width": 80,
+            "height": 40,
+            "inset": 1,
+            "labels": "split",
+            "path": "M0,20 H24 M56,20 H80 M56,20 a16,16 0 1,0 -32,0 a16,16 0 1,0 32,0 M33,27 V13 L40,22 L47,13 V27",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left"
+                },
+                {
+                    "name": "2",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right"
+                }
+            ]
+        },
+        {
+            "id": "generator",
+            "label": "Generator",
+            "group": "Loads & meters",
+            "prefix": "G",
+            "aliases": ["gen"],
+            "hint": "",
+            "width": 80,
+            "height": 40,
+            "inset": 1,
+            "labels": "split",
+            "path": "M0,20 H24 M56,20 H80 M56,20 a16,16 0 1,0 -32,0 a16,16 0 1,0 32,0 M46.5,15.5 A8,8 0 1,0 46.5,24.5 V20.5 H41.5",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left"
+                },
+                {
+                    "name": "2",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right"
+                }
+            ]
+        },
+        {
+            "id": "voltmeter",
+            "label": "Voltmeter",
+            "group": "Loads & meters",
+            "prefix": "PV",
+            "aliases": [],
+            "hint": "",
+            "width": 80,
+            "height": 40,
+            "inset": 1,
+            "labels": "split",
+            "path": "M0,20 H24 M56,20 H80 M56,20 a16,16 0 1,0 -32,0 a16,16 0 1,0 32,0 M34,13 L40,27 L46,13",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left"
+                },
+                {
+                    "name": "2",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right"
+                }
+            ]
+        },
+        {
+            "id": "ammeter",
+            "label": "Ammeter",
+            "group": "Loads & meters",
+            "prefix": "PA",
+            "aliases": [],
+            "hint": "",
+            "width": 80,
+            "height": 40,
+            "inset": 1,
+            "labels": "split",
+            "path": "M0,20 H24 M56,20 H80 M56,20 a16,16 0 1,0 -32,0 a16,16 0 1,0 32,0 M34,27 L40,13 L46,27 M36.5,22 H43.5",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left"
+                },
+                {
+                    "name": "2",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right"
+                }
+            ]
+        },
+        {
+            "id": "and",
+            "label": "AND gate",
+            "group": "Logic",
+            "prefix": "U",
+            "aliases": ["and2"],
+            "logic": "and",
+            "hint": "",
+            "width": 100,
+            "height": 80,
+            "inset": 8,
+            "labels": "top",
+            "path": "M0,20 H20 M0,60 H20 M80,40 H100 M20,10 H50 A30,30 0 0,1 50,70 H20 Z",
+            "pins": [
+                {
+                    "name": "a",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1", "in1"]
+                },
+                {
+                    "name": "b",
+                    "x": 0,
+                    "y": 60,
+                    "side": "left",
+                    "aliases": ["2", "in2"]
+                },
+                {
+                    "name": "y",
+                    "x": 100,
+                    "y": 40,
+                    "side": "right",
+                    "aliases": ["3", "out", "q"]
+                }
+            ]
+        },
+        {
+            "id": "or",
+            "label": "OR gate",
+            "group": "Logic",
+            "prefix": "U",
+            "aliases": ["or2"],
+            "logic": "or",
+            "hint": "",
+            "width": 100,
+            "height": 80,
+            "inset": 8,
+            "labels": "top",
+            "path": "M0,20 H23 M0,60 H23 M80,40 H100 M20,10 Q38,10 50,14 Q68,20 80,40 Q68,60 50,66 Q38,70 20,70 Q32,40 20,10 Z",
+            "pins": [
+                {
+                    "name": "a",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1", "in1"]
+                },
+                {
+                    "name": "b",
+                    "x": 0,
+                    "y": 60,
+                    "side": "left",
+                    "aliases": ["2", "in2"]
+                },
+                {
+                    "name": "y",
+                    "x": 100,
+                    "y": 40,
+                    "side": "right",
+                    "aliases": ["3", "out", "q"]
+                }
+            ]
+        },
+        {
+            "id": "not",
+            "label": "NOT gate",
+            "group": "Logic",
+            "prefix": "U",
+            "aliases": ["inverter", "inv"],
+            "logic": "not",
+            "hint": "",
+            "width": 80,
+            "height": 40,
+            "inset": 8,
+            "labels": "top",
+            "path": "M0,20 H20 M60,20 H80 M20,6 V34 L52,20 Z M60,20 a4,4 0 1,0 -8,0 a4,4 0 1,0 8,0",
+            "pins": [
+                {
+                    "name": "a",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1", "in"]
+                },
+                {
+                    "name": "y",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right",
+                    "aliases": ["2", "out", "q"]
+                }
+            ]
+        },
+        {
+            "id": "nand",
+            "label": "NAND gate",
+            "group": "Logic",
+            "prefix": "U",
+            "aliases": ["nand2"],
+            "logic": "nand",
+            "hint": "",
+            "width": 100,
+            "height": 80,
+            "inset": 8,
+            "labels": "top",
+            "path": "M0,20 H20 M0,60 H20 M80,40 H100 M80,40 a4,4 0 1,0 -8,0 a4,4 0 1,0 8,0 M20,10 H42 A30,30 0 0,1 42,70 H20 Z",
+            "pins": [
+                {
+                    "name": "a",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1", "in1"]
+                },
+                {
+                    "name": "b",
+                    "x": 0,
+                    "y": 60,
+                    "side": "left",
+                    "aliases": ["2", "in2"]
+                },
+                {
+                    "name": "y",
+                    "x": 100,
+                    "y": 40,
+                    "side": "right",
+                    "aliases": ["3", "out", "q"]
+                }
+            ]
+        },
+        {
+            "id": "nor",
+            "label": "NOR gate",
+            "group": "Logic",
+            "prefix": "U",
+            "aliases": ["nor2"],
+            "logic": "nor",
+            "hint": "",
+            "width": 100,
+            "height": 80,
+            "inset": 8,
+            "labels": "top",
+            "path": "M0,20 H23 M0,60 H23 M80,40 H100 M80,40 a4,4 0 1,0 -8,0 a4,4 0 1,0 8,0 M20,10 Q36,10 46,14 Q62,20 72,40 Q62,60 46,66 Q36,70 20,70 Q32,40 20,10 Z",
+            "pins": [
+                {
+                    "name": "a",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1", "in1"]
+                },
+                {
+                    "name": "b",
+                    "x": 0,
+                    "y": 60,
+                    "side": "left",
+                    "aliases": ["2", "in2"]
+                },
+                {
+                    "name": "y",
+                    "x": 100,
+                    "y": 40,
+                    "side": "right",
+                    "aliases": ["3", "out", "q"]
+                }
+            ]
+        },
+        {
+            "id": "xor",
+            "label": "XOR gate",
+            "group": "Logic",
+            "prefix": "U",
+            "aliases": ["eor"],
+            "logic": "xor",
+            "hint": "",
+            "width": 100,
+            "height": 80,
+            "inset": 8,
+            "labels": "top",
+            "path": "M0,20 H22 M0,60 H22 M80,40 H100 M26,10 Q42,10 52,14 Q69,20 80,40 Q69,60 52,66 Q42,70 26,70 Q38,40 26,10 Z M19,10 Q31,40 19,70",
+            "pins": [
+                {
+                    "name": "a",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1", "in1"]
+                },
+                {
+                    "name": "b",
+                    "x": 0,
+                    "y": 60,
+                    "side": "left",
+                    "aliases": ["2", "in2"]
+                },
+                {
+                    "name": "y",
+                    "x": 100,
+                    "y": 40,
+                    "side": "right",
+                    "aliases": ["3", "out", "q"]
+                }
+            ]
+        },
+        {
+            "id": "xnor",
+            "label": "XNOR gate",
+            "group": "Logic",
+            "prefix": "U",
+            "aliases": [],
+            "logic": "xnor",
+            "hint": "",
+            "width": 100,
+            "height": 80,
+            "inset": 8,
+            "labels": "top",
+            "path": "M0,20 H22 M0,60 H22 M80,40 H100 M80,40 a4,4 0 1,0 -8,0 a4,4 0 1,0 8,0 M26,10 Q40,10 49,14 Q63,20 72,40 Q63,60 49,66 Q40,70 26,70 Q38,40 26,10 Z M19,10 Q31,40 19,70",
+            "pins": [
+                {
+                    "name": "a",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1", "in1"]
+                },
+                {
+                    "name": "b",
+                    "x": 0,
+                    "y": 60,
+                    "side": "left",
+                    "aliases": ["2", "in2"]
+                },
+                {
+                    "name": "y",
+                    "x": 100,
+                    "y": 40,
+                    "side": "right",
+                    "aliases": ["3", "out", "q"]
+                }
+            ]
+        },
+        {
+            "id": "buffer",
+            "label": "Buffer",
+            "group": "Logic",
+            "prefix": "U",
+            "aliases": ["buf"],
+            "logic": "buffer",
+            "hint": "",
+            "width": 80,
+            "height": 40,
+            "inset": 8,
+            "labels": "top",
+            "path": "M0,20 H20 M56,20 H80 M20,6 V34 L56,20 Z",
+            "pins": [
+                {
+                    "name": "a",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1", "in"]
+                },
+                {
+                    "name": "y",
+                    "x": 80,
+                    "y": 20,
+                    "side": "right",
+                    "aliases": ["2", "out", "q"]
+                }
+            ]
+        },
+        {
+            "id": "input",
+            "label": "Logic input (switch)",
+            "group": "Logic",
+            "prefix": "",
+            "role": "input",
+            "logic": "input",
+            "aliases": ["toggle", "in", "switch_input"],
+            "hint": "A",
+            "width": 60,
+            "height": 40,
+            "inset": 2,
+            "labels": "left",
+            "path": "M12,8 H28 A12,12 0 0,1 28,32 H12 A12,12 0 0,1 12,8 Z M40,20 H60",
+            "lit": "M12,8 H28 A12,12 0 0,1 28,32 H12 A12,12 0 0,1 12,8 Z",
+            "pins": [
+                {
+                    "name": "y",
+                    "x": 60,
+                    "y": 20,
+                    "side": "right",
+                    "aliases": ["1", "out"]
+                }
+            ],
+            "states": {
+                "off": "M19,20 a7,7 0 1,0 -14,0 a7,7 0 1,0 14,0",
+                "on": "M35,20 a7,7 0 1,0 -14,0 a7,7 0 1,0 14,0"
+            }
+        },
+        {
+            "id": "clock",
+            "label": "Clock",
+            "group": "Logic",
+            "prefix": "",
+            "role": "clock",
+            "logic": "clock",
+            "aliases": ["clk", "oscillator"],
+            "hint": "CLK",
+            "width": 60,
+            "height": 40,
+            "inset": 2,
+            "labels": "left",
+            "path": "M4,6 H36 V34 H4 Z M36,20 H60 M9,26 H14 V14 H20 V26 H26 V14 H31",
+            "lit": "M4,6 H36 V34 H4 Z",
+            "pins": [
+                {
+                    "name": "y",
+                    "x": 60,
+                    "y": 20,
+                    "side": "right",
+                    "aliases": ["1", "out"]
+                }
+            ]
+        },
+        {
+            "id": "output",
+            "label": "Logic output",
+            "group": "Logic",
+            "prefix": "",
+            "role": "output",
+            "logic": "output",
+            "aliases": ["probe", "indicator", "out"],
+            "hint": "Y",
+            "width": 40,
+            "height": 40,
+            "inset": 4,
+            "labels": "right",
+            "path": "M0,20 H12 M40,20 a14,14 0 1,0 -28,0 a14,14 0 1,0 28,0",
+            "lit": "M40,20 a14,14 0 1,0 -28,0 a14,14 0 1,0 28,0",
+            "pins": [
+                {
+                    "name": "a",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1", "in"]
+                }
+            ]
+        },
+        {
+            "id": "ground",
+            "label": "Ground",
+            "group": "Nets",
+            "prefix": "",
+            "role": "ground",
+            "aliases": ["gnd", "earth"],
+            "hint": "",
+            "width": 40,
+            "height": 40,
+            "inset": 6,
+            "labels": "right",
+            "path": "M20,0 V16 M6,16 H34 M11,23 H29 M16,30 H24",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 20,
+                    "y": 0,
+                    "side": "top"
+                }
+            ]
+        },
+        {
+            "id": "power",
+            "label": "Power rail",
+            "group": "Nets",
+            "prefix": "",
+            "role": "power",
+            "aliases": ["vcc", "rail"],
+            "hint": "VCC",
+            "width": 40,
+            "height": 20,
+            "inset": 0,
+            "labels": "top",
+            "path": "M20,20 V2 M8,2 H32",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 20,
+                    "y": 20,
+                    "side": "bottom"
+                }
+            ]
+        },
+        {
+            "id": "terminal",
+            "label": "Terminal",
+            "group": "Nets",
+            "prefix": "",
+            "role": "terminal",
+            "aliases": ["port", "testpoint"],
+            "hint": "OUT",
+            "width": 40,
+            "height": 20,
+            "inset": 15,
+            "labels": "left",
+            "path": "M40,10 H27 M27,10 a5,5 0 1,0 -10,0 a5,5 0 1,0 10,0",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 40,
+                    "y": 10,
+                    "side": "right"
+                }
+            ]
+        },
+        {
+            "id": "label",
+            "label": "Net label",
+            "group": "Nets",
+            "prefix": "",
+            "role": "label",
+            "aliases": ["net", "netlabel", "tag"],
+            "hint": "NET",
+            "width": 20,
+            "height": 20,
+            "inset": 0,
+            "labels": "left",
+            "path": "M20,10 H14 L9,5 H1 V15 H9 L14,10",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 20,
+                    "y": 10,
+                    "side": "right"
+                }
+            ]
+        },
+        {
+            "id": "junction",
+            "label": "Junction",
+            "group": "Nets",
+            "prefix": "",
+            "role": "junction",
+            "aliases": ["node", "dot"],
+            "hint": "",
+            "width": 12,
+            "height": 12,
+            "inset": 0,
+            "labels": "none",
+            "path": "",
+            "fill": "M10,6 a4,4 0 1,0 -8,0 a4,4 0 1,0 8,0",
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 6,
+                    "y": 6,
+                    "side": null
+                }
+            ]
+        }
+    ],
+    "modules": [
+        {
+            "id": "esp32",
+            "label": "ESP32 DevKit",
+            "prefix": "U",
+            "aliases": ["esp32_devkit", "esp-32"],
+            "hint": "ESP32",
+            "left": [
+                "EN",
+                "GPIO36",
+                "GPIO39",
+                "GPIO34",
+                "GPIO35",
+                "GPIO32",
+                "GPIO33",
+                "GPIO25",
+                "GPIO26",
+                "GPIO27",
+                "GPIO14",
+                "GPIO12",
+                "GPIO13",
+                "GND",
+                "VIN"
+            ],
+            "right": [
+                "GPIO23",
+                "GPIO22",
+                "TX0",
+                "RX0",
+                "GPIO21",
+                "GPIO19",
+                "GPIO18",
+                "GPIO5",
+                "GPIO17",
+                "GPIO16",
+                "GPIO4",
+                "GPIO2",
+                "GPIO15",
+                "GND2",
+                "3V3"
+            ]
+        },
+        {
+            "id": "esp8266",
+            "label": "ESP8266 NodeMCU",
+            "prefix": "U",
+            "aliases": ["nodemcu", "esp-8266"],
+            "hint": "NodeMCU",
+            "left": ["A0", "D0", "D1", "D2", "D3", "D4", "3V3", "GND"],
+            "right": ["D5", "D6", "D7", "D8", "RX", "TX", "VIN", "GND2"]
+        },
+        {
+            "id": "arduino_uno",
+            "label": "Arduino Uno",
+            "prefix": "U",
+            "aliases": ["arduino", "uno"],
+            "hint": "Arduino Uno",
+            "left": [
+                "RESET",
+                "3V3",
+                "5V",
+                "GND",
+                "VIN",
+                "A0",
+                "A1",
+                "A2",
+                "A3",
+                "A4",
+                "A5"
+            ],
+            "right": [
+                "D13",
+                "D12",
+                "D11",
+                "D10",
+                "D9",
+                "D8",
+                "D7",
+                "D6",
+                "D5",
+                "D4",
+                "D3",
+                "D2",
+                "D1",
+                "D0"
+            ]
+        },
+        {
+            "id": "arduino_nano",
+            "label": "Arduino Nano",
+            "prefix": "U",
+            "aliases": ["nano"],
+            "hint": "Arduino Nano",
+            "left": [
+                "3V3",
+                "5V",
+                "GND",
+                "VIN",
+                "RESET",
+                "A0",
+                "A1",
+                "A2",
+                "A3",
+                "A4",
+                "A5",
+                "A6",
+                "A7"
+            ],
+            "right": [
+                "D13",
+                "D12",
+                "D11",
+                "D10",
+                "D9",
+                "D8",
+                "D7",
+                "D6",
+                "D5",
+                "D4",
+                "D3",
+                "D2",
+                "RX",
+                "TX"
+            ]
+        },
+        {
+            "id": "pico",
+            "label": "Raspberry Pi Pico",
+            "prefix": "U",
+            "aliases": ["rp2040", "pi_pico"],
+            "hint": "Pi Pico",
+            "left": [
+                "GP0",
+                "GP1",
+                "GP2",
+                "GP3",
+                "GP4",
+                "GP5",
+                "GP6",
+                "GP7",
+                "GP8",
+                "GP9",
+                "GP10",
+                "GP11",
+                "GP12",
+                "GP13",
+                "GP14",
+                "GP15"
+            ],
+            "right": [
+                "VBUS",
+                "VSYS",
+                "GND",
+                "3V3",
+                "GP28",
+                "GP27",
+                "GP26",
+                "RUN",
+                "GP22",
+                "GP21",
+                "GP20",
+                "GP19",
+                "GP18",
+                "GP17",
+                "GP16"
+            ]
+        },
+        {
+            "id": "dht22",
+            "label": "DHT22 temperature / humidity",
+            "prefix": "S",
+            "aliases": ["dht11", "dht"],
+            "hint": "DHT22",
+            "left": ["VCC", "DATA", "GND"],
+            "right": []
+        },
+        {
+            "id": "ds18b20",
+            "label": "DS18B20 temperature",
+            "prefix": "S",
+            "aliases": [],
+            "hint": "DS18B20",
+            "left": ["VDD", "DQ", "GND"],
+            "right": []
+        },
+        {
+            "id": "bme280",
+            "label": "BME280 (I2C)",
+            "prefix": "S",
+            "aliases": ["bmp280", "bme680"],
+            "hint": "BME280",
+            "left": ["VCC", "GND", "SCL", "SDA"],
+            "right": []
+        },
+        {
+            "id": "hcsr04",
+            "label": "HC-SR04 ultrasonic",
+            "prefix": "S",
+            "aliases": ["ultrasonic", "hc-sr04"],
+            "hint": "HC-SR04",
+            "left": ["VCC", "TRIG", "ECHO", "GND"],
+            "right": []
+        },
+        {
+            "id": "pir",
+            "label": "PIR motion sensor",
+            "prefix": "S",
+            "aliases": ["hc-sr501", "motion"],
+            "hint": "PIR",
+            "left": ["VCC", "OUT", "GND"],
+            "right": []
+        },
+        {
+            "id": "oled",
+            "label": "OLED display (I2C)",
+            "prefix": "DS",
+            "aliases": ["ssd1306", "display"],
+            "hint": "SSD1306",
+            "left": ["GND", "VCC", "SCL", "SDA"],
+            "right": []
+        },
+        {
+            "id": "relay_module",
+            "label": "Relay module",
+            "prefix": "K",
+            "aliases": ["relayboard"],
+            "hint": "Relay",
+            "left": ["VCC", "GND", "IN"],
+            "right": ["COM", "NO", "NC"]
+        },
+        {
+            "id": "servo",
+            "label": "Servo",
+            "prefix": "M",
+            "aliases": ["sg90"],
+            "hint": "SG90",
+            "left": ["GND", "VCC", "SIG"],
+            "right": []
+        },
+        {
+            "id": "gps",
+            "label": "GPS module",
+            "prefix": "U",
+            "aliases": ["neo6m", "neo-6m"],
+            "hint": "NEO-6M",
+            "left": ["VCC", "RX", "TX", "GND"],
+            "right": []
+        },
+        {
+            "id": "chip",
+            "label": "Chip, your own pins",
+            "prefix": "U",
+            "aliases": ["ic", "module", "dip8"],
+            "hint": "IC",
+            "left": ["1", "2", "3", "4"],
+            "right": ["8", "7", "6", "5"]
+        },
+        {
+            "id": "dff",
+            "label": "D flip-flop",
+            "group": "Logic",
+            "logic": "dff",
+            "prefix": "FF",
+            "aliases": ["flipflop", "flip-flop", "d_flip_flop"],
+            "hint": "",
+            "left": ["D", "CLK"],
+            "right": ["Q", "QN"]
+        }
+    ]
+}

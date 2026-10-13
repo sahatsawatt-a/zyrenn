@@ -19,6 +19,8 @@ const props = defineProps<{
     image?: HTMLImageElement;
     video?: HTMLVideoElement;
     playing?: boolean;
+    // In a logic circuit: whether this wire, input or lamp is high just now
+    level?: 0 | 1 | null;
     pathOf: (item: Item) => number[];
     snap: (item: Item) => (position: { x: number; y: number }) => {
         x: number;
@@ -54,6 +56,7 @@ const config = computed(() => ({
             :image="image"
             :video="video"
             :playing="playing"
+            :level="level"
             :path="path"
         />
     </Group>

@@ -154,7 +154,26 @@ await runBoard('/demo/konva', async (b) => {
     const drawn = await painted();
     await page.mouse.move(handle.x, handle.y);
     await page.mouse.down();
-    await page.mouse.move(handle.x + 90, handle.y, { steps: 10 });
+
+    // The edge stays under the pointer the whole way: measured from a stale
+    // box, it ran ahead and fell back by turns, like a shaking hand
+    let adrift = 0;
+
+    for (let step = 1; step <= 10; step++) {
+        await page.mouse.move(handle.x + step * 9, handle.y);
+        await page.evaluate(
+            () => new Promise((resolve) => requestAnimationFrame(resolve)),
+        );
+        const now = await fields();
+        const edge = await screenOf(now.x + now.w, now.y);
+        adrift = Math.max(adrift, Math.abs(edge.x - (handle.x + step * 9)));
+    }
+
+    check(
+        'the edge follows the pointer steadily as it is resized',
+        adrift <= 2,
+        `${adrift.toFixed(1)}px adrift at worst`,
+    );
     await page.mouse.up();
     await page.waitForTimeout(400);
     const after = await fields();

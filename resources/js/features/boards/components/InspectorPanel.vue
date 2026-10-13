@@ -10,16 +10,32 @@ import {
     ChevronDown,
     ChevronUp,
     Copy,
+    Minus,
     PanelRightClose,
+    Plus,
+    RotateCw,
     SendToBack,
     SlidersHorizontal,
     Trash2,
 } from '@lucide/vue';
+import { useLocalStorage } from '@vueuse/core';
 import type { Component } from 'vue';
 import { computed, ref } from 'vue';
+import {
+    chipFrom,
+    isSymbol,
+    pinList,
+    symbolOf,
+    withWords,
+    wordsOf,
+} from '@/features/boards/circuit/symbols';
 import { HEAD_TYPES } from '@/features/boards/composables/connectors';
 import { SIDES } from '@/features/boards/composables/geometry';
-import { FONT_FAMILIES, hasText } from '@/features/boards/composables/items';
+import {
+    FONT_FAMILIES,
+    hasOutline,
+    hasText,
+} from '@/features/boards/composables/items';
 import type {
     Align,
     Fit,
@@ -31,6 +47,12 @@ import type {
     VerticalAlign,
 } from '@/features/boards/composables/items';
 import PhotoEditor from '@/components/photo/PhotoEditor.vue';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
+import { Switch } from '@/components/ui/switch';
 import ColourPicker from './ColourPicker.vue';
 import ConnectorSettings from './ConnectorSettings.vue';
 
@@ -56,6 +78,7 @@ const emit = defineEmits<{
     remove: [];
     reorder: ['front' | 'back' | 'forward' | 'backward'];
     update: [Partial<Item>];
+    turn: [];
     close: [];
 }>();
 
@@ -86,11 +109,15 @@ const fits: { value: Fit; label: string; title: string }[] = [
     { value: 'cover', label: 'Fill', title: 'Covering the box, edges cut off' },
 ];
 
-const families: { value: FontFamily; label: string; title: string }[] = [
-    { value: 'sans', label: 'Sans', title: 'Arial' },
-    { value: 'serif', label: 'Serif', title: 'Times New Roman' },
-    { value: 'mono', label: 'Mono', title: 'Courier New' },
+const families: { value: FontFamily; label: string }[] = [
+    { value: 'sans', label: 'Sans' },
+    { value: 'serif', label: 'Serif' },
+    { value: 'mono', label: 'Mono' },
 ];
+
+// Where it is and how big, in numbers: seldom wanted, so folded away, and
+// left however the person last had it
+const geometryOpen = useLocalStorage('board.geometry', false);
 
 /** A number typed for every selected label, held to what makes sense. */
 const onLabelNumber = (
@@ -106,7 +133,67 @@ const onLabelNumber = (
     }
 };
 
-const labelled = computed(() => props.selection.filter(hasText));
+// A symbol's words are set beside it, the one way; they have a place of
+// their own below
+const labelled = computed(() =>
+    props.selection.filter((item) => hasText(item) && !isSymbol(item)),
+);
+
+// ------------------------------------------------------------------ Symbols
+const symbols = computed(() => props.selection.filter(isSymbol));
+
+// Nothing here but lines: no fill to choose
+const lineOnly = computed(() =>
+    props.selection.every((item) => isSymbol(item) || item.kind === 'arrow'),
+);
+
+// The first shape with an edge of its own, for how heavy that edge is
+const outlined = computed(() => props.selection.find(hasOutline) ?? null);
+
+// One part chosen on its own, for its name and its value
+const part = computed(() => {
+    const item = props.selection.length === 1 ? symbols.value[0] : undefined;
+    const symbol = item ? symbolOf(item.symbol) : undefined;
+
+    return item && symbol && symbol.labels !== 'none'
+        ? { item, symbol, ...wordsOf(item) }
+        : null;
+});
+
+/**
+ * A module's pins typed anew: it becomes a chip with those pins, the size
+ * they need. A wire on a pin that is still there stays on it.
+ */
+const onPins = (event: Event) => {
+    const symbol = symbolOf(chipFrom((event.target as HTMLInputElement).value));
+
+    if (symbol && symbol.pins.length) {
+        emit('update', {
+            symbol: symbol.id,
+            width: symbol.width,
+            height: symbol.height,
+        });
+    }
+};
+
+const onWord = (field: 'name' | 'value', event: Event) => {
+    const chosen = part.value;
+
+    if (!chosen) {
+        return;
+    }
+
+    const typed = (event.target as HTMLInputElement).value;
+
+    emit('update', {
+        text: chosen.symbol.prefix
+            ? withWords(
+                  field === 'name' ? typed : chosen.name,
+                  field === 'value' ? typed : chosen.value,
+              )
+            : typed.trim(),
+    });
+};
 const label = computed(() => labelled.value[0] ?? null);
 
 const aligns: { value: Align; icon: Component; title: string }[] = [
@@ -179,12 +266,28 @@ const summary = computed(() => {
         return 'Nothing selected';
     }
 
-    return props.selection.length === 1
-        ? props.selection[0].kind
-        : `${props.selection.length} items`;
+    if (props.selection.length > 1) {
+        return `${props.selection.length} items`;
+    }
+
+    const [item] = props.selection;
+
+    return (isSymbol(item) && symbolOf(item.symbol)?.label) || item.kind;
 });
 
 const round = (value: number) => Math.round(value);
+
+/** The label's size, a step up or down. */
+const stepFontSize = (by: number) => {
+    if (label.value) {
+        emit('update', {
+            fontSize: Math.min(
+                400,
+                Math.max(6, round(label.value.fontSize) + by),
+            ),
+        });
+    }
+};
 
 const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     const value = Number((event.target as HTMLInputElement).value);
@@ -255,6 +358,15 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                     <SendToBack class="size-4" />
                 </button>
                 <button
+                    v-if="symbols.length"
+                    type="button"
+                    title="Turn a quarter turn (R)"
+                    data-test="symbol-turn"
+                    @click="emit('turn')"
+                >
+                    <RotateCw class="size-4" />
+                </button>
+                <button
                     type="button"
                     title="Duplicate (Ctrl+D)"
                     @click="emit('duplicate')"
@@ -271,56 +383,136 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                 </button>
             </div>
 
-            <ColourPicker
-                v-if="!line"
-                :model-value="fill"
-                label="Fill"
-                @update:model-value="emit('paint', $event)"
-            />
-            <ColourPicker
-                :model-value="stroke"
-                label="Line"
-                data-test="stroke-picker"
-                @update:model-value="emit('paint-stroke', $event)"
-            />
-
-            <p v-if="one" class="inspector-label">Position and size</p>
-            <div v-if="one" class="inspector-grid">
-                <label>
-                    X
+            <!-- A part's name and its value, the two things said of it -->
+            <div v-if="part" class="inspector-part" data-test="symbol-config">
+                <label v-if="part.symbol.prefix">
+                    Name
                     <input
-                        type="number"
-                        :value="round(one.x)"
-                        data-test="prop-x"
-                        @change="onNumber('x', $event)"
+                        type="text"
+                        :value="part.name"
+                        :placeholder="`${part.symbol.prefix}1`"
+                        data-test="symbol-name"
+                        @change="onWord('name', $event)"
                     />
                 </label>
                 <label>
-                    Y
+                    {{ part.symbol.prefix ? 'Value' : 'Name' }}
                     <input
-                        type="number"
-                        :value="round(one.y)"
-                        @change="onNumber('y', $event)"
+                        type="text"
+                        :value="part.symbol.prefix ? part.value : part.name"
+                        :placeholder="part.symbol.hint"
+                        data-test="symbol-value"
+                        @change="onWord('value', $event)"
                     />
                 </label>
-                <label>
-                    W
-                    <input
-                        type="number"
-                        :value="round(one.width)"
-                        data-test="prop-width"
-                        @change="onNumber('width', $event)"
+                <label
+                    v-if="
+                        part.symbol.logic === 'input' ||
+                        part.symbol.logic === 'clock'
+                    "
+                    class="inspector-switch"
+                    title="Click it on the board to flip it. A switch that is on feeds the circuit a 1; a clock that is on ticks."
+                >
+                    On
+                    <Switch
+                        :model-value="part.item.on"
+                        data-test="symbol-on"
+                        @update:model-value="emit('update', { on: $event })"
                     />
                 </label>
-                <label>
-                    H
+                <label
+                    v-if="part.symbol.module"
+                    title="The pins down its left, then after a | those down its right"
+                >
+                    Pins
                     <input
-                        type="number"
-                        :value="round(one.height)"
-                        @change="onNumber('height', $event)"
+                        type="text"
+                        :value="pinList(part.symbol)"
+                        placeholder="VCC, GND | OUT"
+                        data-test="symbol-pins"
+                        @change="onPins"
                     />
                 </label>
             </div>
+
+            <!-- Its colours: a chip each, opened for the swatches and for
+                 any other colour, rather than both palettes always out -->
+            <div class="inspector-colours">
+                <Popover v-if="!lineOnly">
+                    <PopoverTrigger as-child>
+                        <button
+                            type="button"
+                            title="Fill colour"
+                            data-test="fill-chip"
+                        >
+                            <span
+                                class="inspector-chip"
+                                :class="{ 'is-none': fill === 'transparent' }"
+                                :style="
+                                    fill === 'transparent'
+                                        ? {}
+                                        : { backgroundColor: fill }
+                                "
+                            />
+                            Fill
+                        </button>
+                    </PopoverTrigger>
+                    <PopoverContent side="left" align="start" class="w-64 p-3">
+                        <ColourPicker
+                            :model-value="fill"
+                            label="Fill"
+                            @update:model-value="emit('paint', $event)"
+                        />
+                    </PopoverContent>
+                </Popover>
+                <Popover>
+                    <PopoverTrigger as-child>
+                        <button
+                            type="button"
+                            title="Line colour"
+                            data-test="stroke-chip"
+                        >
+                            <span
+                                class="inspector-chip is-line"
+                                :class="{ 'is-none': stroke === 'transparent' }"
+                                :style="
+                                    stroke === 'transparent'
+                                        ? {}
+                                        : { borderColor: stroke }
+                                "
+                            />
+                            Line
+                        </button>
+                    </PopoverTrigger>
+                    <PopoverContent side="left" align="start" class="w-64 p-3">
+                        <ColourPicker
+                            :model-value="stroke"
+                            label="Line"
+                            data-test="stroke-picker"
+                            @update:model-value="emit('paint-stroke', $event)"
+                        />
+                    </PopoverContent>
+                </Popover>
+            </div>
+            <!-- A shape's edge: none at 0. A connector has its own below -->
+            <label v-if="outlined && !line" class="inspector-slider">
+                Line width
+                <input
+                    type="range"
+                    min="0"
+                    max="12"
+                    :value="outlined.lineWidth"
+                    data-test="outline-width"
+                    @input="
+                        emit('update', {
+                            lineWidth: Number(
+                                ($event.target as HTMLInputElement).value,
+                            ),
+                        })
+                    "
+                />
+                <span>{{ outlined.lineWidth }}</span>
+            </label>
 
             <!-- Where the label sits in whatever it is written on -->
             <div v-if="label" class="inspector-align" data-test="align-config">
@@ -353,80 +545,97 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                     </button>
                 </div>
 
-                <!-- Its type: size, face, room round it, and light Markdown -->
-                <div class="inspector-segments" data-test="font-config">
-                    <button
-                        v-for="option in families"
-                        :key="option.value"
-                        type="button"
-                        :title="option.title"
-                        :class="{ 'is-on': label.fontFamily === option.value }"
-                        :style="{ fontFamily: FONT_FAMILIES[option.value] }"
-                        :data-test="`font-${option.value}`"
-                        @click="emit('update', { fontFamily: option.value })"
+                <!-- Its type: face and size, room round it, light Markdown -->
+                <div class="inspector-row" data-test="font-config">
+                    <select
+                        class="inspector-select"
+                        aria-label="Font"
+                        :value="label.fontFamily"
+                        :style="{ fontFamily: FONT_FAMILIES[label.fontFamily] }"
+                        data-test="prop-font"
+                        @change="
+                            emit('update', {
+                                fontFamily: ($event.target as HTMLSelectElement)
+                                    .value as FontFamily,
+                            })
+                        "
                     >
-                        {{ option.label }}
-                    </button>
-                </div>
-                <div class="inspector-grid">
-                    <label>
-                        Size
+                        <option
+                            v-for="option in families"
+                            :key="option.value"
+                            :value="option.value"
+                            :style="{ fontFamily: FONT_FAMILIES[option.value] }"
+                        >
+                            {{ option.label }}
+                        </option>
+                    </select>
+                    <div class="inspector-stepper" title="Text size">
+                        <button
+                            type="button"
+                            title="Smaller"
+                            data-test="font-smaller"
+                            @click="stepFontSize(-2)"
+                        >
+                            <Minus class="size-3.5" />
+                        </button>
                         <input
                             type="number"
                             min="6"
                             max="400"
+                            aria-label="Text size"
                             :value="round(label.fontSize)"
                             data-test="prop-font-size"
                             @change="onLabelNumber('fontSize', 6, 400, $event)"
                         />
-                    </label>
-                    <label title="Room between the edge and the words">
-                        Pad
-                        <input
-                            type="number"
-                            min="0"
-                            max="200"
-                            :value="round(label.padding)"
-                            data-test="prop-padding"
-                            @change="onLabelNumber('padding', 0, 200, $event)"
-                        />
-                    </label>
+                        <button
+                            type="button"
+                            title="Larger"
+                            data-test="font-larger"
+                            @click="stepFontSize(2)"
+                        >
+                            <Plus class="size-3.5" />
+                        </button>
+                    </div>
                 </div>
                 <label
-                    class="inspector-check"
+                    class="inspector-slider"
+                    title="Room between the edge and the words"
+                >
+                    Padding
+                    <input
+                        type="range"
+                        min="0"
+                        :max="Math.max(64, round(label.padding))"
+                        :value="round(label.padding)"
+                        data-test="prop-padding"
+                        @input="onLabelNumber('padding', 0, 200, $event)"
+                    />
+                    <span>{{ round(label.padding) }}</span>
+                </label>
+                <label
+                    class="inspector-switch"
                     title="# heading, - bullet, **bold**, *italic*"
                 >
-                    <input
-                        type="checkbox"
-                        :checked="label.rich"
+                    Markdown
+                    <Switch
+                        :model-value="label.rich"
                         data-test="prop-rich"
-                        @change="
-                            emit('update', {
-                                rich: ($event.target as HTMLInputElement)
-                                    .checked,
-                            })
-                        "
+                        @update:model-value="emit('update', { rich: $event })"
                     />
-                    Markdown: # heading, - bullet, **bold**
                 </label>
             </div>
 
             <!-- Whether the frame is a page of the PDF -->
             <div v-if="frames.length" class="inspector-align">
-                <p class="inspector-label">PDF</p>
-                <label class="inspector-check">
-                    <input
-                        type="checkbox"
-                        :checked="frames.every((frame) => frame.pdfHidden)"
+                <label class="inspector-switch">
+                    Hide in PDF
+                    <Switch
+                        :model-value="frames.every((frame) => frame.pdfHidden)"
                         data-test="prop-pdf-hidden"
-                        @change="
-                            emit('update', {
-                                pdfHidden: ($event.target as HTMLInputElement)
-                                    .checked,
-                            })
+                        @update:model-value="
+                            emit('update', { pdfHidden: $event })
                         "
                     />
-                    Hide in PDF
                 </label>
             </div>
 
@@ -477,6 +686,62 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                 :line="line"
                 @update="emit('update', $event)"
             />
+
+            <!-- Where it is and how big, to the pixel: there when wanted -->
+            <details
+                v-if="one"
+                class="inspector-fold"
+                :open="geometryOpen"
+                data-test="geometry"
+                @toggle="
+                    geometryOpen = ($event.target as HTMLDetailsElement).open
+                "
+            >
+                <summary>
+                    Position and size
+                    <span
+                        >{{ round(one.width) }} × {{ round(one.height) }}</span
+                    >
+                </summary>
+                <div class="inspector-grid">
+                    <label>
+                        X
+                        <input
+                            type="number"
+                            :value="round(one.x)"
+                            data-test="prop-x"
+                            @change="onNumber('x', $event)"
+                        />
+                    </label>
+                    <label>
+                        Y
+                        <input
+                            type="number"
+                            :value="round(one.y)"
+                            data-test="prop-y"
+                            @change="onNumber('y', $event)"
+                        />
+                    </label>
+                    <label>
+                        W
+                        <input
+                            type="number"
+                            :value="round(one.width)"
+                            data-test="prop-width"
+                            @change="onNumber('width', $event)"
+                        />
+                    </label>
+                    <label>
+                        H
+                        <input
+                            type="number"
+                            :value="round(one.height)"
+                            data-test="prop-height"
+                            @change="onNumber('height', $event)"
+                        />
+                    </label>
+                </div>
+            </details>
         </div>
 
         <p v-else class="inspector-hint">
@@ -589,6 +854,31 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     border-radius: var(--radius-sm);
 }
 
+/* A part's name and value: a short word, then the room to type in */
+.inspector-part {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+.inspector-part label:not(.inspector-switch) {
+    display: grid;
+    grid-template-columns: 3rem minmax(0, 1fr);
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.6875rem;
+    color: var(--muted-foreground);
+}
+.inspector-part input {
+    min-width: 0;
+    height: 1.75rem;
+    padding: 0 0.375rem;
+    font-size: 0.75rem;
+    color: var(--foreground);
+    background-color: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
 .inspector-align {
     display: flex;
     flex-direction: column;
@@ -602,6 +892,118 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     font-size: 0.6875rem;
     color: var(--muted-foreground);
     cursor: pointer;
+}
+
+/* Something on or off: its name, and a switch at the far end */
+.inspector-switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: 1.75rem;
+    font-size: 0.75rem;
+    color: var(--foreground);
+    cursor: pointer;
+}
+
+/* Fill and line, side by side: each a chip of its colour and its name */
+.inspector-colours {
+    display: flex;
+    gap: 0.375rem;
+}
+.inspector-colours button {
+    display: inline-flex;
+    flex: 1;
+    align-items: center;
+    gap: 0.5rem;
+    height: 2rem;
+    padding: 0 0.5rem;
+    font-size: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+.inspector-colours button:hover,
+.inspector-colours button[data-state='open'] {
+    background-color: var(--muted);
+}
+.inspector-chip {
+    width: 1.125rem;
+    height: 1.125rem;
+    flex-shrink: 0;
+    border: 1px solid rgb(0 0 0 / 0.2);
+    border-radius: 999px;
+}
+/* A line's colour is a ring, as a line is */
+.inspector-chip.is-line {
+    background-color: transparent;
+    border-width: 3px;
+}
+.inspector-chip.is-none {
+    border: 1px solid var(--border);
+    background: linear-gradient(
+        to top left,
+        transparent calc(50% - 1px),
+        #ef4444 calc(50% - 1px),
+        #ef4444 calc(50% + 1px),
+        transparent calc(50% + 1px)
+    );
+}
+
+.inspector-row {
+    display: flex;
+    gap: 0.375rem;
+}
+.inspector-select {
+    flex: 1;
+    min-width: 0;
+    height: 1.75rem;
+    padding: 0 0.375rem;
+    font-size: 0.75rem;
+    color: var(--foreground);
+    background-color: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+/* A number with a step either side of it */
+.inspector-stepper {
+    display: flex;
+    align-items: stretch;
+    height: 1.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+.inspector-stepper button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.625rem;
+    color: var(--muted-foreground);
+    cursor: pointer;
+}
+.inspector-stepper button:hover {
+    color: var(--foreground);
+    background-color: var(--muted);
+}
+.inspector-stepper input {
+    width: 2.5rem;
+    padding: 0;
+    font-size: 0.75rem;
+    text-align: center;
+    color: var(--foreground);
+    background-color: var(--background);
+    border: 0;
+    border-inline: 1px solid var(--border);
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+.inspector-stepper input::-webkit-outer-spin-button,
+.inspector-stepper input::-webkit-inner-spin-button {
+    appearance: none;
+    margin: 0;
 }
 
 .inspector-connector {
@@ -769,6 +1171,9 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
 .inspector-slider input {
     flex: 1;
     min-width: 0;
+}
+.inspector-slider input {
+    accent-color: var(--primary);
 }
 .inspector-slider span {
     width: 1.25rem;

@@ -18,6 +18,26 @@ Type **/** on an empty line and pick from the menu, or keep typing to narrow it.
 | /code     | Code, coloured by its language                       |
 | /equation | A formula written as LaTeX                           |
 | /mermaid  | A diagram drawn from a few lines of text             |
+| /circuit  | A circuit drawn from its parts and wires, as text    |
+
+## Draw a circuit
+
+**/circuit** draws a schematic from a few lines. Write each part on a line of its own, then the wires between them:
+
+```circuit
+V1: 9V
+R1: 330
+D1: led red
+V1 -- R1 -- D1 -- V1
+```
+
+A part is a name and a value. The name says what it is: R1 a resistor, C1 a capacitor, D1 a diode, Q1 a transistor. Say it yourself where the name does not, as in `D1: led red`. A wire joins ends with `--`: a pin (`Q1.b`), a part to run through, or a net's name such as `gnd`, `3V3` or `out`.
+
+Boards and sensors have their pins by name: `U1: esp32`, `S1: dht22`, then `U1.GPIO4 -- S1.DATA`. For a chip of your own, list its pins: `U2: chip 74HC595 [SER, CLK | QA, QB]`.
+
+Logic works the same way: `A: input`, `U1: and`, `Y: output`, then `A -- U1.a` and `U1.y -- Y`.
+
+On a board the same parts are in the shapes menu, under **Electrical**. A logic circuit there is live: click a switch to flip it or a clock to start it, and the wires and lamps show what follows. Draw a connector from one pin to another and it becomes a wire; **Circuit**, at the top of the board, lists the parts and what is left unconnected.
 
 ## Show other things in a note
 

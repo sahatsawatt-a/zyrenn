@@ -1,8 +1,20 @@
 // A connector: which faces it leaves by, the path it takes between them, and
 // the caps drawn on each end.
+import {
+    GRID,
+    isSymbol,
+    nearestPin,
+    pinOf,
+} from '@/features/boards/circuit/symbols';
 import type { Endpoint, HeadType, Item, LineStyle, Side } from './items';
 import { isConnector } from './items';
-import { anchorAt, boundsOf, isFlatSide, nearestSide } from './geometry';
+import {
+    anchorAt,
+    boundsOf,
+    isFlatSide,
+    nearestSide,
+    sideTowards,
+} from './geometry';
 
 /** What either end of a connector can be capped with, for the inspector. */
 export const HEAD_TYPES: { value: HeadType; label: string }[] = [
@@ -117,6 +129,28 @@ const anchorFor = (
     return anchorAt(host, side, (place + 1) / (sharing.length + 1));
 };
 
+/**
+ * The pin an end is on, when what it hangs off is a symbol: the one it
+ * names, or failing that the one nearest the far end of the line.
+ */
+export const pinFor = (
+    end: Endpoint | null,
+    host: Item | null,
+    facing: { x: number; y: number },
+) =>
+    host && isSymbol(host)
+        ? ((end?.pin ? pinOf(host, end.pin) : undefined) ??
+          nearestPin(host, facing))
+        : undefined;
+
+/** A wire: a connector with an end on a pin. It is drawn as one, too. */
+export const isWire = (item: Item, byId: Map<string, Item>): boolean =>
+    [item.from, item.to].some((end) => {
+        const host = end?.item ? byId.get(end.item) : undefined;
+
+        return !!host && isSymbol(host);
+    });
+
 const STUB = 24;
 
 const stubbed = (
@@ -136,6 +170,51 @@ const stubbed = (
         default:
             return point;
     }
+};
+
+const upright = (side: Side | null) => side === 'top' || side === 'bottom';
+
+/** Whether going from a point by this side heads towards `to`. */
+const ahead = (
+    from: { x: number; y: number },
+    side: Side,
+    to: { x: number; y: number },
+) => {
+    switch (side) {
+        case 'top':
+            return to.y < from.y;
+        case 'bottom':
+            return to.y > from.y;
+        case 'left':
+            return to.x < from.x;
+        default:
+            return to.x > from.x;
+    }
+};
+
+/**
+ * The one corner a line needs when its ends leave at right angles to each
+ * other and the corner lies ahead of both: out of the first, round it, and
+ * into the second. Nothing when the ends face the same way, or the corner
+ * would be behind one of them -- the elbow's two turns are needed then.
+ */
+const cornerBetween = (
+    start: { x: number; y: number },
+    fromSide: Side | null,
+    end: { x: number; y: number },
+    toSide: Side | null,
+) => {
+    if (!fromSide || !toSide || upright(fromSide) === upright(toSide)) {
+        return null;
+    }
+
+    const corner = upright(fromSide)
+        ? { x: start.x, y: end.y }
+        : { x: end.x, y: start.y };
+
+    return ahead(start, fromSide, corner) && ahead(end, toSide, corner)
+        ? corner
+        : null;
 };
 
 /**
@@ -204,34 +283,61 @@ export const connectorPoints = (
     const fromHost = item.from.item ? (byId.get(item.from.item) ?? null) : null;
     const toHost = item.to.item ? (byId.get(item.to.item) ?? null) : null;
 
+    const fromFacing = toHost
+        ? centreOf(toHost)
+        : { x: item.to.x, y: item.to.y };
+    const toFacing = fromHost
+        ? centreOf(fromHost)
+        : { x: item.from.x, y: item.from.y };
+
+    // An end on a symbol is on one of its pins, and leaves the way the pin
+    // points; a junction's pin points nowhere, and is left towards the far end
+    const fromPin = pinFor(item.from, fromHost, fromFacing);
+    const toPin = pinFor(item.to, toHost, toFacing);
+
     // An end with no side of its own turns to face wherever the other end is
     // now, rather than where it was when the line was drawn: drag a shape to
     // the far side and the line comes out of its other face, as it does in
     // every diagram tool. An end somebody put on a particular face stays on it.
-    const fromSide = sideOf(
-        item.from,
-        fromHost,
-        toHost ? centreOf(toHost) : { x: item.to.x, y: item.to.y },
-    );
-    const toSide = sideOf(
-        item.to,
-        toHost,
-        fromHost ? centreOf(fromHost) : { x: item.from.x, y: item.from.y },
-    );
+    const fromSide = fromPin
+        ? (item.from.side ??
+          fromPin.side ??
+          sideTowards(fromPin, toPin ?? fromFacing))
+        : sideOf(item.from, fromHost, fromFacing);
+    const toSide = toPin
+        ? (item.to.side ??
+          toPin.side ??
+          sideTowards(toPin, fromPin ?? toFacing))
+        : sideOf(item.to, toHost, toFacing);
 
     // The point and the side have to come from the same answer, or the line
     // leaves one face while turning as though it left another
-    const start =
-        fromHost && fromSide
-            ? anchorFor(item, 'from', fromHost, fromSide, byId, attached)
-            : { x: item.from.x, y: item.from.y };
-    const end =
-        toHost && toSide
-            ? anchorFor(item, 'to', toHost, toSide, byId, attached)
-            : { x: item.to.x, y: item.to.y };
+    const start = fromPin
+        ? { x: fromPin.x, y: fromPin.y }
+        : fromHost && fromSide
+          ? anchorFor(item, 'from', fromHost, fromSide, byId, attached)
+          : { x: item.from.x, y: item.from.y };
+    const end = toPin
+        ? { x: toPin.x, y: toPin.y }
+        : toHost && toSide
+          ? anchorFor(item, 'to', toHost, toSide, byId, attached)
+          : { x: item.to.x, y: item.to.y };
 
     if (item.routing === 'straight' || (!fromSide && !toSide)) {
         return [start.x, start.y, end.x, end.y];
+    }
+
+    // A wire keeps to the grid its pins are on, and turns a corner once
+    // where once will do: out of a pin, round, and straight into the other
+    const wire = !!fromPin || !!toPin;
+    const stub = wire ? GRID : STUB;
+
+    if (wire && item.routing === 'elbow') {
+        const corner = cornerBetween(start, fromSide, end, toSide);
+
+        if (corner) {
+            return [start, corner, end].flatMap((point) => [point.x, point.y]);
+        }
     }
 
     // Curved: one cubic sweep -- start, two handles, end -- leaving and
@@ -253,8 +359,8 @@ export const connectorPoints = (
         ].flatMap((point) => [point.x, point.y]);
     }
 
-    const out = stubbed(start, fromSide);
-    const back = stubbed(end, toSide);
+    const out = stubbed(start, fromSide, stub);
+    const back = stubbed(end, toSide, stub);
 
     // Turn in the axis the first stub is already travelling along
     const midpoint =

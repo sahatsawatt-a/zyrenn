@@ -157,7 +157,7 @@ class UpdateBoard extends BoardTool
 
             $current = array_values(array_filter($board->content['items'] ?? [], 'is_array'));
             $specs = BoardItems::withIds($this->specs($validated), array_column($current, 'id'));
-            $problem = $this->itemProblem($specs);
+            $problem = $this->itemProblem($specs, $current);
 
             if ($problem !== null) {
                 return Response::error($problem);

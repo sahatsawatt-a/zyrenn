@@ -11,6 +11,7 @@ import { boundsOf, boundsOfAll } from '@/features/boards/composables/geometry';
 import type { Item } from '@/features/boards/composables/items';
 import { hydrate, isConnector } from '@/features/boards/composables/items';
 import { groupKeys } from '@/features/boards/composables/layers';
+import { provideBoardTheme } from '@/features/boards/composables/useBoardTheme';
 import { useImageCache } from '@/features/boards/composables/useImageCache';
 import { useVideos } from '@/features/boards/composables/useVideos';
 import BoardFormulae from './BoardFormulae.vue';
@@ -31,9 +32,13 @@ const props = withDefaults(
         padding?: number;
         /** The frame alone, edge to edge, with no room for its title: a slide. */
         bare?: boolean;
+        /** Light whatever the page is: a picture or a PDF is on paper. */
+        plain?: boolean;
     }>(),
-    { frame: null, padding: 16, bare: false },
+    { frame: null, padding: 16, bare: false, plain: false },
 );
+
+provideBoardTheme(() => drawn.value, { plain: props.plain });
 
 const wrapper = useTemplateRef<HTMLDivElement>('wrapper');
 const { width, height } = useElementSize(wrapper);

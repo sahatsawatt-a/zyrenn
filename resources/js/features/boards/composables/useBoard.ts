@@ -1,5 +1,12 @@
 import { computed, ref, shallowRef, watch } from 'vue';
 import type { Ref } from 'vue';
+import {
+    isSymbol,
+    nextDesignator,
+    symbolOf,
+    withWords,
+    wordsOf,
+} from '@/features/boards/circuit/symbols';
 import { STICKY_COLOURS, bumpIdsTo, hydrate, makeItem, newId } from './items';
 import { labelHeight } from './labels';
 import { groupKeys, keepOnFrames } from './layers';
@@ -167,6 +174,20 @@ export function useBoard(initial: Item[] | null = null) {
         }
     };
 
+    /** Puts several things on at once, as one step: a circuit, say. */
+    const place = (placed: Item[]) => {
+        if (!placed.length) {
+            return;
+        }
+
+        commit();
+        items.value.push(...placed);
+        settle();
+        selection.value = placed
+            .filter((item) => item.kind !== 'arrow')
+            .map((item) => item.id);
+    };
+
     const remove = (ids: string[]) => {
         if (!ids.length) {
             return;
@@ -196,9 +217,36 @@ export function useBoard(initial: Item[] | null = null) {
         const copies = selected.value.map((item) => ({
             ...copy(item),
             id: newId(),
-            x: item.x + 32,
-            y: item.y + 32,
+            // 40 keeps a part on the grid its pins are on
+            x: item.x + (isSymbol(item) ? 40 : 32),
+            y: item.y + (isSymbol(item) ? 40 : 32),
         }));
+
+        // A line copied along with what it joins joins the copies
+        const copyOf = new Map(
+            selected.value.map((item, index) => [item.id, copies[index].id]),
+        );
+
+        for (const made of copies) {
+            for (const end of [made.from, made.to]) {
+                if (end?.item && copyOf.has(end.item)) {
+                    end.item = copyOf.get(end.item)!;
+                }
+            }
+
+            // Two parts cannot both be R1: the copy takes the next number
+            const prefix = isSymbol(made) && symbolOf(made.symbol)?.prefix;
+
+            if (prefix) {
+                made.text = withWords(
+                    nextDesignator(
+                        [...items.value, ...copies.filter((c) => c !== made)],
+                        prefix,
+                    ),
+                    wordsOf(made).value,
+                );
+            }
+        }
 
         items.value.push(...copies);
         settle();
@@ -354,8 +402,13 @@ export function useBoard(initial: Item[] | null = null) {
 
         commit();
         selected.value.forEach((item) => {
-            // A stroke has no fill worth changing; colour its line instead
-            if (item.kind === 'arrow' || item.kind === 'draw') {
+            // A stroke has no fill worth changing, nor has a symbol, which is
+            // all line; colour that instead
+            if (
+                item.kind === 'arrow' ||
+                item.kind === 'draw' ||
+                item.kind === 'symbol'
+            ) {
                 item.stroke = colour;
             } else {
                 item.fill = colour;
@@ -471,6 +524,7 @@ export function useBoard(initial: Item[] | null = null) {
         select,
         toggleInSelection,
         add,
+        place,
         remove,
         duplicate,
         reorder,
@@ -493,7 +547,7 @@ export function useBoard(initial: Item[] | null = null) {
             kind: ItemKind,
             x: number,
             y: number,
-            colours?: { fill?: string; stroke?: string },
+            colours?: { fill?: string; stroke?: string; symbol?: string },
         ) => makeItem(kind, x, y, colours),
     };
 }

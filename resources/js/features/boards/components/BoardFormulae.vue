@@ -2,6 +2,7 @@
 import type { Ref } from 'vue';
 import { computed } from 'vue';
 import type { Item } from '@/features/boards/composables/items';
+import { useBoardTheme } from '@/features/boards/composables/useBoardTheme';
 import { useFormulae } from '@/features/boards/composables/useFormulae';
 
 // Formulae, set by KaTeX over a board -- the canvas, or a board drawn
@@ -17,6 +18,8 @@ const props = defineProps<{
     editingId?: string | null;
 }>();
 
+const theme = useBoardTheme();
+
 const { formulae, mathHtml, mathStyle } = useFormulae({
     items: computed(() => props.items),
     camera: props.camera,
@@ -29,7 +32,7 @@ const { formulae, mathHtml, mathStyle } = useFormulae({
         v-for="item in formulae"
         :key="item.id"
         class="math-item"
-        :style="mathStyle(item)"
+        :style="[mathStyle(item), { color: theme.inkOn(item) }]"
         :data-test="`math-${item.id}`"
         v-html="mathHtml(item)"
     />
@@ -41,7 +44,6 @@ const { formulae, mathHtml, mathStyle } = useFormulae({
     position: absolute;
     display: flex;
     overflow: hidden;
-    color: #0f172a;
     pointer-events: none;
 }
 /* KaTeX sets its own size; the wrapper's font-size is what scales it */

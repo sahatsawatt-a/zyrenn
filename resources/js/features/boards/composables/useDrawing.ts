@@ -1,12 +1,26 @@
 import type Konva from 'konva';
 import type { ComputedRef, Ref } from 'vue';
 import { nextTick, ref } from 'vue';
+import {
+    firstWords,
+    isSymbol,
+    snapped,
+    symbolOf,
+} from '@/features/boards/circuit/symbols';
+import { spotOnWire } from '@/features/boards/circuit/wiring';
+import { isWire } from './connectors';
 import { boundsOf, overlaps } from './geometry';
 import type { Guide } from './guides';
 import { alignmentFor } from './guides';
 import { groupKeys } from './layers';
 import type { Endpoint, Item, ItemKind, Tool } from './items';
-import { hasText, isConnectable, isConnector, isStroke } from './items';
+import {
+    drawnBy,
+    hasText,
+    isConnectable,
+    isConnector,
+    isStroke,
+} from './items';
 
 type Drawing = {
     board: {
@@ -16,14 +30,14 @@ type Drawing = {
         selected: ComputedRef<Item[]>;
         select: (ids: string[]) => void;
         toggleInSelection: (id: string) => void;
-        add: (item: Item) => void;
+        add: (item: Item, options?: { keepSelection?: boolean }) => void;
         commit: () => void;
         settle: (dropped?: string[]) => void;
         makeItem: (
             kind: ItemKind,
             x: number,
             y: number,
-            colours?: { fill?: string; stroke?: string },
+            colours?: { fill?: string; stroke?: string; symbol?: string },
         ) => Item;
     };
     camera: {
@@ -44,6 +58,8 @@ type Drawing = {
     showTarget: (point: { x: number; y: number }, over: Item | null) => void;
     clearTarget: () => void;
     startEditing: (id: string) => void;
+    /** The drawn path of a connector, for joining a new wire to it. */
+    connectorPath: (item: Item) => number[];
 };
 
 /**
@@ -64,6 +80,7 @@ export function useDrawing({
     showTarget,
     clearTarget,
     startEditing,
+    connectorPath,
 }: Drawing) {
     type Draft = { item: Item; originX: number; originY: number } | null;
 
@@ -108,6 +125,74 @@ export function useDrawing({
         return null;
     };
 
+    /** Where a part goes to sit with its middle under the pointer, on the grid. */
+    const underPointer = (item: Item, point: { x: number; y: number }) =>
+        snapped(item, {
+            x: point.x - item.width / 2,
+            y: point.y - item.height / 2,
+        });
+
+    /**
+     * A wire's loose end let go on another wire is joined to it: a dot goes
+     * down there, and the wire it landed on becomes two, one either side of
+     * the dot, so all three are the same piece of the circuit.
+     */
+    const joinToWire = (item: Item, end: 'from' | 'to') => {
+        const loose = item[end];
+
+        if (!loose || loose.item) {
+            return;
+        }
+
+        const wires = board.items.value.filter(
+            (other) =>
+                isConnector(other) &&
+                other.id !== item.id &&
+                !other.hidden &&
+                !other.locked &&
+                isWire(other, board.byId.value),
+        );
+        const spot = spotOnWire(
+            wires,
+            connectorPath,
+            loose,
+            10 / camera.scale.value,
+        );
+
+        if (!spot?.wire.to) {
+            return;
+        }
+
+        const dot = board.makeItem('symbol', 0, 0, { symbol: 'junction' });
+        Object.assign(
+            dot,
+            snapped(dot, {
+                x: spot.x - dot.width / 2,
+                y: spot.y - dot.height / 2,
+            }),
+        );
+
+        const onDot = {
+            item: dot.id,
+            side: null,
+            pin: '1',
+            x: spot.x,
+            y: spot.y,
+        };
+        const rest: Item = {
+            ...spot.wire,
+            id: board.makeItem('arrow', 0, 0).id,
+            // Its words stay on the half that keeps its name
+            text: '',
+            from: { ...onDot },
+            to: { ...spot.wire.to },
+        };
+
+        spot.wire.to = { ...onDot };
+        item[end] = { ...onDot };
+        board.items.value.push(dot, rest);
+    };
+
     const onPointerDown = (event: Konva.KonvaEventObject<PointerEvent>) => {
         drewJustNow = false;
 
@@ -134,12 +219,19 @@ export function useDrawing({
         }
 
         // Every other tool draws something, sized by the drag that follows
-        const item = board.makeItem(tool.value as ItemKind, point.x, point.y, {
+        const drawing = drawnBy(tool.value);
+        const item = board.makeItem(drawing.kind, point.x, point.y, {
             fill: fill.value,
             stroke: stroke.value,
+            symbol: drawing.symbol,
         });
 
-        if (isConnector(item)) {
+        if (isSymbol(item)) {
+            // A part is the size it is: it goes down where the pointer is,
+            // on the grid, already named
+            Object.assign(item, underPointer(item, point));
+            item.text = firstWords(symbolOf(item.symbol)!, board.items.value);
+        } else if (isConnector(item)) {
             // Connectors live in board coordinates: their ends decide where they are
             item.x = 0;
             item.y = 0;
@@ -147,6 +239,9 @@ export function useDrawing({
             item.to = { item: null, side: null, x: point.x, y: point.y };
         } else if (isStroke(item)) {
             item.points = [0, 0];
+            // Nothing stays selected under the pen: its handles would take
+            // the strokes meant for the board
+            board.select([]);
         } else {
             item.width = 0;
             item.height = 0;
@@ -155,7 +250,27 @@ export function useDrawing({
         draft.value = { item, originX: point.x, originY: point.y };
     };
 
-    const onPointerMove = () => {
+    /**
+     * Every place the pointer has been since the last move that was heard.
+     * A pen reports far more often than the screen is drawn, and the browser
+     * hands over only the last of each batch: a line through those alone has
+     * corners where quick handwriting had curves.
+     */
+    const pointsSince = (event?: Konva.KonvaEventObject<PointerEvent>) => {
+        const box = stage()?.container().getBoundingClientRect();
+        const moves = event?.evt.getCoalescedEvents?.() ?? [];
+
+        return box && moves.length > 1
+            ? moves.map((move) =>
+                  camera.toBoard({
+                      x: move.clientX - box.left,
+                      y: move.clientY - box.top,
+                  }),
+              )
+            : null;
+    };
+
+    const onPointerMove = (event?: Konva.KonvaEventObject<PointerEvent>) => {
         const point = pointerOnBoard();
 
         if (!point) {
@@ -185,8 +300,10 @@ export function useDrawing({
             // stroke only appeared once the item was committed on release.
             current.item.points = [
                 ...current.item.points,
-                point.x - current.originX,
-                point.y - current.originY,
+                ...(pointsSince(event) ?? [point]).flatMap((at) => [
+                    at.x - current.originX,
+                    at.y - current.originY,
+                ]),
             ];
 
             return;
@@ -197,6 +314,13 @@ export function useDrawing({
 
             current.item.to = pinTo(over, point);
             showTarget(point, over);
+
+            return;
+        }
+
+        // Held, a part follows the pointer until it is let go
+        if (isSymbol(current.item)) {
+            Object.assign(current.item, underPointer(current.item, point));
 
             return;
         }
@@ -272,6 +396,17 @@ export function useDrawing({
             }
 
             board.add(item);
+
+            // A line with an end on a pin, or on a wire, is a wire: it has
+            // no head, and joins the wire it was dropped on
+            joinToWire(item, 'from');
+            joinToWire(item, 'to');
+
+            if (isWire(item, board.byId.value)) {
+                item.startHead = 'none';
+                item.endHead = 'none';
+            }
+
             tool.value = 'select';
             drewJustNow = true;
 
@@ -282,13 +417,45 @@ export function useDrawing({
             return;
         }
 
+        // The pen stays in the hand: writing is one stroke after another,
+        // and each left selected would put its handles under the next
+        if (item.kind === 'draw') {
+            board.add(item, { keepSelection: true });
+            drewJustNow = true;
+
+            return;
+        }
+
         board.add(item);
         tool.value = 'select';
         drewJustNow = true;
 
-        if (hasText(item) && item.kind !== 'frame') {
+        // Something to write on is written on straight away; of the symbols,
+        // only one with a value to give or a net to name
+        const symbol = isSymbol(item) ? symbolOf(item.symbol) : undefined;
+        // (a module already says which board or sensor it is)
+        const written = symbol
+            ? (!!symbol.prefix && !symbol.module) ||
+              symbol.role === 'power' ||
+              symbol.role === 'terminal' ||
+              symbol.role === 'label'
+            : hasText(item) && item.kind !== 'frame';
+
+        if (written) {
             void nextTick(() => startEditing(item.id));
         }
+    };
+
+    /**
+     * Lets go of whatever is half drawn or half chosen, keeping none of it:
+     * the pointer was taken away -- by the browser, or by a second finger
+     * coming down to move the board.
+     */
+    const cancelPointer = () => {
+        draft.value = null;
+        marqueeStart = null;
+        marquee.value = null;
+        clearTarget();
     };
 
     // Dragging one of several selected items should move the whole selection
@@ -383,6 +550,21 @@ export function useDrawing({
      */
     const snapWhileDragging =
         (item: Item) => (position: { x: number; y: number }) => {
+            // A part keeps to the grid its pins are on, however many are
+            // dragged with it: they were on it already, and stay on it
+            if (isSymbol(item)) {
+                const scale = camera.scale.value;
+                const at = snapped(item, {
+                    x: (position.x - camera.position.value.x) / scale,
+                    y: (position.y - camera.position.value.y) / scale,
+                });
+
+                return {
+                    x: at.x * scale + camera.position.value.x,
+                    y: at.y * scale + camera.position.value.y,
+                };
+            }
+
             // Only a single item lines up: a group would jump to suit one member
             if (
                 isConnector(item) ||
@@ -543,6 +725,7 @@ export function useDrawing({
         onPointerDown,
         onPointerMove,
         onPointerUp,
+        cancelPointer,
         onItemDragStart,
         onItemDragMove,
         onItemDragEnd,

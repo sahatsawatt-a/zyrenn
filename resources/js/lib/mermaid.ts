@@ -1,4 +1,5 @@
 import type { Mermaid } from 'mermaid';
+import { svgToPng } from '@/lib/svgImage';
 
 let mermaidPromise: Promise<Mermaid> | null = null;
 let initializedWith: string | null = null;
@@ -471,33 +472,5 @@ export async function mermaidImage(
         return new Blob([markup], { type: 'image/svg+xml' });
     }
 
-    const picture = new Image();
-    picture.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
-    await picture.decode();
-
-    // Twice the size, short of what a browser will hold in one canvas
-    const scale = Math.min(
-        2,
-        8192 / box.width,
-        8192 / box.height,
-        Math.sqrt(32_000_000 / (box.width * box.height)),
-    );
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(box.width * scale);
-    canvas.height = Math.round(box.height * scale);
-
-    const context = canvas.getContext('2d')!;
-    context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(picture, 0, 0, canvas.width, canvas.height);
-
-    return new Promise((resolve, reject) =>
-        canvas.toBlob(
-            (blob) =>
-                blob
-                    ? resolve(blob)
-                    : reject(new Error('Couldn’t draw this diagram.')),
-            'image/png',
-        ),
-    );
+    return svgToPng(markup, box.width, box.height);
 }

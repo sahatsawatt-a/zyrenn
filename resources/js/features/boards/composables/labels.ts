@@ -300,27 +300,29 @@ export const labelHeight = (item: Item): number => {
  * Draws a rich label, for a Konva Shape: each line's pieces in their own
  * fonts, the block placed down the box by the label's vertical alignment.
  */
-export const drawRich = (item: Item) => (context: Konva.Context) => {
-    const { lines, height } = layoutRich(item);
-    const box = labelBox(item);
-    const top =
-        item.verticalAlign === 'bottom'
-            ? box.height - height
-            : item.verticalAlign === 'middle'
-              ? (box.height - height) / 2
-              : 0;
+export const drawRich =
+    (item: Item, ink: string = INK) =>
+    (context: Konva.Context) => {
+        const { lines, height } = layoutRich(item);
+        const box = labelBox(item);
+        const top =
+            item.verticalAlign === 'bottom'
+                ? box.height - height
+                : item.verticalAlign === 'middle'
+                  ? (box.height - height) / 2
+                  : 0;
 
-    context.setAttr('fillStyle', INK);
-    context.setAttr('textBaseline', 'middle');
+        context.setAttr('fillStyle', ink);
+        context.setAttr('textBaseline', 'middle');
 
-    for (const line of lines) {
-        for (const fragment of line.fragments) {
-            context.setAttr('font', fragment.font);
-            context.fillText(
-                fragment.text,
-                fragment.x,
-                Math.max(0, top) + line.y + line.height / 2,
-            );
+        for (const line of lines) {
+            for (const fragment of line.fragments) {
+                context.setAttr('font', fragment.font);
+                context.fillText(
+                    fragment.text,
+                    fragment.x,
+                    Math.max(0, top) + line.y + line.height / 2,
+                );
+            }
         }
-    }
-};
+    };

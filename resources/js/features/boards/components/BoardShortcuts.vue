@@ -36,6 +36,7 @@ const sections: { name: string; rows: [string, string][] }[] = [
             ['Enter', 'Finish writing'],
             ['Shift + click', 'Add to the selection'],
             ['Ctrl + D', 'Duplicate'],
+            ['R', 'Turn a selected part of a circuit'],
             ['Delete', 'Remove'],
             ['Ctrl + ] · [', 'Forward · backward'],
             ['Ctrl + Z · Shift + Z', 'Undo · redo'],

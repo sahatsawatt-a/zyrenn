@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Circle, Line, Rect } from 'vue-konva';
 import { anchorsOf } from '@/features/boards/composables/geometry';
+import type { Anchor } from '@/features/boards/composables/geometry';
 import type { Guide } from '@/features/boards/composables/guides';
 import type { Item, Side } from '@/features/boards/composables/items';
 
@@ -14,7 +15,7 @@ const props = defineProps<{
     aiming: boolean;
     /** The shape being aimed at, and the dot under the pointer. */
     hoveredTarget: string | null;
-    hoveredAnchor: { id: string; side: Side } | null;
+    hoveredAnchor: { id: string; side: Side | null; pin?: string } | null;
     /** The ends of the one selected connector. */
     handles: { end: 'from' | 'to'; x: number; y: number }[];
     endpointName: string;
@@ -25,8 +26,10 @@ const props = defineProps<{
 }>();
 
 /** Whether this is the dot an end is about to be dropped on. */
-const isAimedAt = (id: string, side: Side) =>
-    props.hoveredAnchor?.id === id && props.hoveredAnchor.side === side;
+const isAimedAt = (id: string, anchor: Anchor) =>
+    props.hoveredAnchor?.id === id &&
+    props.hoveredAnchor.side === anchor.side &&
+    props.hoveredAnchor.pin === anchor.pin;
 </script>
 
 <template>
@@ -39,24 +42,24 @@ const isAimedAt = (id: string, side: Side) =>
         <template v-for="shape in connectable" :key="shape.id">
             <Circle
                 v-for="anchor in anchorsOf(shape)"
-                :key="anchor.side"
+                :key="anchor.pin ?? anchor.side ?? ''"
                 :config="{
                     x: anchor.x,
                     y: anchor.y,
                     radius:
-                        (isAimedAt(shape.id, anchor.side)
+                        (isAimedAt(shape.id, anchor)
                             ? 8
                             : hoveredTarget === shape.id
                               ? 6
                               : 4) / scale,
                     fill:
-                        isAimedAt(shape.id, anchor.side) ||
+                        isAimedAt(shape.id, anchor) ||
                         hoveredTarget === shape.id
                             ? '#6366f1'
                             : '#ffffff',
                     stroke: '#6366f1',
                     strokeWidth:
-                        (isAimedAt(shape.id, anchor.side) ? 2.5 : 1.5) / scale,
+                        (isAimedAt(shape.id, anchor) ? 2.5 : 1.5) / scale,
                     listening: false,
                 }"
             />

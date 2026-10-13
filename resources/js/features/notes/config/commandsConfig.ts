@@ -1,5 +1,9 @@
 import type { Editor, Range } from '@tiptap/core';
 import type { SlashCommandItem } from '@/features/notes/composables/useSlashCommands';
+import {
+    circuitExamples,
+    defaultCircuit,
+} from '@/features/boards/circuit/examples';
 import { defaultMermaidTemplate, mermaidTemplates } from './mermaidTemplates';
 
 // Fired on the editor DOM so TiptapEditor opens the LaTeX popover for a new formula
@@ -419,6 +423,31 @@ export const commandItems: SlashCommandItem[] = [
                     content: [
                         { type: 'text', text: defaultMermaidTemplate.source },
                     ],
+                })
+                .run();
+        },
+    },
+    {
+        title: 'Circuit',
+        description: 'A schematic drawn from a few lines of text.',
+        icon: '⏚',
+        keywords: [
+            'electrical',
+            'electronics',
+            'schematic',
+            'wiring',
+            'resistor',
+            ...circuitExamples.map((example) => example.label),
+        ],
+        command: ({ editor, range }) => {
+            editor
+                .chain()
+                .focus()
+                .deleteRange(range)
+                .insertContent({
+                    type: 'codeBlock',
+                    attrs: { language: 'circuit' },
+                    content: [{ type: 'text', text: defaultCircuit.source }],
                 })
                 .run();
         },

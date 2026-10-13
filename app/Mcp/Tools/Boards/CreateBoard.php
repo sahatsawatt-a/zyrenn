@@ -25,6 +25,15 @@ A flowchart, for example:
  {"id":"c","kind":"cylinder","text":"Warehouse"},
  {"kind":"arrow","from":{"item":"a"},"to":{"item":"b"}},
  {"kind":"arrow","from":{"item":"b"},"to":{"item":"c"},"text":"yes"}]
+
+A circuit is items of kind "symbol", each a part with pins, wired by arrows that name the pins they
+join. Parts keep to a 20-unit grid so the wires run straight:
+[{"id":"v1","kind":"symbol","symbol":"battery","text":"BT1\n9 V","x":0,"y":40},
+ {"id":"r1","kind":"symbol","symbol":"resistor","text":"R1\n330 Ω","x":80,"y":0},
+ {"id":"d1","kind":"symbol","symbol":"led","text":"D1","x":260,"y":40,"rotation":90},
+ {"kind":"arrow","from":{"item":"v1","pin":"+"},"to":{"item":"r1","pin":"1"}},
+ {"kind":"arrow","from":{"item":"r1","pin":"2"},"to":{"item":"d1","pin":"a"}},
+ {"kind":"arrow","from":{"item":"d1","pin":"k"},"to":{"item":"v1","pin":"-"}}]
 TEXT)]
 class CreateBoard extends BoardTool
 {

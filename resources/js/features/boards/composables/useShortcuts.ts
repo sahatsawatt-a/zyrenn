@@ -42,6 +42,8 @@ type Keys = {
     showFrame: (index: number) => void;
     stopPresenting: () => void;
     removeSelection: () => void;
+    /** Turns the selected parts a quarter turn; false when there are none. */
+    turnSelection: () => boolean;
 };
 
 /**
@@ -60,12 +62,36 @@ export function useShortcuts({
     showFrame,
     stopPresenting,
     removeSelection,
+    turnSelection,
 }: Keys) {
     useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+        // A key pressed in something opened over the board -- a colour's
+        // swatches, a dialog, a menu -- is that thing's: Esc closes it, and
+        // leaves chosen whatever it was opened for
+        const over = '[role="dialog"], [role="menu"], [role="listbox"]';
+
+        if (
+            (event.target instanceof Element && event.target.closest(over)) ||
+            // Esc with one of them open closes it, wherever the focus went.
+            // (Open: one still fading out after it was closed is no longer
+            // in the way, and the next Esc is the board's)
+            (event.key === 'Escape' &&
+                document.querySelector(`:is(${over})[data-state="open"]`))
+        ) {
+            return;
+        }
+
+        // In something that takes letters. A slider or a switch just used
+        // still has the focus, and is not being typed into: Esc after one
+        // lets go of the selection like anywhere else
+        const focused = document.activeElement;
         const typing =
             editingId.value !== null ||
-            document.activeElement instanceof HTMLInputElement ||
-            document.activeElement instanceof HTMLTextAreaElement;
+            (focused instanceof HTMLInputElement &&
+                !['range', 'checkbox', 'radio', 'button'].includes(
+                    focused.type,
+                )) ||
+            focused instanceof HTMLTextAreaElement;
 
         if (event.code === 'Space' && !typing) {
             spaceHeld.value = true;
@@ -139,6 +165,12 @@ export function useShortcuts({
         if (event.key === 'Escape') {
             board.select([]);
             tool.value = 'select';
+        }
+
+        // R turns a part, as it does in every schematic editor; with none
+        // selected it is the rectangle it always was
+        if (event.key.toLowerCase() === 'r' && !meta && turnSelection()) {
+            return;
         }
 
         const next = TOOL_KEYS[event.key.toLowerCase()];

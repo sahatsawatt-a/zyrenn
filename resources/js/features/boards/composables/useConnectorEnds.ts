@@ -1,8 +1,14 @@
 import type Konva from 'konva';
 import type { ComputedRef, Ref } from 'vue';
 import { computed, ref } from 'vue';
+import {
+    isSymbol,
+    nearestPin,
+    wordsOf,
+} from '@/features/boards/circuit/symbols';
 import { anchorsOf } from './geometry';
-import type { Item, Side } from './items';
+import type { Anchor } from './geometry';
+import type { Endpoint, Item, Side } from './items';
 import { isConnectable, isConnector } from './items';
 
 /** The name a handle carries, so a drag can tell which end it has hold of. */
@@ -44,7 +50,11 @@ export function useConnectorEnds({
 
     /** The shape being aimed at, and the dot under the pointer. */
     const hoveredTarget = ref<string | null>(null);
-    const hoveredAnchor = ref<{ id: string; side: Side } | null>(null);
+    const hoveredAnchor = ref<{
+        id: string;
+        side: Side | null;
+        pin?: string;
+    } | null>(null);
 
     /** Whether this is the dot the pointer is about to drop an end on. */
     const isAimedAt = (id: string, side: Side) =>
@@ -56,15 +66,14 @@ export function useConnectorEnds({
 
         hoveredTarget.value = anchor?.id ?? over?.id ?? null;
         hoveredAnchor.value = anchor
-            ? { id: anchor.id, side: anchor.side }
+            ? { id: anchor.id, side: anchor.side, pin: anchor.pin }
             : null;
     };
 
     /** The anchor dot under the pointer, if it is close enough to one. */
     const anchorNear = (point: { x: number; y: number }) => {
         let closest = ANCHOR_GRAB / camera.scale.value;
-        let found: { id: string; side: Side; x: number; y: number } | null =
-            null;
+        let found: (Anchor & { id: string }) | null = null;
 
         for (const shape of connectable.value) {
             for (const anchor of anchorsOf(shape)) {
@@ -88,8 +97,24 @@ export function useConnectorEnds({
      * ports. Dropped anywhere else on a shape, the end stays free to turn, and
      * leaves by whichever face is pointing at the other end at the time.
      */
-    const pinTo = (item: Item | null, point: { x: number; y: number }) => {
+    const pinTo = (
+        item: Item | null,
+        point: { x: number; y: number },
+    ): Endpoint => {
         const anchor = anchorNear(point);
+
+        // On a symbol the dots are its pins, and an end is always on one:
+        // which pins a wire joins is the circuit, and must not change
+        // because a part was moved. The way it leaves is the pin's own.
+        if (anchor?.pin) {
+            return {
+                item: anchor.id,
+                side: null,
+                pin: anchor.pin,
+                x: anchor.x,
+                y: anchor.y,
+            };
+        }
 
         if (anchor) {
             return {
@@ -100,9 +125,21 @@ export function useConnectorEnds({
             };
         }
 
+        if (item && isSymbol(item)) {
+            const pin = nearestPin(item, point);
+
+            return {
+                item: item.id,
+                side: null,
+                pin: pin?.name ?? null,
+                x: pin?.x ?? point.x,
+                y: pin?.y ?? point.y,
+            };
+        }
+
         return {
             item: item?.id ?? null,
-            side: null as Side | null,
+            side: null,
             x: point.x,
             y: point.y,
         };
@@ -133,6 +170,12 @@ export function useConnectorEnds({
             const host = item[end]?.item
                 ? board.byId.value.get(item[end]!.item!)
                 : null;
+
+            if (host && isSymbol(host)) {
+                const pin = item[end]?.pin;
+
+                return `${wordsOf(host).name || host.symbol}${pin ? `.${pin}` : ''}`;
+            }
 
             return host ? host.text || host.kind : 'a point';
         };

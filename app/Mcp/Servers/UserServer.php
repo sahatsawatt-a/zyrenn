@@ -85,7 +85,11 @@ folder tree, listed by list-board-folders. get-board lists a board's frames, rea
 "frame", and gives a big board in outline; update-board's add_items, update_items and delete_items
 change items by id, sending only what changes -- prefer them to rewriting "items" whole.
 A label can be light Markdown ("rich": "# " headings, "- " bullets, **bold**), in "sans", "serif" or
-"mono", with its own "padding". To see a board or one frame as the app draws it, get-board with
+"mono", with its own "padding". A circuit can be drawn too: items of kind "symbol" name a part in "symbol"
+(resistor, led, npn, esp32, a "chip:VCC,GND|OUT" of your own, ...) with its designator and value as "text"
+("R1\n10 kΩ"), and an arrow whose ends name pins -- {"item": "r1", "pin": "2"} -- is a wire. Logic runs on the board as it is drawn:
+gates (and, or, not, nand, nor, xor, xnor, dff) between "input" switches ("on": true sets one) and
+"output" lamps. To see a board or one frame as the app draws it, get-board with
 "image": true sends a PNG; "check": true lists labels that run out of their box and items lying over
 each other.
 
@@ -110,6 +114,12 @@ Markdown holding "ref: <the trip's ref_id>" and "day: all" (the whole trip) or "
 fence holding "name: ", "address: ", "lat: " and "lng: " lines (and "zoom: ", 1 to 20, or "saved: <a
 saved place's ref_id>" to show that place as it is now); to show a link as a card with its page's
 title and picture, a ```link fence holding "url: " and "title: ".
+To draw a circuit in a note, put a ```circuit fence holding its parts, one to a line as "NAME: [what]
+[value]" ("R1: 10k", "D1: led red", "Q1: npn BC547", "V1: 9V" -- what a part is can be left out when
+its name says so), then its wires as ends joined by "--": a pin ("Q1.b"), a two-pin part to run
+through from its first pin to its second, or a net's name ("gnd", "3V3", "sda"). For example
+"V1 -- R1 -- D1 -- V1", or with a board: "U1: esp32", "S1: dht22", "U1.GPIO4 -- S1.DATA" (a chip of your
+own lists its pins: "U2: chip 74HC595 [SER, CLK | QA, QB]"). The note lays it out and draws it.
 
 Saved places: pins kept on the map, each in a list such as "Want to go" (list-places, save-place,
 delete-place).

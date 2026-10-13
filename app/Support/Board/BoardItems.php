@@ -17,18 +17,21 @@ class BoardItems
 {
     public const CONNECTOR = 'arrow';
 
+    /** A part of a circuit, drawn from the symbol library (Symbols). */
+    public const SYMBOL = 'symbol';
+
     /** Every kind the canvas can draw. */
     public const KINDS = [
         'frame', 'sticky', 'text', 'rect', 'pill', 'ellipse', 'triangle',
         'diamond', 'hexagon', 'star', 'cylinder', 'parallelogram', 'document',
-        'process', 'cloud', 'image', 'video', 'math', self::CONNECTOR, 'draw',
+        'process', 'cloud', 'image', 'video', 'math', self::SYMBOL, self::CONNECTOR, 'draw',
     ];
 
     /** Kinds a connector may pin itself to. */
     public const CONNECTABLE = [
         'sticky', 'text', 'rect', 'pill', 'ellipse', 'triangle', 'diamond',
         'hexagon', 'star', 'cylinder', 'parallelogram', 'document', 'process',
-        'cloud', 'image', 'video', 'math',
+        'cloud', 'image', 'video', 'math', self::SYMBOL,
     ];
 
     public const SIDES = BoardPins::SIDES;
@@ -105,7 +108,21 @@ class BoardItems
                 }
             }
 
-            foreach (['hidden', 'locked', 'rich', 'pdfHidden'] as $flag) {
+            // A part is the size the library draws it, unless told otherwise:
+            // when it is new, and when it becomes another part
+            if ($kind === self::SYMBOL) {
+                $was = $item['symbol'] ?? '';
+                $symbol = Symbols::find(is_string($spec['symbol'] ?? null) ? $spec['symbol'] : $was) ?? Symbols::find('resistor');
+                $item['symbol'] = $symbol['id'];
+
+                foreach (['width', 'height'] as $side) {
+                    if (! is_numeric($spec[$side] ?? null) && ($was !== $symbol['id'] || ! isset($existing[$id]))) {
+                        $item[$side] = (float) $symbol[$side];
+                    }
+                }
+            }
+
+            foreach (['hidden', 'locked', 'rich', 'pdfHidden', 'on'] as $flag) {
                 if (is_bool($spec[$flag] ?? null)) {
                     $item[$flag] = $spec[$flag];
                 }
@@ -145,7 +162,16 @@ class BoardItems
 
         foreach ($items as $position => $item) {
             if ($item['kind'] === self::CONNECTOR) {
-                $items[$position] = BoardPins::pin($item, $specs[$position], $boxes);
+                $pinned = BoardPins::pin($item, $specs[$position], $boxes);
+
+                // A line onto a pin is a wire, and a wire has no head: a new
+                // one gets none unless it was asked for
+                if (! isset($existing[$item['id']]) && ! isset($specs[$position]['endHead'])
+                    && (isset($pinned['from']['pin']) || isset($pinned['to']['pin']))) {
+                    $pinned['endHead'] = 'none';
+                }
+
+                $items[$position] = $pinned;
             }
         }
 
@@ -191,6 +217,10 @@ class BoardItems
                 ];
             }
 
+            if ($kind === self::SYMBOL) {
+                $spec['symbol'] = (string) ($item['symbol'] ?? '');
+            }
+
             if (trim((string) ($item['text'] ?? '')) !== '') {
                 $spec['text'] = (string) $item['text'];
             }
@@ -198,18 +228,21 @@ class BoardItems
             foreach (['fill', 'stroke'] as $colour) {
                 $value = (string) ($item[$colour] ?? '');
 
-                if ($value !== '' && $value !== 'transparent') {
+                // "transparent" is said where it was chosen -- a shape made
+                // see-through -- not where the kind never has one, as text
+                if ($value !== '' && ($value !== 'transparent' || self::blank($kind, 0)[$colour] !== 'transparent')) {
                     $spec[$colour] = $value;
                 }
             }
 
-            foreach (['rotation' => 0, 'fontSize' => 16, 'lineWidth' => 2, 'headSize' => 10] as $number => $default) {
+            // A symbol's words are set small beside it, always the same size
+            foreach (['rotation' => 0, 'fontSize' => $kind === self::SYMBOL ? 13 : 16, 'lineWidth' => 2, 'headSize' => 10] as $number => $default) {
                 if (isset($item[$number]) && self::round($item[$number]) !== (float) $default) {
                     $spec[$number] = self::round($item[$number]);
                 }
             }
 
-            foreach (['hidden', 'locked', 'rich', 'pdfHidden'] as $flag) {
+            foreach (['hidden', 'locked', 'rich', 'pdfHidden', 'on'] as $flag) {
                 if (($item[$flag] ?? false) === true) {
                     $spec[$flag] = true;
                 }
@@ -327,6 +360,12 @@ class BoardItems
 
         if ($problems !== []) {
             throw new BoardItemProblem('A connector points at something it cannot pin to. '.implode(' ', $problems));
+        }
+
+        $unnamed = self::symbolProblem($specs);
+
+        if ($unnamed !== null) {
+            throw new BoardItemProblem($unnamed);
         }
 
         $items = self::fromSpec($specs, $current);
@@ -501,9 +540,11 @@ class BoardItems
     public static function badReferences(array $specs): array
     {
         $kinds = [];
+        $symbols = [];
 
         foreach (self::withIds($specs) as $spec) {
             $kinds[$spec['id']] = is_string($spec['kind'] ?? null) ? $spec['kind'] : 'sticky';
+            $symbols[$spec['id']] = Symbols::find(is_string($spec['symbol'] ?? null) ? $spec['symbol'] : null);
         }
 
         $problems = [];
@@ -524,11 +565,48 @@ class BoardItems
                     $problems[] = "\"{$end}\" points at \"{$item}\", which is not an item on this board.";
                 } elseif (! in_array($kinds[$item], self::CONNECTABLE, true)) {
                     $problems[] = "\"{$end}\" points at \"{$item}\", which is a {$kinds[$item]}; connectors can only pin to a shape, a sticky, a text or a picture.";
+                } elseif (is_string($spec[$end]['pin'] ?? null) && $spec[$end]['pin'] !== '') {
+                    $symbol = $symbols[$item];
+                    $pin = $spec[$end]['pin'];
+
+                    if ($symbol === null) {
+                        $problems[] = "\"{$end}\" names pin \"{$pin}\" of \"{$item}\", which is a {$kinds[$item]}; only a symbol has pins.";
+                    } elseif (Symbols::pinName($symbol, $pin) === null) {
+                        $problems[] = "\"{$end}\" names pin \"{$pin}\" of \"{$item}\", a {$symbol['id']}, whose pins are ".implode(', ', array_column($symbol['pins'], 'name')).'.';
+                    }
                 }
             }
         }
 
         return array_values(array_unique($problems));
+    }
+
+    /**
+     * What is wrong with the symbols in a client's list: one that does not
+     * say which part it is, and is not already one on the board.
+     *
+     * @param  list<array<string, mixed>>  $specs
+     * @param  list<mixed>  $current  the board's items as stored
+     */
+    public static function symbolProblem(array $specs, array $current = []): ?string
+    {
+        $known = [];
+
+        foreach ($current as $item) {
+            if (is_array($item) && ($item['kind'] ?? '') === self::SYMBOL) {
+                $known[(string) ($item['id'] ?? '')] = true;
+            }
+        }
+
+        foreach ($specs as $spec) {
+            if (($spec['kind'] ?? null) === self::SYMBOL
+                && ! is_string($spec['symbol'] ?? null)
+                && ! isset($known[(string) ($spec['id'] ?? '')])) {
+                return 'An item of kind "symbol" needs a "symbol" to say which part it is: '.implode(', ', Symbols::ids()).' -- or "chip:VCC,GND|OUT" for a chip with pins of your own.';
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -587,6 +665,9 @@ class BoardItems
             'math' => [...$base, 'width' => 260.0, 'height' => 90.0, 'fill' => 'transparent',
                 'stroke' => 'transparent', 'fontSize' => 24.0],
             'cylinder' => [...$base, 'width' => 180.0, 'height' => 200.0, 'fill' => '#e0e7ff', 'stroke' => '#6366f1'],
+            // Drawn in ink, with its name and value set small beside it; its size is its symbol's own
+            self::SYMBOL => [...$base, 'symbol' => '', 'on' => false, 'width' => 80.0, 'height' => 40.0, 'fill' => 'transparent',
+                'stroke' => '#0f172a', 'fontSize' => 13.0, 'padding' => 0.0],
             self::CONNECTOR, 'draw' => [...$base, 'width' => 0.0, 'height' => 0.0, 'fill' => 'transparent', 'stroke' => '#0f172a'],
             default => $base,
         };

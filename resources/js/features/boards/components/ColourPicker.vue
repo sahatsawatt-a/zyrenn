@@ -70,9 +70,20 @@ const palette = usePalette();
 // Taking colours off the swatches, rather than painting with them
 const editing = ref(false);
 
-const hsv = ref<Hsv>(toHsv(props.modelValue));
+// No colour at all: a shape with nothing behind its words, or no edge
+const NONE = 'transparent';
+
+const hsv = ref<Hsv>(
+    toHsv(props.modelValue === NONE ? '#ffffff' : props.modelValue),
+);
 const hex = ref(props.modelValue);
 const custom = ref(false);
+const none = computed(() => hex.value === NONE);
+
+const clear = () => {
+    hex.value = NONE;
+    emit('update:modelValue', NONE);
+};
 
 // Follow the outside value unless it is the one we just emitted, so dragging
 // does not fight the parent.
@@ -80,7 +91,10 @@ watch(
     () => props.modelValue,
     (value) => {
         if (value.toLowerCase() !== hex.value.toLowerCase()) {
-            hsv.value = toHsv(value);
+            if (value !== NONE) {
+                hsv.value = toHsv(value);
+            }
+
             hex.value = value;
         }
     },
@@ -204,6 +218,15 @@ const pickFromScreen = async () => {
              kept here with the plus and taken off again under Edit -->
         <div class="picker-presets" data-test="palette">
             <button
+                v-if="!editing"
+                type="button"
+                class="picker-preset picker-none"
+                :class="{ 'is-on': none }"
+                :title="`No ${label.toLowerCase()}`"
+                data-test="palette-none"
+                @click="clear"
+            />
+            <button
                 v-for="colour in palette.colours.value"
                 :key="colour"
                 type="button"
@@ -222,6 +245,7 @@ const pickFromScreen = async () => {
             </button>
             <button
                 v-if="
+                    !none &&
                     !palette.has(hex) &&
                     palette.colours.value.length < MOST_COLOURS
                 "
@@ -236,10 +260,15 @@ const pickFromScreen = async () => {
         </div>
 
         <div class="picker-row">
-            <span class="picker-chip" :style="{ backgroundColor: hex }" />
+            <span
+                class="picker-chip"
+                :class="{ 'picker-none': none }"
+                :style="none ? {} : { backgroundColor: hex }"
+            />
             <input
                 class="picker-hex"
-                :value="hex"
+                :value="none ? '' : hex"
+                placeholder="None"
                 spellcheck="false"
                 data-test="picker-hex"
                 @input="onHexInput"
@@ -459,6 +488,19 @@ const pickFromScreen = async () => {
     color: #fff;
     background-color: rgb(15 23 42 / 0.7);
     border-radius: 999px;
+}
+
+/* Nothing: a stroke through an empty swatch */
+.picker-none {
+    background:
+        linear-gradient(
+            to top left,
+            transparent calc(50% - 1px),
+            #ef4444 calc(50% - 1px),
+            #ef4444 calc(50% + 1px),
+            transparent calc(50% + 1px)
+        ),
+        #fff;
 }
 
 .picker-keep {

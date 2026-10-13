@@ -1,5 +1,6 @@
 // The board's data model. Everything on the canvas is one flat list of items in
 // paint order, which keeps z-order, undo snapshots and hit-testing simple.
+import { symbolOf } from '@/features/boards/circuit/symbols';
 
 export type ItemKind =
     | 'frame'
@@ -23,6 +24,9 @@ export type ItemKind =
     | 'video'
     // A formula, written as LaTeX and set with KaTeX
     | 'math'
+    // A part of a circuit -- a resistor, a breaker, a ground -- drawn from the
+    // symbol library, with pins a wire holds on to (circuit/symbols)
+    | 'symbol'
     | 'arrow'
     | 'draw';
 
@@ -61,6 +65,8 @@ export type Endpoint = {
     side: Side | null;
     x: number;
     y: number;
+    // On a symbol: which of its pins the end is on, making the line a wire
+    pin?: string | null;
 };
 
 export type Routing = 'elbow' | 'straight' | 'curved';
@@ -128,6 +134,10 @@ export type Item = {
     src: string;
     // A picture's way of filling its box
     fit: Fit;
+    // A symbol only: which one, by its id in the library
+    symbol: string;
+    // A logic input only: whether it is set, for the circuit to run from
+    on: boolean;
     // Connectors only: where each end is pinned and how the line is drawn
     from: Endpoint | null;
     to: Endpoint | null;
@@ -139,7 +149,14 @@ export type Item = {
     headSize: number;
 };
 
-export type Tool = 'select' | ItemKind;
+// A symbol is picked with the tool, as "symbol:resistor"
+export type Tool = 'select' | ItemKind | `symbol:${string}`;
+
+/** The kind of item a tool draws, and which symbol when it draws one. */
+export const drawnBy = (tool: Tool): { kind: ItemKind; symbol?: string } =>
+    tool.startsWith('symbol:')
+        ? { kind: 'symbol', symbol: tool.slice(7) }
+        : { kind: tool as ItemKind };
 
 export const STICKY_COLOURS = [
     '#fde68a',
@@ -185,7 +202,11 @@ export const bumpIdsTo = (highest: number): void => {
  * video is double-clicked to watch it full size instead.
  */
 export const hasText = (item: Item): boolean =>
-    item.kind !== 'arrow' && item.kind !== 'draw' && item.kind !== 'video';
+    item.kind !== 'arrow' &&
+    item.kind !== 'draw' &&
+    item.kind !== 'video' &&
+    // A junction is only its dot
+    !(item.kind === 'symbol' && symbolOf(item.symbol)?.labels === 'none');
 
 /** Items drawn from a point list rather than a box. */
 export const isStroke = (item: Item): boolean =>
@@ -193,6 +214,20 @@ export const isStroke = (item: Item): boolean =>
 
 /** A connector: two ends, each either pinned to a shape or to a point. */
 export const isConnector = (item: Item): boolean => item.kind === 'arrow';
+
+/**
+ * Shapes with an edge of their own, as heavy as their lineWidth -- down to
+ * none at all. A sticky and a frame are cards, and text is only its words.
+ */
+export const hasOutline = (item: Item): boolean =>
+    item.kind === 'rect' ||
+    item.kind === 'pill' ||
+    item.kind === 'ellipse' ||
+    item.kind === 'star' ||
+    item.kind === 'math' ||
+    item.kind === 'image' ||
+    POLYGONS.includes(item.kind) ||
+    isPath(item.kind);
 
 /** Shapes a connector is allowed to pin itself to. */
 export const isConnectable = (item: Item): boolean =>
@@ -202,7 +237,7 @@ export const makeItem = (
     kind: ItemKind,
     x: number,
     y: number,
-    colours: { fill?: string; stroke?: string } = {},
+    colours: { fill?: string; stroke?: string; symbol?: string } = {},
 ): Item => {
     const base: Item = {
         id: newId(),
@@ -227,6 +262,8 @@ export const makeItem = (
         pdfHidden: false,
         src: '',
         fit: 'fill',
+        symbol: '',
+        on: false,
         from: null,
         to: null,
         routing: 'elbow',
@@ -322,6 +359,23 @@ export const makeItem = (
                 fill: colours.fill ?? '#e0e7ff',
                 stroke: colours.stroke ?? '#6366f1',
             };
+        case 'symbol': {
+            // Drawn as the library draws it: its own size, in ink, with its
+            // name and value set small beside it
+            const symbol =
+                symbolOf(colours.symbol ?? '') ?? symbolOf('resistor');
+
+            return {
+                ...base,
+                symbol: symbol?.id ?? '',
+                width: symbol?.width ?? 80,
+                height: symbol?.height ?? 40,
+                fill: 'transparent',
+                stroke: INK,
+                fontSize: 13,
+                padding: 0,
+            };
+        }
         case 'parallelogram':
         case 'document':
         case 'process':
@@ -358,7 +412,9 @@ export const makeItem = (
  * draw and a list of points to follow.
  */
 export const hydrate = (saved: Partial<Item>): Item => {
-    const item = makeItem(saved.kind ?? 'rect', 0, 0);
+    const item = makeItem(saved.kind ?? 'rect', 0, 0, {
+        symbol: saved.symbol,
+    });
 
     for (const [field, value] of Object.entries(saved)) {
         if (value !== null && value !== undefined) {
@@ -387,6 +443,8 @@ export const nameOf = (item: Item): string => {
             return 'Video';
         case 'math':
             return 'Formula';
+        case 'symbol':
+            return symbolOf(item.symbol)?.label ?? 'Symbol';
         case 'cylinder':
             return 'Database';
         case 'parallelogram':

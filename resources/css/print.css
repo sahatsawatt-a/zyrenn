@@ -87,7 +87,7 @@
     }
 
     .code-block-header,
-    .mermaid-toolbar,
+    .diagram-toolbar,
     .board-toolbar {
         display: none !important;
     }
@@ -135,7 +135,7 @@
     table,
     tr,
     .code-block-wrapper,
-    .mermaid-block,
+    .diagram-block,
     .board-block,
     .katex-display {
         break-inside: avoid;
@@ -365,14 +365,14 @@
     }
 
     /* --- figures: the drawing, without the app's card around it ----------- */
-    html[data-print-style='report'] .mermaid-block,
+    html[data-print-style='report'] .diagram-block,
     html[data-print-style='report'] .board-block {
         border: 0 !important;
         border-radius: 0 !important;
         background: none !important;
     }
 
-    html[data-print-style='report'] .mermaid-preview {
+    html[data-print-style='report'] .diagram-preview {
         padding: 6pt 0 !important;
     }
 }

@@ -31,6 +31,7 @@ onMounted(() => markEditorReady());
             :frame="frame"
             :bare="!!frame"
             :padding="frame ? 0 : 24"
+            plain
         />
     </div>
 
@@ -45,6 +46,7 @@ onMounted(() => markEditorReady());
                 :frame="page"
                 :bare="!!page"
                 :padding="page ? 0 : 24"
+                plain
             />
         </div>
     </template>

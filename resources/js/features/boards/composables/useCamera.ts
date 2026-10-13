@@ -197,6 +197,13 @@ export function useCamera(
             scaleY: next.scale,
             x: next.x,
             y: next.y,
+            // Whatever is laid over the canvas as HTML -- a formula, the
+            // dots, a video's bar -- is placed by these, so they keep up
+            // with the glide instead of jumping to where it ends
+            onUpdate: () => {
+                scale.value = target.scaleX();
+                position.value = { x: target.x(), y: target.y() };
+            },
             onFinish: () => {
                 scale.value = next.scale;
                 position.value = { x: next.x, y: next.y };
