@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, router, usePage } from '@inertiajs/vue3';
+import { Head, router, setLayoutProps, usePage } from '@inertiajs/vue3';
 import {
     BookOpenText,
     ChevronDown,
@@ -10,7 +10,7 @@ import {
     Trash2,
     X,
 } from '@lucide/vue';
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch, watchEffect } from 'vue';
 import DeleteDialog from '@/components/common/DeleteDialog.vue';
 import EmptyState from '@/components/common/EmptyState.vue';
 import PageHeader from '@/components/common/PageHeader.vue';
@@ -33,6 +33,9 @@ import {
 import TicketPick from '@/features/tickets/components/TicketPick.vue';
 import { formatRelativeTime, xsrfToken } from '@/lib/utils';
 import { ask, destroy, read, update } from '@/routes/knowledge';
+import { index as ownKnowledge } from '@/routes/knowledge';
+import { index as projectKnowledge } from '@/routes/projects/knowledge';
+import { owned } from '@/lib/projects';
 
 type Kind = 'notes' | 'table' | 'drive';
 type Source = { kind: Kind; ref: string; label: string };
@@ -68,6 +71,18 @@ const props = defineProps<{
     can: { manage: boolean };
     urls: { store: string };
 }>();
+
+// Its name in the bar at the top, as every page has
+watchEffect(() =>
+    setLayoutProps({
+        breadcrumbs: [
+            {
+                title: 'Knowledge',
+                href: owned(ownKnowledge, projectKnowledge)(),
+            },
+        ],
+    }),
+);
 
 const page = usePage();
 const where = computed(() => page.props.project?.name ?? 'your own');

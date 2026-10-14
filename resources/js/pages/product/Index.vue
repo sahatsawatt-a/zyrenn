@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { Head, Link as InertiaLink, router, usePage } from '@inertiajs/vue3';
+import {
+    Head,
+    Link as InertiaLink,
+    router,
+    setLayoutProps,
+    usePage,
+} from '@inertiajs/vue3';
 import { Check, ListTree, Minus, Plus, Quote } from '@lucide/vue';
 import { useLocalStorage } from '@vueuse/core';
-import { computed, ref } from 'vue';
+import { computed, ref, watchEffect } from 'vue';
 import PageHeader from '@/components/common/PageHeader.vue';
 import SegmentTabs from '@/components/common/SegmentTabs.vue';
 import { Button } from '@/components/ui/button';
@@ -27,6 +33,7 @@ import { Switch } from '@/components/ui/switch';
 import ElementSheet from '@/features/product/ElementSheet.vue';
 import ProductTree from '@/features/product/ProductTree.vue';
 import RequirementSheet from '@/features/product/RequirementSheet.vue';
+import WorkOut from '@/features/product/WorkOut.vue';
 import {
     REQUEST_STATUSES,
     REQUIREMENT_STATUSES,
@@ -47,6 +54,7 @@ import { update as updateRequest } from '@/routes/product/requests';
 import { store as storeElement } from '@/routes/projects/product/elements';
 import { store as storeRequest } from '@/routes/projects/product/requests';
 import { store as storeRequirement } from '@/routes/projects/product/requirements';
+import { index as projectProduct } from '@/routes/projects/product';
 
 const props = defineProps<{
     elements: Element[];
@@ -56,11 +64,24 @@ const props = defineProps<{
     coverage: Coverage;
     tickets: TicketRef[];
     people: { id: number; name: string }[];
+    agents: { ref_id: string; name: string }[];
     can: { change: boolean };
 }>();
 
 const page = usePage();
 const project = computed(() => page.props.project!);
+
+// Its name in the bar at the top, as every page has
+watchEffect(() =>
+    setLayoutProps({
+        breadcrumbs: [
+            {
+                title: 'Product',
+                href: projectProduct(project.value.ref_id).url,
+            },
+        ],
+    }),
+);
 
 const RELOADED = ['elements', 'links', 'requests', 'requirements', 'coverage'];
 
@@ -258,10 +279,10 @@ const SOURCES: Record<ProductRequest['source'], string> = {
         />
 
         <!-- Requests: what was asked, word for word -->
-        <section v-else-if="tab === 'requests'" class="grid gap-4">
+        <section v-else-if="tab === 'requests'" class="grid grid-cols-1 gap-4">
             <form
                 v-if="can.change"
-                class="grid gap-2 rounded-xl border p-3"
+                class="grid grid-cols-1 gap-2 rounded-xl border p-3"
                 @submit.prevent="keepRequest"
             >
                 <Label for="request-original"
@@ -340,7 +361,10 @@ const SOURCES: Record<ProductRequest['source'], string> = {
         </section>
 
         <!-- Requirements -->
-        <section v-else-if="tab === 'requirements'" class="grid gap-3">
+        <section
+            v-else-if="tab === 'requirements'"
+            class="grid grid-cols-1 gap-3"
+        >
             <SegmentTabs
                 v-model="shownRequirements"
                 :options="[
@@ -404,7 +428,11 @@ const SOURCES: Record<ProductRequest['source'], string> = {
         </section>
 
         <!-- Coverage: how far each capability's trail goes -->
-        <section v-else class="grid gap-4" data-test="product-coverage">
+        <section
+            v-else
+            class="grid grid-cols-1 gap-4"
+            data-test="product-coverage"
+        >
             <div class="overflow-x-auto rounded-xl border">
                 <table class="w-full text-sm">
                     <thead class="bg-muted/40 text-muted-foreground text-xs">
@@ -465,7 +493,7 @@ const SOURCES: Record<ProductRequest['source'], string> = {
                     </tbody>
                 </table>
             </div>
-            <div v-if="coverage.gaps.length" class="grid gap-2">
+            <div v-if="coverage.gaps.length" class="grid grid-cols-1 gap-2">
                 <h3 class="text-sm font-medium">Gaps in the trail</h3>
                 <ul class="divide-y rounded-xl border" data-test="product-gaps">
                     <li v-for="(gap, at) in coverage.gaps" :key="at">
@@ -545,14 +573,14 @@ const SOURCES: Record<ProductRequest['source'], string> = {
                         >
                     </SheetDescription>
                 </SheetHeader>
-                <div class="space-y-5 px-5 py-5">
+                <div class="min-w-0 space-y-5 px-5 py-5">
                     <blockquote
                         class="bg-muted/40 rounded-lg border-l-4 px-4 py-3 text-sm whitespace-pre-wrap"
                         data-test="request-words"
                     >
                         {{ request.original }}
                     </blockquote>
-                    <div class="grid gap-1.5">
+                    <div class="grid grid-cols-1 gap-1.5">
                         <Label>How far it has got</Label>
                         <TicketPick
                             :model-value="request.status"
@@ -564,7 +592,7 @@ const SOURCES: Record<ProductRequest['source'], string> = {
                             "
                         />
                     </div>
-                    <div class="grid gap-2">
+                    <div class="grid grid-cols-1 gap-2">
                         <Label>Requirements made from it</Label>
                         <ul
                             v-if="requirementsOf(request).length"
@@ -586,15 +614,26 @@ const SOURCES: Record<ProductRequest['source'], string> = {
                                         class="text-muted-foreground font-mono text-[11px]"
                                         >{{ one.code }}</span
                                     >
-                                    <span class="min-w-0 flex-1 truncate">{{
-                                        one.title
-                                    }}</span>
+                                    <span
+                                        class="min-w-0 flex-1 truncate"
+                                        :title="one.title"
+                                        >{{ one.title }}</span
+                                    >
                                 </button>
                             </li>
                         </ul>
+                        <WorkOut
+                            v-if="can.change"
+                            :key="request.ref_id"
+                            :request="request.ref_id"
+                            :project="project.ref_id"
+                            :agents="agents"
+                            :elements="elements"
+                            :reloaded="RELOADED"
+                        />
                         <form
                             v-if="can.change"
-                            class="grid gap-2 rounded-lg border p-3"
+                            class="grid grid-cols-1 gap-2 rounded-lg border p-3"
                             @submit.prevent="requirementFrom(request)"
                         >
                             <Input
@@ -634,7 +673,7 @@ const SOURCES: Record<ProductRequest['source'], string> = {
                 </DialogHeader>
                 <form
                     id="part-form"
-                    class="grid gap-3"
+                    class="grid grid-cols-1 gap-3"
                     @submit.prevent="makePart"
                 >
                     <SegmentTabs
@@ -659,7 +698,7 @@ const SOURCES: Record<ProductRequest['source'], string> = {
                         placeholder="e.g. Board, or Change border colour"
                         data-test="part-name"
                     />
-                    <div class="grid gap-1.5">
+                    <div class="grid grid-cols-1 gap-1.5">
                         <Label>Under</Label>
                         <TicketPick
                             v-model="draft.parent"

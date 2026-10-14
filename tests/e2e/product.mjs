@@ -2,7 +2,8 @@
 // with codes, a shared one and what uses it, a capability made live; what a
 // customer wrote kept from the inbox as a request, with a way back to the
 // chat; a complaint filed from the inbox as a bug on the part it is about;
-// a request kept word for word and worked out into a requirement,
+// working a request out with an agent, before there is one and with one
+// that has no model; a request kept word for word and worked out into a requirement,
 // verified only once its criteria are met; and coverage saying where the
 // trail has gaps.
 //
@@ -234,7 +235,8 @@ await runBoard(
         await test('req-criterion-input').fill(
             'Typing #RRGGBB sets the colour',
         );
-        await page.keyboard.press('Enter');
+        // On the box itself: a dropdown just closed hands focus back to itself a moment later
+        await test('req-criterion-input').press('Enter');
         await test('req-criterion').waitFor();
         await pick(test('req-status'), 'Verified');
         await soon(
@@ -259,6 +261,43 @@ await runBoard(
         });
         await page.keyboard.press('Escape');
         await test('requirement-sheet').waitFor({ state: 'detached' });
+
+        // -------------- Worked out by an agent: none yet, then one with no model
+        const theRequest = async () => {
+            await open(page, `${base}/p/${project}/product`);
+            await test('product-tab-requests').click();
+            await test('product-request')
+                .filter({ hasText: 'colour picking' })
+                .click();
+            await test('request-sheet').waitFor();
+        };
+        await theRequest();
+        check(
+            'with no agent yet, it says where to make one',
+            /No agents in this project yet/.test(
+                await test('work-out').innerText(),
+            ),
+        );
+        await open(page, `${base}/p/${project}/agents`);
+        await test('agent-new').click();
+        await test('agent-preset-analyst').click();
+        await test('agent-sheet').waitFor();
+        await page.keyboard.press('Escape');
+        await test('agent-sheet').waitFor({ state: 'detached' });
+
+        await theRequest();
+        await test('work-out-ask').click();
+        await soon(
+            'an agent with no model to ask says so, and the request stays open',
+            async () =>
+                (await test('work-out-failed').count()) === 1 &&
+                /no model|no AI connection/.test(
+                    await test('work-out-failed').innerText(),
+                ) &&
+                (await test('request-sheet').count()) === 1,
+        );
+        await page.keyboard.press('Escape');
+        await test('request-sheet').waitFor({ state: 'detached' });
 
         // ------------------------------------------------------ Coverage
         await test('product-tab-coverage').click();

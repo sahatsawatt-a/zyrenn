@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, router, usePage } from '@inertiajs/vue3';
+import { Head, router, setLayoutProps, usePage } from '@inertiajs/vue3';
 import {
     Columns3,
     List,
@@ -8,7 +8,7 @@ import {
     Ticket as TicketIcon,
 } from '@lucide/vue';
 import { useLocalStorage } from '@vueuse/core';
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch, watchEffect } from 'vue';
 import DeleteDialog from '@/components/common/DeleteDialog.vue';
 import EmptyState from '@/components/common/EmptyState.vue';
 import PageHeader from '@/components/common/PageHeader.vue';
@@ -30,6 +30,7 @@ import type {
 } from '@/features/tickets/tickets';
 import { canChange } from '@/lib/projects';
 import { chat, destroy, store, update } from '@/routes/projects/tickets';
+import { index as projectTickets } from '@/routes/projects/tickets';
 
 const props = defineProps<{
     tickets: Ticket[];
@@ -39,6 +40,18 @@ const props = defineProps<{
 
 const page = usePage();
 const project = computed(() => page.props.project!);
+
+// Its name in the bar at the top, as every page has
+watchEffect(() =>
+    setLayoutProps({
+        breadcrumbs: [
+            {
+                title: 'Tickets',
+                href: projectTickets(project.value.ref_id).url,
+            },
+        ],
+    }),
+);
 const changes = computed(() => canChange());
 
 // ------------------------------------------------------------------ Looking

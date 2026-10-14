@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Head, router, usePage } from '@inertiajs/vue3';
+import { Head, router, setLayoutProps, usePage } from '@inertiajs/vue3';
 import { BookOpenText, Bot, Plus, Trash2 } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import { computed, ref, watchEffect } from 'vue';
 import DeleteDialog from '@/components/common/DeleteDialog.vue';
 import EmptyState from '@/components/common/EmptyState.vue';
 import PageHeader from '@/components/common/PageHeader.vue';
@@ -16,6 +16,9 @@ import {
 import AgentSheet from '@/features/agents/AgentSheet.vue';
 import type { Agent, AgentChoices } from '@/features/agents/agents';
 import { destroy } from '@/routes/agents';
+import { index as ownAgents } from '@/routes/agents';
+import { index as projectAgents } from '@/routes/projects/agents';
+import { owned } from '@/lib/projects';
 
 const props = defineProps<{
     agents: Agent[];
@@ -23,6 +26,15 @@ const props = defineProps<{
     can: { manage: boolean };
     urls: { store: string };
 }>();
+
+// Its name in the bar at the top, as every page has
+watchEffect(() =>
+    setLayoutProps({
+        breadcrumbs: [
+            { title: 'Agents', href: owned(ownAgents, projectAgents)() },
+        ],
+    }),
+);
 
 const page = usePage();
 const where = computed(() => page.props.project?.name ?? 'your own');

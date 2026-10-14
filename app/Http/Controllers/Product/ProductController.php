@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Product;
 
 use App\Http\Controllers\Controller;
+use App\Models\Agent\Agent;
 use App\Models\Chat\ChatRoom;
 use App\Models\Product\ProductElement;
 use App\Models\Product\ProductLink;
@@ -10,11 +11,14 @@ use App\Models\Product\ProductRequest;
 use App\Models\Product\Requirement;
 use App\Models\Project;
 use App\Models\Ticket\Ticket;
+use App\Support\Chat\AiFailed;
+use App\Support\Product\Analyst;
 use App\Support\Product\Keeper;
 use App\Support\Product\Tracker;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -42,6 +46,8 @@ class ProductController extends Controller
                 ->map(fn (Requirement $one) => self::requirement($one))->values(),
             'coverage' => Tracker::coverage($project),
             'tickets' => $project->tickets()->orderByDesc('number')->get(['id', 'number', 'title', 'type', 'status'])->map->only(['number', 'title', 'type', 'status'])->values(),
+            // Who can work a request out into requirements
+            'agents' => Agent::query()->of($project)->orderBy('name')->get(['ref_id', 'name'])->map->only(['ref_id', 'name'])->values(),
             'people' => $project->members()->wherePivotIn('role', [Project::OWNER, Project::EDITOR])->orderBy('name')->get()->map->only(['id', 'name'])->values(),
             'can' => ['change' => Gate::allows('contribute', $project)],
         ]);
@@ -205,6 +211,70 @@ class ProductController extends Controller
         }
 
         $productRequest->update($request->validate(['status' => ['required', Rule::in(ProductRequest::STATUSES)]]));
+
+        return back();
+    }
+
+    /**
+     * A request worked out by one of the project's agents into requirements:
+     * a draft, kept by nobody, for a person to read and change first.
+     */
+    public function workOut(Request $request, ProductRequest $productRequest, Analyst $analyst): JsonResponse
+    {
+        $project = $this->changing($productRequest->project);
+        $ref = (string) $request->validate(['agent' => ['required', 'string', 'max:16']])['agent'];
+        $agent = Agent::query()->of($project)->where('ref_id', $ref)->first()
+            ?? throw ValidationException::withMessages(['agent' => __('Choose one of the project\'s agents.')]);
+
+        try {
+            return response()->json($analyst->workOut($agent, $productRequest, $request->user()));
+        } catch (AiFailed $e) {
+            // Asked, and it could not: said as an answer, not as a request gone wrong
+            return response()->json(['failed' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * The requirements a person keeps of a draft, as they left them: each
+     * made from the request, still to be checked -- "clarifying" while it has
+     * questions, a "draft" otherwise. Their criteria start unmet.
+     */
+    public function keepWorkedOut(Request $request, ProductRequest $productRequest): RedirectResponse
+    {
+        $project = $this->changing($productRequest->project);
+        $validated = $request->validate([
+            'requirements' => ['required', 'array', 'min:1', 'max:8'],
+            'requirements.*.title' => ['required', 'string', 'max:200'],
+            'requirements.*.need' => ['nullable', 'string', 'max:5000'],
+            'requirements.*.kind' => ['sometimes', Rule::in(Requirement::KINDS)],
+            'requirements.*.understanding' => ['sometimes', Rule::in(Requirement::UNDERSTANDING)],
+            'requirements.*.criteria' => ['sometimes', 'array', 'max:50'],
+            'requirements.*.criteria.*' => ['nullable', 'string', 'max:500'],
+            'requirements.*.questions' => ['sometimes', 'array', 'max:50'],
+            'requirements.*.questions.*' => ['nullable', 'string', 'max:500'],
+            'requirements.*.assumptions' => ['sometimes', 'array', 'max:50'],
+            'requirements.*.assumptions.*' => ['nullable', 'string', 'max:500'],
+            'requirements.*.parts' => ['sometimes', 'array', 'max:100'],
+            'requirements.*.parts.*' => ['string', 'max:16'],
+        ]);
+
+        $kept = DB::transaction(fn () => array_map(function (array $one) use ($project, $request, $productRequest) {
+            $requirement = Keeper::addRequirement($project, $request->user(), $one['title'], $one['need'] ?? null, $one['kind'] ?? null, $productRequest);
+            $questions = array_values(array_filter(array_map(fn ($text) => trim((string) $text), $one['questions'] ?? [])));
+
+            Keeper::changeRequirement($requirement, [
+                'understanding' => $one['understanding'] ?? 'partial',
+                'status' => $questions === [] ? 'draft' : 'clarifying',
+                'criteria' => array_map(fn ($text) => ['text' => (string) $text, 'met' => false], $one['criteria'] ?? []),
+                'questions' => $questions,
+                'assumptions' => $one['assumptions'] ?? [],
+                'elements' => $project->productElements()->whereIn('code', $one['parts'] ?? [])->pluck('id')->all(),
+            ]);
+
+            return $requirement->code;
+        }, $validated['requirements']));
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => trans_choice(':codes kept.|:codes kept.', count($kept), ['codes' => implode(', ', $kept)])]);
 
         return back();
     }

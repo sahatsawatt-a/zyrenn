@@ -264,9 +264,12 @@ const changed = ({ from, to }: ElementDetail['history'][number]) =>
 
             <div class="space-y-6 px-5 py-5">
                 <!-- What it is, and how it stands -->
-                <section class="grid gap-3">
-                    <fieldset :disabled="!canChange" class="grid gap-3">
-                        <div class="grid gap-1.5">
+                <section class="grid grid-cols-1 gap-3">
+                    <fieldset
+                        :disabled="!canChange"
+                        class="grid grid-cols-1 gap-3"
+                    >
+                        <div class="grid grid-cols-1 gap-1.5">
                             <Label for="element-name">Name</Label>
                             <Input
                                 id="element-name"
@@ -276,7 +279,7 @@ const changed = ({ from, to }: ElementDetail['history'][number]) =>
                                 @change="name.trim() && change({ name })"
                             />
                         </div>
-                        <div class="grid gap-1.5">
+                        <div class="grid grid-cols-1 gap-1.5">
                             <Label for="element-summary"
                                 >What it does today</Label
                             >
@@ -289,10 +292,10 @@ const changed = ({ from, to }: ElementDetail['history'][number]) =>
                                 @change="change({ summary })"
                             />
                         </div>
-                        <div class="grid gap-3 sm:grid-cols-2">
+                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <div
                                 v-if="element.kind === 'capability'"
-                                class="grid gap-1.5"
+                                class="grid grid-cols-1 gap-1.5"
                             >
                                 <Label>How it stands</Label>
                                 <TicketPick
@@ -305,7 +308,7 @@ const changed = ({ from, to }: ElementDetail['history'][number]) =>
                                     "
                                 />
                             </div>
-                            <div class="grid gap-1.5">
+                            <div class="grid grid-cols-1 gap-1.5">
                                 <Label>Under</Label>
                                 <TicketPick
                                     :model-value="element.parent ?? TOP"
@@ -334,7 +337,10 @@ const changed = ({ from, to }: ElementDetail['history'][number]) =>
                 </section>
 
                 <!-- What it uses or depends on, apart from where it sits -->
-                <section class="grid gap-2" data-test="element-links">
+                <section
+                    class="grid grid-cols-1 gap-2"
+                    data-test="element-links"
+                >
                     <Label>Uses and depends on</Label>
                     <ul
                         v-if="detail?.links.length"
@@ -406,7 +412,7 @@ const changed = ({ from, to }: ElementDetail['history'][number]) =>
                 <!-- What a change to it would reach -->
                 <section
                     v-if="detail"
-                    class="grid gap-2 rounded-xl border p-3"
+                    class="grid grid-cols-1 gap-2 rounded-xl border p-3"
                     data-test="element-impact"
                 >
                     <Label class="flex items-center gap-1.5"
@@ -467,7 +473,7 @@ const changed = ({ from, to }: ElementDetail['history'][number]) =>
                 </section>
 
                 <!-- Requirements about it -->
-                <section v-if="detail" class="grid gap-2">
+                <section v-if="detail" class="grid grid-cols-1 gap-2">
                     <Label>Requirements</Label>
                     <ul
                         v-if="detail.requirements.length"
@@ -525,7 +531,7 @@ const changed = ({ from, to }: ElementDetail['history'][number]) =>
                 </section>
 
                 <!-- Work on it: the project's tickets -->
-                <section v-if="detail" class="grid gap-2">
+                <section v-if="detail" class="grid grid-cols-1 gap-2">
                     <Label>Work on it</Label>
                     <ul
                         v-if="detail.tickets.length"
@@ -578,7 +584,10 @@ const changed = ({ from, to }: ElementDetail['history'][number]) =>
                 </section>
 
                 <!-- What happened to it -->
-                <section v-if="detail?.history.length" class="grid gap-2">
+                <section
+                    v-if="detail?.history.length"
+                    class="grid grid-cols-1 gap-2"
+                >
                     <Label class="flex items-center gap-1.5"
                         ><History class="size-4" /> History</Label
                     >

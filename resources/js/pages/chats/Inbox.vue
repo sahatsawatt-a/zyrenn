@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, router, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, setLayoutProps, usePage } from '@inertiajs/vue3';
 import {
     Inbox,
     MessageCircle,
@@ -11,7 +11,7 @@ import {
     Workflow,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive, ref, watchEffect } from 'vue';
 import EmptyState from '@/components/common/EmptyState.vue';
 import PageHeader from '@/components/common/PageHeader.vue';
 import SegmentTabs from '@/components/common/SegmentTabs.vue';
@@ -61,6 +61,15 @@ const props = defineProps<{
 
 const page = usePage();
 const project = computed(() => page.props.project!);
+
+// Its name in the bar at the top, as every page has
+watchEffect(() =>
+    setLayoutProps({
+        breadcrumbs: [
+            { title: 'Inbox', href: inbox(project.value.ref_id).url },
+        ],
+    }),
+);
 const me = page.props.auth.user.id;
 
 const LISTED = ['rooms', 'more', 'counts', 'channels'];

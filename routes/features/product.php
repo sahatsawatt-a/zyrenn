@@ -20,6 +20,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('product-elements/{element}/tickets', [ProductController::class, 'elementTicket'])->name('product.elements.ticket');
     Route::delete('product-links/{link}', [ProductController::class, 'unlink'])->name('product.links.destroy');
     Route::patch('product-requests/{productRequest}', [ProductController::class, 'updateRequest'])->name('product.requests.update');
+    // Worked out by an agent into requirements: a draft, then what a person keeps of it
+    Route::post('product-requests/{productRequest}/work-out', [ProductController::class, 'workOut'])->middleware('throttle:20,1')->name('product.requests.work-out');
+    Route::post('product-requests/{productRequest}/requirements', [ProductController::class, 'keepWorkedOut'])->name('product.requests.requirements.store');
     Route::patch('requirements/{requirement}', [ProductController::class, 'updateRequirement'])->name('product.requirements.update');
     Route::post('chats/{room}/requests', [ProductController::class, 'requestFromChat'])->name('chats.requests.store');
 });

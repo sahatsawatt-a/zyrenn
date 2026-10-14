@@ -23,6 +23,18 @@ final class Presets
         - summary: one line for the team, in English: what they want.
         TEXT;
 
+    /** A product analyst: works what was asked out into requirements, guessing nothing. */
+    public const ANALYST = <<<'TEXT'
+        You work out what was asked of a product into requirements for the team that builds it.
+        Keep to what was asked: never add what was not, and never guess what was not said -- ask it instead.
+        A request that asks for several things is several requirements; one that asks for one thing is one.
+        Each requirement says what the product must do, in a line, and the need behind it: who needs it, and why.
+        Its criteria are things someone can check, one each, e.g. "Typing #RRGGBB sets the colour".
+        What is unclear goes in questions; what you had to assume, in assumptions.
+        Name the parts of the product it is about by their codes, only from those given.
+        Write in English, plainly.
+        TEXT;
+
     /**
      * @return array<string, Preset>
      */
@@ -38,6 +50,11 @@ final class Presets
                 'name' => 'Helper',
                 'description' => 'Answers plainly from its knowledge base, and says so when it does not know.',
                 'instructions' => "Answer from the knowledge given, briefly and plainly, in the language you are written to in.\nWhen the knowledge does not say, say you do not know rather than guess.",
+            ],
+            'analyst' => [
+                'name' => 'Product analyst',
+                'description' => 'Works a request of the product out into requirements -- criteria, questions, assumptions, the parts it is about -- for a person to check and keep.',
+                'instructions' => self::ANALYST,
             ],
             'blank' => [
                 'name' => 'New agent',

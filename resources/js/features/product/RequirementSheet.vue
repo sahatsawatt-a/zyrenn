@@ -215,8 +215,8 @@ const changing = () =>
             </SheetHeader>
 
             <fieldset :disabled="!canChange" class="space-y-6 px-5 py-5">
-                <section class="grid gap-3">
-                    <div class="grid gap-1.5">
+                <section class="grid grid-cols-1 gap-3">
+                    <div class="grid grid-cols-1 gap-1.5">
                         <Label for="req-title">What it must do</Label>
                         <Input
                             id="req-title"
@@ -225,7 +225,7 @@ const changing = () =>
                             @change="title.trim() && change({ title })"
                         />
                     </div>
-                    <div class="grid gap-1.5">
+                    <div class="grid grid-cols-1 gap-1.5">
                         <Label for="req-need">The need it serves</Label>
                         <textarea
                             id="req-need"
@@ -236,7 +236,7 @@ const changing = () =>
                             @change="change({ need })"
                         />
                     </div>
-                    <div class="grid gap-1.5">
+                    <div class="grid grid-cols-1 gap-1.5">
                         <Label for="req-body">More about it</Label>
                         <textarea
                             id="req-body"
@@ -246,8 +246,8 @@ const changing = () =>
                             @change="change({ body })"
                         />
                     </div>
-                    <div class="grid gap-3 sm:grid-cols-2">
-                        <div class="grid gap-1.5">
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div class="grid grid-cols-1 gap-1.5">
                             <Label>Status</Label>
                             <TicketPick
                                 :model-value="requirement.status"
@@ -258,7 +258,7 @@ const changing = () =>
                             />
                             <InputError :message="errors.status" />
                         </div>
-                        <div class="grid gap-1.5">
+                        <div class="grid grid-cols-1 gap-1.5">
                             <Label>Understood</Label>
                             <TicketPick
                                 :model-value="requirement.understanding"
@@ -269,7 +269,7 @@ const changing = () =>
                                 "
                             />
                         </div>
-                        <div class="grid gap-1.5">
+                        <div class="grid grid-cols-1 gap-1.5">
                             <Label>Kind</Label>
                             <TicketPick
                                 :model-value="requirement.kind"
@@ -278,7 +278,7 @@ const changing = () =>
                                 @update:model-value="change({ kind: $event })"
                             />
                         </div>
-                        <div class="grid gap-1.5">
+                        <div class="grid grid-cols-1 gap-1.5">
                             <Label>Owner</Label>
                             <TicketPick
                                 :model-value="
@@ -302,7 +302,10 @@ const changing = () =>
                 </section>
 
                 <!-- What it is checked against -->
-                <section class="grid gap-2" data-test="req-criteria">
+                <section
+                    class="grid grid-cols-1 gap-2"
+                    data-test="req-criteria"
+                >
                     <Label>
                         Checked against
                         <span class="text-muted-foreground font-normal"
@@ -310,7 +313,7 @@ const changing = () =>
                             {{ requirement.criteria.length }} met</span
                         >
                     </Label>
-                    <ul class="grid gap-1">
+                    <ul class="grid grid-cols-1 gap-1">
                         <li
                             v-for="(one, at) in requirement.criteria"
                             :key="at"
@@ -367,14 +370,14 @@ const changing = () =>
                 <section
                     v-for="list in ['questions', 'assumptions'] as const"
                     :key="list"
-                    class="grid gap-2"
+                    class="grid grid-cols-1 gap-2"
                 >
                     <Label>{{
                         list === 'questions'
                             ? 'Still to be asked'
                             : 'Assumed, not confirmed'
                     }}</Label>
-                    <ul class="grid gap-1">
+                    <ul class="grid grid-cols-1 gap-1">
                         <li
                             v-for="(text, at) in requirement[list]"
                             :key="at"
@@ -411,7 +414,7 @@ const changing = () =>
                 </section>
 
                 <!-- The parts of the product it is about -->
-                <section class="grid gap-2">
+                <section class="grid grid-cols-1 gap-2">
                     <Label>About these parts</Label>
                     <div class="flex flex-wrap gap-1.5">
                         <span
@@ -460,7 +463,7 @@ const changing = () =>
                 </section>
 
                 <!-- The work done for it -->
-                <section class="grid gap-2">
+                <section class="grid grid-cols-1 gap-2">
                     <Label>Work for it</Label>
                     <ul
                         v-if="requirement.tickets.length"
