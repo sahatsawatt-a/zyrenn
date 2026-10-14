@@ -33,6 +33,7 @@ import {
     update,
 } from '@/routes/boards';
 import PdfPreview from '@/components/media/PdfPreview.vue';
+import NoteBacklinks from '@/features/notes/components/NoteBacklinks.vue';
 import { fetchExport } from '@/lib/exporting';
 import { index as projectIndex } from '@/routes/projects/boards';
 
@@ -403,6 +404,7 @@ const statusLabel = computed(() => {
                 >View only</span
             >
             <PresenceAvatars :others="others" />
+            <NoteBacklinks folded kind="board" :page="props.board.ref_id" />
             <div class="ml-auto">
                 <Button
                     variant="ghost"
@@ -451,6 +453,8 @@ const statusLabel = computed(() => {
 
         <template #actions>
             <PresenceAvatars :others="others" class="mr-1" />
+
+            <NoteBacklinks folded kind="board" :page="props.board.ref_id" />
 
             <Button
                 variant="ghost"

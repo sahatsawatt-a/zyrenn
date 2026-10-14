@@ -92,6 +92,7 @@ import {
 } from '@/features/notes/nodes/PageLinkNode';
 import type { SlashCommandItem } from '@/features/notes/composables/useSlashCommands';
 import { PageBreak } from '@/features/notes/nodes/PageBreak';
+import { RevealNode } from '@/features/notes/nodes/RevealNode';
 import { PdfHidden } from '@/features/notes/nodes/PdfHidden';
 import { ImageNode } from '@/features/notes/nodes/ImageNode';
 import { VideoNode } from '@/features/notes/nodes/VideoNode';
@@ -321,6 +322,8 @@ const editor = useEditor({
 
         // Custom isolated structural Callout and CodeBlock view modules
         CalloutNode,
+        // Kept out of sight until its line is clicked: answers, a hint
+        RevealNode,
         CodeBlockNode,
 
         // Task List configurations

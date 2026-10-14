@@ -311,7 +311,7 @@ final class NoteBlocks
             $type === 'heading' => 'heading '.($block['attrs']['level'] ?? 1),
             // A diagram, a board, trip or place shown in the note, or a link
             // shown as a card, is a code block underneath
-            $type === 'codeBlock' && in_array($block['attrs']['language'] ?? '', ['mermaid', 'circuit', 'timing', 'board', 'trip', 'map', 'link'], true) => $block['attrs']['language'],
+            $type === 'codeBlock' && in_array($block['attrs']['language'] ?? '', ['mermaid', 'circuit', 'plot', 'timing', 'board', 'trip', 'map', 'link'], true) => $block['attrs']['language'],
             $type === 'pageBreak' => 'page break',
             default => $type,
         };

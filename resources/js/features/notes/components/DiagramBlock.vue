@@ -89,6 +89,9 @@
             ></div>
         </div>
 
+        <!-- What a reader can change about the drawing, under it -->
+        <slot name="controls" />
+
         <!-- Asked before a template takes the place of something written -->
         <Dialog :open="!!replacing" @update:open="replacing = null">
             <DialogContent class="sm:max-w-md">
@@ -151,6 +154,9 @@ import { copyToClipboard } from '@/lib/utils';
 const props = defineProps({
     ...nodeViewProps,
     kind: { type: Object as PropType<DiagramKind>, required: true },
+    // Counted up when something other than the source changes what is
+    // drawn: the drawing is then made again, at once
+    redraw: { type: Number, default: 0 },
 });
 
 const isEditing = ref(false);
@@ -197,6 +203,10 @@ const render = async () => {
 const debouncedRender = useDebounceFn(render, 300);
 
 watch(source, () => void debouncedRender());
+watch(
+    () => props.redraw,
+    () => void render(),
+);
 
 // Re-render with the matching theme when light/dark mode flips
 if (props.kind.themed) {

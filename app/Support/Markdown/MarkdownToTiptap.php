@@ -8,6 +8,7 @@ use App\Support\Markdown\Extension\InlineValue;
 use App\Support\Markdown\Extension\MathBlock;
 use App\Support\Markdown\Extension\NoteSyntaxExtension;
 use App\Support\Markdown\Extension\PageLink;
+use App\Support\Markdown\Extension\Reveal;
 use League\CommonMark\Environment\Environment;
 use League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension;
 use League\CommonMark\Extension\CommonMark\Node\Block\BlockQuote;
@@ -110,6 +111,7 @@ final class MarkdownToTiptap
             $node instanceof ThematicBreak => [['type' => 'horizontalRule']],
             $node instanceof Table => [$this->table($node)],
             $node instanceof Callout => [$this->node('callout', ['icon' => $node->icon], $this->blocks($node) ?: [['type' => 'paragraph']])],
+            $node instanceof Reveal => [$this->node('reveal', ['title' => $node->title], $this->blocks($node) ?: [['type' => 'paragraph']])],
             $node instanceof MathBlock => $node->latex === '' ? [] : [$this->node('blockMath', ['latex' => $node->latex])],
             $node instanceof HtmlBlock => [$this->pageBreak($node->getLiteral()) ?? $this->video($node->getLiteral()) ?? $this->textParagraph($node->getLiteral())],
             default => [],

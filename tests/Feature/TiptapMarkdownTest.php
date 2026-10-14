@@ -101,6 +101,21 @@ MD;
         $this->assertSame($markdown, trim(TiptapMarkdown::toMarkdown($doc)));
     }
 
+    public function test_something_kept_out_of_sight_survives_the_round_trip()
+    {
+        // Whatever blocks it holds, under the line it shows
+        $markdown = "What flows?\n\n:::reveal Answer to 1\n3 mA, since:\n\n- 9 V across\n- 3 kΩ in all\n:::\n\nNext.";
+        $doc = TiptapMarkdown::toDoc($markdown);
+
+        $this->assertSame(['paragraph', 'reveal', 'paragraph'], array_column($doc['content'], 'type'));
+        $this->assertSame(['title' => 'Answer to 1'], $doc['content'][1]['attrs']);
+        $this->assertSame(['paragraph', 'bulletList'], array_column($doc['content'][1]['content'], 'type'));
+        $this->assertSame($markdown, trim(TiptapMarkdown::toMarkdown($doc)));
+
+        // With nothing said after "reveal", its line says "Answer"
+        $this->assertSame(['title' => 'Answer'], TiptapMarkdown::toDoc(":::reveal\nHidden\n:::")['content'][0]['attrs']);
+    }
+
     public function test_empty_input_produces_a_valid_document()
     {
         $this->assertSame(['type' => 'doc', 'content' => [['type' => 'paragraph']]], TiptapMarkdown::toDoc(''));

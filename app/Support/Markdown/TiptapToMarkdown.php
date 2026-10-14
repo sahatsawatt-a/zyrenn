@@ -63,6 +63,8 @@ final class TiptapToMarkdown
             'blockquote' => $this->prefixLines($this->blocksToMarkdown($content), '> '),
             'codeBlock' => $this->codeBlockToMarkdown($block),
             'callout' => ':::callout '.($attrs['icon'] ?? '💡')."\n".$this->blocksToMarkdown($content)."\n:::",
+            // Kept out of sight until asked for; its line is what follows "reveal"
+            'reveal' => ':::reveal '.trim(str_replace("\n", ' ', (string) ($attrs['title'] ?? 'Answer')))."\n".$this->blocksToMarkdown($content)."\n:::",
             'table' => $this->tableToMarkdown($content),
             'horizontalRule' => '---',
             // Invisible in any other Markdown viewer, and not mistaken for words

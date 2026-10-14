@@ -198,6 +198,8 @@ const field =
                     </fieldset>
                 </PopoverContent>
             </Popover>
+            <!-- What the page showing the trip adds to this row -->
+            <slot name="more" />
         </div>
 
         <FlightsDialog

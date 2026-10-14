@@ -17,16 +17,21 @@ import {
     readCircuit,
 } from '@/features/boards/circuit/netlist';
 import { truthTable } from '@/features/boards/circuit/logic';
+import { boardValues } from '@/features/boards/circuit/values';
 import type { Item } from '@/features/boards/composables/items';
 import { copyToClipboard } from '@/lib/utils';
 
 // What the drawing says as a circuit: the parts to buy, which pins are joined
 // to which, and anything that looks unfinished. Read from the symbols and
 // wires on the board each time it is opened; nothing here is kept.
-const props = defineProps<{ items: Item[] }>();
+const props = defineProps<{
+    items: Item[];
+    // Whether there is anything on the board to work out (and it is asked for)
+    values?: boolean;
+}>();
 
 const open = ref(false);
-const tab = ref<'parts' | 'nets' | 'truth'>('parts');
+const tab = ref<'parts' | 'nets' | 'truth' | 'values'>('parts');
 
 // Only worked out while it is being looked at
 const reading = computed(() => (open.value ? readCircuit(props.items) : null));
@@ -36,6 +41,13 @@ const bom = computed(() =>
 
 // What a logic circuit puts out for everything that can be put in
 const truth = computed(() => (open.value ? truthTable(props.items) : null));
+
+// The voltages and currents of what is drawn, as a table
+const worked = computed(() =>
+    open.value && props.values && tab.value === 'values'
+        ? boardValues(props.items)
+        : null,
+);
 
 const copy = async (text: string, what: string) => {
     try {
@@ -111,6 +123,15 @@ const copy = async (text: string, what: string) => {
                     >
                         Truth table
                     </button>
+                    <button
+                        v-if="values"
+                        type="button"
+                        :class="{ 'is-on': tab === 'values' }"
+                        data-test="circuit-tab-values"
+                        @click="tab = 'values'"
+                    >
+                        Values
+                    </button>
                 </div>
 
                 <div class="max-h-72 overflow-y-auto">
@@ -180,6 +201,72 @@ const copy = async (text: string, what: string) => {
                             </tr>
                         </tbody>
                     </table>
+
+                    <template v-else-if="tab === 'values' && worked">
+                        <table class="circuit-table">
+                            <thead>
+                                <tr>
+                                    <th>Part</th>
+                                    <th class="text-right">Across</th>
+                                    <th class="text-right">Through</th>
+                                    <th class="text-right">Power</th>
+                                </tr>
+                            </thead>
+                            <tbody data-test="circuit-values">
+                                <tr
+                                    v-for="row in worked.rows"
+                                    :key="row.item"
+                                    :class="{ 'is-over': row.warning }"
+                                >
+                                    <td class="font-medium">{{ row.name }}</td>
+                                    <td class="text-right tabular-nums">
+                                        {{ row.voltage }}
+                                    </td>
+                                    <td class="text-right tabular-nums">
+                                        {{ row.current }}
+                                    </td>
+                                    <td class="text-right tabular-nums">
+                                        {{ row.power }}
+                                    </td>
+                                </tr>
+                                <tr v-if="!worked.rows.length">
+                                    <td
+                                        colspan="4"
+                                        class="text-muted-foreground"
+                                    >
+                                        Nothing here was worked out.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <ul
+                            v-if="
+                                worked.warnings.length || worked.problems.length
+                            "
+                            class="circuit-problems mt-2"
+                            data-test="circuit-warnings"
+                        >
+                            <li
+                                v-for="said in [
+                                    ...worked.warnings,
+                                    ...worked.problems,
+                                ]"
+                                :key="said"
+                            >
+                                <TriangleAlert
+                                    class="mt-0.5 size-3.5 shrink-0"
+                                />
+                                {{ said }}
+                            </li>
+                        </ul>
+                        <p
+                            v-for="said in worked.assumed"
+                            :key="said"
+                            class="text-muted-foreground mt-2 text-xs"
+                        >
+                            {{ said }}
+                        </p>
+                    </template>
 
                     <table v-else class="circuit-table">
                         <thead>
@@ -294,6 +381,10 @@ const copy = async (text: string, what: string) => {
     text-align: center;
     font-variant-numeric: tabular-nums;
 }
+.circuit-table tr.is-over td {
+    color: var(--destructive);
+}
+
 .circuit-truth .is-output {
     border-left: 1px solid var(--border);
 }

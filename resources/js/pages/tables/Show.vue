@@ -32,6 +32,7 @@ import { useTableStore } from '@/features/tables/composables/useTableStore';
 import { usePresence } from '@/composables/usePresence';
 import { copyToClipboard, formatRelativeTime } from '@/lib/utils';
 import { canChange, owned } from '@/lib/projects';
+import NoteBacklinks from '@/features/notes/components/NoteBacklinks.vue';
 import { destroy, index as ownIndex, show } from '@/routes/tables';
 import { index as projectIndex } from '@/routes/projects/tables';
 import type {
@@ -259,6 +260,7 @@ onBeforeUnmount(() => {
 
             <div class="ml-auto flex items-center gap-1">
                 <PresenceAvatars :others="others" class="mr-2" />
+                <NoteBacklinks folded kind="table" :page="props.table.ref_id" />
                 <Button
                     variant="ghost"
                     size="sm"

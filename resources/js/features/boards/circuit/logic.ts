@@ -32,8 +32,30 @@ export type Signals = {
     // What to show on each item: the level of a wire's net, of an input or
     // a clock itself, and of whatever an output is fed
     levels: Map<string, Level>;
+    // For a display: the segments that are lit, by the pin that lights each
+    lit: Map<string, string[]>;
     read: (item: Pick<Item, 'id'>, pin: string) => Level;
 };
+
+/** The segments that make each digit, 0 to F, on a 7-segment display. */
+const DIGITS = [
+    'abcdef',
+    'bc',
+    'abdeg',
+    'abcdg',
+    'bcfg',
+    'acdfg',
+    'acdefg',
+    'abc',
+    'abcdefg',
+    'abcdfg',
+    'abcefg',
+    'cdefg',
+    'adef',
+    'bcdeg',
+    'adefg',
+    'aefg',
+];
 
 const not = (level: Level): Level => (level === null ? null : level ? 0 : 1);
 
@@ -61,6 +83,10 @@ export const isOperable = (item: Pick<Item, 'symbol'>): boolean => {
 
     return logic === 'input' || logic === 'clock';
 };
+
+/** A part that is on only while it is held down: a push-button. */
+export const isPressable = (item: Pick<Item, 'symbol'>): boolean =>
+    symbolOf(item.symbol)?.logic === 'button';
 
 /** Whether anything on the board works something out. */
 export const hasLogic = (items: Item[]): boolean =>
@@ -102,6 +128,12 @@ export const simulate = (items: Item[], run: Run = {}): Signals => {
         switch (symbol.logic) {
             case 'input':
                 return [['y', (run.inputs?.get(item.id) ?? item.on) ? 1 : 0]];
+            // High only while it is held down: nothing of it is kept
+            case 'button':
+                return [['y', run.inputs?.get(item.id) ? 1 : 0]];
+            case 'seg7':
+            case 'bcd7':
+                return [];
             // A clock ticks only while it is switched on
             case 'clock':
                 return [['y', item.on && run.clock ? 1 : 0]];
@@ -207,7 +239,40 @@ export const simulate = (items: Item[], run: Run = {}): Signals => {
         }
     }
 
-    return { levels, read };
+    // A display shows the pins that are high, or the digit they count up to
+    const lit = new Map<string, string[]>();
+
+    for (const item of parts) {
+        const symbol = symbolOf(item.symbol)!;
+
+        if (symbol.logic === 'seg7') {
+            lit.set(
+                item.id,
+                symbol.pins
+                    .filter((pin) => read(item, pin.name) === 1)
+                    .map((pin) => pin.name),
+            );
+        }
+
+        if (symbol.logic === 'bcd7') {
+            const bits = symbol.pins.map((pin) => read(item, pin.name));
+
+            // Nothing sure to show until every bit is driven
+            lit.set(
+                item.id,
+                bits.includes(null)
+                    ? []
+                    : DIGITS[
+                          bits.reduce<number>(
+                              (sum, bit, place) => sum + (bit ? 2 ** place : 0),
+                              0,
+                          )
+                      ].split(''),
+            );
+        }
+    }
+
+    return { levels, lit, read };
 };
 
 export type TruthTable = {
@@ -234,7 +299,12 @@ export const truthTable = (items: Item[]): TruthTable | null => {
                     numeric: true,
                 }),
             );
-    const inputs = of('input');
+    // A push-button is an input too: held down, or not
+    const inputs = [...of('input'), ...of('button')].sort((a, b) =>
+        wordsOf(a).name.localeCompare(wordsOf(b).name, undefined, {
+            numeric: true,
+        }),
+    );
     const outputs = of('output');
 
     if (

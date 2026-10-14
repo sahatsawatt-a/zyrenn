@@ -1,32 +1,44 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { FileText } from '@lucide/vue';
+import { FileText, Link2 } from '@lucide/vue';
+import { createReusableTemplate } from '@vueuse/core';
 import { ref, watch } from 'vue';
+import { Button } from '@/components/ui/button';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
 import { notesLinkingTo } from '@/features/notes/lib/pageLinks';
-import type { LinkingNote } from '@/features/notes/lib/pageLinks';
+import type { LinkingNote, PageKind } from '@/features/notes/lib/pageLinks';
 
-// The notes that link to this one, under it: where it is mentioned. Nothing
-// is shown for a note nothing links to.
-const props = defineProps<{ note: string }>();
+// The notes that link to a page: where it is mentioned. Under a note they
+// are a list; on a board, a table or a trip, which have no foot to put one
+// at, they are folded behind a button that says how many. Nothing is shown
+// for a page nothing links to.
+defineOptions({ inheritAttrs: false });
+
+const props = withDefaults(
+    defineProps<{ page: string; kind?: PageKind; folded?: boolean }>(),
+    { kind: 'note', folded: false },
+);
 
 const notes = ref<LinkingNote[]>([]);
 
 watch(
-    () => props.note,
-    async (note) => {
+    () => [props.page, props.kind] as const,
+    async ([page, kind]) => {
         notes.value = [];
-        notes.value = await notesLinkingTo(note).catch(() => []);
+        notes.value = await notesLinkingTo(page, kind).catch(() => []);
     },
     { immediate: true },
 );
+
+const [DefineList, List] = createReusableTemplate();
 </script>
 
 <template>
-    <section
-        v-if="notes.length"
-        class="note-backlinks"
-        data-test="note-backlinks"
-    >
+    <DefineList>
         <h2>Linked from</h2>
         <ul>
             <li v-for="from in notes" :key="from.ref_id">
@@ -39,11 +51,41 @@ watch(
                 </Link>
             </li>
         </ul>
+    </DefineList>
+
+    <Popover v-if="folded && notes.length">
+        <PopoverTrigger as-child>
+            <Button
+                variant="ghost"
+                size="sm"
+                v-bind="$attrs"
+                :title="`${notes.length === 1 ? 'A note links' : `${notes.length} notes link`} here`"
+                data-test="linked-from"
+            >
+                <Link2 />
+                {{ notes.length }}
+            </Button>
+        </PopoverTrigger>
+        <PopoverContent
+            align="end"
+            class="note-backlinks w-72 max-w-[calc(100vw-2rem)]"
+            data-test="note-backlinks"
+        >
+            <List />
+        </PopoverContent>
+    </Popover>
+    <section
+        v-else-if="!folded && notes.length"
+        v-bind="$attrs"
+        class="note-backlinks is-foot"
+        data-test="note-backlinks"
+    >
+        <List />
     </section>
 </template>
 
-<style scoped>
-.note-backlinks {
+<style>
+.note-backlinks.is-foot {
     margin-top: 2.5rem;
     padding-top: 1rem;
     border-top: 1px solid var(--border);

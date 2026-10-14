@@ -29,6 +29,7 @@ import { useMap } from '@/components/map/useMap';
 import { usePresence } from '@/composables/usePresence';
 import type { Candidate } from '@/lib/maps';
 import { whatIsHere } from '@/lib/maps';
+import NoteBacklinks from '@/features/notes/components/NoteBacklinks.vue';
 import { canChange, owned } from '@/lib/projects';
 import { index as projectIndex } from '@/routes/projects/trips';
 import { index as ownIndex, show } from '@/routes/trips';
@@ -409,7 +410,16 @@ const conflictOpen = computed({
 
         <FloatingPanel v-model:folded="folded">
             <template #header>
-                <TripHeader :plan="plan" :near="centre" :editable="editable" />
+                <TripHeader :plan="plan" :near="centre" :editable="editable">
+                    <template #more>
+                        <NoteBacklinks
+                            folded
+                            kind="trip"
+                            :page="props.trip.ref_id"
+                            class="h-auto rounded-full border px-2.5 py-1 text-xs"
+                        />
+                    </template>
+                </TripHeader>
             </template>
             <TripPanel
                 :plan="plan"

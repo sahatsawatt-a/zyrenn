@@ -62,4 +62,20 @@ class PageLinkController extends Controller
             'notes' => PageLinks::linkedFrom($note, $request->user()),
         ]);
     }
+
+    /**
+     * The notes that link to a page of any kind: a board, a table, a trip.
+     */
+    public function linkedFromPage(Request $request, string $kind, string $ref): JsonResponse
+    {
+        abort_unless(isset(PageLinks::KINDS[$kind]), 404);
+
+        $page = PageLinks::KINDS[$kind][0]::query()->where('ref_id', $ref)->firstOrFail();
+
+        Gate::authorize('view', $page);
+
+        return response()->json([
+            'notes' => PageLinks::linkedFrom($page, $request->user()),
+        ]);
+    }
 }

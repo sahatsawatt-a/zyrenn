@@ -33,6 +33,8 @@ const ROW = GRID * 4;
  * written against them: what hangs off one of its pins starts beyond it.
  */
 const BESIDE = GRID * 6;
+// The room a ground or a rail drawn in line with a pin takes, with its name
+const CAP = GRID * 4;
 
 const OPPOSITE: Record<Side, Side> = {
     top: 'bottom',
@@ -83,7 +85,12 @@ const overlap = (a: Box, b: Box) =>
 const key = (part: string, pin: string) => `${part}.${pin}`;
 
 /** The circuit as items: its parts where they belong, wired up. */
-export const layOut = (circuit: Circuit): Item[] => {
+export const layOut = (
+    circuit: Circuit,
+    // What will be written under each part besides its own words, by the
+    // part's name: room is left for it
+    notes: Map<string, string> = new Map(),
+): Item[] => {
     const netAt = new Map<string, Net>();
 
     for (const net of circuit.nets) {
@@ -131,8 +138,41 @@ export const layOut = (circuit: Circuit): Item[] => {
         text: part.symbol.prefix ? withWords(part.name, part.value) : part.name,
     });
 
+    const noteOn = (item: Item) => {
+        const note = notes.get(item.text.split('\n')[0]);
+
+        return note ? [note] : [];
+    };
+
+    /**
+     * The room a ground or a rail takes straight out from a pin, for a part
+     * on a module's row of pins: there it is drawn in line (inLine), where
+     * the part on the next row would otherwise be.
+     */
+    const caps = (part: Part, item: Item): Box[] =>
+        pinsOf(item).flatMap((pin) => {
+            const net = netAt.get(key(part.name, pin.name));
+
+            if (
+                !net ||
+                tracked(net) ||
+                (pin.side !== 'left' && pin.side !== 'right')
+            ) {
+                return [];
+            }
+
+            return [
+                {
+                    x: pin.side === 'left' ? pin.x - CAP : pin.x,
+                    y: pin.y - GRID,
+                    width: CAP,
+                    height: GRID * 2,
+                },
+            ];
+        });
+
     /** What a part covers: itself, with a little air, and its words. */
-    const footprint = (item: Item): Box[] => {
+    const footprint = (item: Item, part?: Part, row = false): Box[] => {
         const box = symbolBox(item);
 
         return [
@@ -142,12 +182,13 @@ export const layOut = (circuit: Circuit): Item[] => {
                 width: box.width + GRID,
                 height: box.height,
             },
-            ...symbolLabels(item).map(labelBounds),
+            ...symbolLabels(item, noteOn(item)).map(labelBounds),
+            ...(part && row && !part.symbol.module ? caps(part, item) : []),
         ];
     };
 
-    const clear = (item: Item) =>
-        footprint(item).every((box) =>
+    const clear = (item: Item, part: Part, row: boolean) =>
+        footprint(item, part, row).every((box) =>
             taken.every((other) => !overlap(box, other)),
         );
 
@@ -179,7 +220,7 @@ export const layOut = (circuit: Circuit): Item[] => {
         const module = !!part.symbol.module;
 
         placed.set(part.name, { part, item });
-        taken.push(...footprint(item));
+        taken.push(...footprint(item, part, row));
 
         if (module || row) {
             inRow.add(item.id);
@@ -230,7 +271,7 @@ export const layOut = (circuit: Circuit): Item[] => {
     ): Item => {
         let item = drafted(part, pin, side, at);
 
-        for (let tries = 0; tries < 400 && !clear(item); tries++) {
+        for (let tries = 0; tries < 400 && !clear(item, part, row); tries++) {
             at = { x: at.x + step.x, y: at.y + step.y };
             item = drafted(part, pin, side, at);
         }

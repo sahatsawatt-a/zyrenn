@@ -7,6 +7,7 @@ use App\Models\Board\Board;
 use App\Support\Board\BoardItemProblem;
 use App\Support\Board\BoardItems;
 use App\Support\Board\BoardParts;
+use App\Support\Board\CircuitLayout;
 use App\Support\Live\Collab;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
@@ -21,6 +22,8 @@ drawn.
 To change what is on it, send only what changes, by item id (from get-board):
 - "add_items": new items, drawn on top. Leave "id" out and one is made up; leave x and y out and they
   are laid out for you. A connector can pin to any item on the board, old or new.
+- "add_circuit": a circuit written as text ("R1: 10k", "V1 -- R1 -- D1 -- V1"; see create-board), laid
+  out for you -- parts on the grid, wires clear of one another -- and added under what is there.
 - "update_items": each with its "id" and just the fields to change; the rest keep what they have.
 - "delete_items": the ids to take off.
 - "delete_frames": frames (by id or title) to take off with everything on them.
@@ -41,6 +44,8 @@ class UpdateBoard extends BoardTool
             'ref_id' => $this->refIdArgument($schema),
             'title' => $schema->string()->max(255)->description('New title.'),
             'add_items' => $this->itemsArgument($schema, 'Items to add, on top.'),
+            'add_circuit' => $this->circuitArgument($schema, 'A circuit as text, laid out for you and added under what is on the board -- or at "circuit_at".'),
+            'circuit_at' => $schema->object(['x' => $schema->number(), 'y' => $schema->number()])->description('Where the top left corner of "add_circuit" goes.'),
             'update_items' => $this->itemsArgument($schema, 'Items to change: each with its "id" and the fields to change.', kindRequired: false),
             'delete_items' => $schema->array()->max(self::MAX_ITEMS)->items($schema->string()->max(64))->description('Ids of items to take off.'),
             'delete_frames' => $schema->array()->max(self::MAX_ITEMS)->items($schema->string()->max(255))->description('Frames, by id or title, to take off along with everything on them and any connector joined to it.'),
@@ -65,6 +70,10 @@ class UpdateBoard extends BoardTool
             'delete_frames.*' => ['string', 'max:255'],
             'frame_order' => ['sometimes', 'array', 'max:'.self::MAX_ITEMS],
             'frame_order.*' => ['string', 'max:64'],
+            'add_circuit' => ['sometimes', 'string', 'max:'.self::MAX_CIRCUIT],
+            'circuit_at' => ['sometimes', 'array'],
+            'circuit_at.x' => ['required_with:circuit_at', 'numeric', 'between:-100000,100000'],
+            'circuit_at.y' => ['required_with:circuit_at', 'numeric', 'between:-100000,100000'],
             ...$this->itemRules(sometimes: true),
             ...$this->itemRules(sometimes: true, key: 'add_items'),
             ...$this->itemRules(sometimes: true, key: 'update_items', kindRequired: false),
@@ -77,7 +86,7 @@ class UpdateBoard extends BoardTool
             return $this->notFound($validated['ref_id']);
         }
 
-        $byItem = array_intersect_key($validated, array_flip(['add_items', 'update_items', 'delete_items', 'delete_frames', 'frame_order'])) !== [];
+        $byItem = array_intersect_key($validated, array_flip(['add_items', 'add_circuit', 'update_items', 'delete_items', 'delete_frames', 'frame_order'])) !== [];
         $also = [];
 
         if ($byItem && array_key_exists('items', $validated)) {
@@ -109,9 +118,20 @@ class UpdateBoard extends BoardTool
             }
 
             try {
+                $add = $this->specs($validated, 'add_items');
+
+                // A circuit written as text is laid out, and added with the rest
+                if (filled($validated['add_circuit'] ?? null)) {
+                    $add = [...$add, ...CircuitLayout::specs(
+                        $validated['add_circuit'],
+                        [...array_column($current, 'id'), ...array_column($add, 'id')],
+                        $validated['circuit_at'] ?? CircuitLayout::under($current),
+                    )];
+                }
+
                 $done = BoardItems::change(
                     $current,
-                    $this->specs($validated, 'add_items'),
+                    $add,
                     $this->specs($validated, 'update_items'),
                     $delete,
                 );

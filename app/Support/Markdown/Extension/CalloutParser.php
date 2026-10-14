@@ -9,18 +9,14 @@ use League\CommonMark\Parser\Block\BlockContinueParserInterface;
 use League\CommonMark\Parser\Cursor;
 
 /**
- * Holds any blocks until a `:::` line closes the callout.
+ * Holds any blocks until a `:::` line closes the callout, or the reveal:
+ * both are a `:::` line, what they hold, and a `:::` line.
  */
 final class CalloutParser extends AbstractBlockContinueParser
 {
-    private Callout $block;
+    public function __construct(private readonly Callout|Reveal $block) {}
 
-    public function __construct(string $icon)
-    {
-        $this->block = new Callout($icon);
-    }
-
-    public function getBlock(): Callout
+    public function getBlock(): Callout|Reveal
     {
         return $this->block;
     }

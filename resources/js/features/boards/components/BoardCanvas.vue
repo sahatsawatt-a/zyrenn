@@ -2,6 +2,7 @@
 import {
     ChevronLeft,
     ChevronRight,
+    Gauge,
     LayoutTemplate,
     Maximize,
     Minus,
@@ -63,7 +64,6 @@ import BoardVideoControls from './BoardVideoControls.vue';
 import ShapeLibrary from './ShapeLibrary.vue';
 import TemplateDialog from './TemplateDialog.vue';
 import { isTable } from '@/features/boards/composables/schema';
-import { Button } from '@/components/ui/button';
 import {
     attachmentsOf,
     connectorPoints,
@@ -79,9 +79,12 @@ import {
 import {
     hasLogic,
     isOperable,
+    isPressable,
     newMemory,
     simulate,
 } from '@/features/boards/circuit/logic';
+import { boardValues } from '@/features/boards/circuit/values';
+import { Button } from '@/components/ui/button';
 import {
     isSymbol,
     snapped,
@@ -560,6 +563,22 @@ const resizeSelection = (change: {
 const hasCircuit = computed(() => board.items.value.some(isSymbol));
 const hasSchema = computed(() => board.items.value.some(isTable));
 
+// A circuit with something to drive it can be worked out: its voltages and
+// currents written on it, for whoever asks. A board with none has no button.
+const canWorkOut = computed(() =>
+    board.items.value.some((item) => {
+        const symbol = isSymbol(item) ? symbolOf(item.symbol) : undefined;
+
+        return !!symbol && (symbol.source || symbol.role === 'power');
+    }),
+);
+const showValues = ref(false);
+const worked = computed(() =>
+    showValues.value && canWorkOut.value
+        ? boardValues(board.items.value)
+        : null,
+);
+
 /** A quarter turn for each selected part, about its own middle. */
 const turnSelection = () => {
     const parts = board.selected.value.filter(isSymbol);
@@ -588,9 +607,17 @@ const logical = computed(() => hasLogic(board.items.value));
 const beat = ref(false);
 const memory = newMemory();
 
+// The push-buttons held down just now: on for as long as they are, and
+// nothing of it kept
+const held = ref(new Map<string, boolean>());
+
 const signals = computed(() =>
     logical.value
-        ? simulate(board.items.value, { clock: beat.value, memory })
+        ? simulate(board.items.value, {
+              clock: beat.value,
+              inputs: held.value,
+              memory,
+          })
         : null,
 );
 
@@ -607,13 +634,39 @@ useIntervalFn(() => {
     }
 }, 500);
 
-/** The switch or clock under the pointer, if that is what is there. */
-const operableAt = (event: Konva.KonvaEventObject<MouseEvent>) => {
+/** What is under the pointer, if it is something that answers it. */
+const partAt = (
+    event: Konva.KonvaEventObject<Event>,
+    answers: (item: Item) => boolean,
+) => {
     const id = event.target.id() || event.target.getParent()?.id();
     const item = id ? board.byId.value.get(id) : undefined;
 
-    return item && !item.locked && isOperable(item) ? item : null;
+    return item && !item.locked && answers(item) ? item : null;
 };
+
+/** The switch or clock under the pointer, if that is what is there. */
+const operableAt = (event: Konva.KonvaEventObject<Event>) =>
+    partAt(event, isOperable);
+
+// A push-button is on from the moment it is pressed until the pointer is
+// let go, wherever that is
+const onStagePress = (event: Konva.KonvaEventObject<Event>) => {
+    const button =
+        presenting.value || tool.value === 'select'
+            ? partAt(event, isPressable)
+            : null;
+
+    if (button) {
+        held.value = new Map([[button.id, true]]);
+    }
+};
+
+useEventListener(window, ['pointerup', 'pointercancel'], () => {
+    if (held.value.size) {
+        held.value = new Map();
+    }
+});
 
 const onStageClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
     // A click flips a switch, or starts and stops a clock. With Shift it is
@@ -631,6 +684,11 @@ const onStageClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
         return;
     }
 
+    // Nor is a push-button by being pressed
+    if (!event.evt.shiftKey && partAt(event, isPressable)) {
+        return;
+    }
+
     onClick(event);
 };
 
@@ -640,7 +698,10 @@ const onStageHover = (event: Konva.KonvaEventObject<MouseEvent>) => {
 
     if (container) {
         container.style.cursor =
-            event.type === 'mouseover' && operableAt(event) ? 'pointer' : '';
+            event.type === 'mouseover' &&
+            partAt(event, (item) => isOperable(item) || isPressable(item))
+                ? 'pointer'
+                : '';
     }
 };
 
@@ -898,7 +959,31 @@ const connectorPath = (item: Item) =>
             <div class="ml-auto flex shrink-0 items-center gap-1">
                 <slot name="actions" />
 
-                <BoardCircuit v-if="hasCircuit" :items="board.items.value" />
+                <!-- The voltages and currents of what is drawn, written on
+                     it: shown and hidden by whoever is looking, and not kept -->
+                <Button
+                    v-if="canWorkOut"
+                    variant="ghost"
+                    size="sm"
+                    :class="{ 'bg-primary/10 text-primary': showValues }"
+                    :aria-pressed="showValues"
+                    :title="
+                        showValues
+                            ? 'Hide the voltages and currents'
+                            : 'Work the circuit out: the voltage on each wire, and the current through each part'
+                    "
+                    data-test="board-values"
+                    @click="showValues = !showValues"
+                >
+                    <Gauge />
+                    <span v-if="!compact">Values</span>
+                </Button>
+
+                <BoardCircuit
+                    v-if="hasCircuit"
+                    :items="board.items.value"
+                    :values="canWorkOut"
+                />
 
                 <!-- The tables drawn here written out as SQL: there once
                      there is a table -->
@@ -974,6 +1059,8 @@ const connectorPath = (item: Item) =>
                 @pointermove="onStagePointerMove"
                 @click="onStageClick"
                 @tap="onStageClick"
+                @mousedown="onStagePress"
+                @touchstart="onStagePress"
                 @mouseover="onStageHover"
                 @mouseout="onStageHover"
                 @dblclick="onDoubleClick"
@@ -994,6 +1081,11 @@ const connectorPath = (item: Item) =>
                         :video="videos.videoFor(item)"
                         :playing="videos.isPlaying(item.id)"
                         :level="signals?.levels.get(item.id)"
+                        :lit="signals?.lit.get(item.id)"
+                        :worked="
+                            worked?.notes.get(item.id)?.text ??
+                            worked?.wires.get(item.id)
+                        "
                         :path-of="connectorPath"
                         :snap="snapWhileDragging"
                     />

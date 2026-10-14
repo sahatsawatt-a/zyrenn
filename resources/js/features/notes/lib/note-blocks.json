@@ -13,6 +13,7 @@
         "taskItem",
         "codeBlock",
         "callout",
+        "reveal",
         "table",
         "horizontalRule",
         "pageBreak",

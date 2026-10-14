@@ -1,49 +1,14 @@
 // Logic on a board: gates between switches and lamps, worked out as it is
 // drawn. A click flips a switch or starts a clock without picking it up, and
 // the board says what the circuit puts out for everything that can go in.
-import { circuitParts } from './circuit-parts.mjs';
+import { circuitParts, liveAt } from './circuit-parts.mjs';
 import { SHOTS, runBoard } from './harness.mjs';
 
 await runBoard('/demo/konva', async (b) => {
     const { page, check, join, screenOf, inspectorTitle } = b;
     const { place } = circuitParts(b);
 
-    /** Whether what is drawn at a board point is the green of a high signal. */
-    const isLive = async (x, y) => {
-        const point = await screenOf(x, y);
-        const shot = await page.screenshot({
-            clip: { x: point.x - 3, y: point.y - 3, width: 6, height: 6 },
-        });
-
-        return page.evaluate(async (base64) => {
-            const picture = new Image();
-            picture.src = `data:image/png;base64,${base64}`;
-            await picture.decode();
-            const canvas = document.createElement('canvas');
-            canvas.width = picture.width;
-            canvas.height = picture.height;
-            const context = canvas.getContext('2d');
-            context.drawImage(picture, 0, 0);
-            const { data } = context.getImageData(
-                0,
-                0,
-                canvas.width,
-                canvas.height,
-            );
-
-            // Any of it green: a wire is a pixel wide from this far out
-            for (let index = 0; index < data.length; index += 4) {
-                if (
-                    data[index + 1] > data[index] + 25 &&
-                    data[index + 1] > data[index + 2] + 25
-                ) {
-                    return true;
-                }
-            }
-
-            return false;
-        }, shot.toString('base64'));
-    };
+    const isLive = liveAt(page, screenOf);
 
     const click = async (x, y, { shift = false } = {}) => {
         const point = await screenOf(x, y);

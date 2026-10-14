@@ -106,9 +106,11 @@ visibility -- a "lifeline" for a sequence, an actor), architecture (server, user
 to one row of a table ("pin"), or sit part way down a lifeline ("along"). create-board's "template"
 starts a board from a ready-made diagram. A circuit can be drawn too: items of kind "symbol" name a part in "symbol"
 (resistor, led, npn, esp32, a "chip:VCC,GND|OUT" of your own, ...) with its designator and value as "text"
-("R1\n10 kΩ"), and an arrow whose ends name pins -- {"item": "r1", "pin": "2"} -- is a wire. Logic runs on the board as it is drawn:
-gates (and, or, not, nand, nor, xor, xnor, dff) between "input" switches ("on": true sets one) and
-"output" lamps. To see a board or one frame as the app draws it, get-board with
+("R1\n10 kΩ"), and an arrow whose ends name pins -- {"item": "r1", "pin": "2"} -- is a wire. Easier: send
+the circuit as text in create-board's "circuit" (update-board's "add_circuit"), the lines a ```circuit
+fence takes, and it is laid out for you. Logic runs on the board as it is drawn: gates (and, or, not,
+nand, nor, xor, xnor, and3, or3, nand3, nor3, dff) between "input" switches ("on": true sets one) or
+"press" push-buttons and "output" lamps or a "seg7" / "bcd7" display. To see a board or one frame as the app draws it, get-board with
 "image": true sends a PNG; "check": true lists labels that run out of their box and items lying over
 each other.
 
@@ -138,7 +140,16 @@ To draw a circuit in a note, put a ```circuit fence holding its parts, one to a 
 its name says so), then its wires as ends joined by "--": a pin ("Q1.b"), a two-pin part to run
 through from its first pin to its second, or a net's name ("gnd", "3V3", "sda"). For example
 "V1 -- R1 -- D1 -- V1", or with a board: "U1: esp32", "S1: dht22", "U1.GPIO4 -- S1.DATA" (a chip of your
-own lists its pins: "U2: chip 74HC595 [SER, CLK | QA, QB]"). The note lays it out and draws it.
+own lists its pins: "U2: chip 74HC595 [SER, CLK | QA, QB]"). The note lays it out and draws it. A
+line "values" works it out at DC and writes each wire's voltage and each part's current on it, marking
+a part driven past its rating ("R1: 100 1W", "D1: led red 30mA"; else 0.25 W and 20 mA); "values
+hidden" keeps them back until the reader clicks Values -- for a guess to be made first.
+To draw a graph in a note, put a ```plot fence holding: "t = 0 to 5" (what runs along the bottom),
+"R = 1 from 0.2 to 5" (a value the reader can slide), "C = 1" (one that stays), a curve per line as
+"V(t) = 5 * (1 - exp(-t / (R * C)))", and "title: ", "x: Time (s)", "y: Volts, 0 to 6" as wanted. Or
+draw a table's columns: "table: Its title", "x: A column", "y: Another, And another" (numbers only).
+To keep an answer out of sight until it is clicked: ":::reveal Answer" on a line, then any blocks,
+then ":::".
 To draw signals over time -- a clock, a bus, a chip-select -- put a ```timing fence holding a line
 for each as "NAME: steps", a character to a step: 0 low, 1 high, "." more of the same, p a clock
 pulse (n one that starts low), x unknown, z let go of, = a value named in order after a "|"

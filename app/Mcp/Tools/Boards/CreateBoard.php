@@ -4,7 +4,9 @@ namespace App\Mcp\Tools\Boards;
 
 use App\Mcp\Tools\BoardTool;
 use App\Models\Board\Board;
+use App\Support\Board\BoardItemProblem;
 use App\Support\Board\BoardItems;
+use App\Support\Board\CircuitLayout;
 use App\Support\Board\Templates;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Validation\Rule;
@@ -37,6 +39,11 @@ join. Parts keep to a 20-unit grid so the wires run straight:
  {"kind":"arrow","from":{"item":"r1","pin":"2"},"to":{"item":"d1","pin":"a"}},
  {"kind":"arrow","from":{"item":"d1","pin":"k"},"to":{"item":"v1","pin":"-"}}]
 
+Easier: write the circuit as text in "circuit" and it is laid out for you, wires and all -- one line
+for each part ("R1: 10k", "D1: led red", "U1: esp32"), then what is joined ("V1 -- R1 -- D1 -- V1",
+"U1.GPIO4 -- R1"). A name that is not a part is a net: "5V", "GND", "out". The answer lists what was
+put on, each part under its own name ("r1") for changing later.
+
 To start from a ready-made diagram instead of drawing one, name it in "template": the answer lists
 its items, each under an id to change with update-board.
 TEXT)]
@@ -47,6 +54,7 @@ class CreateBoard extends BoardTool
         return [
             'title' => $schema->string()->max(255)->description('The board title.')->required(),
             'items' => $this->itemsArgument($schema, 'What to put on the board, drawn back to front. An empty board is fine too.'),
+            'circuit' => $this->circuitArgument($schema, 'A circuit as text, laid out for you and put on the board (under "items", when both are sent).'),
             'template' => $schema->string()->enum(Templates::ids())->description('A diagram to start the board from, with sample words to change: '.Templates::described().'. Sent with "items", those are drawn over it.'),
             'folder' => $this->folderArgument($schema, 'Folder to create the board in; folders that don\'t exist yet are created.'),
         ];
@@ -60,12 +68,23 @@ class CreateBoard extends BoardTool
         $validated = $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'folder' => ['nullable', 'string', 'max:1000'],
+            'circuit' => ['nullable', 'string', 'max:'.self::MAX_CIRCUIT],
             'template' => ['nullable', 'string', Rule::in(Templates::ids())],
             ...$this->itemRules(),
         ]);
 
         // A template is the first thing drawn; what else was sent goes over it
         $specs = [...Templates::specs($validated['template'] ?? ''), ...$this->specs($validated)];
+
+        try {
+            // A circuit written as text is laid out, and goes on with the rest
+            if (filled($validated['circuit'] ?? null)) {
+                $specs = [...$specs, ...CircuitLayout::specs($validated['circuit'], array_column($specs, 'id'), CircuitLayout::under($specs))];
+            }
+        } catch (BoardItemProblem $problem) {
+            return Response::error($problem->getMessage());
+        }
+
         $problem = $this->itemProblem($specs);
 
         if ($problem !== null) {

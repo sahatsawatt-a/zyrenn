@@ -4,6 +4,7 @@ import {
     circuitExamples,
     defaultCircuit,
 } from '@/features/boards/circuit/examples';
+import { defaultPlot, plotExamples } from '@/features/notes/plot/examples';
 import {
     defaultTiming,
     timingExamples,
@@ -485,5 +486,49 @@ export const commandItems: SlashCommandItem[] = [
                 })
                 .run();
         },
+    },
+    {
+        title: 'Graph',
+        description: 'A curve from a formula, with values to slide.',
+        icon: '📈',
+        keywords: [
+            'plot',
+            'chart',
+            'curve',
+            'formula',
+            'function',
+            'slider',
+            ...plotExamples.map((example) => example.label),
+        ],
+        command: ({ editor, range }) => {
+            editor
+                .chain()
+                .focus()
+                .deleteRange(range)
+                .insertContent({
+                    type: 'codeBlock',
+                    attrs: { language: 'plot' },
+                    content: [{ type: 'text', text: defaultPlot.source }],
+                })
+                .run();
+        },
+    },
+    {
+        title: 'Reveal',
+        description: 'Kept out of sight until it is clicked: an answer.',
+        icon: '▸',
+        keywords: [
+            'answer',
+            'hint',
+            'spoiler',
+            'hide',
+            'show',
+            'toggle',
+            'collapse',
+            'details',
+            'solution',
+        ],
+        command: ({ editor, range }) =>
+            editor.chain().focus().deleteRange(range).wrapIn('reveal').run(),
     },
 ];

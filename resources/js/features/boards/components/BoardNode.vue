@@ -21,6 +21,10 @@ const props = defineProps<{
     playing?: boolean;
     // In a logic circuit: whether this wire, input or lamp is high just now
     level?: 0 | 1 | null;
+    // On a display: which of its segments are lit
+    lit?: string[];
+    // What was worked out for it, when that is asked to be shown
+    worked?: string;
     pathOf: (item: Item) => number[];
     snap: (item: Item) => (position: { x: number; y: number }) => {
         x: number;
@@ -57,6 +61,8 @@ const config = computed(() => ({
             :video="video"
             :playing="playing"
             :level="level"
+            :lit="lit"
+            :worked="worked"
             :path="path"
         />
     </Group>

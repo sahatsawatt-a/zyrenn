@@ -30,6 +30,7 @@ import {
     symbolLabels,
     symbolOf,
 } from '@/features/boards/circuit/symbols';
+import { WARNED, besideRun } from '@/features/boards/circuit/values';
 import { polygonPoints } from '@/features/boards/composables/geometry';
 import type { Item } from '@/features/boards/composables/items';
 import {
@@ -82,12 +83,20 @@ const props = defineProps<{
     playing?: boolean;
     // In a logic circuit: whether this wire, input or lamp is high just now
     level?: 0 | 1 | null;
+    // On a display: which of its segments are lit
+    lit?: string[];
+    // What its circuit was worked out to: under a part, what flows through
+    // it and is across it; beside a wire, the voltage it is at
+    worked?: string;
     // A connector's path, worked out from what it is pinned to
     path: number[];
 }>();
 
 // What is high in a running logic circuit is drawn in this
 const LIVE = '#16a34a';
+// What a circuit was worked out to, and that which is over its rating
+const WORKED = '#6366f1';
+const OVER = '#dc2626';
 
 // On a dark board, a line in the board's ink is drawn light where it lies
 // on the board itself; every other colour is drawn as it was chosen
@@ -276,35 +285,47 @@ const symbolScale = (item: Item) => {
  * were measured into the part's box, and stretched the frame drawn round a
  * selected part out to wherever they were.
  */
-const drawWords = (item: Item, ink: string) => (context: Konva.Context) => {
-    const upright = (-item.rotation * Math.PI) / 180;
+const drawWords =
+    (item: Item, ink: string, worked = '') =>
+    (context: Konva.Context) => {
+        const upright = (-item.rotation * Math.PI) / 180;
 
-    context.setAttr('fillStyle', ink);
-    context.setAttr('textBaseline', 'middle');
+        context.setAttr('textBaseline', 'middle');
 
-    for (const label of [...symbolLabels(item), ...pinTexts(item)]) {
-        const at = inItem(item, label);
+        for (const label of [
+            ...symbolLabels(item, worked ? [worked] : []),
+            ...pinTexts(item),
+        ]) {
+            const at = inItem(item, label);
 
-        context.save();
-        context.translate(at.x, at.y);
-        context.rotate(upright);
-        context.setAttr(
-            'font',
-            `${label.name ? '600 ' : ''}${label.size ?? LABEL_SIZE}px Arial`,
-        );
-        context.setAttr('textAlign', label.align);
-        context.fillText(
-            label.text,
-            0,
-            label.baseline === 'top'
-                ? LABEL_LINE / 2
-                : label.baseline === 'bottom'
-                  ? -LABEL_LINE / 2
-                  : 0,
-        );
-        context.restore();
-    }
-};
+            context.setAttr(
+                'fillStyle',
+                label.note
+                    ? label.text.startsWith(WARNED)
+                        ? OVER
+                        : WORKED
+                    : ink,
+            );
+            context.save();
+            context.translate(at.x, at.y);
+            context.rotate(upright);
+            context.setAttr(
+                'font',
+                `${label.name ? '600 ' : ''}${label.size ?? LABEL_SIZE}px Arial`,
+            );
+            context.setAttr('textAlign', label.align);
+            context.fillText(
+                label.text,
+                0,
+                label.baseline === 'top'
+                    ? LABEL_LINE / 2
+                    : label.baseline === 'bottom'
+                      ? -LABEL_LINE / 2
+                      : 0,
+            );
+            context.restore();
+        }
+    };
 
 // Close enough for a backing chip: Konva would have to measure the text to do
 // better, and this only has to keep the line out of the words.
@@ -519,6 +540,19 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
                 listening: false,
             }"
         />
+        <!-- A display's segments: each faint until its pin is high -->
+        <Path
+            v-for="(segment, pin) in symbolOf(item.symbol)?.segments ?? {}"
+            :key="pin"
+            :config="{
+                data: segment,
+                scaleX: item.width / symbolOf(item.symbol)!.width,
+                scaleY: item.height / symbolOf(item.symbol)!.height,
+                fill: lit?.includes(String(pin)) ? LIVE : shown(item.stroke),
+                opacity: lit?.includes(String(pin)) ? 1 : 0.1,
+                listening: false,
+            }"
+        />
         <!-- A switch's knob: at one end while off, the other while on -->
         <Path
             v-if="symbolOf(item.symbol)?.states"
@@ -546,7 +580,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
         />
         <Shape
             :config="{
-                sceneFunc: drawWords(item, shown(INK)),
+                sceneFunc: drawWords(item, shown(INK), worked),
                 listening: false,
                 opacity: editing ? 0 : 1,
             }"
@@ -802,6 +836,22 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             }"
         />
     </template>
+
+    <!-- What a wire's net was worked out to be at, beside its longest run -->
+    <Text
+        v-if="isConnector(item) && worked && besideRun(path)"
+        :config="{
+            direction: DIRECTION,
+            text: worked,
+            x: besideRun(path)!.x - (besideRun(path)!.level ? 40 : 0),
+            y: besideRun(path)!.y - 9,
+            width: 80,
+            align: besideRun(path)!.level ? 'center' : 'left',
+            fontSize: 11,
+            fill: WORKED,
+            listening: false,
+        }"
+    />
 
     <!-- A label sits inside every shape except plain text,
      which is the label. Double-click any of them. -->

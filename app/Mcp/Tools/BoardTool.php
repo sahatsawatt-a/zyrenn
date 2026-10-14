@@ -25,6 +25,9 @@ abstract class BoardTool extends FiledTool
     /** No board needs more on it than this in one call. */
     protected const MAX_ITEMS = 300;
 
+    /** Nor a circuit longer than this, written as text. */
+    protected const MAX_CIRCUIT = 8000;
+
     protected function noun(): string
     {
         return 'board';
@@ -68,6 +71,14 @@ abstract class BoardTool extends FiledTool
             ->items($this->itemArgument($schema, $kindRequired))
             ->max(self::MAX_ITEMS)
             ->description($description);
+    }
+
+    /**
+     * Schema for a circuit written as text, which is laid out on the board.
+     */
+    protected function circuitArgument(JsonSchema $schema, string $description): Type
+    {
+        return $schema->string()->max(self::MAX_CIRCUIT)->description($description);
     }
 
     /**

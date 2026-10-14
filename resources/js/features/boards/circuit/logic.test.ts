@@ -193,6 +193,75 @@ describe('logic on a board', () => {
         ]);
     });
 
+    it('takes three inputs on a gate that has three', () => {
+        const table = truthTable(
+            drawn(
+                'A: input\nB: input\nC: input\nU1: and3\nU2: nor3\nY: output\nZ: output\nA -- U1.a\nB -- U1.b\nC -- U1.c\nA -- U2.a\nB -- U2.b\nC -- U2.c\nU1.y -- Y\nU2.y -- Z',
+            ),
+        )!;
+
+        // Y is all three; Z is none of them
+        expect(table.rows.map((row) => row.outputs.join(''))).toEqual([
+            '01',
+            '00',
+            '00',
+            '00',
+            '00',
+            '00',
+            '00',
+            '10',
+        ]);
+    });
+
+    it('holds a push-button high only while it is pressed', () => {
+        const items = drawn('A: press\nY: output\nA -- Y');
+        const lamp = (pressed: boolean) =>
+            simulate(items, {
+                inputs: new Map(pressed ? [[named(items, 'A').id, true]] : []),
+            }).levels.get(named(items, 'Y').id);
+
+        expect([lamp(false), lamp(true), lamp(false)]).toEqual([0, 1, 0]);
+        // A button counts as an input: held down, or not
+        expect(truthTable(items)!.rows.map((row) => row.outputs[0])).toEqual([
+            0, 1,
+        ]);
+    });
+
+    it('lights the segments of a display that are fed', () => {
+        const items = set(
+            drawn(
+                'A: input\nB: input\nDS1: seg7\nA -- DS1.b\nA -- DS1.c\nB -- DS1.g',
+            ),
+            'A',
+        );
+
+        // b and c: a one
+        expect(simulate(items).lit.get(named(items, 'DS1').id)).toEqual([
+            'b',
+            'c',
+        ]);
+    });
+
+    it('shows the digit a display is given as a number', () => {
+        const items = drawn(
+            'A: input\nB: input\nC: input\nD: input\nDS1: bcd7\nA -- DS1.1\nB -- DS1.2\nC -- DS1.4\nD -- DS1.8',
+        );
+        const shows = (...on: string[]) =>
+            simulate(set(items, ...on))
+                .lit.get(named(items, 'DS1').id)!
+                .join('');
+
+        expect(shows()).toBe('abcdef');
+        expect(shows('A')).toBe('bc');
+        expect(shows('A', 'B', 'C')).toBe('abc');
+        expect(shows('A', 'D')).toBe('abcdfg');
+
+        // With a bit left undriven there is nothing sure to show
+        const loose = drawn('A: input\nDS1: bcd7\nA -- DS1.1');
+
+        expect(simulate(loose).lit.get(named(loose, 'DS1').id)).toEqual([]);
+    });
+
     it('has no truth table for what depends on what came before', () => {
         expect(
             truthTable(

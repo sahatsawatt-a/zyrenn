@@ -1315,6 +1315,404 @@
             ]
         },
         {
+            "id": "and3",
+            "label": "AND gate, 3 inputs",
+            "group": "Logic",
+            "prefix": "U",
+            "aliases": [],
+            "logic": "and",
+            "hint": "",
+            "width": 100,
+            "height": 80,
+            "inset": 8,
+            "labels": "top",
+            "path": "M0,20 H20 M0,60 H20 M80,40 H100 M20,10 H50 A30,30 0 0,1 50,70 H20 Z M0,40 H20",
+            "pins": [
+                {
+                    "name": "a",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1", "in1"]
+                },
+                {
+                    "name": "b",
+                    "x": 0,
+                    "y": 40,
+                    "side": "left",
+                    "aliases": ["2", "in2"]
+                },
+                {
+                    "name": "c",
+                    "x": 0,
+                    "y": 60,
+                    "side": "left",
+                    "aliases": ["3", "in3"]
+                },
+                {
+                    "name": "y",
+                    "x": 100,
+                    "y": 40,
+                    "side": "right",
+                    "aliases": ["4", "out", "q"]
+                }
+            ]
+        },
+        {
+            "id": "or3",
+            "label": "OR gate, 3 inputs",
+            "group": "Logic",
+            "prefix": "U",
+            "aliases": [],
+            "logic": "or",
+            "hint": "",
+            "width": 100,
+            "height": 80,
+            "inset": 8,
+            "labels": "top",
+            "path": "M0,20 H23 M0,60 H23 M80,40 H100 M20,10 Q38,10 50,14 Q68,20 80,40 Q68,60 50,66 Q38,70 20,70 Q32,40 20,10 Z M0,40 H26",
+            "pins": [
+                {
+                    "name": "a",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1", "in1"]
+                },
+                {
+                    "name": "b",
+                    "x": 0,
+                    "y": 40,
+                    "side": "left",
+                    "aliases": ["2", "in2"]
+                },
+                {
+                    "name": "c",
+                    "x": 0,
+                    "y": 60,
+                    "side": "left",
+                    "aliases": ["3", "in3"]
+                },
+                {
+                    "name": "y",
+                    "x": 100,
+                    "y": 40,
+                    "side": "right",
+                    "aliases": ["4", "out", "q"]
+                }
+            ]
+        },
+        {
+            "id": "nand3",
+            "label": "NAND gate, 3 inputs",
+            "group": "Logic",
+            "prefix": "U",
+            "aliases": [],
+            "logic": "nand",
+            "hint": "",
+            "width": 100,
+            "height": 80,
+            "inset": 8,
+            "labels": "top",
+            "path": "M0,20 H20 M0,60 H20 M80,40 H100 M80,40 a4,4 0 1,0 -8,0 a4,4 0 1,0 8,0 M20,10 H42 A30,30 0 0,1 42,70 H20 Z M0,40 H20",
+            "pins": [
+                {
+                    "name": "a",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1", "in1"]
+                },
+                {
+                    "name": "b",
+                    "x": 0,
+                    "y": 40,
+                    "side": "left",
+                    "aliases": ["2", "in2"]
+                },
+                {
+                    "name": "c",
+                    "x": 0,
+                    "y": 60,
+                    "side": "left",
+                    "aliases": ["3", "in3"]
+                },
+                {
+                    "name": "y",
+                    "x": 100,
+                    "y": 40,
+                    "side": "right",
+                    "aliases": ["4", "out", "q"]
+                }
+            ]
+        },
+        {
+            "id": "nor3",
+            "label": "NOR gate, 3 inputs",
+            "group": "Logic",
+            "prefix": "U",
+            "aliases": [],
+            "logic": "nor",
+            "hint": "",
+            "width": 100,
+            "height": 80,
+            "inset": 8,
+            "labels": "top",
+            "path": "M0,20 H23 M0,60 H23 M80,40 H100 M80,40 a4,4 0 1,0 -8,0 a4,4 0 1,0 8,0 M20,10 Q36,10 46,14 Q62,20 72,40 Q62,60 46,66 Q36,70 20,70 Q32,40 20,10 Z M0,40 H26",
+            "pins": [
+                {
+                    "name": "a",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1", "in1"]
+                },
+                {
+                    "name": "b",
+                    "x": 0,
+                    "y": 40,
+                    "side": "left",
+                    "aliases": ["2", "in2"]
+                },
+                {
+                    "name": "c",
+                    "x": 0,
+                    "y": 60,
+                    "side": "left",
+                    "aliases": ["3", "in3"]
+                },
+                {
+                    "name": "y",
+                    "x": 100,
+                    "y": 40,
+                    "side": "right",
+                    "aliases": ["4", "out", "q"]
+                }
+            ]
+        },
+        {
+            "id": "press",
+            "label": "Logic push-button",
+            "group": "Logic",
+            "prefix": "",
+            "role": "input",
+            "logic": "button",
+            "aliases": ["pushbutton_input", "momentary", "key"],
+            "hint": "A",
+            "width": 60,
+            "height": 40,
+            "inset": 2,
+            "labels": "left",
+            "path": "M4,8 H36 V32 H4 Z M36,20 H60 M27,20 a7,7 0 1,0 -14,0 a7,7 0 1,0 14,0",
+            "lit": "M27,20 a7,7 0 1,0 -14,0 a7,7 0 1,0 14,0",
+            "pins": [
+                {
+                    "name": "y",
+                    "x": 60,
+                    "y": 20,
+                    "side": "right",
+                    "aliases": ["1", "out"]
+                }
+            ]
+        },
+        {
+            "id": "seg7",
+            "label": "7-segment display",
+            "group": "Logic",
+            "prefix": "DS",
+            "logic": "seg7",
+            "aliases": [],
+            "hint": "",
+            "width": 100,
+            "height": 160,
+            "inset": 0,
+            "labels": "top",
+            "path": "M20,0 H100 V160 H20 Z M0,20 H20 M0,40 H20 M0,60 H20 M0,80 H20 M0,100 H20 M0,120 H20 M0,140 H20",
+            "segments": {
+                "a": "M42,35 H78 L81,38 L78,41 H42 L39,38 Z",
+                "b": "M79,45 L82,42 L85,45 V74 L82,77 L79,74 Z",
+                "c": "M79,86 L82,83 L85,86 V115 L82,118 L79,115 Z",
+                "d": "M42,119 H78 L81,122 L78,125 H42 L39,122 Z",
+                "e": "M35,86 L38,83 L41,86 V115 L38,118 L35,115 Z",
+                "f": "M35,45 L38,42 L41,45 V74 L38,77 L35,74 Z",
+                "g": "M42,77 H78 L81,80 L78,83 H42 L39,80 Z"
+            },
+            "texts": [
+                {
+                    "text": "a",
+                    "x": 24,
+                    "y": 20,
+                    "align": "left"
+                },
+                {
+                    "text": "b",
+                    "x": 24,
+                    "y": 40,
+                    "align": "left"
+                },
+                {
+                    "text": "c",
+                    "x": 24,
+                    "y": 60,
+                    "align": "left"
+                },
+                {
+                    "text": "d",
+                    "x": 24,
+                    "y": 80,
+                    "align": "left"
+                },
+                {
+                    "text": "e",
+                    "x": 24,
+                    "y": 100,
+                    "align": "left"
+                },
+                {
+                    "text": "f",
+                    "x": 24,
+                    "y": 120,
+                    "align": "left"
+                },
+                {
+                    "text": "g",
+                    "x": 24,
+                    "y": 140,
+                    "align": "left"
+                }
+            ],
+            "pins": [
+                {
+                    "name": "a",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["1"]
+                },
+                {
+                    "name": "b",
+                    "x": 0,
+                    "y": 40,
+                    "side": "left",
+                    "aliases": ["2"]
+                },
+                {
+                    "name": "c",
+                    "x": 0,
+                    "y": 60,
+                    "side": "left",
+                    "aliases": ["3"]
+                },
+                {
+                    "name": "d",
+                    "x": 0,
+                    "y": 80,
+                    "side": "left",
+                    "aliases": ["4"]
+                },
+                {
+                    "name": "e",
+                    "x": 0,
+                    "y": 100,
+                    "side": "left",
+                    "aliases": ["5"]
+                },
+                {
+                    "name": "f",
+                    "x": 0,
+                    "y": 120,
+                    "side": "left",
+                    "aliases": ["6"]
+                },
+                {
+                    "name": "g",
+                    "x": 0,
+                    "y": 140,
+                    "side": "left",
+                    "aliases": ["7"]
+                }
+            ]
+        },
+        {
+            "id": "bcd7",
+            "label": "7-segment display, from a number",
+            "group": "Logic",
+            "prefix": "DS",
+            "logic": "bcd7",
+            "aliases": [],
+            "hint": "",
+            "width": 100,
+            "height": 160,
+            "inset": 0,
+            "labels": "top",
+            "path": "M20,0 H100 V160 H20 Z M0,20 H20 M0,40 H20 M0,60 H20 M0,80 H20",
+            "segments": {
+                "a": "M42,35 H78 L81,38 L78,41 H42 L39,38 Z",
+                "b": "M79,45 L82,42 L85,45 V74 L82,77 L79,74 Z",
+                "c": "M79,86 L82,83 L85,86 V115 L82,118 L79,115 Z",
+                "d": "M42,119 H78 L81,122 L78,125 H42 L39,122 Z",
+                "e": "M35,86 L38,83 L41,86 V115 L38,118 L35,115 Z",
+                "f": "M35,45 L38,42 L41,45 V74 L38,77 L35,74 Z",
+                "g": "M42,77 H78 L81,80 L78,83 H42 L39,80 Z"
+            },
+            "texts": [
+                {
+                    "text": "1",
+                    "x": 24,
+                    "y": 20,
+                    "align": "left"
+                },
+                {
+                    "text": "2",
+                    "x": 24,
+                    "y": 40,
+                    "align": "left"
+                },
+                {
+                    "text": "4",
+                    "x": 24,
+                    "y": 60,
+                    "align": "left"
+                },
+                {
+                    "text": "8",
+                    "x": 24,
+                    "y": 80,
+                    "align": "left"
+                }
+            ],
+            "pins": [
+                {
+                    "name": "1",
+                    "x": 0,
+                    "y": 20,
+                    "side": "left",
+                    "aliases": ["d0", "a"]
+                },
+                {
+                    "name": "2",
+                    "x": 0,
+                    "y": 40,
+                    "side": "left",
+                    "aliases": ["d1", "b"]
+                },
+                {
+                    "name": "4",
+                    "x": 0,
+                    "y": 60,
+                    "side": "left",
+                    "aliases": ["d2", "c"]
+                },
+                {
+                    "name": "8",
+                    "x": 0,
+                    "y": 80,
+                    "side": "left",
+                    "aliases": ["d3", "d"]
+                }
+            ]
+        },
+        {
             "id": "ground",
             "label": "Ground",
             "group": "Nets",

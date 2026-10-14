@@ -150,6 +150,28 @@ class PageLinksTest extends TestCase
         $this->assertSame([$plan->ref_id], array_column(PageLinks::linkedFrom($board, $user), 'ref_id'));
     }
 
+    public function test_a_board_a_table_or_a_trip_says_which_notes_link_to_it()
+    {
+        $user = User::factory()->create();
+        $board = (new Board(['title' => 'Floor plan']))->ownedBy($user, $user);
+        $board->save();
+        $plan = $this->note($user, 'Plan', 'As drawn on [[board:Floor plan]].');
+
+        $this->actingAs($user)
+            ->getJson(route('pages.linked-from', ['kind' => 'board', 'ref' => $board->ref_id]))
+            ->assertOk()
+            ->assertJsonPath('notes.0.ref_id', $plan->ref_id)
+            ->assertJsonPath('notes.0.title', 'Plan')
+            ->assertJsonCount(1, 'notes');
+
+        // Not a kind of page, not a page, and not one's own to ask about
+        $this->actingAs($user)->getJson(route('pages.linked-from', ['kind' => 'user', 'ref' => $board->ref_id]))->assertNotFound();
+        $this->actingAs($user)->getJson(route('pages.linked-from', ['kind' => 'table', 'ref' => $board->ref_id]))->assertNotFound();
+        $this->actingAs(User::factory()->create())
+            ->getJson(route('pages.linked-from', ['kind' => 'board', 'ref' => $board->ref_id]))
+            ->assertForbidden();
+    }
+
     public function test_one_of_two_pages_of_a_name_is_written_by_its_ref_id()
     {
         $user = User::factory()->create();

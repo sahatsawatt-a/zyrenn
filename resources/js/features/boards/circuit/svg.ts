@@ -8,6 +8,7 @@ import {
 } from '@/features/boards/composables/connectors';
 import { INK, isConnector } from '@/features/boards/composables/items';
 import type { Item } from '@/features/boards/composables/items';
+import { WARNED, besideRun } from './values';
 import {
     LABEL_SIZE,
     isSymbol,
@@ -28,6 +29,18 @@ export type DrawingOptions = {
     paper?: string;
     padding?: number;
     title?: string;
+    // What was worked out, written on the drawing in its own colour: a line
+    // under a part's words, by the part's item id, and a net's voltage on
+    // one of its wires, by the wire's id
+    notes?: Map<string, string>;
+    wireNotes?: Map<string, string>;
+    accent?: string;
+    // A line under the whole drawing: why nothing could be worked out
+    caption?: string;
+    // Another, in the colour of a warning: what is asked for more than it
+    // is good for. A part's own line is in that colour when it starts "⚠"
+    alarm?: string;
+    danger?: string;
 };
 
 const escaped = (text: string) =>
@@ -49,7 +62,22 @@ export const drawCircuit = (
     items: Item[],
     options: DrawingOptions = {},
 ): Drawing => {
-    const { ink = 'currentColor', paper, padding = 16, title = '' } = options;
+    const {
+        ink = 'currentColor',
+        paper,
+        padding = 16,
+        title = '',
+        notes,
+        wireNotes,
+        // The app's own accent where there is one; a file gets the fallback
+        accent = 'var(--primary, #4f46e5)',
+        caption = '',
+        alarm = '',
+        danger = 'var(--destructive, #dc2626)',
+    } = options;
+    // Said of a line in the colour of a warning
+    const alarmed = ` fill="${escaped(danger)}"`;
+    const worked: string[] = [];
     const shown = items.filter((item) => !item.hidden);
     const byId = new Map(shown.map((item) => [item.id, item]));
     const attached = attachmentsOf(shown);
@@ -90,6 +118,25 @@ export const drawCircuit = (
                 lines.push(
                     `<polyline points="${points.join(' ')}"${stroke(item)}/>`,
                 );
+            }
+
+            // What its net was worked out to be at: beside the longest
+            // straight run of it, clear of its corners
+            const volts = wireNotes?.get(item.id);
+            const at = volts ? besideRun(path) : null;
+
+            if (at && volts) {
+                const { level } = at;
+
+                worked.push(
+                    `<text x="${number(at.x)}" y="${number(at.y)}" text-anchor="${level ? 'middle' : 'start'}" font-size="11">${escaped(volts)}</text>`,
+                );
+                boxes.push({
+                    x: at.x - (level ? 24 : 0),
+                    y: at.y - 12,
+                    width: 48,
+                    height: 16,
+                });
             }
 
             // A wire's words are its net's name, written just over it
@@ -141,10 +188,12 @@ export const drawCircuit = (
 
         boxes.push(symbolBox(item));
 
-        for (const label of symbolLabels(item)) {
+        const note = notes?.get(item.id);
+
+        for (const label of symbolLabels(item, note ? [note] : [])) {
             boxes.push(labelBounds(label));
-            words.push(
-                `<text x="${number(label.x)}" y="${number(label.y + BASELINE[label.baseline])}" text-anchor="${ANCHOR[label.align]}"${label.name ? ' font-weight="600"' : ''}>${escaped(label.text)}</text>`,
+            (label.note ? worked : words).push(
+                `<text x="${number(label.x)}" y="${number(label.y + BASELINE[label.baseline])}" text-anchor="${ANCHOR[label.align]}"${label.name ? ' font-weight="600"' : ''}${label.note && label.text.startsWith(WARNED) ? alarmed : ''}>${escaped(label.text)}</text>`,
             );
         }
 
@@ -181,15 +230,51 @@ export const drawCircuit = (
         );
     }
 
+    // Why nothing was worked out, and what is over its rating, under the
+    // drawing: broken into lines no wider than it is
+    const perLine = Math.max(24, Math.floor(width / 5.6));
+    const captionLines: { text: string; alarm: boolean }[] = [];
+
+    for (const [said, isAlarm] of [
+        [caption, false],
+        [alarm, true],
+    ] as const) {
+        let line = '';
+
+        for (const word of said.split(/\s+/).filter(Boolean)) {
+            if (line !== '' && `${line} ${word}`.length > perLine) {
+                captionLines.push({ text: line, alarm: isAlarm });
+                line = word;
+            } else {
+                line = line === '' ? word : `${line} ${word}`;
+            }
+        }
+
+        if (line !== '') {
+            captionLines.push({ text: line, alarm: isAlarm });
+        }
+    }
+
+    const footer = captionLines.length ? captionLines.length * 14 + 10 : 0;
+
+    captionLines.forEach((line, index) =>
+        worked.push(
+            `<text x="${number(x + width / 2)}" y="${number(y + height + 12 + index * 14)}" text-anchor="middle" font-size="11"${line.alarm ? alarmed : ''}>${escaped(line.text)}</text>`,
+        ),
+    );
+
     const svg = [
-        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${number(x)} ${number(y)} ${number(width)} ${number(height)}" width="${number(width)}" height="${number(height)}" font-family="Arial, Helvetica, sans-serif" font-size="${LABEL_SIZE}">`,
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${number(x)} ${number(y)} ${number(width)} ${number(height + footer)}" width="${number(width)}" height="${number(height + footer)}" font-family="Arial, Helvetica, sans-serif" font-size="${LABEL_SIZE}">`,
         paper
-            ? `<rect x="${number(x)}" y="${number(y)}" width="${number(width)}" height="${number(height)}" fill="${escaped(paper)}"/>`
+            ? `<rect x="${number(x)}" y="${number(y)}" width="${number(width)}" height="${number(height + footer)}" fill="${escaped(paper)}"/>`
             : '',
         `<g fill="none" stroke="${escaped(ink)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${lines.join('')}${shapes.join('')}</g>`,
         `<g fill="${escaped(ink)}" stroke="none">${solids.join('')}${words.join('')}</g>`,
+        worked.length
+            ? `<g fill="${escaped(accent)}" stroke="none">${worked.join('')}</g>`
+            : '',
         '</svg>',
     ].join('');
 
-    return { svg, width, height };
+    return { svg, width, height: height + footer };
 };

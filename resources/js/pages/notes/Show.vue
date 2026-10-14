@@ -495,7 +495,7 @@ const statusLabel = computed(() => {
             class="mx-auto w-full px-10 pb-16 print:hidden"
             :class="isWide ? 'max-w-none' : 'max-w-[800px]'"
         >
-            <NoteBacklinks :note="note.ref_id" />
+            <NoteBacklinks :page="note.ref_id" />
         </div>
     </div>
 </template>

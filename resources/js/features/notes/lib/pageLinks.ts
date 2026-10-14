@@ -4,6 +4,7 @@
 // link on the page in one request, as live values are (noteValues).
 import { reactive, ref } from 'vue';
 import { linkedFrom as linkedFromRoute } from '@/routes/notes';
+import { linkedFrom as linkedFromPage } from '@/routes/pages';
 import { pick, show } from '@/routes/notes/page-links';
 import { xsrfToken } from '@/lib/utils';
 
@@ -120,8 +121,16 @@ export interface LinkingNote {
     folder: string | null;
 }
 
-export async function notesLinkingTo(note: string): Promise<LinkingNote[]> {
-    const response = await fetch(linkedFromRoute.url(note), { headers: json });
+export async function notesLinkingTo(
+    page: string,
+    kind: PageKind = 'note',
+): Promise<LinkingNote[]> {
+    const response = await fetch(
+        kind === 'note'
+            ? linkedFromRoute.url(page)
+            : linkedFromPage.url({ kind, ref: page }),
+        { headers: json },
+    );
 
     return response.ok ? (await response.json()).notes : [];
 }

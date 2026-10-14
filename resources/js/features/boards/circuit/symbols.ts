@@ -42,6 +42,8 @@ export type SymbolDef = {
     logic?: string;
     // The part of it filled in while it is on: an input's box, a lamp
     lit?: string;
+    // The parts lit one by one: a display's segments, by the pin that lights each
+    segments?: Record<string, string>;
     // Drawn one way while it is off and another while on: a switch's knob
     states?: { off: string; on: string };
     // A board or a chip: a box with a named pin down each side, made from a
@@ -540,6 +542,8 @@ export type SymbolLabel = {
     name: boolean;
     // Smaller than a name or a value: a module's pin names
     size?: number;
+    // Something worked out about the part, not written on it: its current
+    note?: boolean;
 };
 
 /**
@@ -547,7 +551,11 @@ export type SymbolLabel = {
  * up: over and under a part lying flat, to one side of a part stood on end,
  * on whichever side has no pin for a wire to run through them.
  */
-export const symbolLabels = (item: Item): SymbolLabel[] => {
+export const symbolLabels = (
+    item: Item,
+    // Lines to add under its own: what was worked out about it
+    notes: string[] = [],
+): SymbolLabel[] => {
     const symbol = symbolOf(item.symbol);
 
     if (!symbol || symbol.labels === 'none') {
@@ -558,6 +566,7 @@ export const symbolLabels = (item: Item): SymbolLabel[] => {
     const lines = [
         { text: name, name: true },
         { text: value, name: false },
+        ...notes.map((text) => ({ text, name: false, note: true })),
     ].filter((line) => line.text);
 
     if (!lines.length) {
@@ -580,7 +589,8 @@ export const symbolLabels = (item: Item): SymbolLabel[] => {
                 : 'split'
             : turnSide(symbol.labels, item.rotation);
 
-    if (where === 'split' && lines.length === 2) {
+    // Its name over it, and the rest under it
+    if (where === 'split' && lines.length >= 2) {
         return [
             {
                 ...lines[0],
@@ -589,13 +599,13 @@ export const symbolLabels = (item: Item): SymbolLabel[] => {
                 align: 'center',
                 baseline: 'bottom',
             },
-            {
-                ...lines[1],
+            ...lines.slice(1).map((line, index): SymbolLabel => ({
+                ...line,
                 x: across,
-                y: box.y + box.height - inset + gap,
+                y: box.y + box.height - inset + gap + index * LABEL_LINE,
                 align: 'center',
                 baseline: 'top',
-            },
+            })),
         ];
     }
 

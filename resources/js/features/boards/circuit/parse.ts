@@ -48,7 +48,16 @@ export type Net = {
     pins: PinRef[];
 };
 
-export type Circuit = { title: string; parts: Part[]; nets: Net[] };
+export type Circuit = {
+    title: string;
+    parts: Part[];
+    nets: Net[];
+    // Asked for by a line reading "values": worked out, and written on the drawing
+    values: boolean;
+    // "values hidden": worked out, but kept back until the reader asks to see
+    // them -- for a guess to be made first
+    valuesHidden: boolean;
+};
 
 export type Parsed =
     | { ok: true; circuit: Circuit }
@@ -110,6 +119,8 @@ export const parseCircuit = (source: string): Parsed => {
     const declared = new Map<string, Net['kind']>();
     const chains: { line: number; ends: string[] }[] = [];
     let title = '';
+    let values = false;
+    let valuesHidden = false;
     let lineNumber = 0;
 
     try {
@@ -119,6 +130,17 @@ export const parseCircuit = (source: string): Parsed => {
             const line = written.replace(/%%.*$/, '').trim();
 
             if (!line || /^(#|\/\/)/.test(line) || /^circuit$/i.test(line)) {
+                continue;
+            }
+
+            // "values": work the circuit out, and write the answers on it --
+            // or, with "hidden", only once the reader asks for them
+            const asked = line.match(/^values(?:\s+(hidden|shown))?$/i);
+
+            if (asked) {
+                valuesHidden = asked[1]?.toLowerCase() === 'hidden';
+                values = !valuesHidden;
+
                 continue;
             }
 
@@ -381,7 +403,13 @@ export const parseCircuit = (source: string): Parsed => {
 
         return {
             ok: true,
-            circuit: { title, parts: [...parts.values()], nets },
+            circuit: {
+                title,
+                parts: [...parts.values()],
+                nets,
+                values,
+                valuesHidden,
+            },
         };
     } catch (problem) {
         if (problem instanceof Unreadable) {
