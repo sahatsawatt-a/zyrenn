@@ -49,26 +49,67 @@ class GuideTest extends TestCase
                 ->where('topic.doc.content.0.type', 'paragraph'));
     }
 
-    public function test_every_topic_has_a_title_and_a_body(): void
+    public function test_every_topic_and_part_has_a_title_and_a_body(): void
     {
         foreach (Guide::topics() as $topic) {
-            $read = Guide::topic($topic['slug']);
+            foreach ([$topic, ...$topic['parts']] as $each) {
+                $read = Guide::topic($each['slug']);
 
-            $this->assertNotNull($read);
-            $this->assertNotSame($topic['slug'], $topic['title'], "{$topic['slug']} has no # title");
-            $this->assertNotEmpty($read['doc']['content']);
+                $this->assertNotNull($read);
+                $this->assertNotSame(basename($each['slug']), $each['title'], "{$each['slug']} has no # title");
+                $this->assertNotEmpty($read['doc']['content']);
+            }
         }
     }
 
-    public function test_every_picture_a_topic_shows_is_there(): void
+    public function test_a_part_is_read_under_its_topic(): void
     {
-        foreach (File::glob(resource_path('guide/*.md')) as $path) {
-            preg_match_all('/!\[[^\]]*\]\(([^)\s]+)\)/', File::get($path), $found);
+        $notes = collect(Guide::topics())->firstWhere('slug', 'notes');
 
-            foreach ($found[1] as $src) {
-                $this->assertFileExists(public_path($src), basename($path)." shows {$src}");
+        $this->assertContains(['slug' => 'notes/math', 'title' => 'Math'], $notes['parts']);
+
+        $this->actingAs(User::factory()->create())
+            ->get('/guide/notes/math')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('topic.slug', 'notes/math')
+                ->where('topic.title', 'Math')
+                ->where('topic.in', ['slug' => 'notes', 'title' => 'Notes']));
+
+        $this->actingAs(User::factory()->create())->get('/guide/notes/nothing-here')->assertNotFound();
+        $this->actingAs(User::factory()->create())->get('/guide/notes/math/deeper')->assertNotFound();
+    }
+
+    public function test_every_link_from_one_page_of_the_guide_to_another_is_there(): void
+    {
+        foreach (File::allFiles(resource_path('guide')) as $file) {
+            preg_match_all('#\]\(/guide/([^)\s]+)\)#', $file->getContents(), $found);
+
+            foreach ($found[1] as $slug) {
+                $this->assertNotNull(Guide::topic($slug), "{$file->getRelativePathname()} links to /guide/{$slug}");
             }
         }
+    }
+
+    public function test_every_picture_and_video_a_topic_shows_is_there(): void
+    {
+        foreach (File::allFiles(resource_path('guide')) as $file) {
+            preg_match_all('/!\[[^\]]*\]\(([^)\s]+)\)|<video src="([^"]+)"/', $file->getContents(), $found);
+
+            foreach (array_filter([...$found[1], ...$found[2]]) as $src) {
+                $this->assertFileExists(public_path($src), $file->getRelativePathname()." shows {$src}");
+            }
+        }
+    }
+
+    public function test_a_video_in_a_topic_is_a_video_block(): void
+    {
+        $doc = Guide::topic('boards')['doc'];
+
+        $this->assertContains(
+            ['src' => '/images/guide/tour-shapes.webm', 'title' => 'Show me: Join two shapes'],
+            collect($doc['content'])->where('type', 'video')->map(fn (array $block) => array_intersect_key($block['attrs'], ['src' => 0, 'title' => 0]))->all(),
+        );
     }
 
     public function test_an_unknown_topic_is_not_found(): void

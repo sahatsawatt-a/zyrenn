@@ -13,47 +13,89 @@ use Illuminate\Support\Facades\File;
  * the list -- and opens with its title as a "# " line. The rest is drawn by
  * the note editor, so anything a note can hold over MCP a topic can too.
  *
- * @phpstan-type Topic array{slug: string, title: string}
+ * A topic can go deeper in parts of its own: the files in a folder named as
+ * the topic is ("02-notes/03-math.md" beside "02-notes.md"), read at
+ * "notes/math".
+ *
+ * @phpstan-type Part array{slug: string, title: string}
+ * @phpstan-type Topic array{slug: string, title: string, parts: list<Part>}
  */
 class Guide
 {
     /**
-     * Every topic, in the order of its file name.
+     * Every topic, in the order of its file name, with its parts.
      *
      * @return list<Topic>
      */
     public static function topics(): array
     {
         return array_map(
-            fn (string $path) => ['slug' => self::slug($path), 'title' => self::read($path)[0]],
-            self::files(),
+            fn (string $path) => [
+                'slug' => self::slug($path),
+                'title' => self::read($path)[0],
+                'parts' => array_map(
+                    fn (string $part) => ['slug' => self::slug($path).'/'.self::slug($part), 'title' => self::read($part)[0]],
+                    self::files(self::folder($path)),
+                ),
+            ],
+            self::files(resource_path('guide')),
         );
     }
 
     /**
-     * One topic with its body as a note document, or null when there is none by that name.
+     * One topic or part with its body as a note document, or null when there
+     * is none by that name. A part says which topic it is in.
      *
-     * @return array{slug: string, title: string, doc: array<string, mixed>}|null
+     * @return array{slug: string, title: string, doc: array<string, mixed>, in: array{slug: string, title: string}|null}|null
      */
     public static function topic(string $slug): ?array
     {
-        foreach (self::files() as $path) {
-            if (self::slug($path) === $slug) {
-                [$title, $body] = self::read($path);
+        [$name, $part] = array_pad(explode('/', $slug, 2), 2, null);
+        $topic = self::find(resource_path('guide'), $name);
 
-                return ['slug' => $slug, 'title' => $title, 'doc' => TiptapMarkdown::toDoc($body)];
+        if ($topic === null) {
+            return null;
+        }
+
+        $path = $part === null ? $topic : self::find(self::folder($topic), $part);
+
+        if ($path === null) {
+            return null;
+        }
+
+        [$title, $body] = self::read($path);
+
+        return [
+            'slug' => $slug,
+            'title' => $title,
+            'doc' => TiptapMarkdown::toDoc($body),
+            'in' => $part === null ? null : ['slug' => $name, 'title' => self::read($topic)[0]],
+        ];
+    }
+
+    private static function find(string $folder, string $slug): ?string
+    {
+        foreach (self::files($folder) as $path) {
+            if (self::slug($path) === $slug) {
+                return $path;
             }
         }
 
         return null;
     }
 
+    /** Where a topic's parts are kept: the folder named as its file is. */
+    private static function folder(string $path): string
+    {
+        return substr($path, 0, -strlen('.md'));
+    }
+
     /**
      * @return list<string>
      */
-    private static function files(): array
+    private static function files(string $folder): array
     {
-        $files = File::glob(resource_path('guide/*.md'));
+        $files = File::glob($folder.'/*.md');
         sort($files);
 
         return $files;
