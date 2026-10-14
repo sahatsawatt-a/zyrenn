@@ -13,4 +13,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::inertia('demo/labs', 'demo/Labs')->name('labs');
     Route::inertia('demo/labs/board', 'demo/LabsBoard')->name('labs.board');
     Route::post('demo/labs/circuit-board', [LabsController::class, 'board'])->name('labs.circuit-board');
+
+    // The content planner, as a demo to try before it is built: nothing is kept or posted
+    Route::inertia('demo/planner', 'demo/Planner')->name('planner_demo');
+
 });
