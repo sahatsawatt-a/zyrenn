@@ -19,7 +19,9 @@ export type SettingType =
     | 'column'
     | 'model'
     | 'timezone'
-    | 'workflow';
+    | 'workflow'
+    | 'knowledge'
+    | 'agent';
 
 export type Setting = {
     name: string;
@@ -93,6 +95,15 @@ export type Options = {
     timezone: string;
     // Its owner's workflows another may run ("When run by another workflow")
     workflows: { ref_id: string; title: string }[];
+    // Its owner's knowledge bases, for an AI to answer from
+    knowledge?: { ref_id: string; title: string }[];
+    // Its owner's agents, each at its latest version
+    agents?: {
+        ref_id: string;
+        title: string;
+        model: string | null;
+        version: number;
+    }[];
 };
 
 export type NodeType = {

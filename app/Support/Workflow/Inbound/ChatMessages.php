@@ -30,6 +30,11 @@ final class ChatMessages
     public static function arrived(ChatMessage $message): void
     {
         try {
+            // A note among the project is for the project alone: no workflow hears it, so it never goes out
+            if ($message->isInternal()) {
+                return;
+            }
+
             $room = $message->room;
             $listeners = self::listening($room);
 
@@ -44,15 +49,7 @@ final class ChatMessages
             $envelope = [
                 'service' => 'chat',
                 'type' => 'message',
-                'room' => [
-                    'ref' => $room->ref_id,
-                    'title' => $room->title,
-                    'key' => $room->external_key,
-                    'link' => $room->link,
-                    // What is kept with the room: its picture, and details by name
-                    'picture' => $room->picture,
-                    'details' => $room->details ?? [],
-                ],
+                'room' => $room->heardAs(),
                 'message' => [
                     'id' => $message->id,
                     'role' => $message->role,
@@ -83,12 +80,29 @@ final class ChatMessages
                 $envelope,
                 $listeners,
                 fn (WorkflowListener $listener) => ($listener->settings['on'] ?? 'message') === 'message'
-                    && ($message->role === ChatMessage::USER || ($listener->settings['include'] ?? 'people') === 'all'),
+                    && self::heardBy($listener, $message),
                 $origin,
             );
         } catch (Throwable $e) {
             report($e);
         }
+    }
+
+    /**
+     * Whether a trigger set to start for some messages starts for this one:
+     * what people write (the usual), people and workflows answering, only
+     * what a customer sent (carried in from outside), or everything.
+     */
+    private static function heardBy(WorkflowListener $listener, ChatMessage $message): bool
+    {
+        $person = $message->role === ChatMessage::USER;
+
+        return match ($listener->settings['include'] ?? 'people') {
+            'all' => true,
+            'outside' => $message->isFromOutside(),
+            'answers' => $person || ($message->role === ChatMessage::WORKFLOW && ! $message->isFromOutside()),
+            default => $person,
+        };
     }
 
     /**
@@ -163,7 +177,7 @@ final class ChatMessages
             Ingest::fire("chat:{$room->ref_id}", "read:{$carried->id}", [
                 'service' => 'chat',
                 'type' => 'read',
-                'room' => ['ref' => $room->ref_id, 'title' => $room->title, 'key' => $room->external_key, 'link' => $room->link, 'picture' => $room->picture, 'details' => $room->details ?? []],
+                'room' => $room->heardAs(),
                 'reader' => ['id' => $reader->id, 'name' => $reader->name],
                 'message' => ['id' => $carried->id, 'content' => $carried->content],
                 // As the outside message came; reply.read is LINE's token for marking read all that was seen
@@ -185,6 +199,12 @@ final class ChatMessages
     private static function listening(ChatRoom $room): Collection
     {
         $listeners = Listeners::for('chat_room', $room->ref_id);
+
+        // A project's, set to hear any of its chats with customers
+        if ($room->kind === ChatRoom::CUSTOMER) {
+            $listeners = $listeners->concat(Listeners::for('chat_room', References::CUSTOMERS)
+                ->filter(fn (WorkflowListener $listener) => $listener->workflow->project_id === $room->project_id));
+        }
 
         if ($room->link === null) {
             return $listeners;

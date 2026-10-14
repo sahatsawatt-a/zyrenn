@@ -2,12 +2,16 @@
 
 namespace App\Models\Chat;
 
+use App\Events\ChatMessagePosted;
+use App\Events\ChatRoomChanged;
 use App\Models\Concerns\HasRefId;
 use App\Models\Connection;
 use App\Models\Owner;
 use App\Models\Project;
+use App\Models\Ticket\Ticket;
 use App\Models\User;
 use App\Support\Connections\Services;
+use App\Support\Live\Live;
 use App\Support\Workflow\Inbound\ChatMessages;
 use Database\Factories\Chat\ChatRoomFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -30,6 +34,9 @@ use Illuminate\Support\Facades\DB;
  * - direct: between two people, the room's members
  * - group: one of a project's, named, with the people in it chosen from the
  *   project; anyone else in the project may see it and join
+ * - customer: a project's chat with someone outside, linked to their chat on
+ *   a messaging service; everyone in the project may open it, and it says
+ *   where it stands, who has taken it and what it is tagged
  *
  * Nothing in the messages depends on which, so the same room can sit behind
  * something else later, such as a ticket pointing at its room.
@@ -37,6 +44,11 @@ use Illuminate\Support\Facades\DB;
  * @property int $id
  * @property string $ref_id
  * @property string $kind
+ * @property string|null $status
+ * @property int|null $assigned_to
+ * @property list<string>|null $tags
+ * @property int|null $contact_id
+ * @property bool $ai_answers
  * @property int|null $user_id
  * @property int|null $project_id
  * @property int|null $created_by
@@ -46,7 +58,7 @@ use Illuminate\Support\Facades\DB;
  * @property string|null $model
  * @property string|null $system_prompt
  * @property string|null $external_key
- * @property array{service: string, connection: string, chat: string}|null $link
+ * @property array{service: string, connection: string, chat: string, platform?: string}|null $link
  * @property string|null $picture
  * @property array<string, string>|null $details
  * @property list<string>|null $details_kept
@@ -69,6 +81,28 @@ class ChatRoom extends Model
 
     public const GROUP = 'group';
 
+    public const CUSTOMER = 'customer';
+
+    /** Where a customer's chat stands: to be answered, answered and waiting on them, or done with. */
+    public const OPEN = 'open';
+
+    public const WAITING = 'waiting';
+
+    public const CLOSED = 'closed';
+
+    public const STATUSES = [self::OPEN, self::WAITING, self::CLOSED];
+
+    /** The services a room can be linked to a chat on. */
+    public const LINKS = ['telegram', 'line', 'whatsapp', 'instagram', 'channel'];
+
+    /** The services that take an answer only for so many hours after the customer last wrote. */
+    public const ANSWER_HOURS = ['whatsapp' => 24, 'instagram' => 24];
+
+    /** How many tags a chat takes, and how long one may be. */
+    public const MAX_TAGS = 12;
+
+    public const MAX_TAG = 30;
+
     /** The Drive folder files sent in chats are kept in. */
     public const DRIVE_FOLDER = 'Chats';
 
@@ -85,7 +119,7 @@ class ChatRoom extends Model
      */
     protected function casts(): array
     {
-        return ['link' => 'array', 'details' => 'array', 'details_kept' => 'array'];
+        return ['link' => 'array', 'details' => 'array', 'details_kept' => 'array', 'tags' => 'array', 'ai_answers' => 'boolean'];
     }
 
     /**
@@ -103,7 +137,8 @@ class ChatRoom extends Model
         $owner = $this->project_id !== null ? $this->project : $this->user;
 
         return [
-            'service' => Services::get($this->link['service'])['label'] ?? $this->link['service'],
+            // A custom channel is shown as the platform it stands for
+            'service' => $this->link['platform'] ?? Services::get($this->link['service'])['label'] ?? $this->link['service'],
             'through' => $owner?->connections()->where('ref_id', $this->link['connection'])->value('name'),
         ];
     }
@@ -180,7 +215,17 @@ class ChatRoom extends Model
      */
     public function scopeShared(Builder $query): void
     {
-        $query->where('kind', '!=', self::PERSONAL);
+        $query->whereIn('kind', [self::DIRECT, self::GROUP]);
+    }
+
+    /**
+     * A project's chats with customers.
+     *
+     * @param  Builder<self>  $query
+     */
+    public function scopeCustomers(Builder $query, Project $project): void
+    {
+        $query->where('kind', self::CUSTOMER)->where('project_id', $project->id);
     }
 
     /**
@@ -370,7 +415,7 @@ class ChatRoom extends Model
     {
         return match ($this->kind) {
             self::PERSONAL => $this->user,
-            self::GROUP => $this->project,
+            self::GROUP, self::CUSTOMER => $this->project,
             default => null,
         };
     }
@@ -384,6 +429,8 @@ class ChatRoom extends Model
             self::PERSONAL => $this->user_id === $user->id,
             self::DIRECT => $this->members()->whereKey($user->id)->exists(),
             self::GROUP => $this->members()->whereKey($user->id)->exists() && $this->inProject($user),
+            // A customer's chat is the whole project's: nobody joins it
+            self::CUSTOMER => $this->project?->roleOf($user) !== null,
             default => false,
         };
     }
@@ -394,6 +441,193 @@ class ChatRoom extends Model
     public function inProject(User $user): bool
     {
         return $this->kind === self::GROUP && $this->project?->roleOf($user) !== null;
+    }
+
+    /**
+     * Whether the user answers for the project a customer's chat is in:
+     * its owners and editors, who may write in it, take it and tag it.
+     */
+    public function answeredBy(User $user): bool
+    {
+        return $this->kind === self::CUSTOMER
+            && in_array($this->project?->roleOf($user), [Project::OWNER, Project::EDITOR], true);
+    }
+
+    /**
+     * Get the customer a chat is with, whichever service it is on.
+     *
+     * @return BelongsTo<Contact, $this>
+     */
+    public function contact(): BelongsTo
+    {
+        return $this->belongsTo(Contact::class);
+    }
+
+    /**
+     * Get the tickets made from what was asked in a customer's chat.
+     *
+     * @return HasMany<Ticket, $this>
+     */
+    public function askedTickets(): HasMany
+    {
+        return $this->hasMany(Ticket::class, 'asked_in_room_id')->orderBy('number');
+    }
+
+    /**
+     * Get who has taken a customer's chat.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function assignee(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_to');
+    }
+
+    /**
+     * Make a project's room its chat with a customer: open, and everyone's
+     * in the project. A room that is one already is left as it stands.
+     */
+    public function becomeCustomers(): void
+    {
+        if ($this->kind === self::GROUP && $this->project_id !== null) {
+            $this->forceFill(['kind' => self::CUSTOMER, 'status' => $this->status ?? self::OPEN])->save();
+        }
+
+        // Someone of their own, until they are found to be someone already known
+        if ($this->kind === self::CUSTOMER && $this->contact_id === null) {
+            Contact::startFor($this);
+        }
+    }
+
+    /**
+     * Where a customer's chat stands after something is said in it: what
+     * comes from outside opens it, and an answer from here leaves it
+     * waiting on them. A note among the project changes nothing, and a
+     * closed chat stays closed until they write again.
+     */
+    public function movedBy(ChatMessage $message): void
+    {
+        if ($this->kind !== self::CUSTOMER || $message->isInternal()) {
+            return;
+        }
+
+        $next = match (true) {
+            $message->isFromOutside() => self::OPEN,
+            $this->status === self::OPEN => self::WAITING,
+            default => $this->status,
+        };
+
+        if ($next !== $this->status) {
+            $this->forceFill(['status' => $next])->save();
+        }
+    }
+
+    /**
+     * Tags as a chat keeps them: short, lower-case words, each once.
+     *
+     * @return list<string>
+     */
+    public static function tagsOf(mixed $given): array
+    {
+        $given = is_string($given) ? explode(',', $given) : (is_array($given) ? $given : []);
+
+        return array_values(collect($given)
+            ->filter(fn ($tag) => is_scalar($tag))
+            ->map(fn ($tag) => mb_substr(mb_strtolower(trim((string) preg_replace('/\s+/', ' ', (string) $tag))), 0, self::MAX_TAG))
+            ->filter()
+            ->unique()
+            ->take(self::MAX_TAGS)
+            ->all());
+    }
+
+    /**
+     * Say something in the room as a person, and tell whoever else is in
+     * it at once -- and, for a customer's chat, everyone in its project
+     * where it now stands. Workflows listening hear it as it is kept.
+     *
+     * @param  array<string, mixed>  $meta  a file, a place, whether it is a note
+     */
+    public function say(User $by, string $content, array $meta = []): ChatMessage
+    {
+        $said = $this->messages()->create([
+            'role' => ChatMessage::USER,
+            'user_id' => $by->id,
+            'content' => $content,
+            'meta' => array_filter($meta) ?: null,
+        ]);
+
+        // Everyone else in a shared room sees it at once, wherever they are
+        if ($this->kind !== self::PERSONAL) {
+            $said->load('author:id,name');
+            Live::tell(new ChatMessagePosted($this, $said));
+        }
+
+        // An answer leaves a customer's chat waiting on them: the inbox and the others who have it open follow
+        if ($this->kind === self::CUSTOMER && ! $said->isInternal()) {
+            Live::tell(new ChatRoomChanged($this->refresh()));
+        }
+
+        return $said;
+    }
+
+    /**
+     * Until when the service a chat is linked to takes an answer: so many
+     * hours from the last thing the customer wrote. Null for a service that
+     * sets no such time, and for a chat nothing has come into yet.
+     */
+    public function answerUntil(): ?Carbon
+    {
+        $hours = self::ANSWER_HOURS[$this->link['service'] ?? ''] ?? null;
+
+        if ($hours === null) {
+            return null;
+        }
+
+        $heard = $this->messages()->where('role', ChatMessage::WORKFLOW)->where('meta->outside', true)->reorder()->max('created_at');
+
+        return $heard === null ? null : Carbon::parse($heard)->addHours($hours);
+    }
+
+    /**
+     * Where a customer's chat stands, as its page and the inbox show it.
+     *
+     * @return array{status: string|null, assignee: array{id: int, name: string}|null, tags: list<string>, ai: bool}
+     */
+    public function desk(): array
+    {
+        return [
+            'status' => $this->status,
+            'assignee' => $this->assignee?->only(['id', 'name']),
+            'tags' => $this->tags ?? [],
+            'ai' => (bool) $this->ai_answers,
+        ];
+    }
+
+    /**
+     * What a workflow reads of the room, as trigger.room.
+     *
+     * @return array<string, mixed>
+     */
+    public function heardAs(): array
+    {
+        return [
+            'ref' => $this->ref_id,
+            'title' => $this->title,
+            'key' => $this->external_key,
+            'link' => $this->link,
+            // What is kept with the room: its picture, and details by name
+            'picture' => $this->picture,
+            'details' => $this->details ?? [],
+            // A customer's chat says where it stands, who has taken it, and its tags
+            'kind' => $this->kind,
+            'status' => $this->status,
+            'assignee' => $this->assignee?->only(['id', 'name', 'email']),
+            'tags' => $this->tags ?? [],
+            // Whether AI answers here: switched on, and nobody has taken the chat
+            'ai' => $this->kind === self::CUSTOMER && $this->ai_answers && $this->assigned_to === null,
+            // Who they are on every service: name, key, notes, and each of their chats
+            'contact' => $this->contact?->card(),
+        ];
     }
 
     /**
@@ -416,6 +650,7 @@ class ChatRoom extends Model
         return match ($this->kind) {
             self::PERSONAL => collect([$this->user])->filter()->values(),
             self::DIRECT, self::GROUP => $this->members()->orderBy('name')->get()->toBase(),
+            self::CUSTOMER => $this->project?->members()->orderBy('name')->get()->toBase() ?? collect(),
             default => collect(),
         };
     }

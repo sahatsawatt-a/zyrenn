@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('hooks')->name('hooks.')->middleware('throttle:hooks')->group(function () {
     Route::post('telegram/{connection}', [HookController::class, 'telegram'])->name('telegram');
     Route::post('line/{connection}', [HookController::class, 'line'])->name('line');
+    // Any platform at all, sending in the app's own shape (a "Custom channel" connection)
+    Route::post('channel/{connection}', [HookController::class, 'channel'])->name('channel');
     // Meta asks first, to be shown the address is the app's, then sends
     Route::match(['GET', 'POST'], 'whatsapp/{connection}', [HookController::class, 'whatsapp'])->name('whatsapp');
     // A connection's ref, and never "signed-in": that is the way back from signing in, below

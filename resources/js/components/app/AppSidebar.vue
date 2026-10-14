@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { Link, usePage } from '@inertiajs/vue3';
+import { Link, router, usePage } from '@inertiajs/vue3';
 import {
     Map as MapIcon,
     Plane,
     Table2,
     BookOpen,
+    BookOpenText,
     FolderGit2,
     HardDrive,
+    Inbox,
     LayoutDashboard,
     LayoutGrid,
     Bot,
@@ -19,6 +21,7 @@ import {
     Ticket,
     Workflow,
 } from '@lucide/vue';
+import { watchDebounced } from '@vueuse/core';
 import { computed } from 'vue';
 import AppLogo from './AppLogo.vue';
 import NavFooter from './NavFooter.vue';
@@ -42,7 +45,7 @@ import {
     konva_demo,
     table_demo,
 } from '@/routes';
-import { useUnreadChats } from '@/composables/useUnreadChats';
+import { inboxChanges, useUnreadChats } from '@/composables/useUnreadChats';
 import { owned } from '@/lib/projects';
 import { index as boardsIndex } from '@/routes/boards';
 import { index as chatsIndex } from '@/routes/chats';
@@ -50,6 +53,7 @@ import { index as driveIndex } from '@/routes/drive';
 import { index as notesIndex } from '@/routes/notes';
 import {
     chat as projectChat,
+    inbox as projectInbox,
     dashboard as projectDashboard,
     edit as projectSettings,
 } from '@/routes/projects';
@@ -65,10 +69,22 @@ import { index as projectWorkflowsIndex } from '@/routes/projects/workflows';
 import { index as tablesIndex } from '@/routes/tables';
 import { index as tripsIndex } from '@/routes/trips';
 import { index as workflowsIndex } from '@/routes/workflows';
+import { index as knowledgeIndex } from '@/routes/knowledge';
+import { index as agentsIndex } from '@/routes/agents';
+import { index as projectAgentsIndex } from '@/routes/projects/agents';
+import { index as projectKnowledgeIndex } from '@/routes/projects/knowledge';
 import type { NavItem } from '@/types';
 
 const page = usePage();
 const unread = useUnreadChats();
+
+// How many of the project's chats with customers are to be answered: asked for again, a moment
+// after one is written in or changed, so a run of them asks once
+watchDebounced(
+    inboxChanges,
+    () => page.props.project && router.reload({ only: ['project'] }),
+    { debounce: 400 },
+);
 
 // Notes, boards, tables and Drive of the project the page is in, or your own
 const mainNavItems = computed<NavItem[]>(() => {
@@ -115,6 +131,18 @@ const mainNavItems = computed<NavItem[]>(() => {
             href: owned(workflowsIndex, projectWorkflowsIndex)(),
             icon: Workflow,
         },
+        // Who answers: a model with its instructions, every version kept
+        {
+            title: 'Agents',
+            href: owned(agentsIndex, projectAgentsIndex)(),
+            icon: Bot,
+        },
+        // What AI answers from
+        {
+            title: 'Knowledge',
+            href: owned(knowledgeIndex, projectKnowledgeIndex)(),
+            icon: BookOpenText,
+        },
         // A project's groups; in your own space, your AI chats and your
         // messages, kept apart: an AI chat answers through your own key
         ...(project
@@ -134,6 +162,17 @@ const mainNavItems = computed<NavItem[]>(() => {
                       badge: unread.value,
                   },
               ]),
+        // Its chats with customers, from every service they write on: a project's alone
+        ...(project
+            ? [
+                  {
+                      title: 'Inbox',
+                      href: projectInbox(project.ref_id),
+                      icon: Inbox,
+                      badge: project.inbox,
+                  },
+              ]
+            : []),
         // What the project has been asked to fix or add: a project's alone
         ...(project
             ? [

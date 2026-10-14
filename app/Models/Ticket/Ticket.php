@@ -33,6 +33,8 @@ use Illuminate\Support\Facades\DB;
  * @property int|null $created_by
  * @property int|null $assigned_to
  * @property int|null $chat_room_id
+ * @property int|null $asked_in_room_id
+ * @property int|null $asked_in_message_id
  * @property Carbon|null $closed_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -40,6 +42,7 @@ use Illuminate\Support\Facades\DB;
  * @property-read User|null $creator
  * @property-read User|null $assignee
  * @property-read ChatRoom|null $room
+ * @property-read ChatRoom|null $askedIn
  */
 #[Fillable(['type', 'status', 'priority', 'title', 'unit', 'body', 'pictures', 'assigned_to'])]
 class Ticket extends Model
@@ -181,6 +184,16 @@ class Ticket extends Model
     }
 
     /**
+     * The customer's chat it was asked in, when it was made from one.
+     *
+     * @return BelongsTo<ChatRoom, $this>
+     */
+    public function askedIn(): BelongsTo
+    {
+        return $this->belongsTo(ChatRoom::class, 'asked_in_room_id');
+    }
+
+    /**
      * The ticket as a page, or an MCP client, is given it.
      *
      * @return array<string, mixed>
@@ -194,6 +207,8 @@ class Ticket extends Model
             'created_by' => $this->creator?->only(['id', 'name']),
             'assigned_to' => $this->assignee?->only(['id', 'name']),
             'chat' => $this->room?->ref_id,
+            // The customer's chat it was asked in
+            'asked_in' => $this->askedIn?->only(['ref_id', 'title']),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             'closed_at' => $this->closed_at,

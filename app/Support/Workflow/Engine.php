@@ -12,10 +12,13 @@ use App\Models\Workflow\WorkflowRun;
 use App\Models\Workflow\WorkflowVersion;
 use App\Support\Live\Live;
 use App\Support\Workflow\Steps\Approval;
+use App\Support\Workflow\Steps\AskAgent;
 use App\Support\Workflow\Steps\AskAi;
+use App\Support\Workflow\Steps\ChannelSend;
 use App\Support\Workflow\Steps\ChatFetch;
 use App\Support\Workflow\Steps\ChatRoomStep;
 use App\Support\Workflow\Steps\ChatSend;
+use App\Support\Workflow\Steps\ChatUpdate;
 use App\Support\Workflow\Steps\Delay;
 use App\Support\Workflow\Steps\DriveFind;
 use App\Support\Workflow\Steps\DriveLink;
@@ -30,6 +33,7 @@ use App\Support\Workflow\Steps\IfCondition;
 use App\Support\Workflow\Steps\InstagramCall;
 use App\Support\Workflow\Steps\InstagramChat;
 use App\Support\Workflow\Steps\InstagramPost;
+use App\Support\Workflow\Steps\KnowledgeSearch;
 use App\Support\Workflow\Steps\LineCall;
 use App\Support\Workflow\Steps\LineFile;
 use App\Support\Workflow\Steps\LineProfile;
@@ -135,6 +139,9 @@ final class Engine
         'chat.room' => ChatRoomStep::class,
         'chat.send' => ChatSend::class,
         'chat.fetch' => ChatFetch::class,
+        'knowledge.search' => KnowledgeSearch::class,
+        'ai.agent' => AskAgent::class,
+        'chat.update' => ChatUpdate::class,
         'table.find' => TableFind::class,
         'table.add' => TableAdd::class,
         'table.update' => TableUpdate::class,
@@ -164,6 +171,8 @@ final class Engine
         'line.reply' => LineReply::class,
         'whatsapp.file' => WhatsAppFile::class,
         'whatsapp.send' => WhatsAppSend::class,
+        'trigger.channel' => GivenTrigger::class,
+        'channel.send' => ChannelSend::class,
         'whatsapp.send_file' => WhatsAppCall::class,
         'whatsapp.template' => WhatsAppCall::class,
         'whatsapp.location' => WhatsAppCall::class,

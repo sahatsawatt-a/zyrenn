@@ -5,6 +5,10 @@ import { onBeforeUnmount, ref, watch } from 'vue';
 // One count for the whole app: the sidebar shows it, a room's page sets it as it reads
 const unread = ref(0);
 
+// Goes up whenever a project's chat with a customer is written in or changed: its inbox, and the
+// count beside it, ask again for what they show
+export const inboxChanges = ref(0);
+
 /** Set the count from what the server said, such as after reading a room. */
 export const setUnreadChats = (count: number) => (unread.value = count);
 
@@ -28,15 +32,26 @@ export function useUnreadChats() {
     if (user && echoIsConfigured()) {
         echo()
             .private(channel)
-            .listen('.chat.message', (event: { room: string }) => {
-                const open = (
-                    page.props.room as { ref_id?: string } | undefined
-                )?.ref_id;
+            .listen(
+                '.chat.message',
+                (event: { room: string; kind?: string }) => {
+                    // A customer's chat is the inbox's to count, by how many are still to be answered
+                    if (event.kind === 'customer') {
+                        inboxChanges.value++;
 
-                if (event.room !== open) {
-                    unread.value++;
-                }
-            });
+                        return;
+                    }
+
+                    const open = (
+                        page.props.room as { ref_id?: string } | undefined
+                    )?.ref_id;
+
+                    if (event.room !== open) {
+                        unread.value++;
+                    }
+                },
+            )
+            .listen('.chat.room', () => inboxChanges.value++);
 
         onBeforeUnmount(() => echo().leave(channel));
     }

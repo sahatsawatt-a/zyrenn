@@ -22,6 +22,9 @@ final class Templates
     {
         $telegram = $chosen['telegram'] ?? '';
         $line = $chosen['line'] ?? '';
+        $whatsapp = $chosen['whatsapp'] ?? '';
+        $instagram = $chosen['instagram'] ?? '';
+        $channel = $chosen['channel'] ?? '';
         $ai = $chosen['ai'] ?? '';
 
         return [
@@ -36,6 +39,30 @@ final class Templates
                 'description' => 'Each LINE chat with your channel gets a chat of its own here: what is sent to it is written in it, and what you write in it goes back to LINE (counted against the channel\'s monthly allowance) -- pictures, files, stickers and places too, kept in the Drive on the way.',
                 'needs' => ['line' => 'Channel'],
                 'definition' => self::bridge('line', $line),
+            ],
+            'whatsapp-room' => [
+                'title' => 'WhatsApp chats in a room, both ways',
+                'description' => 'Each person who writes to your business number gets a chat of their own here: what they send is written in it, and what you write in it goes back on WhatsApp -- pictures, files and places too, kept in the Drive on the way, and their message is marked read once someone has seen it here. WhatsApp takes an answer only within 24 hours of their last message.',
+                'needs' => ['whatsapp' => 'Number'],
+                'definition' => self::desk('whatsapp', $whatsapp),
+            ],
+            'instagram-room' => [
+                'title' => 'Instagram messages in a room, both ways',
+                'description' => 'Each person who messages your Instagram account gets a chat of their own here, under their name and picture: what they send is written in it, and what you write in it goes back on Instagram, pictures too. Instagram takes an answer only within 24 hours of their last message.',
+                'needs' => ['instagram' => 'Account'],
+                'definition' => self::desk('instagram', $instagram),
+            ],
+            'channel-room' => [
+                'title' => 'Custom channel chats in a room, both ways',
+                'description' => 'Each chat a platform of your own sends to its hook address gets a chat of its own here, under the sender\'s name and picture: what they send is written in it, files and places too, and what you write in it is posted back to the platform\'s "Send to" address.',
+                'needs' => ['channel' => 'Custom channel'],
+                'definition' => self::custom($channel),
+            ],
+            'ai-desk' => [
+                'title' => 'AI answers customers, people take requests',
+                'description' => 'In a project: what a customer writes in any of its chats is put to an agent -- make one from "Customer desk" on the Agents page, with a knowledge base. A question it can answer from what it knows is answered, and goes back through the chat\'s own bridge. A bug or a feature they ask for is thanked for, tagged, and noted for someone to make a ticket of; anything else is left to a person with a note. AI keeps out of a chat someone has taken, or where "AI" is off. Choose the agent after.',
+                'needs' => [],
+                'definition' => self::aiDesk(),
             ],
             'telegram-ai' => [
                 'title' => 'AI answers on Telegram',
@@ -209,7 +236,7 @@ final class Templates
             [$at + 1, 1, 'say', 'chat.send', [...$room, 'message' => '{{ trigger.display }}']],
 
             // Out
-            [0, 4, 'written', 'trigger.chat', ['room' => References::LINKED.":{$service}"]],
+            [0, 4, 'written', 'trigger.chat', ['room' => References::LINKED.":{$service}", 'include' => 'answers']],
             [1, 4, 'out', 'logic.switch', ['ways' => [
                 ['name' => 'file', 'value' => 'len(trigger.files) > 0'],
                 ['name' => 'place', 'value' => 'trigger.kind = "location"'],
@@ -302,8 +329,224 @@ final class Templates
             $joins = [...array_map(fn (array $join) => $join[2] === $step[2] ? [$join[0], $join[1], $reply] : $join, $joins), [$reply, NodeTypes::UNSENT, $step[2]]];
         }
 
-        $steps = $placed;
+        return self::laid($placed, $joins);
+    }
 
+    /**
+     * A WhatsApp number's or an Instagram account's chats, each with a room
+     * of its own here, both ways. Either speaks with one person at a time,
+     * and tells an app less than LINE or Telegram do, so there is less to
+     * carry: words, a file, and -- on WhatsApp -- a sticker and a place.
+     *
+     * Coming in, a file is kept in a Drive folder named for the service:
+     * WhatsApp's by its own "get the file" step, Instagram's from the
+     * address Instagram gives. Who it is with is kept with the room: on
+     * Instagram their name and picture are asked for; WhatsApp sends a name
+     * with each message, and their number is the chat.
+     *
+     * Going out, what is written in the room goes to them, a file as a file
+     * and a place as a place -- on Instagram, which has none, as a link to
+     * a map. A WhatsApp message is marked read there once someone has seen
+     * it here.
+     *
+     * @return array{nodes: list<array<string, mixed>>, edges: list<array<string, mixed>>}
+     */
+    private static function desk(string $service, string $connection): array
+    {
+        $whatsapp = $service === 'whatsapp';
+        $named = $whatsapp ? 'WhatsApp' : 'Instagram';
+        $who = $whatsapp
+            ? '{{ coalesce(trigger.sender.name, trigger.chat.id) }}'
+            : '{{ coalesce(node("who").name, node("who").username, "Someone") }}';
+        $room = ['room' => '{{ node("room").room }}', 'sender' => "{$who} ({$named})"];
+        $out = ['connection' => References::LINKED, 'to' => '{{ trigger.room.link.chat }}'];
+        // Where the question of its kind stands: Instagram asks who wrote first
+        $at = $whatsapp ? 2 : 3;
+
+        /** @var list<array{0: int, 1: int, 2: string, 3: string, 4: array<string, mixed>, 5?: string}> $steps */
+        $steps = [
+            // In
+            [0, 0, 'heard', $whatsapp ? 'trigger.whatsapp' : 'trigger.instagram_message', ['connection' => $connection]],
+            ...$whatsapp ? [] : [[1, 0, 'who', 'instagram.profile', ['connection' => $connection, 'user' => '{{ trigger.sender.id }}'], 'continue']],
+            [$at - 1, 0, 'room', 'chat.room', [
+                'key' => "{$service}:{{ trigger.chat.id }}",
+                'title' => "{$who} on {$named}",
+                'link' => $connection,
+                'link_chat' => '{{ trigger.chat.id }}',
+                ...$whatsapp ? [
+                    'details' => [
+                        ['name' => 'name', 'value' => '{{ coalesce(trigger.sender.name, "") }}'],
+                        ['name' => 'phone', 'value' => '{{ trigger.chat.id }}'],
+                    ],
+                ] : [
+                    'picture' => '{{ coalesce(node("who").picture, "") }}',
+                    'details' => [
+                        ['name' => 'name', 'value' => '{{ coalesce(node("who").name, "") }}'],
+                        ['name' => 'username', 'value' => '{{ coalesce(node("who").username, "") }}'],
+                        ['name' => 'instagram_id', 'value' => '{{ trigger.sender.id }}'],
+                    ],
+                ],
+            ]],
+            [$at, 0, 'kind', 'logic.switch', ['ways' => [
+                ...$whatsapp ? [['name' => 'sticker', 'value' => 'trigger.kind = "sticker"']] : [],
+                ['name' => 'file', 'value' => 'len(trigger.files) > 0'],
+                ...$whatsapp ? [['name' => 'place', 'value' => 'trigger.kind = "location"']] : [],
+            ]]],
+            $whatsapp
+                ? [$at + 1, -2, 'save', 'whatsapp.file', ['connection' => $connection, 'folder' => $named]]
+                : [$at + 1, -2, 'save', 'drive.save', ['from' => 'url', 'url' => '{{ item(trigger.files, 1) }}', 'folder' => $named]],
+            [$at + 2, -2, 'show', 'chat.send', [...$room, 'message' => '{{ trigger.display }}', 'file' => '{{ node("save").ref_id }}']],
+            ...$whatsapp ? [
+                [$at + 1, -1, 'sticker', 'whatsapp.file', ['connection' => $connection, 'folder' => 'WhatsApp/Stickers'], 'continue'],
+                [$at + 2, -1, 'showsticker', 'chat.send', [...$room, 'message' => '{{ if(node("sticker").ref_id, "", "Sticker") }}', 'file' => '{{ node("sticker").ref_id }}', 'shown' => 'sticker']],
+                [$at + 1, 0, 'saywhere', 'chat.send', [...$room, 'message' => '{{ trigger.display }}', 'place' => '{{ trigger.location }}']],
+            ] : [],
+            [$at + 1, 1, 'say', 'chat.send', [...$room, 'message' => '{{ trigger.display }}']],
+
+            // Out
+            [0, 4, 'written', 'trigger.chat', ['room' => References::LINKED.":{$service}", 'include' => 'answers']],
+            [1, 4, 'out', 'logic.switch', ['ways' => [
+                ['name' => 'file', 'value' => 'len(trigger.files) > 0'],
+                ['name' => 'place', 'value' => 'trigger.kind = "location"'],
+            ]]],
+            [2, 3, 'backfile', "{$service}.send_file", [...$out, 'file' => '{{ item(trigger.files, 1) }}', ...$whatsapp ? ['text' => '{{ trigger.text }}'] : []]],
+            [2, 5, 'back', "{$service}.send", [...$out, 'text' => '{{ trigger.text }}']],
+            $whatsapp
+                ? [2, 6, 'backplace', 'whatsapp.location', [...$out, 'lat' => '{{ trigger.location.lat }}', 'lng' => '{{ trigger.location.lng }}', 'name' => '{{ coalesce(trigger.location.title, "") }}', 'address' => '{{ coalesce(trigger.location.address, "") }}']]
+                // Instagram sends no place: a link that opens it on a map goes instead, with what was written
+                : [2, 6, 'backplace', 'instagram.send', [...$out, 'text' => "{{ trigger.text }}\n📍 {{ coalesce(trigger.location.title, \"A place\") }}\nhttps://www.google.com/maps?q={{ trigger.location.lat }},{{ trigger.location.lng }}"]],
+            // Words written with a WhatsApp place, or with an Instagram file, follow it: neither carries any
+            [3, $whatsapp ? 6 : 3, 'worded', 'logic.if', ['condition' => 'trigger.text']],
+            [4, $whatsapp ? 6 : 3, 'backwords', "{$service}.send", [...$out, 'text' => '{{ trigger.text }}']],
+
+            ...$whatsapp ? [
+                // Read here, read there: the two ticks turn blue once someone has seen it in the room
+                [0, 8, 'read', 'trigger.chat', ['room' => References::LINKED.':whatsapp', 'on' => 'read']],
+                [1, 8, 'marked', 'logic.if', ['condition' => 'trigger.reply.to']],
+                [2, 8, 'seen', 'whatsapp.read', ['connection' => References::LINKED, 'message' => '{{ trigger.reply.to }}'], 'continue'],
+            ] : [],
+        ];
+
+        $joins = [
+            ...$whatsapp ? [['heard', 'out', 'room']] : [['heard', 'out', 'who'], ['who', 'out', 'room']],
+            ['room', 'out', 'kind'],
+            ['kind', 'file', 'save'], ['save', 'out', 'show'],
+            ...$whatsapp ? [['kind', 'sticker', 'sticker'], ['sticker', 'out', 'showsticker'], ['kind', 'place', 'saywhere']] : [],
+            ['kind', NodeTypes::OTHERWISE, 'say'],
+            ['written', 'out', 'out'],
+            ['out', 'file', 'backfile'],
+            ['out', 'place', 'backplace'],
+            ['out', NodeTypes::OTHERWISE, 'back'],
+            [$whatsapp ? 'backplace' : 'backfile', 'out', 'worded'], ['worded', 'true', 'backwords'],
+            ...$whatsapp ? [['read', 'out', 'marked'], ['marked', 'true', 'seen']] : [],
+        ];
+
+        return self::laid($steps, $joins);
+    }
+
+    /**
+     * A platform of the user's own and a room for each of its chats, both
+     * ways. Coming in, a file is kept in the Drive from the address the
+     * platform gives, and a place is shown on a map; going out, words, a
+     * file and a place go in the one call the channel takes.
+     *
+     * @return array{nodes: list<array<string, mixed>>, edges: list<array<string, mixed>>}
+     */
+    private static function custom(string $connection): array
+    {
+        $room = ['room' => '{{ node("room").room }}', 'sender' => '{{ coalesce(trigger.sender.name, "Someone") }} ({{ trigger.platform }})'];
+
+        return self::laid([
+            // In
+            [0, 0, 'heard', 'trigger.channel', ['connection' => $connection]],
+            [1, 0, 'room', 'chat.room', [
+                // Two channels may each have a chat "1": the channel is part of what it stands for
+                'key' => "channel:{$connection}:{{ trigger.chat.id }}",
+                'title' => '{{ coalesce(trigger.sender.name, trigger.chat.title, trigger.chat.id) }} on {{ trigger.platform }}',
+                'link' => $connection,
+                'link_chat' => '{{ trigger.chat.id }}',
+                'picture' => '{{ coalesce(trigger.sender.picture, "") }}',
+                'details' => [
+                    ['name' => 'name', 'value' => '{{ coalesce(trigger.sender.name, "") }}'],
+                    ['name' => 'channel_id', 'value' => '{{ trigger.sender.id }}'],
+                ],
+            ]],
+            [2, 0, 'kind', 'logic.switch', ['ways' => [
+                ['name' => 'file', 'value' => 'len(trigger.files) > 0'],
+                ['name' => 'place', 'value' => 'trigger.kind = "location"'],
+            ]]],
+            [3, -1, 'save', 'drive.save', ['from' => 'url', 'url' => '{{ item(trigger.files, 1) }}', 'folder' => 'Channels']],
+            [4, -1, 'show', 'chat.send', [...$room, 'message' => '{{ trigger.display }}', 'file' => '{{ node("save").ref_id }}']],
+            [3, 0, 'saywhere', 'chat.send', [...$room, 'message' => '{{ trigger.display }}', 'place' => '{{ trigger.location }}']],
+            [3, 1, 'say', 'chat.send', [...$room, 'message' => '{{ trigger.display }}']],
+
+            // Out: one call carries all of it
+            [0, 3, 'written', 'trigger.chat', ['room' => References::LINKED.':channel', 'include' => 'answers']],
+            [1, 3, 'back', 'channel.send', [
+                'connection' => References::LINKED,
+                'to' => '{{ trigger.room.link.chat }}',
+                'text' => '{{ trigger.text }}',
+                'file' => '{{ item(trigger.files, 1) }}',
+                'place' => '{{ trigger.location }}',
+            ]],
+        ], [
+            ['heard', 'out', 'room'],
+            ['room', 'out', 'kind'],
+            ['kind', 'file', 'save'], ['save', 'out', 'show'],
+            ['kind', 'place', 'saywhere'],
+            ['kind', NodeTypes::OTHERWISE, 'say'],
+            ['written', 'out', 'back'],
+        ]);
+    }
+
+    /**
+     * A project's AI desk: what customers write, answered from a knowledge
+     * base -- or, for a request or what it can't answer, left to a person.
+     *
+     * @return array{nodes: list<array<string, mixed>>, edges: list<array<string, mixed>>}
+     */
+    private static function aiDesk(): array
+    {
+        $room = '{{ trigger.room.ref }}';
+        $asked = 'node("ask").json';
+
+        return self::laid([
+            [0, 0, 'heard', 'trigger.chat', ['room' => References::CUSTOMERS, 'include' => 'outside']],
+            // Not where someone has taken the chat, or AI is switched off
+            [1, 0, 'on', 'logic.if', ['condition' => 'trigger.room.ai']],
+            // The agent reads its knowledge and the chat so far for itself
+            [2, 0, 'ask', 'ai.agent', ['agent' => '', 'message' => '{{ trigger.text }}', 'room' => $room, 'answer' => 'json']],
+            [3, 0, 'way', 'logic.switch', ['ways' => [
+                ['name' => 'request', 'value' => $asked.'.kind = "bug" or '.$asked.'.kind = "feature"'],
+                ['name' => 'answer', 'value' => "{$asked}.answered and {$asked}.reply"],
+            ]]],
+            // Answered: written in the chat, and sent on by its bridge
+            [4, -1, 'say', 'chat.send', ['room' => $room, 'message' => "{{ {$asked}.reply }}", 'sources' => '{{ node("ask").sources }}', 'note' => 'message']],
+            // A request: thanked for, tagged, and noted for someone to make a ticket of
+            [4, 0, 'thank', 'chat.send', ['room' => $room, 'message' => "{{ {$asked}.reply }}", 'sources' => '{{ node("ask").sources }}', 'note' => 'message']],
+            [5, 0, 'flag', 'chat.update', ['room' => $room, 'status' => 'open', 'assign' => 'keep', 'tag' => "{{ {$asked}.kind }}"]],
+            [6, 0, 'tell', 'chat.send', ['room' => $room, 'message' => "Looks like a {{ {$asked}.kind }} request: {{ {$asked}.summary }}\nMake a ticket of their message if it is one.", 'note' => 'note']],
+            // Anything else: a person answers
+            [4, 1, 'leave', 'chat.send', ['room' => $room, 'message' => "AI left this for a person: {{ coalesce({$asked}.summary, trigger.text) }}", 'note' => 'note']],
+        ], [
+            ['heard', 'out', 'on'],
+            ['on', 'true', 'ask'],
+            ['ask', 'out', 'way'],
+            ['way', 'answer', 'say'],
+            ['way', 'request', 'thank'], ['thank', 'out', 'flag'], ['flag', 'out', 'tell'],
+            ['way', NodeTypes::OTHERWISE, 'leave'],
+        ]);
+    }
+
+    /**
+     * Steps placed on a grid, and the ways between them, as a definition.
+     *
+     * @param  list<array{0: int, 1: int, 2: string, 3: string, 4: array<string, mixed>, 5?: string}>  $steps  column, row, key, kind, settings, and what a failure does when not stopping
+     * @param  list<array{0: string, 1: string, 2: string}>  $joins  from, by which way out, to
+     * @return array{nodes: list<array<string, mixed>>, edges: list<array<string, mixed>>}
+     */
+    private static function laid(array $steps, array $joins): array
+    {
         return [
             'nodes' => array_map(fn (array $step) => [
                 'id' => $step[2], 'key' => $step[2], 'type' => $step[3],

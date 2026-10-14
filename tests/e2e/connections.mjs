@@ -14,6 +14,7 @@ import {
     tinker,
     open,
     reopen,
+    until,
 } from './harness.mjs';
 
 const HOST = process.env.E2E_OLLAMA ?? 'http://ollama:11434';
@@ -270,21 +271,30 @@ await runBoard(
             .catch(() => false);
 
         if (reachable) {
-            await page.locator('[data-model-picker]').click();
+            // A dropdown of its models, with a switch beside it for the free ones
             await page.waitForSelector('[data-free-toggle]');
-            const total = await page
-                .locator('[data-model-list] [role="option"]')
-                .count();
             const advertised = Number(
-                (await page.locator('[data-free-toggle]').innerText()).match(
-                    /\((\d+)\)/,
-                )?.[1],
+                (
+                    await page
+                        .locator('label', {
+                            has: page.locator('[data-free-toggle]'),
+                        })
+                        .innerText()
+                ).match(/\((\d+)\)/)?.[1],
             );
-            const badged = await page
-                .locator('[data-model-list] [role="option"]', {
-                    hasText: /\bfree\b/,
-                })
-                .count();
+            await page.locator('[data-model-picker]').click();
+            const texts = await until(async () => {
+                const now = await page
+                    .locator('[data-model-list] [role="option"]')
+                    .allInnerTexts();
+
+                return now.length > 1 ? now : null;
+            });
+            const total = texts.length;
+            // Each free one says so on a line of its own, under its name
+            const badged = texts.filter((text) =>
+                text.split('\n').some((line) => line.trim() === 'free'),
+            ).length;
             check(
                 'a host that gives prices offers a switch for the free ones',
                 advertised > 0 && advertised < 200,
@@ -293,11 +303,15 @@ await runBoard(
             check(
                 'free ones are marked in the full list',
                 badged > 0,
-                `${badged} marked of ${total} shown`,
+                `${badged} marked of ${total} listed`,
             );
+            await page.keyboard.press('Escape');
+            await page
+                .locator('[data-model-list]')
+                .waitFor({ state: 'detached' });
 
             await page.locator('[data-free-toggle]').click();
-            await page.waitForTimeout(200);
+            await page.locator('[data-model-picker]').click();
             // The first row is "no usual model", which is a choice and not a model
             const onlyFree = (
                 await page
@@ -312,19 +326,11 @@ await runBoard(
                     onlyFree.length === advertised,
                 `${onlyFree.length} listed of ${advertised} free`,
             );
-
-            await page
-                .locator('input[aria-label="Search models"]')
-                .fill('zzzz-no-such');
-            check(
-                'and a typed name still narrows them, or is offered as typed',
-                (await page
-                    .getByRole('option', { name: /Use “zzzz-no-such”/ })
-                    .count()) === 1,
-            );
-
             await page.keyboard.press('Escape');
-            await page.waitForTimeout(300);
+            await page
+                .locator('[data-model-list]')
+                .waitFor({ state: 'detached' });
+
             await reopen(page);
             await page.locator('[data-connection-add]').click();
             await sheet.locator('[data-service="openrouter"]').click();
@@ -332,7 +338,6 @@ await runBoard(
             await page.waitForSelector('text=/Works: \\d+ model/', {
                 timeout: 30000,
             });
-            await page.locator('[data-model-picker]').click();
             await page.waitForSelector('[data-free-toggle]');
             check(
                 'the switch is remembered',
@@ -341,7 +346,6 @@ await runBoard(
                     .getAttribute('aria-checked')) === 'true',
             );
             await page.locator('[data-free-toggle]').click(); // leave it as found
-            await page.keyboard.press('Escape');
         } else {
             console.log(
                 'SKIP  the free-model switch: the app could not reach openrouter.ai',

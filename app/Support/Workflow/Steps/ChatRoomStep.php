@@ -3,7 +3,9 @@
 namespace App\Support\Workflow\Steps;
 
 use App\Models\Chat\ChatRoom;
+use App\Models\Chat\Contact;
 use App\Models\Project;
+use App\Support\Connections\Services;
 use App\Support\Workflow\References;
 use Illuminate\Database\UniqueConstraintViolationException;
 
@@ -11,7 +13,9 @@ use Illuminate\Database\UniqueConstraintViolationException;
  * Find or make a room: the room that stands for an outside conversation --
  * one for each Telegram chat, say -- made the first time it is asked for.
  * A personal workflow's rooms are its owner's own chats; a project's are
- * the project's group chats, started by whoever the run acts as.
+ * the project's group chats, started by whoever the run acts as -- and one
+ * linked to a chat outside is the project's chat with a customer, in its
+ * inbox.
  */
 final class ChatRoomStep implements Step
 {
@@ -83,7 +87,7 @@ final class ChatRoomStep implements Step
             return;
         }
 
-        $connection = References::connection($step->owner(), $through, ['telegram', 'line'])
+        $connection = References::connection($step->owner(), $through, ChatRoom::LINKS)
             ?? throw new StepFailed('The bot or channel to link it to is gone, or is not this workflow\'s.');
         $chat = trim($step->text('link_chat'));
 
@@ -91,10 +95,26 @@ final class ChatRoomStep implements Step
             throw new StepFailed('There is no chat to link it to.');
         }
 
-        $link = ['service' => $connection->service, 'connection' => $connection->ref_id, 'chat' => mb_substr($chat, 0, 120)];
+        $link = [
+            'service' => $connection->service,
+            'connection' => $connection->ref_id,
+            'chat' => mb_substr($chat, 0, 120),
+            // A custom channel is named for the platform it stands for
+            ...$connection->service === Services::CHANNEL ? ['platform' => mb_substr((string) $connection->setting('platform'), 0, 60)] : [],
+        ];
 
         if ($room->link !== $link) {
             $room->forceFill(['link' => $link])->save();
+        }
+
+        // A project's room that stands for a chat outside is its chat with a customer
+        $room->becomeCustomers();
+
+        // Who they are on every service: the same key, the same person
+        $key = trim($step->text('contact'));
+
+        if ($room->kind === ChatRoom::CUSTOMER && $key !== '') {
+            Contact::join($room, $key);
         }
     }
 
@@ -136,6 +156,7 @@ final class ChatRoomStep implements Step
             'link' => $room->link,
             'picture' => $room->picture,
             'details' => $room->details ?? [],
+            'contact' => $room->contact()->value('ref_id'),
             'url' => route('chats.show', $room),
             'created' => $created,
         ];

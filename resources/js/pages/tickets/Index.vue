@@ -12,6 +12,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import DeleteDialog from '@/components/common/DeleteDialog.vue';
 import EmptyState from '@/components/common/EmptyState.vue';
 import PageHeader from '@/components/common/PageHeader.vue';
+import SegmentTabs from '@/components/common/SegmentTabs.vue';
 import MediaViewer from '@/components/media/MediaViewer.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,16 +56,41 @@ const kinds = computed(() => {
                 (!type || ticket.type === type) && ticket.closed_at === null,
         ).length;
 
+    const of = (type: TicketType, label: string) => ({
+        value: type,
+        label,
+        count: left(type),
+        icon: TYPES[type].icon,
+        tone: TYPES[type].tone,
+        test: `tickets-${type}`,
+    });
+
     return [
-        { value: 'all' as const, label: 'All', count: left() },
-        { value: 'bug' as const, label: 'Bugs', count: left('bug') },
         {
-            value: 'feature' as const,
-            label: 'Features',
-            count: left('feature'),
+            value: 'all' as const,
+            label: 'All',
+            count: left(),
+            test: 'tickets-all',
         },
+        of('bug', 'Bugs'),
+        of('feature', 'Features'),
     ];
 });
+
+const VIEWS = [
+    {
+        value: 'list' as const,
+        title: 'As a list',
+        icon: List,
+        test: 'tickets-as-list',
+    },
+    {
+        value: 'board' as const,
+        title: 'As a board',
+        icon: Columns3,
+        test: 'tickets-as-board',
+    },
+];
 
 // The parts tickets here are about already
 const unitsUsed = computed(() =>
@@ -235,29 +261,7 @@ const remove = () => {
 
         <template v-if="tickets.length">
             <div class="flex flex-wrap items-center gap-2">
-                <div class="ticket-tabs" role="tablist">
-                    <button
-                        v-for="option in kinds"
-                        :key="option.value"
-                        type="button"
-                        role="tab"
-                        :aria-selected="kind === option.value"
-                        :class="{ 'is-on': kind === option.value }"
-                        :data-test="`tickets-${option.value}`"
-                        @click="kind = option.value"
-                    >
-                        <component
-                            :is="TYPES[option.value].icon"
-                            v-if="option.value !== 'all'"
-                            class="size-3.5"
-                            :class="TYPES[option.value].tone"
-                        />
-                        {{ option.label }}
-                        <span class="text-muted-foreground tabular-nums">{{
-                            option.count
-                        }}</span>
-                    </button>
-                </div>
+                <SegmentTabs v-model="kind" :options="kinds" />
 
                 <TicketPick
                     v-if="unitsUsed.length > 1"
@@ -282,30 +286,7 @@ const remove = () => {
                     />
                 </div>
 
-                <div class="ticket-tabs" role="tablist" aria-label="View">
-                    <button
-                        type="button"
-                        role="tab"
-                        title="As a list"
-                        :aria-selected="view === 'list'"
-                        :class="{ 'is-on': view === 'list' }"
-                        data-test="tickets-as-list"
-                        @click="view = 'list'"
-                    >
-                        <List class="size-4" />
-                    </button>
-                    <button
-                        type="button"
-                        role="tab"
-                        title="As a board"
-                        :aria-selected="view === 'board'"
-                        :class="{ 'is-on': view === 'board' }"
-                        data-test="tickets-as-board"
-                        @click="view = 'board'"
-                    >
-                        <Columns3 class="size-4" />
-                    </button>
-                </div>
+                <SegmentTabs v-model="view" :options="VIEWS" label="View" />
             </div>
 
             <p
@@ -363,30 +344,3 @@ const remove = () => {
         <MediaViewer />
     </div>
 </template>
-
-<style scoped>
-.ticket-tabs {
-    display: inline-flex;
-    padding: 2px;
-    gap: 2px;
-    background-color: var(--muted);
-    border-radius: var(--radius-md);
-}
-.ticket-tabs button {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    height: 2rem;
-    padding: 0 0.625rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--muted-foreground);
-    border-radius: calc(var(--radius-md) - 2px);
-    cursor: pointer;
-}
-.ticket-tabs button.is-on {
-    color: var(--foreground);
-    background-color: var(--background);
-    box-shadow: 0 1px 2px rgb(15 23 42 / 0.12);
-}
-</style>

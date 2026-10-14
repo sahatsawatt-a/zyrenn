@@ -50,6 +50,7 @@ class ChatMessagePosted implements ShouldBroadcastNow
      */
     public function broadcastWith(): array
     {
-        return ['room' => $this->room->ref_id, 'message' => $this->message->toChat()];
+        // Its kind too: a customer's chat is counted by the inbox, not among one's messages
+        return ['room' => $this->room->ref_id, 'kind' => $this->room->kind, 'message' => $this->message->toChat()];
     }
 }

@@ -3,6 +3,7 @@ import {
     BadgeCheck,
     Ban,
     BookOpenText,
+    Bot,
     Braces,
     Code,
     ChartBar,
@@ -166,6 +167,7 @@ const ICONS: Record<string, Component> = {
     'text-search': TextSearch,
     locate: Locate,
     'book-open-text': BookOpenText,
+    bot: Bot,
     network: Network,
     'list-tree': ListTree,
 };
@@ -224,6 +226,10 @@ const TONES: Record<string, { strip: string; tile: string }> = {
     whatsapp: {
         strip: 'bg-lime-500',
         tile: 'bg-lime-500/10 text-lime-700 dark:text-lime-400',
+    },
+    channel: {
+        strip: 'bg-stone-500',
+        tile: 'bg-stone-500/10 text-stone-700 dark:text-stone-300',
     },
     facebook: {
         strip: 'bg-sky-600',

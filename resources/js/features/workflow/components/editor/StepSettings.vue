@@ -27,7 +27,7 @@ import type {
     Setting,
     StepNode,
 } from '@/features/workflow/types';
-import { owned } from '@/lib/projects';
+import { currentProject, owned } from '@/lib/projects';
 import {
     index as ownConnections,
     models as modelsRoute,
@@ -162,6 +162,16 @@ const connectionsPage = owned(ownConnections, projectConnections);
 
 // What a step sends through, from a linked chat: that chat's own
 const LINKED = '*linked';
+// Any of a project's chats with customers (References::CUSTOMERS)
+const CUSTOMERS = '*customers';
+// The services a room can be linked to a chat on (ChatRoom::LINKS)
+const LINKS = {
+    telegram: 'Telegram',
+    line: 'LINE',
+    whatsapp: 'WhatsApp',
+    instagram: 'Instagram',
+    channel: 'a custom channel',
+};
 
 const connectionsFor = (setting: Setting) => [
     ...(setting.linked
@@ -227,11 +237,14 @@ const roomByFormula = ref<Record<string, boolean>>({});
 const roomOptions = (setting: Setting) => [
     ...(setting.linked
         ? [
-              {
-                  value: `${LINKED}:telegram`,
-                  label: 'Any chat linked to Telegram',
-              },
-              { value: `${LINKED}:line`, label: 'Any chat linked to LINE' },
+              // A project's: every one of its chats with customers, whichever service
+              ...(currentProject()
+                  ? [{ value: CUSTOMERS, label: 'Any chat with a customer' }]
+                  : []),
+              ...Object.entries(LINKS).map(([service, name]) => ({
+                  value: `${LINKED}:${service}`,
+                  label: `Any chat linked to ${name}`,
+              })),
           ]
         : []),
     ...props.options.rooms.map((r) => ({ value: r.ref_id, label: r.title })),
@@ -483,6 +496,8 @@ async function copyHook(token: unknown) {
                             'table',
                             'column',
                             'workflow',
+                            'knowledge',
+                            'agent',
                         ].includes(setting.type)
                     "
                     class="grid grid-cols-1 gap-2"
@@ -508,7 +523,20 @@ async function copyHook(token: unknown) {
                                             value: w.ref_id,
                                             label: w.title,
                                         }))
-                                      : columns
+                                      : setting.type === 'agent'
+                                        ? (options.agents ?? []).map((a) => ({
+                                              value: a.ref_id,
+                                              label: a.title,
+                                              hint: `v${a.version}${a.model ? ` · ${a.model}` : ''}`,
+                                          }))
+                                        : setting.type === 'knowledge'
+                                          ? (options.knowledge ?? []).map(
+                                                (k) => ({
+                                                    value: k.ref_id,
+                                                    label: k.title,
+                                                }),
+                                            )
+                                          : columns
                         "
                         :none="
                             setting.required

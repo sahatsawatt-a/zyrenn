@@ -281,6 +281,134 @@ workflow reads them as `trigger.room.picture` and
 is with: their picture (one person's chat only; a group has many faces),
 name, id there, language and status.
 
+**A project's inbox.** In a project, a room linked to a chat outside is its
+chat with a customer, listed in the project's Inbox whichever service it
+came by: Telegram, LINE, WhatsApp or Instagram ("Find or make a room" takes
+any of the four as "Link it to", and their send steps take "The chat's own"
+connection). Everyone in the project opens such a chat without joining it;
+owners and editors answer, viewers read, and only an owner deletes one. Each
+says where it stands -- open (to be answered), waiting (answered) or closed
+-- who has taken it, and its tags. It moves by itself: what the customer
+sends opens it, and an answer from here, a person's or a workflow's, leaves
+it waiting. A **note** written in one is for the project alone: no "Chat
+message" trigger hears it, so it never goes out. It is kept apart from
+the conversation, in the chat's "Team only" part -- beside it on a wide
+screen, a tab of its own on a phone -- with what an AI desk flags and the
+tickets made, so nothing there is mistaken for what the customer was told. A workflow reads the rest
+as `trigger.room.kind` ("customer"), `trigger.room.status`,
+`trigger.room.assignee` (id, name, email) and `trigger.room.tags`, and
+changes it with **Change a customer's chat**: set the status, give it to an
+owner or an editor by their email or to nobody, add tags and take them off
+-- how a chat is handed from an AI answer to a person, or closed when it has
+gone quiet. The templates "WhatsApp chats in a room" and "Instagram
+messages in a room" bring those two in as "LINE / Telegram chats in a room"
+do; either service takes an answer only within 24 hours of the customer's
+last message.
+
+**A custom channel: any platform at all.** A platform with an API of its
+own -- a shop's chat, a website's chat box, a service of one's own -- is
+added as a "Custom channel" connection: its name, where answers go ("Send
+to"), and a secret both sides share. It posts each message to the hook
+address the connection shows, as JSON in the app's own shape: `id`, `chat`
+(`{id, title}`, or the id alone), `sender` (`{id, name, picture}`), `text`,
+`files` (addresses) and `location` -- or several as `{"messages": […]}` --
+signed as `X-Zyrenn-Signature: sha256=<hex HMAC-SHA256 of the body>`. The
+same id sent twice starts one run. **Custom channel message** starts a run
+on it (`trigger.platform` is the channel's name); **Send on a custom
+channel** posts `{chat, text, file: {url, name, mime, size}, location}` back,
+signed the same way, with an `Idempotency-Key` header -- a file as a signed
+link good for a day, and only ever to a public address. The template
+"Custom channel chats in a room, both ways" puts its chats in the inbox,
+named for the platform ("Ada on Shop chat").
+
+**Saved replies.** Answers a project gives often -- opening hours, how to
+pay -- are kept once, by its owners and editors, from the speech-bubble
+button beside the emoji in a customer's chat (where what is written can be
+kept as one). Picked, one is put in what is being written, `{name}` becoming
+who the chat is with and `{me}` whoever sends it.
+
+**What a customer asks, a ticket.** A bug they hit or a feature they ask
+for is made a ticket of the project's from the chat: the ticket button on
+their message (owners and editors) starts one from what they said. The
+ticket says where it was asked and links back; the chat lists its tickets
+under its name and keeps a note of each, which the customer never sees.
+
+**Knowledge, and an AI desk.** A knowledge base (Knowledge, in the
+sidebar) is what AI answers from: notes of a folder, a table, the text
+files of a Drive folder -- one's own, or a project's -- read, cut into
+passages and read again every hour (`knowledge:read`), keeping what has
+not changed. Given an AI connection and an embedding model (Ollama's
+`nomic-embed-text`, say), passages are found by meaning; without one, by
+their words. Its page tries a question. **Search knowledge** gives the
+passages nearest a question, and `context`, all of them as one text for
+"Ask AI". The template **AI answers customers, people take requests** puts
+them together for a project: what a customer writes in any of its chats
+("Any chat with a customer", hearing only what customers sent) is put to a
+model with what the knowledge base finds and the conversation so far
+("Read a room" gives it as `transcript`); a question it can answer is
+answered in the chat and goes out by the chat's bridge (the room templates
+send what people and workflows answer); a bug or a feature asked for is
+thanked for, tagged, and noted for a person to make a ticket of; anything
+else is left to a person with a note. AI keeps out of a chat that someone
+has taken, or where its "AI" switch is off (`trigger.room.ai`). "Write in a
+room" can write a note for the project rather than a message.
+
+**Agents.** An agent (Agents, in the sidebar) is a model, through one of
+the owner's AI connections, with the instructions it answers by and the
+knowledge base it answers from. Started from a preset ("Customer desk",
+"Helper", blank), changed on its page -- every change of model,
+instructions or knowledge is kept as a version, with a word on what changed
+-- tried there at its latest or at any version, and any earlier version can
+be used again (kept as a new one, so nothing is lost). **Ask an agent**
+asks it in a workflow: its knowledge searched for the message, the chat's
+latest messages read first when given a chat (notes for the team left out),
+its answer as text or JSON, and the version that answered; a "Version"
+keeps a step to one whatever is changed after. "AI answers customers" is
+built on one. In a customer's chat, **Suggest a reply** (the sparkle beside
+the emoji) has one of the project's agents write an answer to what they
+last asked into the message being written: nothing goes to them until a
+person sends it. Every agent's answer comes with its **sources**: the
+passages of its knowledge base it was given before answering (what each is
+called, how near the question it was, what it says, a link to open it) --
+under a suggestion before it is sent, under an AI desk's answer in the chat
+for the project (`chat.send`'s "Its sources"), and under "Try it". None
+found is said plainly: the answer is then the model's own. They are what it
+read, not proof of what it used: an answer that says more than its sources
+is the one to check.
+
+**Agents with tools (MCP).** An agent can be given tools, one by one, on
+its page: Zyrenn's own -- the MCP tools AI clients use: notes, tables,
+tickets, customer chats, the Drive, places -- run here as the person it
+works for and in its owner's project (it is never asked which project), and
+those of any MCP server its owner connects ("MCP server" connection: an
+address, and a token when it asks for one; trying it says how many tools it
+offers). The tools given are part of each version. A tool that says it
+only reads may be used anywhere; one that changes something (marked
+"changes things") only by "Ask an agent" in a workflow -- trying an agent,
+or a suggested reply, only looks things up. The model must be one that
+takes tools: on OpenRouter, `supported_parameters` lists "tools"
+(`nvidia/nemotron-3-super-120b-a12b:free` worked); qwen2.5 on Ollama does
+too. A few rounds at most, then it answers. What it used is shown beside the
+answer, under "Used": each tool, what it asked, what came back.
+
+**From an AI client.** list-chats, get-chat, say-in-chat and update-chat
+reach a project's inbox over MCP: read the open chats, answer one (or leave
+a note), hand it to someone, close it.
+
+**One customer, every service.** Each chat with a customer is someone's:
+made with their first chat, and named as it knows them. Their chats on
+other services are joined to them by "Find or make a room"'s **Same person
+as** -- something the same for them everywhere, such as an email or a phone
+number -- or by hand from "About this chat" ("The same person as another
+chat…", and "This chat is someone else" to take one apart again). A chat
+then links to their others ("Also on" under its name), the inbox finds them
+by their name and says where else they write, and what is noted about them
+by hand is kept with them, once, for all their chats; what a workflow keeps
+of one service -- their LINE id, their language -- stays with that chat. A
+workflow reads them as `trigger.room.contact`: ref_id, name, key, details,
+and rooms (each chat's ref_id, title, service and status), so an answer can
+go to where they wrote last.
+
 **Places in a chat.** A message can carry a place -- lat, lng, a title and
 an address -- drawn under it as a small map with its pin, the way there, the
 app's own map of it, and "Save" to keep it in a list of saved places; the

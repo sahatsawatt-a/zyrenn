@@ -3,6 +3,7 @@
 namespace App\Support\Connections;
 
 use App\Models\Connection;
+use App\Support\Agents\Toolbox;
 use App\Support\Chat\AiClient;
 use App\Support\Chat\AiFailed;
 use Illuminate\Http\Client\ConnectionException;
@@ -44,6 +45,7 @@ class ConnectionCheck
             Services::WHATSAPP => $this->whatsapp($connection),
             Services::SERPAPI => $this->serpapi($connection),
             Services::TAVILY => $this->tavily($connection),
+            Services::MCP => $this->mcp($connection),
             default => ['ok' => true, 'message' => 'Nothing to try ahead: it is checked when it is used.'],
         };
     }
@@ -265,5 +267,23 @@ class ConnectionCheck
         $plan = $response->json('account.current_plan');
 
         return ['ok' => true, 'message' => 'Works'.(is_numeric($used) && is_numeric($limit) ? ': '.number_format((int) $used).' of '.number_format((int) $limit).' credits used'.(is_string($plan) && $plan !== '' ? " ({$plan})" : '') : '').'.'];
+    }
+
+    /**
+     * An MCP server: reached, and how many tools it offers.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    private function mcp(Connection $connection): array
+    {
+        try {
+            $client = Toolbox::client($connection);
+            $count = $client->tools()->count();
+            $client->disconnect();
+
+            return ['ok' => true, 'message' => "Works: it offers {$count} ".($count === 1 ? 'tool' : 'tools').'.'];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'message' => 'It could not be asked: '.mb_strimwidth($e->getMessage(), 0, 200, '…')];
+        }
     }
 }

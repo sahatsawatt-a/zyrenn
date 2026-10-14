@@ -127,6 +127,85 @@ class AiClient
     }
 
     /**
+     * One answer, whole, to a conversation that offers tools: the words, or
+     * the tools the model asks to use -- each by name, with its arguments
+     * read as JSON -- as hosts in this dialect give them.
+     *
+     * @param  list<array<string, mixed>>  $messages
+     * @param  list<array<string, mixed>>  $tools
+     * @return array{content: string, calls: list<array{id: string, name: string, arguments: array<string, mixed>}>, message: array<string, mixed>}
+     *
+     * @throws AiFailed
+     */
+    public function complete(Connection $connection, string $model, array $messages, array $tools): array
+    {
+        $response = $this->send($connection, fn (PendingRequest $http) => $http
+            ->timeout(240)
+            ->post($this->root($connection).'/chat/completions', [
+                'model' => $model,
+                'messages' => $messages,
+                ...$tools === [] ? [] : ['tools' => $tools],
+                'stream' => false,
+            ]));
+
+        $message = (array) $response->json('choices.0.message', []);
+        $calls = [];
+
+        foreach ((array) ($message['tool_calls'] ?? []) as $at => $call) {
+            $function = is_array($call) ? (array) ($call['function'] ?? []) : [];
+            $arguments = $function['arguments'] ?? [];
+            $arguments = is_string($arguments) ? (json_decode($arguments, true) ?? []) : (array) $arguments;
+
+            if (is_string($function['name'] ?? null)) {
+                $calls[] = ['id' => (string) ($call['id'] ?? "call_{$at}"), 'name' => $function['name'], 'arguments' => is_array($arguments) ? $arguments : []];
+            }
+        }
+
+        return ['content' => trim((string) ($message['content'] ?? '')), 'calls' => $calls, 'message' => $message];
+    }
+
+    /**
+     * Each text as a list of numbers its meaning is near others' by: what
+     * the connection's embedding model makes of it, in the order given.
+     *
+     * @param  list<string>  $texts
+     * @return list<list<float>>
+     *
+     * @throws AiFailed
+     */
+    public function embed(Connection $connection, string $model, array $texts): array
+    {
+        if ($texts === []) {
+            return [];
+        }
+
+        $response = $this->send($connection, fn (PendingRequest $http) => $http
+            // A model that has to be loaded first takes a while
+            ->timeout(120)
+            ->post($this->root($connection).'/embeddings', ['model' => $model, 'input' => $texts]));
+
+        $vectors = [];
+
+        foreach ((array) $response->json('data', []) as $at => $item) {
+            $vector = is_array($item) ? ($item['embedding'] ?? null) : null;
+
+            if (! is_array($vector) || $vector === []) {
+                throw new AiFailed("{$model} gave no embedding.");
+            }
+
+            $vectors[(int) ($item['index'] ?? $at)] = array_map('floatval', array_values($vector));
+        }
+
+        ksort($vectors);
+
+        if (count($vectors) !== count($texts)) {
+            throw new AiFailed("{$model} gave ".count($vectors).' embeddings for '.count($texts).' texts.');
+        }
+
+        return array_values($vectors);
+    }
+
+    /**
      * Where to call: the connection's address, with "localhost" read as the user means it.
      */
     private function root(Connection $connection): string

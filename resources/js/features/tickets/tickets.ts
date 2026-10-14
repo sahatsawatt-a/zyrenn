@@ -33,6 +33,8 @@ export type Ticket = {
     assigned_to: TicketPerson | null;
     // The group it is talked over in, once somebody has started it
     chat: string | null;
+    // The customer's chat it was asked in, when it was made from one
+    asked_in?: { ref_id: string; title: string } | null;
     created_at: string;
     updated_at: string;
     closed_at: string | null;

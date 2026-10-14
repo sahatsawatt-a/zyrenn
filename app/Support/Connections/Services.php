@@ -58,6 +58,12 @@ final class Services
     /** A WhatsApp Business number, by Meta's Cloud API. */
     public const WHATSAPP = 'whatsapp';
 
+    /** A server speaking the Model Context Protocol, over HTTP: tools an agent may use. */
+    public const MCP = 'mcp';
+
+    /** Any messaging platform with an API of its own: its messages sent to a hook, answers posted back. */
+    public const CHANNEL = 'channel';
+
     /** Search engines' results as data, by a key (serpapi.com). */
     public const SERPAPI = 'serpapi';
 
@@ -278,6 +284,33 @@ final class Services
             'secrets' => [
                 ['name' => 'access_token', 'label' => 'Access token', 'type' => 'secret', 'required' => true],
                 ['name' => 'app_secret', 'label' => 'App secret', 'type' => 'secret', 'required' => true],
+            ],
+        ];
+
+        $services[self::CHANNEL] = [
+            'label' => 'Custom channel',
+            'group' => self::MESSAGING,
+            'hint' => 'Any messaging platform with an API of its own -- a shop\'s chat, a website\'s chat box, a service of your own. It sends each message to the hook address shown once this is saved; answers are posted to "Send to". Both ways are signed with the shared secret: an HMAC-SHA256 of the body, in hex, in the X-Zyrenn-Signature header as sha256=… -- give the same secret to the other side.',
+            'testable' => false,
+            'settings' => [
+                ['name' => 'platform', 'label' => 'Platform', 'type' => 'text', 'required' => true, 'placeholder' => 'Shop chat', 'help' => 'What its chats are called: "Ada on Shop chat".'],
+                ['name' => 'send_url', 'label' => 'Send to', 'type' => 'url', 'required' => false, 'placeholder' => 'https://api.example.com/zyrenn/messages', 'help' => 'Where answers are posted, as JSON: chat, text, file and place.'],
+            ],
+            'secrets' => [
+                ['name' => 'secret', 'label' => 'Shared secret', 'type' => 'secret', 'required' => true, 'help' => 'Any long, random string, given to the other side too.'],
+            ],
+        ];
+
+        $services[self::MCP] = [
+            'label' => 'MCP server',
+            'group' => self::AI,
+            'hint' => 'A server speaking the Model Context Protocol over HTTP -- its address, and a token when it asks for one. Agents can then be given its tools, one by one.',
+            'testable' => true,
+            'settings' => [
+                ['name' => 'url', 'label' => 'Address', 'type' => 'url', 'required' => true, 'placeholder' => 'https://example.com/mcp'],
+            ],
+            'secrets' => [
+                ['name' => 'token', 'label' => 'Token', 'type' => 'secret', 'required' => false, 'help' => 'Sent as "Authorization: Bearer …". Left empty, none.'],
             ],
         ];
 

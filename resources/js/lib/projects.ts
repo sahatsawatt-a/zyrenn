@@ -12,6 +12,8 @@ export type CurrentProject = {
     ref_id: string;
     name: string;
     role: ProjectRole | null;
+    // Its chats with customers still to be answered
+    inbox: number;
 };
 
 export type ProjectSummary = { ref_id: string; name: string };

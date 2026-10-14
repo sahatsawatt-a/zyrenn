@@ -6,10 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Models\Connection;
 use App\Models\Workflow\WorkflowListener;
 use App\Support\Connections\Meta;
+use App\Support\Connections\Services;
 use App\Support\Workflow\Inbound\Envelope;
 use App\Support\Workflow\Ingest;
 use App\Support\Workflow\Listeners;
 use App\Support\Workflow\References;
+use App\Support\Workflow\Steps\ChannelApi;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -301,6 +303,45 @@ class HookController extends Controller
         );
 
         return response()->json(['ok' => true], 202);
+    }
+
+    /**
+     * A message from a platform of the user's own (a "Custom channel"), in
+     * the app's own shape -- one, or several as {"messages": [...]} --
+     * signed with the secret the two share. The same message sent twice,
+     * by its own id, starts one run.
+     */
+    public function channel(Request $request, string $connection): JsonResponse
+    {
+        $channel = Connection::where('ref_id', $connection)->where('service', Services::CHANNEL)->first();
+
+        if ($channel === null || ! ChannelApi::signedBy($request->getContent(), (string) $request->header(ChannelApi::HEADER), $channel)) {
+            return response()->json(['ok' => false], 403);
+        }
+
+        $body = $request->json()->all();
+        $messages = is_array($body['messages'] ?? null) ? $body['messages'] : [$body];
+        $taken = 0;
+
+        foreach ($messages as $message) {
+            $envelope = is_array($message) ? Envelope::channel($message, (string) $channel->setting('platform')) : null;
+
+            if ($envelope === null) {
+                continue;
+            }
+
+            $taken++;
+            Ingest::fire(
+                "channel:{$channel->ref_id}",
+                $envelope['id'] ?: hash('sha256', json_encode($message) ?: ''),
+                $envelope,
+                Listeners::for('channel', $channel->ref_id),
+            );
+        }
+
+        return $taken === 0 && $messages !== []
+            ? response()->json(['ok' => false, 'error' => 'Each message needs chat.id, and text, files or a location.'], 422)
+            : response()->json(['ok' => true, 'taken' => $taken]);
     }
 
     /**

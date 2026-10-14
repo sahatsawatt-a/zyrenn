@@ -8,6 +8,10 @@ use App\Mcp\Tools\Boards\GetBoard;
 use App\Mcp\Tools\Boards\ListBoardFolders;
 use App\Mcp\Tools\Boards\ListBoards;
 use App\Mcp\Tools\Boards\UpdateBoard;
+use App\Mcp\Tools\Chats\GetChat;
+use App\Mcp\Tools\Chats\ListChats;
+use App\Mcp\Tools\Chats\SayInChat;
+use App\Mcp\Tools\Chats\UpdateChat;
 use App\Mcp\Tools\Drive\DeleteFile;
 use App\Mcp\Tools\Drive\GetFile;
 use App\Mcp\Tools\Drive\ListDrive;
@@ -78,6 +82,13 @@ update-ticket), each a "bug" or a "feature" with a number in its project, a titl
 is about, a body, a priority and a status: open, in_progress, done, or dropped. They always take
 "project". Asked to work through a project's tickets: list-tickets, get-ticket for each, set it
 "in_progress" while it is being done and "done" when it is.
+
+Chats with customers: a project's inbox -- each person who writes to it on LINE, Telegram, WhatsApp,
+Instagram or a custom channel has a chat (list-chats, get-chat, say-in-chat, update-chat), open (to be
+answered), waiting (answered) or closed, given to someone, tagged, and joined to the customer's chats
+on other services. They always take "project". What say-in-chat writes goes to the customer, unless it
+is a "note", which only the project sees. Asked to answer a project's customers: list-chats, get-chat
+for each, say-in-chat, then update-chat to close one that is done.
 
 Notes: bodies are read and written as Markdown (get-note, create-note, update-note, edit-note). Notes
 live in folders addressed by path, e.g. "KT Plan/Lakeshore". Every block of a note -- a paragraph,
@@ -203,6 +214,10 @@ class GlobalServer extends Server
             new GetTicket(global: true),
             new CreateTicket(global: true),
             new UpdateTicket(global: true),
+            new ListChats(global: true),
+            new GetChat(global: true),
+            new SayInChat(global: true),
+            new UpdateChat(global: true),
             new ListNotes(global: true),
             new ListFolders(global: true),
             new GetNote(global: true),

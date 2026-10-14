@@ -65,7 +65,7 @@ class HandleInertiaRequests extends Middleware
      * URL, or the one the note, board, table or file being shown belongs to.
      * Null on the user's own things.
      *
-     * @return array{ref_id: string, name: string, role: string|null}|null
+     * @return array{ref_id: string, name: string, role: string|null, inbox: int}|null
      */
     private function currentProject(Request $request): ?array
     {
@@ -82,6 +82,11 @@ class HandleInertiaRequests extends Middleware
             return null;
         }
 
-        return [...$project->only(['ref_id', 'name']), 'role' => $project->roleOf($user)];
+        return [
+            ...$project->only(['ref_id', 'name']),
+            'role' => $project->roleOf($user),
+            // Its chats with customers still to be answered, for the sidebar
+            'inbox' => ChatRoom::query()->customers($project)->where('status', ChatRoom::OPEN)->count(),
+        ];
     }
 }

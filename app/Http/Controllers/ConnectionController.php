@@ -283,6 +283,11 @@ class ConnectionController extends Controller
                 'set' => 'by_hand',
                 'hint' => 'For a workflow to start on a reply: in the Meta app, under the Threads use case → Settings, with webhooks added, paste it as the Callback URL, with the verify token '.Meta::verifyToken($connection).', then subscribe to "replies". Meta sends only once the app is live.',
             ],
+            $connection->service === Services::CHANNEL => [
+                'url' => Hooks::url("channel/{$connection->ref_id}"),
+                'set' => 'by_hand',
+                'hint' => 'The platform posts each message here as JSON, signed with the shared secret: {"id": its own id, "chat": {"id", "title"}, "sender": {"id", "name", "picture"}, "text", "files": [addresses], "location": {"lat", "lng", "title", "address"}} -- or several as {"messages": […]}. Only chat.id is needed, and one of text, files or location.',
+            ],
             $connection->service === 'line' => ['url' => Hooks::url("line/{$connection->ref_id}"), 'set' => 'by_hand'],
             $connection->service === 'telegram' && $connection->setting('receive') !== 'poll' => ['url' => Hooks::url("telegram/{$connection->ref_id}"), 'set' => 'by_app'],
             default => null,

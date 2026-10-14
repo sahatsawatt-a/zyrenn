@@ -2,6 +2,7 @@
 
 namespace App\Support\Workflow\Inbound;
 
+use App\Models\Chat\ChatMessage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
@@ -555,6 +556,66 @@ final class Envelope
                 'story' => $story === null ? null : ['id' => isset($story['id']) ? (string) $story['id'] : null, 'url' => $story['url'] ?? null],
             ], fn ($part) => $part !== null),
             'raw' => $event,
+        ];
+    }
+
+    /**
+     * One message from a platform of the user's own (a "Custom channel"),
+     * in the app's own shape: id, chat { id, title } (or the chat's id
+     * alone), sender { id, name, picture }, text, files (addresses, or
+     * { url, name }), location { lat, lng, title, address }. Null for one
+     * with no chat, or with nothing said. Beside the common shape: platform,
+     * the name the connection gives it.
+     *
+     * @param  array<string, mixed>  $message
+     * @return array<string, mixed>|null
+     */
+    public static function channel(array $message, string $platform): ?array
+    {
+        $chat = is_array($message['chat'] ?? null) ? $message['chat'] : ['id' => $message['chat'] ?? null];
+        $chatId = is_scalar($chat['id'] ?? null) ? trim((string) $chat['id']) : '';
+        $sender = is_array($message['sender'] ?? null) ? $message['sender'] : [];
+        $text = is_scalar($message['text'] ?? null) ? (string) $message['text'] : '';
+        $files = array_values(array_filter(array_map(
+            fn ($file) => match (true) {
+                is_string($file) => $file,
+                is_array($file) && is_string($file['url'] ?? null) => $file['url'],
+                default => null,
+            },
+            is_array($message['files'] ?? null) ? $message['files'] : [],
+        ), fn (?string $url) => $url !== null && preg_match('#^https?://#i', $url) === 1));
+        $location = ChatMessage::placeOf($message['location'] ?? null);
+
+        if ($chatId === '' || ($text === '' && $files === [] && $location === null)) {
+            return null;
+        }
+
+        $id = is_scalar($message['id'] ?? null) ? (string) $message['id'] : '';
+        $word = fn (mixed $value) => is_scalar($value) && trim((string) $value) !== '' ? trim((string) $value) : null;
+
+        return [
+            'service' => 'channel',
+            'platform' => $platform,
+            'type' => 'message',
+            'kind' => match (true) {
+                $location !== null => 'location',
+                $files !== [] => 'file',
+                default => 'text',
+            },
+            'id' => $id,
+            'at' => is_string($message['at'] ?? null) ? $message['at'] : now()->format('Y-m-d\TH:i:s.vP'),
+            'chat' => ['id' => $chatId, 'kind' => 'private', 'title' => $word($chat['title'] ?? null)],
+            'sender' => [
+                'id' => $word($sender['id'] ?? null) ?? $chatId,
+                'name' => $word($sender['name'] ?? null),
+                'picture' => is_string($sender['picture'] ?? null) && str_starts_with($sender['picture'], 'https://') ? $sender['picture'] : null,
+            ],
+            'text' => $text,
+            'display' => $text,
+            'files' => $files,
+            'location' => $location,
+            'reply' => ['to' => $id !== '' ? $id : null, 'quote' => null],
+            'raw' => $message,
         ];
     }
 

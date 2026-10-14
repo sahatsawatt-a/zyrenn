@@ -2,8 +2,10 @@
 
 namespace App\Support\Workflow;
 
+use App\Models\Agent\Agent;
 use App\Models\Chat\ChatRoom;
 use App\Models\Connection;
+use App\Models\Knowledge\KnowledgeBase;
 use App\Models\Owner;
 use App\Models\Project;
 use App\Models\Table\Table;
@@ -25,6 +27,9 @@ final class References
     /** "The chat's own" connection, or "any chat linked to <service>" for a room. */
     public const LINKED = '*linked';
 
+    /** For a project's chat trigger: any of its chats with customers, whichever service. */
+    public const CUSTOMERS = '*customers';
+
     /**
      * What the draft points at that isn't there, or isn't its owner's to use.
      *
@@ -45,7 +50,7 @@ final class References
                 }
 
                 // Worked out from the run's linked chat, when it runs
-                if (($setting['linked'] ?? false) && ($value === self::LINKED || str_starts_with($value, self::LINKED.':'))) {
+                if (($setting['linked'] ?? false) && ($value === self::LINKED || $value === self::CUSTOMERS || str_starts_with($value, self::LINKED.':'))) {
                     continue;
                 }
 
@@ -56,6 +61,12 @@ final class References
                     'table' => self::table($owner, $value) === null
                         ? 'choose one of this workflow\'s own tables.'
                         : null,
+                    'knowledge' => self::knowledge($owner, $value) === null
+                        ? 'choose one of this workflow\'s own knowledge bases.'
+                        : null,
+                    'agent' => self::agent($owner, $value) === null
+                        ? 'choose one of this workflow\'s own agents.'
+                        : null,
                     'workflow' => $value === $workflow->ref_id
                         ? 'a workflow can\'t run itself this way.'
                         : (self::callable($owner, $value) === null
@@ -63,7 +74,7 @@ final class References
                             : null),
                     // A room worked out while it runs can only be checked then
                     'room' => ! str_contains($value, '{{') && self::room($owner, $value) === null
-                        ? ($owner instanceof Project ? 'choose one of the project\'s group chats.' : 'choose one of your own chats.')
+                        ? ($owner instanceof Project ? 'choose one of the project\'s chats.' : 'choose one of your own chats.')
                         : null,
                     default => null,
                 };
@@ -128,6 +139,16 @@ final class References
         return collect($nodes)->firstWhere('type', 'trigger.call')['id'] ?? null;
     }
 
+    public static function agent(Owner $owner, string $refId): ?Agent
+    {
+        return Agent::query()->of($owner)->where('ref_id', $refId)->first();
+    }
+
+    public static function knowledge(Owner $owner, string $refId): ?KnowledgeBase
+    {
+        return KnowledgeBase::query()->of($owner)->where('ref_id', $refId)->first();
+    }
+
     public static function table(Owner $owner, string $refId): ?Table
     {
         return $owner->tables()->where('ref_id', $refId)->first();
@@ -135,8 +156,8 @@ final class References
 
     /**
      * A room the owner's workflows may use: one's own chats for a user, the
-     * project's group chats for a project -- never a direct one between two
-     * people.
+     * project's group chats and its chats with customers for a project --
+     * never a direct one between two people.
      */
     public static function room(Owner $owner, string $refId): ?ChatRoom
     {
@@ -149,7 +170,7 @@ final class References
     public static function rooms(Owner $owner): Builder
     {
         return $owner instanceof Project
-            ? ChatRoom::where('kind', ChatRoom::GROUP)->where('project_id', $owner->getKey())
+            ? ChatRoom::whereIn('kind', [ChatRoom::GROUP, ChatRoom::CUSTOMER])->where('project_id', $owner->getKey())
             : ChatRoom::where('kind', ChatRoom::PERSONAL)->where('user_id', $owner->getKey());
     }
 

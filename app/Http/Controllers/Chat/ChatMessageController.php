@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Chat;
 
-use App\Events\ChatMessagePosted;
 use App\Http\Controllers\Controller;
 use App\Models\Chat\ChatMessage;
 use App\Models\Chat\ChatRoom;
@@ -10,7 +9,6 @@ use App\Models\Drive\DriveFile;
 use App\Support\Chat\AiFailed;
 use App\Support\Chat\ChatEngine;
 use App\Support\Folders;
-use App\Support\Live\Live;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -41,7 +39,10 @@ class ChatMessageController extends Controller
             'place.lng' => ['required_with:place', 'numeric', 'between:-180,180'],
             'place.title' => ['nullable', 'string', 'max:200'],
             'place.address' => ['nullable', 'string', 'max:300'],
+            // A note among the project, in a customer's chat: kept here, never sent out
+            'internal' => ['nullable', 'boolean'],
         ]);
+        $internal = $room->kind === ChatRoom::CUSTOMER && $request->boolean('internal');
 
         // A file goes with it: kept in the Drive of whoever's chat this is,
         // where everyone in the chat can open it
@@ -60,18 +61,11 @@ class ChatMessageController extends Controller
                 ?? throw ValidationException::withMessages(['file' => __('That file is not in this chat\'s Drive.')]);
         }
 
-        $said = $room->messages()->create([
-            'role' => ChatMessage::USER,
-            'user_id' => $request->user()->id,
-            'content' => $validated['content'] ?? '',
-            'meta' => array_filter(['file' => $file?->ref_id, 'place' => ChatMessage::placeOf($validated['place'] ?? null)]) ?: null,
+        $said = $room->say($request->user(), $validated['content'] ?? '', [
+            'file' => $file?->ref_id,
+            'place' => ChatMessage::placeOf($validated['place'] ?? null),
+            'internal' => $internal,
         ]);
-
-        // Everyone else in a shared room sees it at once, wherever they are
-        if ($room->kind !== ChatRoom::PERSONAL) {
-            $said->load('author:id,name');
-            Live::tell(new ChatMessagePosted($room, $said));
-        }
 
         // One's own room is named after what it was first about, until it is named
         if ($room->kind === ChatRoom::PERSONAL && $room->title === '') {
@@ -92,7 +86,7 @@ class ChatMessageController extends Controller
                 flush();
             };
 
-            $send('user', ['message' => $said->toChat(), 'title' => $room->titleFor($said->author)]);
+            $send('user', ['message' => $said->toChat(), 'title' => $room->titleFor($said->author), 'status' => $room->status]);
 
             if (! $room->hasAgent()) {
                 $send('done', ['message' => null]);

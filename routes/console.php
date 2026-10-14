@@ -1,5 +1,7 @@
 <?php
 
+use App\Jobs\ReadKnowledge;
+use App\Models\Knowledge\KnowledgeBase;
 use App\Support\Workflow\Engine;
 use App\Support\Workflow\Health;
 use App\Support\Workflow\Inbound\Schedules;
@@ -32,6 +34,15 @@ Artisan::command('workflows:prune', function () {
 })->purpose('Delete workflow runs, webhook records and audit entries older than they are kept for');
 
 Schedule::command('workflows:prune')->dailyAt('03:30')->withoutOverlapping();
+
+// What knowledge bases read is read again, keeping the passages that have not changed
+Artisan::command('knowledge:read', function () {
+    $bases = KnowledgeBase::query()->where('state', '!=', KnowledgeBase::READING)->pluck('id');
+    $bases->each(fn (int $id) => ReadKnowledge::dispatch($id));
+    $this->info("{$bases->count()} knowledge bases to read");
+})->purpose('Read every knowledge base\'s notes, tables and files again');
+
+Schedule::command('knowledge:read')->hourly()->withoutOverlapping();
 
 // How the workflows have been doing, for whoever runs the app
 Artisan::command('workflows:health {--hours=24}', function () {

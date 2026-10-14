@@ -2,9 +2,11 @@
 
 namespace App\Support\Workflow;
 
+use App\Models\Agent\Agent;
 use App\Models\Chat\ChatRoom;
 use App\Models\Connection;
 use App\Models\Drive\DriveFolder;
+use App\Models\Knowledge\KnowledgeBase;
 use App\Models\Owner;
 use App\Models\Table\Table;
 use App\Models\Table\TableColumn;
@@ -50,6 +52,12 @@ final class Choices
                 ->filter(fn (Workflow $other) => References::callTrigger($other) !== null)
                 ->map(fn (Workflow $other) => ['ref_id' => $other->ref_id, 'title' => $other->title ?: 'Untitled workflow'])
                 ->values(),
+            // Who answers: a model with its instructions, at its latest
+            'agents' => Agent::query()->of($owner)->orderBy('name')->get(['ref_id', 'name', 'model', 'version'])
+                ->map(fn (Agent $agent) => ['ref_id' => $agent->ref_id, 'title' => $agent->name, 'model' => $agent->model, 'version' => $agent->version])->values(),
+            // What an AI may answer from
+            'knowledge' => KnowledgeBase::query()->of($owner)->orderBy('title')->get(['ref_id', 'title'])
+                ->map(fn (KnowledgeBase $base) => $base->only(['ref_id', 'title']))->values(),
             'hooks' => Hooks::url('w/'),
             'timezone' => config('app.timezone'),
         ];

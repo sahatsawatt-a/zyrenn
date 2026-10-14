@@ -3,6 +3,7 @@
 namespace App\Policies;
 
 use App\Models\Chat\ChatRoom;
+use App\Models\Project;
 use App\Models\User;
 
 /**
@@ -12,7 +13,9 @@ use App\Models\User;
  * renamed and deleted by its owner, since its agent answers with their key;
  * a group, by whoever started it, while they are still in its project. A
  * group is joined by anyone in its project, and left by anyone in it. A
- * direct room is never renamed or deleted: it is the two of them.
+ * direct room is never renamed or deleted: it is the two of them. A project's
+ * chat with a customer is read by everyone in the project; its owners and
+ * editors answer in it and look after it, and only an owner deletes it.
  */
 class ChatPolicy
 {
@@ -26,7 +29,7 @@ class ChatPolicy
      */
     public function post(User $user, ChatRoom $room): bool
     {
-        return $room->includes($user);
+        return $room->kind === ChatRoom::CUSTOMER ? $room->answeredBy($user) : $room->includes($user);
     }
 
     public function update(User $user, ChatRoom $room): bool
@@ -36,7 +39,9 @@ class ChatPolicy
 
     public function delete(User $user, ChatRoom $room): bool
     {
-        return $this->manages($user, $room);
+        return $room->kind === ChatRoom::CUSTOMER
+            ? $room->project?->roleOf($user) === Project::OWNER
+            : $this->manages($user, $room);
     }
 
     /**
@@ -60,6 +65,7 @@ class ChatPolicy
         return match ($room->kind) {
             ChatRoom::PERSONAL => $room->user_id === $user->id,
             ChatRoom::GROUP => $room->created_by === $user->id && $room->inProject($user),
+            ChatRoom::CUSTOMER => $room->answeredBy($user),
             default => false,
         };
     }

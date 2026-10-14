@@ -28,7 +28,7 @@ final class ServiceKinds
      */
     public static function all(): array
     {
-        return [...self::serpapi(), ...self::tavily(), ...self::telegram(), ...self::line(), ...self::whatsapp(), ...self::linkedin(), ...self::facebook(), ...self::instagram(), ...self::threads()];
+        return [...self::serpapi(), ...self::tavily(), ...self::telegram(), ...self::line(), ...self::whatsapp(), ...self::channel(), ...self::linkedin(), ...self::facebook(), ...self::instagram(), ...self::threads()];
     }
 
     // --- SerpApi ---
@@ -525,7 +525,7 @@ final class ServiceKinds
      */
     private static function whatsapp(): array
     {
-        $number = ['name' => 'connection', 'label' => 'Number', 'type' => 'connection', 'required' => true, 'services' => ['whatsapp']];
+        $number = ['name' => 'connection', 'label' => 'Number', 'type' => 'connection', 'required' => true, 'services' => ['whatsapp'], 'linked' => true];
         $to = ['name' => 'to', 'label' => 'To', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.chat.id }}', 'help' => 'Their number with its country code, like 66812345678.'];
         $under = ['name' => 'reply_to', 'label' => 'In answer to', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.reply.to }}', 'help' => 'A message\'s id: this is then shown under it. Left empty, it stands alone.'];
         $window = 'Only within 24 hours of their last message: after that, WhatsApp takes a template alone.';
@@ -572,6 +572,24 @@ final class ServiceKinds
                 ['name' => 'message', 'label' => 'Message', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.reply.to }}', 'help' => 'The message\'s id.'],
                 ['name' => 'typing', 'label' => 'And show "typing…"', 'type' => 'choice', 'required' => true, 'default' => 'no', 'options' => ['no' => 'No', 'yes' => 'Yes, until an answer goes or 25 seconds pass']],
             ]),
+        ];
+    }
+
+    // --- A custom channel ---
+
+    /**
+     * @return list<NodeType>
+     */
+    private static function channel(): array
+    {
+        return [
+            self::kind('channel.send', 'Send on a custom channel', 'send', 'Posts words, a file and a place to the channel\'s "Send to" address as JSON -- {"chat", "text", "file": {"url", "name", "mime", "size"}, "location"} -- signed with its secret, with an Idempotency-Key for a repeat to be seen by. A file goes as a link the platform fetches it by, good for a day. Gives out the platform\'s answer as body, and its id when it gives one.', [
+                ['name' => 'connection', 'label' => 'Channel', 'type' => 'connection', 'required' => true, 'services' => ['channel'], 'linked' => true],
+                ['name' => 'to', 'label' => 'Chat', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.chat.id }}', 'help' => 'The chat\'s id on the platform, as its messages give it.'],
+                ['name' => 'text', 'label' => 'Message', 'type' => 'template', 'required' => false],
+                ['name' => 'file', 'label' => 'With file', 'type' => 'template', 'required' => false, 'placeholder' => '{{ item(trigger.files, 1) }}', 'help' => 'A file in the Drive, by its ref_id.'],
+                ['name' => 'place', 'label' => 'With a place', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.location }}', 'help' => 'A record with lat and lng, and a title and address when it has them.'],
+            ], sends: true),
         ];
     }
 
@@ -623,7 +641,7 @@ final class ServiceKinds
         $post = ['name' => 'post', 'label' => 'Post', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("post").id }}', 'help' => 'Its id, as "Post on Instagram" or "Instagram: my posts" gives it -- not its link.'];
         $comment = ['name' => 'comment', 'label' => 'Comment', 'type' => 'template', 'required' => true, 'placeholder' => '{{ item(node("comments").comments, 1).id }}', 'help' => 'Its id, as a step gives it.'];
         $fetched = 'Instagram fetches it from the app, so the app needs its public address.';
-        $chats = [...$account, 'help' => 'An Instagram connection, signed in with Instagram and allowed its messages.'];
+        $chats = [...$account, 'linked' => true, 'help' => 'An Instagram connection, signed in with Instagram and allowed its messages.'];
         $to = ['name' => 'to', 'label' => 'To', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.chat.id }}', 'help' => 'Who, by the id Instagram gives the account for them, as a message from them carries it -- not their @name.'];
         $window = 'Only within 24 hours of their last message.';
 

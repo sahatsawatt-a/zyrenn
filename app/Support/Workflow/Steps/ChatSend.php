@@ -5,6 +5,7 @@ namespace App\Support\Workflow\Steps;
 use App\Events\ChatMessagePosted;
 use App\Models\Chat\ChatMessage;
 use App\Models\Chat\ChatRoom;
+use App\Support\Agents\Sourced;
 use App\Support\Chat\AiFailed;
 use App\Support\Chat\ChatEngine;
 use App\Support\Live\Live;
@@ -61,6 +62,10 @@ final class ChatSend implements Step
                     // Drawn small and bare, as a sticker is, rather than as a picture sent
                     'sticker' => $file !== null && $step->setting('shown') === 'sticker' ? true : null,
                     'emojis' => $emojis ?: null,
+                    // What an agent answered from: shown to the project under the message
+                    'sources' => filled($step->setting('sources')) ? Sourced::kept($step->template('sources')) : null,
+                    // For the project alone, in a customer's chat
+                    'internal' => $room->kind === ChatRoom::CUSTOMER && $step->setting('note') === 'note' ? true : null,
                 ], fn ($value) => $value !== null),
             ]);
             $said->forceFill(['workflow_node_run_id' => $step->nodeRun->id])->save();
@@ -130,6 +135,6 @@ final class ChatSend implements Step
     public static function room(StepContext $step, string $refId): ChatRoom
     {
         return References::room($step->owner(), trim($refId))
-            ?? throw new StepFailed('"'.$refId.'" is not a room this workflow can use: '.($step->run->workflow->project_id ? 'one of its project\'s group chats.' : 'one of its owner\'s own chats.'));
+            ?? throw new StepFailed('"'.$refId.'" is not a room this workflow can use: '.($step->run->workflow->project_id ? 'one of its project\'s chats.' : 'one of its owner\'s own chats.'));
     }
 }

@@ -47,7 +47,30 @@ class ChatMessage extends Model
      */
     protected static function booted(): void
     {
-        static::created(fn (ChatMessage $message) => ChatMessages::arrived($message));
+        static::created(function (ChatMessage $message) {
+            // A customer's chat is opened by what they send, and left waiting by an answer
+            $message->room->movedBy($message);
+
+            ChatMessages::arrived($message);
+        });
+    }
+
+    /**
+     * Whether it is a note among the project, in a customer's chat: seen
+     * here only, and heard by no workflow, so it never goes out.
+     */
+    public function isInternal(): bool
+    {
+        return (bool) ($this->meta['internal'] ?? false);
+    }
+
+    /**
+     * Whether a workflow carried it in from a chat outside, under its
+     * sender's name.
+     */
+    public function isFromOutside(): bool
+    {
+        return $this->role === self::WORKFLOW && (bool) ($this->meta['outside'] ?? false);
     }
 
     /**
@@ -127,7 +150,7 @@ class ChatMessage extends Model
             };
         }
 
-        return ($who === null ? '' : "{$who}: ").mb_strimwidth($what, 0, 90, '…');
+        return ($this->isInternal() ? 'Note · ' : '').($who === null ? '' : "{$who}: ").mb_strimwidth($what, 0, 90, '…');
     }
 
     /**
@@ -164,6 +187,10 @@ class ChatMessage extends Model
             'sticker' => (bool) ($this->meta['sticker'] ?? false),
             // Pictures that stand for some of its words: an outside chat's own emoji
             'emojis' => $this->meta['emojis'] ?? [],
+            // A note among the project, in a customer's chat: never sent out
+            'internal' => $this->isInternal(),
+            // What an agent answered from, when one did: null for a message that is not an agent's answer
+            'sources' => is_array($this->meta['sources'] ?? null) ? $this->meta['sources'] : null,
             'doc' => $this->role === self::ASSISTANT ? ChatMarkdown::toDoc($this->content) : null,
             'error' => $this->meta['error'] ?? null,
             'created_at' => $this->created_at,

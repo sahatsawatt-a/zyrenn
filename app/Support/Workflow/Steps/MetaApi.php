@@ -37,8 +37,11 @@ final class MetaApi
      */
     public static function account(StepContext $step, string $service): Connection
     {
-        $account = References::connection($step->owner(), (string) $step->setting('connection'), [$service])
-            ?? throw new StepFailed('Its connection is gone, or is not this workflow\'s.');
+        // "The chat's own": the one the chat that started the run is linked through
+        $account = References::connectionFor($step->owner(), (string) $step->setting('connection'), [$service], $step->run->trigger_data)
+            ?? throw new StepFailed($step->setting('connection') === References::LINKED
+                ? 'The chat this run began in is not linked through a connection of this kind.'
+                : 'Its connection is gone, or is not this workflow\'s.');
         $signIn = SignIns::for($service);
 
         if ($signIn === null) {

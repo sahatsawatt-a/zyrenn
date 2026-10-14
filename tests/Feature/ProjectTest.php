@@ -85,7 +85,7 @@ class ProjectTest extends TestCase
                 ->component('notes/Index')
                 ->has('notes', 1)
                 ->where('notes.0.ref_id', $shared->ref_id)
-                ->where('project', ['ref_id' => $project->ref_id, 'name' => $project->name, 'role' => Project::VIEWER])
+                ->where('project', ['ref_id' => $project->ref_id, 'name' => $project->name, 'role' => Project::VIEWER, 'inbox' => 0])
                 ->where('projects', [['ref_id' => $project->ref_id, 'name' => $project->name]])
             );
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { router } from '@inertiajs/vue3';
+import { Link, router } from '@inertiajs/vue3';
 import {
     Check,
     Copy,
@@ -9,6 +9,9 @@ import {
     Pencil,
     Plus,
     Trash2,
+    UserRound,
+    UserRoundMinus,
+    UserRoundPlus,
     X,
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
@@ -22,8 +25,15 @@ import {
     SheetTitle,
 } from '@/components/ui/sheet';
 import { getInitials } from '@/composables/useInitials';
-import { update } from '@/routes/chats';
+import { SERVICES } from '@/features/chat/desk';
+import type { DeskContact } from '@/features/chat/desk';
+import { show, update } from '@/routes/chats';
+import {
+    leave as notSame,
+    update as nameContact,
+} from '@/routes/chats/contact';
 import FaceViewer from './FaceViewer.vue';
+import SameAsDialog from './SameAsDialog.vue';
 
 // About a chat, opened beside it like a contact's card: its face, what it
 // is linked to, and what is known about it. A workflow keeps some of that --
@@ -45,6 +55,8 @@ const props = defineProps<{
         manage: boolean;
         messages?: number;
         created_at?: string | null;
+        // A customer's chat: who it is with, on every service
+        contact?: DeskContact | null;
     };
     // The face to show when the room keeps none of its own
     face?: string | null;
@@ -124,6 +136,48 @@ async function copy(row: Row) {
         }
     }, 1500);
 }
+
+// --- who a customer is, on every service ---
+
+const contact = computed(() => props.room.contact ?? null);
+const naming = ref(false);
+const name = ref('');
+const joining = ref(false);
+
+function startNaming() {
+    name.value = contact.value?.name ?? '';
+    naming.value = true;
+}
+
+function saveName() {
+    const named = name.value.trim();
+
+    if (!named || named === contact.value?.name) {
+        naming.value = false;
+
+        return;
+    }
+
+    router.patch(
+        nameContact(props.room.ref_id).url,
+        { name: named },
+        {
+            preserveScroll: true,
+            only: ['room'],
+            onSuccess: () => (naming.value = false),
+        },
+    );
+}
+
+// Found not to be the same person: this chat is someone of its own again
+const apart = () =>
+    router.delete(notSame(props.room.ref_id).url, {
+        preserveScroll: true,
+        only: ['room'],
+    });
+
+const serviceName = (service: string | null) =>
+    service ? (SERVICES[service] ?? service) : 'Not linked';
 
 // --- notes of one's own ---
 
@@ -293,6 +347,114 @@ const service = computed(() =>
             </SheetHeader>
 
             <div class="flex-1 space-y-6 px-4 pb-6">
+                <!-- Who a customer is, and their chats on every service -->
+                <section v-if="contact" data-chat-contact>
+                    <h3
+                        class="text-muted-foreground mb-2 flex items-center gap-1.5 px-2 text-xs font-medium tracking-wide uppercase"
+                    >
+                        <UserRound class="size-3" />
+                        Customer
+                    </h3>
+                    <div class="bg-card divide-y rounded-xl border">
+                        <form
+                            v-if="naming"
+                            class="flex items-center gap-1.5 p-2"
+                            @submit.prevent="saveName"
+                        >
+                            <Input
+                                v-model="name"
+                                maxlength="120"
+                                class="h-8 flex-1 text-sm"
+                                aria-label="Their name"
+                                data-test="contact-name-input"
+                            />
+                            <Button type="submit" size="icon-sm">
+                                <Check />
+                            </Button>
+                        </form>
+                        <div v-else class="flex items-center gap-2 px-3 py-2.5">
+                            <div class="min-w-0 flex-1">
+                                <p
+                                    class="truncate text-sm font-medium"
+                                    data-test="contact-name"
+                                >
+                                    {{ contact.name }}
+                                </p>
+                                <p
+                                    v-if="contact.key"
+                                    class="text-muted-foreground truncate text-[11px]"
+                                    title="What a workflow knows them by on every service"
+                                >
+                                    Known as {{ contact.key }}
+                                </p>
+                            </div>
+                            <button
+                                v-if="room.manage"
+                                type="button"
+                                class="text-muted-foreground hover:text-foreground rounded-md p-1.5"
+                                aria-label="Rename them"
+                                data-test="contact-rename"
+                                @click="startNaming"
+                            >
+                                <Pencil class="size-3.5" />
+                            </button>
+                        </div>
+                        <ul>
+                            <li
+                                v-for="chat in contact.rooms"
+                                :key="chat.ref_id"
+                                class="flex items-center gap-2 px-3 py-2"
+                                data-test="contact-chat"
+                            >
+                                <span
+                                    class="shrink-0 rounded-full bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 dark:text-sky-400"
+                                    >{{ serviceName(chat.service) }}</span
+                                >
+                                <span
+                                    v-if="chat.ref_id === room.ref_id"
+                                    class="min-w-0 flex-1 truncate text-sm"
+                                    >{{ chat.title }}
+                                    <span class="text-muted-foreground text-xs"
+                                        >· this chat</span
+                                    ></span
+                                >
+                                <Link
+                                    v-else
+                                    :href="show(chat.ref_id)"
+                                    class="text-primary min-w-0 flex-1 truncate text-sm underline-offset-2 hover:underline"
+                                    >{{ chat.title }}</Link
+                                >
+                            </li>
+                        </ul>
+                    </div>
+                    <div v-if="room.manage" class="mt-2 grid gap-1.5">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            data-test="contact-same"
+                            @click="joining = true"
+                        >
+                            <UserRoundPlus />
+                            The same person as another chat…
+                        </Button>
+                        <Button
+                            v-if="contact.rooms.length > 1"
+                            variant="ghost"
+                            size="sm"
+                            data-test="contact-apart"
+                            @click="apart"
+                        >
+                            <UserRoundMinus />
+                            This chat is someone else
+                        </Button>
+                    </div>
+                    <SameAsDialog
+                        v-model:open="joining"
+                        :room="room.ref_id"
+                        :name="contact.name"
+                    />
+                </section>
+
                 <!-- What a workflow keeps: shown, copied, never changed here -->
                 <section v-if="kept.length" data-chat-kept>
                     <h3
@@ -349,7 +511,11 @@ const service = computed(() =>
                         <h3
                             class="text-muted-foreground flex-1 text-xs font-medium tracking-wide uppercase"
                         >
-                            Your notes
+                            {{
+                                contact
+                                    ? `Notes about ${contact.name}`
+                                    : 'Your notes'
+                            }}
                         </h3>
                         <button
                             v-if="room.manage && !editing && own.length"

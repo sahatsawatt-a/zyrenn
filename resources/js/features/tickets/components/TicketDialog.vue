@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Link } from '@inertiajs/vue3';
 import { ImagePlus, MessagesSquare, Trash2, X } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import InputError from '@/components/common/InputError.vue';
@@ -31,6 +32,7 @@ import type {
     TicketType,
 } from '@/features/tickets/tickets';
 import { formatRelativeTime } from '@/lib/utils';
+import { show as showChat } from '@/routes/chats';
 import TicketPick from './TicketPick.vue';
 
 // One form for a ticket, new or already filed: what it is about, how far
@@ -119,6 +121,15 @@ const show = (index: number) =>
                         {{ formatRelativeTime(ticket.created_at) }}
                         <template v-if="ticket.created_by">
                             by {{ ticket.created_by.name }}
+                        </template>
+                        <template v-if="ticket.asked_in">
+                            · asked in
+                            <Link
+                                :href="showChat(ticket.asked_in.ref_id)"
+                                class="text-primary underline-offset-2 hover:underline"
+                                data-test="ticket-asked-in"
+                                >{{ ticket.asked_in.title }}</Link
+                            >
                         </template>
                     </template>
                     <template v-else>

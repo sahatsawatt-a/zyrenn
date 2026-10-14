@@ -12,11 +12,14 @@ import {
     Send,
     Settings2,
     Square,
+    StickyNote,
+    Ticket as TicketIcon,
     Trash2,
     Upload,
     X,
     Zap,
 } from '@lucide/vue';
+import { useNow } from '@vueuse/core';
 import {
     computed,
     nextTick,
@@ -35,6 +38,17 @@ import MessagePlace from '@/features/chat/components/MessagePlace.vue';
 import type { ChatPlace } from '@/features/chat/components/MessagePlace.vue';
 import PlaceDialog from '@/features/chat/components/PlaceDialog.vue';
 import RoomAbout from '@/features/chat/components/RoomAbout.vue';
+import PromoteDialog from '@/features/chat/components/PromoteDialog.vue';
+import RoomDesk from '@/features/chat/components/RoomDesk.vue';
+import TeamNotes from '@/features/chat/components/TeamNotes.vue';
+import SavedReplies from '@/features/chat/components/SavedReplies.vue';
+import SuggestReply from '@/features/chat/components/SuggestReply.vue';
+import type { Suggested } from '@/features/chat/components/SuggestReply.vue';
+import AnswerActions from '@/features/chat/components/AnswerActions.vue';
+import AnswerSources from '@/features/chat/components/AnswerSources.vue';
+import type { AnswerSource } from '@/features/chat/components/AnswerSources.vue';
+import type { Desk, DeskContact, DeskPerson } from '@/features/chat/desk';
+import SegmentTabs from '@/components/common/SegmentTabs.vue';
 import MessageText from '@/features/chat/components/MessageText.vue';
 import ModelPicker from '@/features/chat/components/ModelPicker.vue';
 import PresenceAvatars from '@/components/common/PresenceAvatars.vue';
@@ -85,7 +99,7 @@ import {
     store as sendMessage,
 } from '@/routes/chats/messages';
 import { index as chatsIndex } from '@/routes/chats';
-import { chat as projectChat } from '@/routes/projects';
+import { chat as projectChat, inbox as projectInbox } from '@/routes/projects';
 
 type Message = {
     id: number;
@@ -112,6 +126,10 @@ type Message = {
     sticker?: boolean;
     // Pictures that stand for some of the words: an outside chat's own emoji
     emojis?: { index: number; length: number; url: string }[];
+    // A note among the project, in a customer's chat: never sent out
+    internal?: boolean;
+    // What an agent answered from, when it is an agent's answer
+    sources?: AnswerSource[] | null;
     // A workflow's: under its name, or the outside sender's it carried over
     sender?: {
         name: string;
@@ -125,8 +143,9 @@ type Message = {
 
 type Room = {
     ref_id: string;
-    // personal: one's own, maybe with an agent; direct: two people; group: a project's
-    kind: 'personal' | 'direct' | 'group';
+    // personal: one's own, maybe with an agent; direct: two people; group: a project's;
+    // customer: a project's chat with someone outside, in its inbox
+    kind: 'personal' | 'direct' | 'group' | 'customer';
     title: string;
     // One's own room, whose agent can be set up
     mine: boolean;
@@ -134,6 +153,19 @@ type Room = {
     manage: boolean;
     // May leave it: a group one is in
     leave: boolean;
+    // May delete it, and may write in it
+    remove: boolean;
+    post: boolean;
+    // A customer's chat: where it stands, who has taken it, its tags, and who it can be given to
+    desk:
+        | (Desk & {
+              people: DeskPerson[];
+              // Until when its service takes an answer; null where it sets no such time
+              answer_until: string | null;
+          })
+        | null;
+    // Who a customer's chat is with, on every service
+    contact: DeskContact | null;
     project: { ref_id: string; name: string } | null;
     model: string | null;
     system_prompt: string | null;
@@ -180,12 +212,17 @@ setLayoutProps({
     breadcrumbs: [
         props.room.kind === 'personal'
             ? { title: 'Chat', href: index() }
-            : props.room.kind === 'group' && props.room.project
+            : props.room.kind === 'customer' && props.room.project
               ? {
-                    title: 'Groups',
-                    href: projectChat(props.room.project.ref_id),
+                    title: 'Inbox',
+                    href: projectInbox(props.room.project.ref_id),
                 }
-              : { title: 'Chat', href: chatsIndex() },
+              : props.room.kind === 'group' && props.room.project
+                ? {
+                      title: 'Groups',
+                      href: projectChat(props.room.project.ref_id),
+                  }
+                : { title: 'Chat', href: chatsIndex() },
         { title: props.room.title || 'New chat', href: '' },
     ],
 });
@@ -312,8 +349,16 @@ const joins = (before: Message, message: Message) =>
 // Each message with where it stands: the first of a day, and the first and
 // last of its speaker's turn -- a name goes over the first, a face and the
 // time by the last. Pictures sent together stand as one, under the first
+// In a customer's chat, what they see stands apart from what only the project sees
+const customerChat = !!props.room.desk;
+const teamNotes = computed(() =>
+    customerChat ? list.value.filter((message) => message.internal) : [],
+);
+
 const shown = computed(() => {
-    const all = list.value;
+    const all = customerChat
+        ? list.value.filter((message) => !message.internal)
+        : list.value;
     const entries: {
         message: Message;
         album: NonNullable<Message['file']>[] | null;
@@ -363,7 +408,7 @@ const fromOutside = (message: Message) =>
 const nameOver = (message: Message) =>
     message.role === 'workflow'
         ? (message.sender?.name ?? 'Workflow')
-        : props.room.kind === 'group'
+        : props.room.kind === 'group' || props.room.kind === 'customer'
           ? (message.author?.name ?? '')
           : '';
 
@@ -427,6 +472,10 @@ const colourOf = (message: Message) =>
               ),
           );
 
+// A note among the project: drawn apart from what was said to the customer
+const NOTE =
+    'border border-amber-500/40 bg-amber-100 text-amber-950 dark:bg-amber-500/15 dark:text-amber-100';
+
 const add = (message: Message) => {
     if (!list.value.some((item) => item.id === message.id)) {
         list.value.push(message);
@@ -463,8 +512,77 @@ const presence = usePresence(() => `chats.${props.room.ref_id}`, {
     'chat.message': (event: { message: Message }) => {
         add(event.message);
         void readUpTo(event.message.id);
+        // What a customer sends opens their chat again
+        deskMoved();
     },
+    // Someone else moved it, took it or tagged it -- or a workflow did
+    'chat.room': () => deskMoved(),
 });
+
+// Where a customer's chat stands is asked for again, with the count beside the inbox
+const deskMoved = () =>
+    props.room.desk && router.reload({ only: ['room', 'project'] });
+
+// WhatsApp and Instagram take an answer only for a day after the customer last wrote: said
+// before it is written, since the service would refuse it
+const answerUntil = computed(() =>
+    props.room.desk?.answer_until
+        ? new Date(props.room.desk.answer_until)
+        : null,
+);
+const now = useNow({ interval: 30_000 });
+const tooLate = computed(
+    () => answerUntil.value !== null && answerUntil.value < now.value,
+);
+const until = new Intl.DateTimeFormat(undefined, {
+    weekday: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+});
+
+// A note for the project, in a customer's chat, in place of an answer to them
+const noting = ref(false);
+
+// What a customer asked, being made a ticket of
+const promoting = ref<Message | null>(null);
+
+// A reply an agent suggests: put in what is being written, to read and change before it is
+// sent -- with what it answered from, to check it by
+const suggestion = ref<Suggested | null>(null);
+
+function suggested(text: string, about: Suggested) {
+    failure.value = null;
+    draft.value = text;
+    suggestion.value = about;
+    nextTick(() => input.value?.focus());
+}
+
+const WRITES = [
+    {
+        value: 'reply' as const,
+        label: 'Reply to them',
+        test: 'chat-as-reply',
+    },
+    {
+        value: 'note' as const,
+        label: 'Note for the team',
+        title: 'For your project only: it is not sent to them',
+        icon: StickyNote,
+        test: 'chat-as-note',
+    },
+];
+
+// The two parts, on a phone: what the customer sees, and what only the team does
+const PARTS = computed(() => [
+    { value: 'reply' as const, label: 'Customer', test: 'chat-part-customer' },
+    {
+        value: 'note' as const,
+        label: 'Team only',
+        icon: StickyNote,
+        count: teamNotes.value.length,
+        test: 'chat-part-team',
+    },
+]);
 const others = shared ? presence.others : ref<Member[]>([]);
 
 // --- scrolling back ---
@@ -511,6 +629,8 @@ function leave() {
 }
 const title = ref(props.room.title);
 const draft = ref('');
+// A suggested reply's sources go with it: gone once what it was suggested for is
+watch(draft, (now) => now.trim() || (suggestion.value = null));
 // What the agent has said so far in the answer being written
 const streaming = ref<string | null>(null);
 const failure = ref<string | null>(null);
@@ -693,6 +813,11 @@ async function send() {
     const form = file instanceof File ? new FormData() : null;
     form?.append('content', content);
     form?.append('upload', file as File);
+
+    if (noting.value) {
+        form?.append('internal', '1');
+    }
+
     const named = file && 'ref_id' in file ? file.ref_id : undefined;
 
     draft.value = '';
@@ -720,6 +845,7 @@ async function send() {
                     content,
                     file: named,
                     place: place ?? undefined,
+                    internal: noting.value || undefined,
                 }),
         });
 
@@ -800,6 +926,8 @@ function handle(
         add(data.message);
         title.value = data.title ?? title.value;
         streaming.value = props.room.ready ? '' : null;
+        // An answer leaves a customer's chat waiting on them
+        deskMoved();
     } else if (name === 'delta') {
         streaming.value = (streaming.value ?? '') + (data.text ?? '');
     } else if (name === 'done') {
@@ -930,7 +1058,10 @@ function saveSettings() {
 <template>
     <Head :title="title || 'New chat'" />
 
-    <div class="mx-auto flex h-[calc(100svh-4rem)] w-full max-w-3xl flex-col">
+    <div
+        class="mx-auto flex h-[calc(100svh-4rem)] w-full flex-col"
+        :class="customerChat ? 'max-w-6xl' : 'max-w-3xl'"
+    >
         <header class="flex items-center gap-2 border-b px-4 py-2.5">
             <button
                 v-if="roomFace"
@@ -952,8 +1083,14 @@ function saveSettings() {
                 v-if="room.manage"
                 v-model="title"
                 class="h-9 flex-1 border-transparent bg-transparent text-base font-medium shadow-none"
-                :placeholder="room.kind === 'group' ? 'Group name' : 'New chat'"
-                :maxlength="room.kind === 'group' ? 80 : 255"
+                :placeholder="
+                    room.kind === 'group'
+                        ? 'Group name'
+                        : room.kind === 'customer'
+                          ? 'Who it is with'
+                          : 'New chat'
+                "
+                :maxlength="room.kind === 'personal' ? 255 : 80"
                 aria-label="Chat title"
                 @blur="saveTitle"
                 @keydown.enter.prevent="
@@ -1024,7 +1161,7 @@ function saveSettings() {
                 <span class="hidden sm:inline">Leave</span>
             </Button>
             <Button
-                v-if="room.manage"
+                v-if="room.remove"
                 variant="ghost"
                 size="icon-sm"
                 aria-label="Delete chat"
@@ -1034,7 +1171,25 @@ function saveSettings() {
             </Button>
         </header>
 
+        <RoomDesk
+            v-if="room.desk"
+            :room="room.ref_id"
+            :desk="room.desk"
+            :contact="room.contact"
+            :can-change="room.manage"
+        />
+
         <RoomAbout v-model:open="about" :room="room" :face="roomFace" />
+
+        <PromoteDialog
+            v-if="room.desk"
+            :open="promoting !== null"
+            :room="room.ref_id"
+            :message="promoting"
+            :customer="room.contact?.name ?? room.title"
+            :service="room.link?.service ?? null"
+            @update:open="$event || (promoting = null)"
+        />
 
         <!-- A face, larger: the room's, or whoever wrote -->
         <FaceViewer
@@ -1044,224 +1199,137 @@ function saveSettings() {
             @update:open="$event || (viewing = null)"
         />
 
+        <!-- On a phone, one part at a time: the conversation, or the team's -->
         <div
-            ref="scroller"
-            class="min-h-0 flex-1 overflow-y-auto px-4 pb-4"
-            data-chat-messages
-            @scroll.passive="onScroll"
-            @load.capture="settle"
-            @loadedmetadata.capture="settle"
+            v-if="customerChat"
+            class="flex justify-center border-b px-4 py-1.5 lg:hidden"
         >
-            <div v-if="hasEarlier" class="flex justify-center">
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    :disabled="loadingEarlier"
-                    data-chat-earlier
-                    @click="loadEarlier"
-                >
-                    {{ loadingEarlier ? 'Loading…' : 'Show earlier messages' }}
-                </Button>
-            </div>
+            <SegmentTabs
+                :model-value="noting ? 'note' : 'reply'"
+                :options="PARTS"
+                label="Which part"
+                @update:model-value="noting = $event === 'note'"
+            />
+        </div>
 
-            <p
-                v-if="room.mine && agents && !room.ready"
-                class="bg-muted/40 rounded-lg border px-4 py-3 text-sm"
-                data-chat-no-agent
+        <div class="flex min-h-0 flex-1">
+            <div
+                ref="scroller"
+                class="min-h-0 flex-1 overflow-y-auto px-4 pb-4"
+                :class="{ 'hidden lg:block': customerChat && noting }"
+                data-chat-messages
+                @scroll.passive="onScroll"
+                @load.capture="settle"
+                @loadedmetadata.capture="settle"
             >
-                No agent answers here, so this is only a log of what you write.
-                <button
-                    class="text-primary underline underline-offset-4"
-                    @click="settingsOpen = true"
-                >
-                    Choose a connection and model
-                </button>
-                to have it answer.
-            </p>
-
-            <p
-                v-else-if="!list.length"
-                class="text-muted-foreground py-16 text-center text-sm"
-            >
-                Say something to begin.
-            </p>
-
-            <template
-                v-for="{ message, album, day, first, last } in shown"
-                :key="message.id"
-            >
-                <p
-                    v-if="day"
-                    class="text-muted-foreground flex items-center gap-3 pt-5 pb-1 text-xs select-none"
-                    data-chat-day
-                >
-                    <span class="bg-border h-px flex-1" />
-                    {{ day }}
-                    <span class="bg-border h-px flex-1" />
-                </p>
-
-                <!-- One's own, on the right -->
-                <div
-                    v-if="isMine(message)"
-                    class="flex flex-col items-end"
-                    :class="first ? 'mt-3' : 'mt-0.5'"
-                    data-chat-user
-                    data-chat-mine
-                >
-                    <div
-                        class="flex max-w-[85%] min-w-0 flex-col items-end sm:max-w-[70%]"
-                    >
-                        <p
-                            v-if="message.content && onlyEmoji(message)"
-                            class="px-1 text-5xl leading-tight"
-                            data-chat-emoji-only
-                        >
-                            {{ message.content.trim() }}
-                        </p>
-                        <p
-                            v-else-if="message.content"
-                            class="bg-primary text-primary-foreground rounded-2xl px-3.5 py-2 text-sm [overflow-wrap:anywhere] whitespace-pre-wrap"
-                            :class="{ 'rounded-br-md': last }"
-                        >
-                            <MessageText
-                                :content="message.content"
-                                :emojis="message.emojis"
-                            />
-                        </p>
-                        <MessageAlbum v-if="album" :files="album" />
-                        <MessageFile
-                            v-else-if="message.file"
-                            :file="message.file"
-                            :sticker="message.sticker"
-                        />
-                        <MessagePlace
-                            v-if="message.place"
-                            :place="message.place"
-                        />
-                    </div>
-                    <time
-                        v-if="last && message.created_at"
-                        class="text-muted-foreground mt-0.5 px-1 text-[11px] tabular-nums"
-                        :datetime="message.created_at"
-                        :title="whenOf(message)"
-                        data-chat-time
-                    >
-                        {{ timeOf(message) }}
-                    </time>
-                </div>
-
-                <!-- Someone else's: a person here, someone outside whose words
-                     a workflow carried in, or a workflow speaking for itself -->
-                <div
-                    v-else-if="message.role !== 'assistant'"
-                    class="flex items-end gap-2"
-                    :class="first ? 'mt-3' : 'mt-0.5'"
-                    :data-chat-user="message.role === 'user' ? '' : undefined"
-                    :data-chat-theirs="message.role === 'user' ? '' : undefined"
-                    :data-chat-workflow="
-                        message.role === 'workflow' ? '' : undefined
-                    "
-                >
-                    <span
-                        v-if="
-                            message.role === 'workflow' && !fromOutside(message)
-                        "
-                        class="mb-4 flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                        :class="{ invisible: !last }"
-                        :title="`${nameOver(message)}, a workflow`"
-                    >
-                        <Zap class="size-3.5" />
-                    </span>
-                    <img
-                        v-else-if="faceOf(message)"
-                        :src="faceOf(message) as string"
-                        :alt="message.sender?.name"
-                        :title="`${message.sender?.name}: written outside, carried in by a workflow`"
-                        class="mb-4 size-7 shrink-0 cursor-zoom-in rounded-full object-cover"
-                        :class="{ invisible: !last }"
-                        referrerpolicy="no-referrer"
-                        loading="lazy"
-                        data-chat-face
-                        @error="broken.add(faceOf(message) as string)"
-                        @click="
-                            viewing = {
-                                src: faceOf(message) as string,
-                                name: message.sender?.name ?? room.title,
-                            }
-                        "
-                    />
-                    <span
-                        v-else
-                        class="mb-4 flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
-                        :class="{ invisible: !last }"
-                        :style="{ backgroundColor: colourOf(message) }"
-                        :title="
-                            message.role === 'user'
-                                ? message.author?.name
-                                : `${message.sender?.name}: written outside, carried in by a workflow`
-                        "
+                <div v-if="hasEarlier" class="flex justify-center">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        :disabled="loadingEarlier"
+                        data-chat-earlier
+                        @click="loadEarlier"
                     >
                         {{
-                            initialsOf(
-                                message.author?.name ??
-                                    message.sender?.name ??
-                                    '?',
-                            )
+                            loadingEarlier
+                                ? 'Loading…'
+                                : 'Show earlier messages'
                         }}
-                    </span>
-                    <div class="max-w-[85%] min-w-0 sm:max-w-[70%]">
-                        <p
-                            v-if="first && nameOver(message)"
-                            class="text-muted-foreground mb-0.5 px-1 text-xs"
-                            data-chat-author
+                    </Button>
+                </div>
+
+                <p
+                    v-if="room.mine && agents && !room.ready"
+                    class="bg-muted/40 rounded-lg border px-4 py-3 text-sm"
+                    data-chat-no-agent
+                >
+                    No agent answers here, so this is only a log of what you
+                    write.
+                    <button
+                        class="text-primary underline underline-offset-4"
+                        @click="settingsOpen = true"
+                    >
+                        Choose a connection and model
+                    </button>
+                    to have it answer.
+                </p>
+
+                <p
+                    v-else-if="!list.length"
+                    class="text-muted-foreground py-16 text-center text-sm"
+                >
+                    Say something to begin.
+                </p>
+
+                <template
+                    v-for="{ message, album, day, first, last } in shown"
+                    :key="message.id"
+                >
+                    <p
+                        v-if="day"
+                        class="text-muted-foreground flex items-center gap-3 pt-5 pb-1 text-xs select-none"
+                        data-chat-day
+                    >
+                        <span class="bg-border h-px flex-1" />
+                        {{ day }}
+                        <span class="bg-border h-px flex-1" />
+                    </p>
+
+                    <!-- One's own, on the right -->
+                    <div
+                        v-if="isMine(message)"
+                        class="flex flex-col items-end"
+                        :class="first ? 'mt-3' : 'mt-0.5'"
+                        data-chat-user
+                        data-chat-mine
+                    >
+                        <div
+                            class="flex max-w-[85%] min-w-0 flex-col items-end sm:max-w-[70%]"
                         >
-                            {{ nameOver(message)
-                            }}<template
-                                v-if="
-                                    message.role === 'workflow' &&
-                                    !fromOutside(message) &&
-                                    message.sender?.by
-                                "
+                            <p
+                                v-if="message.internal && first"
+                                class="mb-0.5 flex items-center gap-1 px-1 text-[11px] text-amber-700 dark:text-amber-400"
+                                data-chat-note
                             >
-                                · for {{ message.sender.by }}</template
+                                <StickyNote class="size-3" /> Note · not sent to
+                                them
+                            </p>
+                            <p
+                                v-if="message.content && onlyEmoji(message)"
+                                class="px-1 text-5xl leading-tight"
+                                data-chat-emoji-only
                             >
-                        </p>
-                        <p
-                            v-if="message.content && onlyEmoji(message)"
-                            class="px-1 text-5xl leading-tight"
-                            data-chat-emoji-only
-                        >
-                            {{ message.content.trim() }}
-                        </p>
-                        <p
-                            v-else-if="message.content"
-                            class="w-fit rounded-2xl px-3.5 py-2 text-sm [overflow-wrap:anywhere] whitespace-pre-wrap"
-                            :class="[
-                                message.role === 'workflow' &&
-                                !fromOutside(message)
-                                    ? 'border border-amber-500/20 bg-amber-500/5'
-                                    : 'bg-muted',
-                                { 'rounded-bl-md': last },
-                            ]"
-                        >
-                            <MessageText
-                                :content="message.content"
-                                :emojis="message.emojis"
+                                {{ message.content.trim() }}
+                            </p>
+                            <p
+                                v-else-if="message.content"
+                                class="rounded-2xl px-3.5 py-2 text-sm [overflow-wrap:anywhere] whitespace-pre-wrap"
+                                :class="[
+                                    message.internal
+                                        ? NOTE
+                                        : 'bg-primary text-primary-foreground',
+                                    { 'rounded-br-md': last },
+                                ]"
+                            >
+                                <MessageText
+                                    :content="message.content"
+                                    :emojis="message.emojis"
+                                />
+                            </p>
+                            <MessageAlbum v-if="album" :files="album" />
+                            <MessageFile
+                                v-else-if="message.file"
+                                :file="message.file"
+                                :sticker="message.sticker"
                             />
-                        </p>
-                        <MessageAlbum v-if="album" :files="album" />
-                        <MessageFile
-                            v-else-if="message.file"
-                            :file="message.file"
-                            :sticker="message.sticker"
-                        />
-                        <MessagePlace
-                            v-if="message.place"
-                            :place="message.place"
-                        />
+                            <MessagePlace
+                                v-if="message.place"
+                                :place="message.place"
+                            />
+                        </div>
                         <time
                             v-if="last && message.created_at"
-                            class="text-muted-foreground mt-0.5 block h-4 px-1 text-[11px] tabular-nums"
+                            class="text-muted-foreground mt-0.5 px-1 text-[11px] tabular-nums"
                             :datetime="message.created_at"
                             :title="whenOf(message)"
                             data-chat-time
@@ -1269,48 +1337,214 @@ function saveSettings() {
                             {{ timeOf(message) }}
                         </time>
                     </div>
-                </div>
-                <div
-                    v-else
-                    class="max-w-full"
-                    :class="first ? 'mt-3' : 'mt-1'"
-                    data-chat-assistant
-                >
-                    <!-- The same editor and Markdown as a note, only for reading -->
-                    <TiptapEditor
-                        :content="message.doc"
-                        :editable="false"
-                        wide
-                        class="chat-answer min-h-0! pt-0!"
-                    />
-                    <p
-                        v-if="message.error"
-                        class="text-destructive mt-1 text-xs"
+
+                    <!-- Someone else's: a person here, someone outside whose words
+                     a workflow carried in, or a workflow speaking for itself -->
+                    <div
+                        v-else-if="message.role !== 'assistant'"
+                        class="group flex items-end gap-2"
+                        :class="first ? 'mt-3' : 'mt-0.5'"
+                        :data-chat-user="
+                            message.role === 'user' ? '' : undefined
+                        "
+                        :data-chat-theirs="
+                            message.role === 'user' ? '' : undefined
+                        "
+                        :data-chat-workflow="
+                            message.role === 'workflow' ? '' : undefined
+                        "
                     >
-                        Stopped early: {{ message.error }}
+                        <span
+                            v-if="
+                                message.role === 'workflow' &&
+                                !fromOutside(message)
+                            "
+                            class="mb-4 flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                            :class="{ invisible: !last }"
+                            :title="`${nameOver(message)}, a workflow`"
+                        >
+                            <Zap class="size-3.5" />
+                        </span>
+                        <img
+                            v-else-if="faceOf(message)"
+                            :src="faceOf(message) as string"
+                            :alt="message.sender?.name"
+                            :title="`${message.sender?.name}: written outside, carried in by a workflow`"
+                            class="mb-4 size-7 shrink-0 cursor-zoom-in rounded-full object-cover"
+                            :class="{ invisible: !last }"
+                            referrerpolicy="no-referrer"
+                            loading="lazy"
+                            data-chat-face
+                            @error="broken.add(faceOf(message) as string)"
+                            @click="
+                                viewing = {
+                                    src: faceOf(message) as string,
+                                    name: message.sender?.name ?? room.title,
+                                }
+                            "
+                        />
+                        <span
+                            v-else
+                            class="mb-4 flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
+                            :class="{ invisible: !last }"
+                            :style="{ backgroundColor: colourOf(message) }"
+                            :title="
+                                message.role === 'user'
+                                    ? message.author?.name
+                                    : `${message.sender?.name}: written outside, carried in by a workflow`
+                            "
+                        >
+                            {{
+                                initialsOf(
+                                    message.author?.name ??
+                                        message.sender?.name ??
+                                        '?',
+                                )
+                            }}
+                        </span>
+                        <div class="max-w-[85%] min-w-0 sm:max-w-[70%]">
+                            <p
+                                v-if="first && nameOver(message)"
+                                class="text-muted-foreground mb-0.5 px-1 text-xs"
+                                data-chat-author
+                            >
+                                {{ nameOver(message)
+                                }}<template v-if="message.internal">
+                                    · note, not sent to them</template
+                                ><template
+                                    v-if="
+                                        message.role === 'workflow' &&
+                                        !fromOutside(message) &&
+                                        message.sender?.by
+                                    "
+                                >
+                                    · for {{ message.sender.by }}</template
+                                >
+                            </p>
+                            <p
+                                v-if="message.content && onlyEmoji(message)"
+                                class="px-1 text-5xl leading-tight"
+                                data-chat-emoji-only
+                            >
+                                {{ message.content.trim() }}
+                            </p>
+                            <p
+                                v-else-if="message.content"
+                                class="w-fit rounded-2xl px-3.5 py-2 text-sm [overflow-wrap:anywhere] whitespace-pre-wrap"
+                                :class="[
+                                    message.internal
+                                        ? NOTE
+                                        : message.role === 'workflow' &&
+                                            !fromOutside(message)
+                                          ? 'border border-amber-500/20 bg-amber-500/5'
+                                          : 'bg-muted',
+                                    { 'rounded-bl-md': last },
+                                ]"
+                            >
+                                <MessageText
+                                    :content="message.content"
+                                    :emojis="message.emojis"
+                                />
+                            </p>
+                            <MessageAlbum v-if="album" :files="album" />
+                            <MessageFile
+                                v-else-if="message.file"
+                                :file="message.file"
+                                :sticker="message.sticker"
+                            />
+                            <MessagePlace
+                                v-if="message.place"
+                                :place="message.place"
+                            />
+                            <!-- An agent's answer: what it answered from, for the project to check it by -->
+                            <AnswerSources
+                                v-if="message.sources"
+                                :sources="message.sources"
+                                class="mt-1 px-1"
+                            />
+                            <time
+                                v-if="last && message.created_at"
+                                class="text-muted-foreground mt-0.5 block h-4 px-1 text-[11px] tabular-nums"
+                                :datetime="message.created_at"
+                                :title="whenOf(message)"
+                                data-chat-time
+                            >
+                                {{ timeOf(message) }}
+                            </time>
+                        </div>
+                        <button
+                            v-if="
+                                room.desk && room.manage && fromOutside(message)
+                            "
+                            type="button"
+                            class="text-muted-foreground hover:text-foreground mb-5 shrink-0 rounded-md p-1 opacity-50 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                            title="Make a ticket of this"
+                            aria-label="Make a ticket of this"
+                            data-test="chat-promote"
+                            @click="promoting = message"
+                        >
+                            <TicketIcon class="size-4" />
+                        </button>
+                    </div>
+                    <div
+                        v-else
+                        class="max-w-full"
+                        :class="first ? 'mt-3' : 'mt-1'"
+                        data-chat-assistant
+                    >
+                        <!-- The same editor and Markdown as a note, only for reading -->
+                        <TiptapEditor
+                            :content="message.doc"
+                            :editable="false"
+                            wide
+                            class="chat-answer min-h-0! pt-0!"
+                        />
+                        <p
+                            v-if="message.error"
+                            class="text-destructive mt-1 text-xs"
+                        >
+                            Stopped early: {{ message.error }}
+                        </p>
+                    </div>
+                </template>
+
+                <!-- Still being written: plain until it is whole, then drawn as a note -->
+                <div v-if="streaming !== null" class="mt-3" data-chat-streaming>
+                    <p v-if="streaming" class="text-sm whitespace-pre-wrap">
+                        {{ streaming }}
+                    </p>
+                    <p v-else class="text-muted-foreground text-sm">
+                        Thinking…
                     </p>
                 </div>
-            </template>
 
-            <!-- Still being written: plain until it is whole, then drawn as a note -->
-            <div v-if="streaming !== null" class="mt-3" data-chat-streaming>
-                <p v-if="streaming" class="text-sm whitespace-pre-wrap">
-                    {{ streaming }}
+                <p
+                    v-if="failure"
+                    class="text-destructive mt-3 text-sm"
+                    role="alert"
+                    data-chat-error
+                >
+                    {{ failure }}
                 </p>
-                <p v-else class="text-muted-foreground text-sm">Thinking…</p>
             </div>
-
-            <p
-                v-if="failure"
-                class="text-destructive mt-3 text-sm"
-                role="alert"
-                data-chat-error
-            >
-                {{ failure }}
-            </p>
+            <TeamNotes
+                v-if="customerChat"
+                :notes="teamNotes"
+                :customer="room.contact?.name ?? room.title"
+                class="w-full border-l lg:w-80"
+                :class="noting ? 'flex' : 'hidden lg:flex'"
+            />
         </div>
 
-        <form class="relative px-4 pt-2 pb-3" @submit.prevent="send">
+        <p
+            v-if="!room.post"
+            class="text-muted-foreground border-t px-4 py-3 text-center text-sm"
+            data-chat-read-only
+        >
+            You can read this chat. Owners and editors of
+            {{ room.project?.name }} answer in it.
+        </p>
+        <form v-else class="relative px-4 pt-2 pb-3" @submit.prevent="send">
             <!-- Scrolled back: a way down to the latest, saying when there is more -->
             <button
                 v-if="!atLatest"
@@ -1381,9 +1615,59 @@ function saveSettings() {
                     <X class="size-4" />
                 </button>
             </div>
+            <p
+                v-if="answerUntil && !noting"
+                class="mb-1.5 px-1 text-xs"
+                :class="
+                    tooLate
+                        ? 'text-amber-700 dark:text-amber-400'
+                        : 'text-muted-foreground'
+                "
+                data-chat-window
+            >
+                <template v-if="tooLate">
+                    More than a day since they last wrote:
+                    {{ room.link?.service }} will not take an answer until they
+                    write again. A note still works.
+                </template>
+                <template v-else>
+                    {{ room.link?.service }} takes an answer until
+                    {{ until.format(answerUntil) }}.
+                </template>
+            </p>
             <div
-                class="focus-within:ring-ring/40 bg-background flex items-end gap-1.5 rounded-2xl border p-1.5 shadow-xs transition-shadow focus-within:ring-[3px]"
-                :class="{ 'ring-primary/40 ring-[3px]': dropping }"
+                v-if="suggestion && draft.trim()"
+                class="bg-muted/40 mb-2 grid gap-1 rounded-lg border px-3 py-2"
+                data-suggestion
+            >
+                <p class="text-muted-foreground text-[11px]">
+                    Suggested by {{ suggestion.agent }}, version
+                    {{ suggestion.version }}: read it, and its sources, before
+                    you send it.
+                </p>
+                <AnswerSources
+                    :sources="suggestion.sources"
+                    :knows="suggestion.knows"
+                    :looked="suggestion.actions.length > 0"
+                />
+                <AnswerActions :actions="suggestion.actions" />
+            </div>
+            <SegmentTabs
+                v-if="room.desk"
+                :model-value="noting ? 'note' : 'reply'"
+                :options="WRITES"
+                label="What is written"
+                class="mb-1.5"
+                @update:model-value="noting = $event === 'note'"
+            />
+            <div
+                class="focus-within:ring-ring/40 flex items-end gap-1.5 rounded-2xl border p-1.5 shadow-xs transition-shadow focus-within:ring-[3px]"
+                :class="[
+                    noting
+                        ? 'border-amber-500/50 bg-amber-50 dark:bg-amber-500/10'
+                        : 'bg-background',
+                    { 'ring-primary/40 ring-[3px]': dropping },
+                ]"
                 @dragover.prevent="dropping = attachable"
                 @dragleave="dropping = false"
                 @drop="
@@ -1440,12 +1724,35 @@ function saveSettings() {
                     @pick="addEmoji"
                     @closed="backToWriting"
                 />
+                <SuggestReply
+                    v-if="room.desk && !noting"
+                    :room="room.ref_id"
+                    :agents="room.desk.agents ?? []"
+                    :disabled="sending"
+                    @pick="suggested"
+                    @failed="failure = $event"
+                />
+                <SavedReplies
+                    v-if="room.desk && room.project"
+                    :project="room.project.ref_id"
+                    :name="room.contact?.name ?? room.title"
+                    :me="page.props.auth.user.name"
+                    :draft="draft"
+                    :can-manage="room.manage"
+                    :disabled="sending"
+                    @pick="addEmoji"
+                    @closed="backToWriting"
+                />
                 <textarea
                     ref="input"
                     v-model="draft"
                     rows="1"
                     class="field-sizing-content max-h-48 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none"
-                    placeholder="Write a message…"
+                    :placeholder="
+                        noting
+                            ? 'A note for your project: not sent to them…'
+                            : 'Write a message…'
+                    "
                     data-chat-input
                     @blur="caret = input?.selectionStart ?? null"
                     @keydown="onKey"

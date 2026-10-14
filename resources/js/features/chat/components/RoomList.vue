@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import type { Component } from 'vue';
+import { getInitials } from '@/composables/useInitials';
+import { colourFor } from '@/lib/live';
 import { formatRelativeTime } from '@/lib/utils';
 import { show } from '@/routes/chats';
 
@@ -19,6 +21,11 @@ export type ListedRoom = {
     picture?: string | null;
     // False for a group one may see but is not in: it is joined, not opened
     open?: boolean;
+    // A customer's chat: what it is tagged, and who has taken it
+    tags?: string[];
+    // The services they write on besides this one, by name
+    also?: string[];
+    assignee?: { id: number; name: string } | null;
 };
 
 // A list of rooms, each opening its room -- or, for a group one is not in, offering to join it
@@ -68,6 +75,21 @@ defineProps<{ rooms: ListedRoom[]; icon: Component }>();
                             data-room-linked
                             >{{ room.linked }}</span
                         >
+                        <span
+                            v-for="service in room.also ?? []"
+                            :key="service"
+                            class="hidden shrink-0 rounded-full border border-sky-500/30 px-1.5 py-0.5 text-[10px] text-sky-700 sm:inline dark:text-sky-400"
+                            :title="`Also writes on ${service}`"
+                            data-room-also
+                            >+ {{ service }}</span
+                        >
+                        <span
+                            v-for="tag in (room.tags ?? []).slice(0, 3)"
+                            :key="tag"
+                            class="bg-muted text-muted-foreground hidden shrink-0 rounded-full px-1.5 py-0.5 text-[10px] sm:inline"
+                            data-room-tag
+                            >{{ tag }}</span
+                        >
                     </p>
                     <p
                         class="truncate text-xs"
@@ -88,6 +110,15 @@ defineProps<{ rooms: ListedRoom[]; icon: Component }>();
                     data-unread
                 >
                     {{ room.unread > 99 ? '99+' : room.unread }}
+                </span>
+                <span
+                    v-if="room.assignee"
+                    class="flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                    :style="{ backgroundColor: colourFor(room.assignee.id) }"
+                    :title="`Assigned to ${room.assignee.name}`"
+                    data-room-assignee
+                >
+                    {{ getInitials(room.assignee.name) }}
                 </span>
                 <span class="text-muted-foreground shrink-0 text-xs">
                     {{ formatRelativeTime(room.updated_at) }}

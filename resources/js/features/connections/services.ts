@@ -7,12 +7,14 @@ import {
     KeyRound,
     MessageCircle,
     Phone,
+    Plug,
     Radar,
     Search,
     Send,
     Server,
     ShieldCheck,
     Sparkles,
+    Webhook,
 } from '@lucide/vue';
 import type { Component } from 'vue';
 
@@ -137,6 +139,10 @@ export function lookOf(service: string, group?: ServiceGroup): Look {
             return { icon: Server, tone: TONES.violet };
         case 'telegram':
             return { icon: Send, tone: TONES.sky };
+        case 'channel':
+            return { icon: Webhook, tone: TONES.slate };
+        case 'mcp':
+            return { icon: Plug, tone: TONES.violet };
         case 'line':
             return { icon: MessageCircle, tone: TONES.green };
         case 'linkedin':
@@ -177,6 +183,10 @@ export function detailOf(
 
     switch (service?.group) {
         case 'ai':
+            if (connection.service === 'mcp') {
+                return `MCP server at ${host(s.url)}`;
+            }
+
             return [host(s.base_url), s.default_model ?? 'no usual model']
                 .filter(Boolean)
                 .join(' · ');
@@ -189,6 +199,12 @@ export function detailOf(
 
             if (connection.service === 'whatsapp') {
                 return `Business number ${s.phone_number_id ?? ''}`;
+            }
+
+            if (connection.service === 'channel') {
+                return s.send_url
+                    ? `${s.platform} · answers go to ${host(s.send_url)}`
+                    : `${s.platform} · nowhere to send answers yet`;
             }
 
             return 'Messaging API channel';

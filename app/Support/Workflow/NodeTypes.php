@@ -371,7 +371,7 @@ final class NodeTypes
                 'inputs' => [],
                 'outputs' => [self::OUT],
                 'config' => [
-                    ['name' => 'room', 'label' => 'Room', 'type' => 'room', 'required' => true, 'linked' => true, 'help' => 'One chat, or every chat linked to a Telegram or LINE chat. Later steps read the message as trigger.text, its author as trigger.message.author, a file sent with it in trigger.files, a place in trigger.location (trigger.kind says which it was: text, file or location), and a linked chat\'s other end as trigger.room.link.chat.'],
+                    ['name' => 'room', 'label' => 'Room', 'type' => 'room', 'required' => true, 'linked' => true, 'help' => 'One chat, or every chat linked to a chat on a service: Telegram, LINE, WhatsApp, Instagram. A note written among a project in a customer\'s chat is never heard. Later steps read the message as trigger.text, its author as trigger.message.author, a file sent with it in trigger.files, a place in trigger.location (trigger.kind says which it was: text, file or location), and a linked chat\'s other end as trigger.room.link.chat.'],
                     [
                         'name' => 'on',
                         'label' => 'When',
@@ -387,7 +387,13 @@ final class NodeTypes
                         'type' => 'choice',
                         'required' => true,
                         'default' => 'people',
-                        'options' => ['people' => 'What people write', 'all' => 'Workflows\' messages too'],
+                        'options' => [
+                            'people' => 'What people write',
+                            'answers' => 'What people and workflows answer (not what came from outside)',
+                            'outside' => 'Only what a customer sent, carried in from outside',
+                            'all' => 'Everything, workflows\' messages too',
+                        ],
+                        'help' => 'A bridge sends what is answered out; an AI that answers customers hears only what they sent.',
                         'when' => ['on' => 'message'],
                     ],
                     self::PER_CHAT,
@@ -655,6 +661,22 @@ final class NodeTypes
                 ],
             ],
 
+            [
+                'type' => 'trigger.channel',
+                'version' => 1,
+                'label' => 'Custom channel message',
+                'group' => 'channel',
+                'icon' => 'message-circle',
+                'description' => 'Starts a run when a platform of your own -- a shop\'s chat, a website\'s chat box -- sends a message to the connection\'s hook address. Later steps read trigger.text, trigger.chat.id, trigger.sender (id, name, picture), trigger.files (addresses), trigger.location and trigger.platform.',
+                'trigger' => true,
+                'inputs' => [],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'connection', 'label' => 'Channel', 'type' => 'connection', 'required' => true, 'services' => ['channel'], 'help' => 'Its hook address and the shape it takes are shown on the connection.'],
+                    self::PER_CHAT,
+                ],
+            ],
+
             // --- Chat ---
             [
                 'type' => 'chat.room',
@@ -669,9 +691,10 @@ final class NodeTypes
                 'config' => [
                     ['name' => 'key', 'label' => 'Stands for', 'type' => 'template', 'required' => false, 'placeholder' => 'telegram:{{ trigger.chat.id }}', 'help' => 'Left empty, a new room every time.'],
                     ['name' => 'title', 'label' => 'Title', 'type' => 'template', 'required' => true, 'default' => 'From a workflow', 'placeholder' => '{{ trigger.sender.name }} on Telegram'],
-                    ['name' => 'link', 'label' => 'Link it to', 'type' => 'connection', 'required' => false, 'services' => ['telegram', 'line'], 'help' => 'A bot or channel: what is written in the room can then go back through it, to the chat below.'],
+                    ['name' => 'link', 'label' => 'Link it to', 'type' => 'connection', 'required' => false, 'services' => ChatRoom::LINKS, 'help' => 'A bot, a channel, a number or an account: what is written in the room can then go back through it, to the chat below. In a project, a linked room is a customer\'s chat, in the project\'s inbox.'],
                     ['name' => 'link_chat', 'label' => 'Its chat there', 'type' => 'template', 'required' => false, 'default' => '{{ trigger.chat.id }}', 'when' => ['link' => true]],
                     ['name' => 'picture', 'label' => 'Its picture', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("who").picture }}', 'help' => 'A picture to show as the room\'s face, at its top and in the list of chats -- its address, or one in the Drive by its ref_id: whoever it is with, as "LINE: who wrote" gives their picture. Kept up to date each time the step runs.'],
+                    ['name' => 'contact', 'label' => 'Same person as', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.sender.phone }}', 'help' => 'In a project, something the same for this customer on every service -- an email, a phone number. Their chats given the same are one person\'s: a chat on WhatsApp and one on LINE then show each other, and share what is noted about them. Read later as trigger.room.contact.', 'when' => ['link' => true]],
                     ['name' => 'details', 'label' => 'Details to keep', 'type' => 'fields', 'required' => false, 'default' => [], 'help' => 'Things known about the room, each by a name: language {{ node("who").language }}, line_id {{ trigger.sender.id }}. Shown in the room under "About this chat", and read by later runs as trigger.room.details.language. One that comes to nothing is left as it was.'],
                 ],
             ],
@@ -700,6 +723,8 @@ final class NodeTypes
                     ],
                     ['name' => 'place', 'label' => 'With a place', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.location }}', 'help' => 'A place shown on a small map under the message: what a message that sent one gives as {{ trigger.location }} -- its lat and lng, and a title and address when it has them.'],
                     ['name' => 'sender', 'label' => 'Shown as', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.sender.name }} (Telegram)', 'help' => 'Left empty, the workflow\'s name.'],
+                    ['name' => 'sources', 'label' => 'Its sources', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("ask").sources }}', 'help' => 'What an agent answered from, as "Ask an agent" gives it: shown under the message to the project, never sent out.'],
+                    ['name' => 'note', 'label' => 'Written as', 'type' => 'choice', 'required' => true, 'default' => 'message', 'options' => ['message' => 'A message', 'note' => 'A note for the project, never sent out'], 'help' => 'In a customer\'s chat, a note is seen by the project alone, and no workflow hears it.'],
                     // Only while rooms may have an agent of their own (CHAT_AGENTS)
                     ...ChatRoom::agentsOn() ? [[
                         'name' => 'ask',
@@ -724,6 +749,40 @@ final class NodeTypes
                 'config' => [
                     ['name' => 'room', 'label' => 'Room', 'type' => 'room', 'required' => true],
                     ['name' => 'limit', 'label' => 'How many', 'type' => 'number', 'required' => true, 'default' => 20],
+                ],
+            ],
+
+            [
+                'type' => 'chat.update',
+                'version' => 1,
+                'label' => 'Change a customer\'s chat',
+                'group' => 'chat',
+                'icon' => 'user-check',
+                'description' => 'Sets where a project\'s chat with a customer stands, who has taken it, and its tags: how a chat is handed to a person, or closed. Gives out status, assignee and tags as they then are.',
+                'trigger' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'room', 'label' => 'Room', 'type' => 'room', 'required' => true],
+                    [
+                        'name' => 'status',
+                        'label' => 'Status',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'keep',
+                        'options' => ['keep' => 'As it is', ChatRoom::OPEN => 'Open: to be answered', ChatRoom::WAITING => 'Waiting on them', ChatRoom::CLOSED => 'Closed'],
+                    ],
+                    [
+                        'name' => 'assign',
+                        'label' => 'Assigned to',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'keep',
+                        'options' => ['keep' => 'As it is', 'person' => 'Someone in the project', 'nobody' => 'Nobody'],
+                    ],
+                    ['name' => 'person', 'label' => 'Who', 'type' => 'template', 'required' => false, 'placeholder' => 'ada@example.com', 'help' => 'An owner or an editor of the project, by their email.', 'when' => ['assign' => 'person']],
+                    ['name' => 'tag', 'label' => 'Add tags', 'type' => 'template', 'required' => false, 'placeholder' => 'refund, {{ node("ask").json.topic }}', 'help' => 'With commas between.'],
+                    ['name' => 'untag', 'label' => 'Take tags off', 'type' => 'template', 'required' => false, 'placeholder' => 'new'],
                 ],
             ],
 
@@ -893,6 +952,47 @@ final class NodeTypes
                         'default' => 'text',
                         'options' => ['text' => 'Text', 'json' => 'JSON, read into json'],
                     ],
+                ],
+            ],
+            [
+                'type' => 'ai.agent',
+                'version' => 1,
+                'label' => 'Ask an agent',
+                'group' => 'ai',
+                'icon' => 'bot',
+                'description' => 'Asks one of your agents -- its model, its instructions, what its knowledge base finds -- given a message and, in a chat, the conversation so far. Gives out text (and json when asked), and the version that answered.',
+                'trigger' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'agent', 'label' => 'Agent', 'type' => 'agent', 'required' => true],
+                    ['name' => 'message', 'label' => 'Message', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.text }}'],
+                    ['name' => 'room', 'label' => 'In the chat', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.room.ref }}', 'help' => 'A chat\'s ref_id: the agent reads its latest messages first. Left empty, the message alone.'],
+                    ['name' => 'version', 'label' => 'Version', 'type' => 'template', 'required' => false, 'placeholder' => 'latest', 'help' => 'A number, to keep to that version whatever is changed after; left empty, the latest.'],
+                    [
+                        'name' => 'answer',
+                        'label' => 'Answer as',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'text',
+                        'options' => ['text' => 'Text', 'json' => 'JSON, read into json'],
+                    ],
+                ],
+            ],
+            [
+                'type' => 'knowledge.search',
+                'version' => 1,
+                'label' => 'Search knowledge',
+                'group' => 'ai',
+                'icon' => 'book-open-text',
+                'description' => 'Finds the passages of a knowledge base -- notes, tables and Drive files read in advance -- nearest a question, best first. Gives out results (each title, url, text and score), found, and context: all of them as one text, for "Ask AI" to answer from.',
+                'trigger' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'knowledge', 'label' => 'Knowledge base', 'type' => 'knowledge', 'required' => true],
+                    ['name' => 'query', 'label' => 'Question', 'type' => 'template', 'required' => true, 'default' => '{{ trigger.text }}'],
+                    ['name' => 'limit', 'label' => 'At most', 'type' => 'number', 'required' => true, 'default' => 5, 'help' => 'Passages, from 1 to 20.'],
                 ],
             ],
 
@@ -1267,6 +1367,7 @@ final class NodeTypes
             'telegram' => 'Telegram',
             'line' => 'LINE',
             'whatsapp' => 'WhatsApp',
+            'channel' => 'Custom channel',
             'linkedin' => 'LinkedIn',
             'facebook' => 'Facebook',
             'instagram' => 'Instagram',
