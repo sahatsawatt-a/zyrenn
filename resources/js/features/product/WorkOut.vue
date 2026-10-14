@@ -5,7 +5,6 @@ import { useLocalStorage } from '@vueuse/core';
 import { computed, ref } from 'vue';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
 import AnswerActions from '@/features/chat/components/AnswerActions.vue';
 import type { AnswerAction } from '@/features/chat/components/AnswerActions.vue';
 import { KINDS, UNDERSTANDING } from '@/features/product/product';
@@ -246,17 +245,21 @@ const agentOptions = computed(() =>
                         data-test="work-out-keep-one"
                     />
                     <div class="grid min-w-0 flex-1 gap-2">
-                        <Input
+                        <!-- Each grows to what it says: a draft is read before it is kept -->
+                        <textarea
                             v-model="one.title"
                             maxlength="200"
                             aria-label="What the product must do"
+                            class="border-input focus-visible:ring-ring/50 field-sizing-content max-h-60 min-h-9 resize-none rounded-md border bg-transparent px-2.5 py-1.5 text-sm font-medium outline-none focus-visible:ring-[3px]"
                             data-test="work-out-title"
+                            @keydown.enter.prevent
                         />
-                        <Input
+                        <textarea
                             v-model="one.need"
                             maxlength="5000"
                             placeholder="The need behind it"
                             aria-label="The need behind it"
+                            class="border-input focus-visible:ring-ring/50 field-sizing-content max-h-60 min-h-9 resize-none rounded-md border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-[3px]"
                         />
                         <p class="text-muted-foreground text-[11px]">
                             {{
@@ -276,8 +279,7 @@ const agentOptions = computed(() =>
                             >
                             <textarea
                                 v-model="one.criteria"
-                                rows="3"
-                                class="border-input focus-visible:ring-ring/50 rounded-md border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-[3px]"
+                                class="border-input focus-visible:ring-ring/50 field-sizing-content max-h-60 min-h-9 resize-none rounded-md border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-[3px]"
                                 data-test="work-out-criteria"
                             />
                         </label>
@@ -290,8 +292,7 @@ const agentOptions = computed(() =>
                             >
                             <textarea
                                 v-model="one.questions"
-                                rows="2"
-                                class="border-input focus-visible:ring-ring/50 rounded-md border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-[3px]"
+                                class="border-input focus-visible:ring-ring/50 field-sizing-content max-h-60 min-h-9 resize-none rounded-md border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-[3px]"
                             />
                         </label>
                         <label
@@ -303,8 +304,7 @@ const agentOptions = computed(() =>
                             >
                             <textarea
                                 v-model="one.assumptions"
-                                rows="2"
-                                class="border-input focus-visible:ring-ring/50 rounded-md border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-[3px]"
+                                class="border-input focus-visible:ring-ring/50 field-sizing-content max-h-60 min-h-9 resize-none rounded-md border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-[3px]"
                             />
                         </label>
                         <div
