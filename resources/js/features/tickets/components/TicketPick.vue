@@ -31,6 +31,8 @@ const props = defineProps<{
     label: string;
     // In a row of a list: shorter, and no wider than what it says
     compact?: boolean;
+    // Said while nothing is chosen
+    placeholder?: string;
     class?: string;
     disabled?: boolean;
     id?: string;
@@ -68,6 +70,9 @@ const chosen = computed(() =>
                     />
                     <span class="truncate">{{ chosen.label }}</span>
                 </template>
+                <span v-else-if="placeholder" class="text-muted-foreground">{{
+                    placeholder
+                }}</span>
             </SelectValue>
         </SelectTrigger>
         <SelectContent>

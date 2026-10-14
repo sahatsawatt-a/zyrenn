@@ -12,6 +12,7 @@ import {
     Send,
     Settings2,
     Square,
+    Quote,
     StickyNote,
     Ticket as TicketIcon,
     Trash2,
@@ -43,6 +44,7 @@ import RoomDesk from '@/features/chat/components/RoomDesk.vue';
 import TeamNotes from '@/features/chat/components/TeamNotes.vue';
 import SavedReplies from '@/features/chat/components/SavedReplies.vue';
 import SuggestReply from '@/features/chat/components/SuggestReply.vue';
+import { store as keepAsRequest } from '@/routes/chats/requests';
 import type { Suggested } from '@/features/chat/components/SuggestReply.vue';
 import AnswerActions from '@/features/chat/components/AnswerActions.vue';
 import AnswerSources from '@/features/chat/components/AnswerSources.vue';
@@ -162,6 +164,13 @@ type Room = {
               people: DeskPerson[];
               // Until when its service takes an answer; null where it sets no such time
               answer_until: string | null;
+              // The parts of the product a ticket made here can be about
+              parts?: {
+                  ref_id: string;
+                  code: string;
+                  name: string;
+                  kind: string;
+              }[];
           })
         | null;
     // Who a customer's chat is with, on every service
@@ -545,6 +554,19 @@ const noting = ref(false);
 
 // What a customer asked, being made a ticket of
 const promoting = ref<Message | null>(null);
+
+// What a customer asked, kept word for word as a request of the project's product; the
+// chat notes it for the team
+const keepRequest = (message: Message) =>
+    router.post(
+        keepAsRequest(props.room.ref_id).url,
+        { message: message.id },
+        {
+            preserveScroll: true,
+            only: ['messages'],
+            onSuccess: () => (list.value = [...props.messages]),
+        },
+    );
 
 // A reply an agent suggests: put in what is being written, to read and change before it is
 // sent -- with what it answered from, to check it by
@@ -1188,6 +1210,7 @@ function saveSettings() {
             :message="promoting"
             :customer="room.contact?.name ?? room.title"
             :service="room.link?.service ?? null"
+            :parts="room.desk.parts"
             @update:open="$event || (promoting = null)"
         />
 
@@ -1484,6 +1507,19 @@ function saveSettings() {
                             @click="promoting = message"
                         >
                             <TicketIcon class="size-4" />
+                        </button>
+                        <button
+                            v-if="
+                                room.desk && room.manage && fromOutside(message)
+                            "
+                            type="button"
+                            class="text-muted-foreground hover:text-foreground mb-5 shrink-0 rounded-md p-1 opacity-50 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                            title="Keep as a request of the product"
+                            aria-label="Keep as a request of the product"
+                            data-test="chat-request"
+                            @click="keepRequest(message)"
+                        >
+                            <Quote class="size-4" />
                         </button>
                     </div>
                     <div

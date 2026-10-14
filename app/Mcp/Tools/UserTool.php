@@ -67,6 +67,33 @@ abstract class UserTool extends Tool
     }
 
     /**
+     * The project a call names in "project", one the user is in, for what
+     * belongs to a project alone ($whose: "Tickets"). $changing, when the call
+     * changes something, says what only its owners and editors can do.
+     */
+    protected function projectCalled(Request $request, string $whose, ?string $changing = null): Project
+    {
+        $named = trim((string) $request->get('project', ''));
+
+        if ($named === '') {
+            throw ValidationException::withMessages([
+                'project' => "{$whose} belong to a project: pass its ref_id or name as \"project\" (see list-projects).",
+            ]);
+        }
+
+        $project = $this->projectNamed($this->targetUser($request), $named);
+        $role = $project->getRelationValue('pivot')?->getAttribute('role');
+
+        if ($changing !== null && ! in_array($role, [Project::OWNER, Project::EDITOR], true)) {
+            throw ValidationException::withMessages([
+                'project' => "The user is a {$role} in \"{$project->name}\": only its owners and editors {$changing}.",
+            ]);
+        }
+
+        return $project;
+    }
+
+    /**
      * One of the user's projects, by ref_id or, failing that, by name.
      */
     protected function projectNamed(User $user, string $named): Project

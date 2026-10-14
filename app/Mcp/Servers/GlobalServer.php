@@ -29,6 +29,13 @@ use App\Mcp\Tools\Places\DeletePlace;
 use App\Mcp\Tools\Places\ListPlaces;
 use App\Mcp\Tools\Places\SavePlace;
 use App\Mcp\Tools\Places\SearchPlaces;
+use App\Mcp\Tools\Product\GetProduct;
+use App\Mcp\Tools\Product\GetProductPart;
+use App\Mcp\Tools\Product\ListProductRequests;
+use App\Mcp\Tools\Product\ListRequirements;
+use App\Mcp\Tools\Product\SaveProductRequest;
+use App\Mcp\Tools\Product\SaveRequirement;
+use App\Mcp\Tools\Product\UpdateProduct;
 use App\Mcp\Tools\Projects\CreateProject;
 use App\Mcp\Tools\Projects\ListProjects;
 use App\Mcp\Tools\Tables\CreateTable;
@@ -82,6 +89,15 @@ update-ticket), each a "bug" or a "feature" with a number in its project, a titl
 is about, a body, a priority and a status: open, in_progress, done, or dropped. They always take
 "project". Asked to work through a project's tickets: list-tickets, get-ticket for each, set it
 "in_progress" while it is being done and "done" when it is.
+
+Product: a project's product, tracked (get-product, get-product-part, update-product,
+list-product-requests, save-product-request, list-requirements, save-requirement). Its parts form a tree --
+components (CMP-n: a screen, a module, a service) with capabilities (CAP-n: what it lets someone do) under
+them, each with a status -- and link to what they use or depend on; a shared part is built once and used in
+several places, so read get-product-part's "impact" before changing one. Requests (RQ-n) are kept word for
+word as they were asked; what they mean is written as requirements (REQ-n) with acceptance criteria, and a
+requirement is verified only once every criterion is met. Tickets linked to a part are its work and its
+bugs. Everything is named by its code, and they always take "project".
 
 Chats with customers: a project's inbox -- each person who writes to it on LINE, Telegram, WhatsApp,
 Instagram or a custom channel has a chat (list-chats, get-chat, say-in-chat, update-chat), open (to be
@@ -214,6 +230,13 @@ class GlobalServer extends Server
             new GetTicket(global: true),
             new CreateTicket(global: true),
             new UpdateTicket(global: true),
+            new GetProduct(global: true),
+            new GetProductPart(global: true),
+            new UpdateProduct(global: true),
+            new ListProductRequests(global: true),
+            new SaveProductRequest(global: true),
+            new ListRequirements(global: true),
+            new SaveRequirement(global: true),
             new ListChats(global: true),
             new GetChat(global: true),
             new SayInChat(global: true),

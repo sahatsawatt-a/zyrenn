@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
 import { Ticket } from '@lucide/vue';
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import InputError from '@/components/common/InputError.vue';
 import SegmentTabs from '@/components/common/SegmentTabs.vue';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import TicketPick from '@/features/tickets/components/TicketPick.vue';
 import { TYPES } from '@/features/tickets/tickets';
 import type { TicketType } from '@/features/tickets/tickets';
 import { store as promote } from '@/routes/chats/tickets';
@@ -31,11 +32,16 @@ const props = defineProps<{
     message: { id: number; content: string } | null;
     customer: string;
     service: string | null;
+    // The parts of the project's product it can be about
+    parts?: { ref_id: string; code: string; name: string; kind: string }[];
 }>();
 
 const type = ref<TicketType>('bug');
 const title = ref('');
 const body = ref('');
+// Which part it is about, when someone knows: the bug counts against it
+const NONE = '-';
+const part = ref(NONE);
 const errors = ref<Record<string, string>>({});
 const busy = ref(false);
 
@@ -62,8 +68,17 @@ watch(open, (isOpen) => {
 
     title.value = (said.split('\n')[0] ?? '').slice(0, 200);
     body.value = said ? `${said}\n\nAsked by ${props.customer}${where}.` : '';
+    part.value = NONE;
     errors.value = {};
 });
+
+const partOptions = computed(() => [
+    { value: NONE, label: 'Not sure, or none' },
+    ...(props.parts ?? []).map((one) => ({
+        value: one.ref_id,
+        label: `${one.code} ${one.name}`,
+    })),
+]);
 
 function make() {
     busy.value = true;
@@ -74,6 +89,7 @@ function make() {
             title: title.value,
             body: body.value,
             message: props.message?.id ?? null,
+            element: part.value === NONE ? null : part.value,
         },
         {
             preserveScroll: true,
@@ -110,6 +126,17 @@ function make() {
                         data-test="promote-title"
                     />
                     <InputError :message="errors.title" />
+                </div>
+                <div v-if="parts?.length" class="grid gap-2">
+                    <Label for="promote-part">Part of the product</Label>
+                    <TicketPick
+                        id="promote-part"
+                        v-model="part"
+                        :options="partOptions"
+                        label="Part of the product"
+                        data-test="promote-part"
+                    />
+                    <InputError :message="errors.element" />
                 </div>
                 <div class="grid gap-2">
                     <Label for="promote-body">What they asked</Label>

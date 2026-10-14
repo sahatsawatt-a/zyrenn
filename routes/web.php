@@ -49,6 +49,7 @@ require __DIR__.'/features/maps.php';
 require __DIR__.'/features/chats.php';
 require __DIR__.'/features/knowledge.php';
 require __DIR__.'/features/agents.php';
+require __DIR__.'/features/product.php';
 require __DIR__.'/features/workflows.php';
 require __DIR__.'/hooks.php';
 require __DIR__.'/features/projects.php';

@@ -33,24 +33,7 @@ abstract class TicketTool extends UserTool
      */
     protected function targetProject(Request $request, bool $changes = false): Project
     {
-        $named = trim((string) $request->get('project', ''));
-
-        if ($named === '') {
-            throw ValidationException::withMessages([
-                'project' => 'Tickets belong to a project: pass its ref_id or name as "project" (see list-projects).',
-            ]);
-        }
-
-        $project = $this->projectNamed($this->targetUser($request), $named);
-        $role = $project->getRelationValue('pivot')?->getAttribute('role');
-
-        if ($changes && ! in_array($role, [Project::OWNER, Project::EDITOR], true)) {
-            throw ValidationException::withMessages([
-                'project' => "The user is a {$role} in \"{$project->name}\": only its owners and editors can file or change tickets.",
-            ]);
-        }
-
-        return $project;
+        return $this->projectCalled($request, 'Tickets', $changes ? 'can file or change tickets' : null);
     }
 
     /**

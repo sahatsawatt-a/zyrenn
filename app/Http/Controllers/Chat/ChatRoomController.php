@@ -346,6 +346,8 @@ class ChatRoomController extends Controller
             'title' => ['required', 'string', 'max:200'],
             'body' => ['nullable', 'string', 'max:20000'],
             'message' => ['nullable', 'integer', Rule::exists('chat_messages', 'id')->where('chat_room_id', $room->id)],
+            // The part of the product it is about, when someone knows
+            'element' => ['nullable', 'string', Rule::exists('product_elements', 'ref_id')->where('project_id', $room->project_id)],
         ]);
 
         $ticket = Ticket::file($room->project, $request->user(), [
@@ -355,7 +357,10 @@ class ChatRoomController extends Controller
         ]);
         $ticket->forceFill(['asked_in_room_id' => $room->id, 'asked_in_message_id' => $validated['message'] ?? null])->save();
 
-        $room->say($request->user(), "Made ticket #{$ticket->number}: {$ticket->title}", ['internal' => true, 'ticket' => $ticket->number]);
+        $part = filled($validated['element'] ?? null) ? $room->project->productElements()->where('ref_id', $validated['element'])->firstOrFail() : null;
+        $part?->tickets()->attach($ticket->id);
+
+        $room->say($request->user(), "Made ticket #{$ticket->number}: {$ticket->title}".($part ? ", about {$part->code} {$part->name}" : ''), ['internal' => true, 'ticket' => $ticket->number]);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Ticket #:number made.', ['number' => $ticket->number])]);
 
@@ -436,6 +441,9 @@ class ChatRoomController extends Controller
                     'tickets' => $room->askedTickets()->get(['number', 'type', 'status', 'title'])
                         ->map(fn (Ticket $ticket) => [...$ticket->only(['number', 'type', 'status', 'title']), 'url' => route('projects.tickets.index', [$room->project, 'ticket' => $ticket->number])])
                         ->values(),
+                    // The parts of the product a ticket made here can be about
+                    'parts' => $room->project?->productElements()->where('status', '!=', 'retired')->orderBy('kind')->orderBy('id')
+                        ->get(['ref_id', 'code', 'name', 'kind'])->map->only(['ref_id', 'code', 'name', 'kind'])->values() ?? [],
                 ] : null,
                 // Who a customer is on every service, and their other chats
                 'contact' => $room->kind === ChatRoom::CUSTOMER ? $room->contact?->card() : null,

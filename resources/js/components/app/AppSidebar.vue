@@ -9,6 +9,7 @@ import {
     FolderGit2,
     HardDrive,
     Inbox,
+    ListTree,
     LayoutDashboard,
     LayoutGrid,
     Bot,
@@ -72,6 +73,7 @@ import { index as workflowsIndex } from '@/routes/workflows';
 import { index as knowledgeIndex } from '@/routes/knowledge';
 import { index as agentsIndex } from '@/routes/agents';
 import { index as projectAgentsIndex } from '@/routes/projects/agents';
+import { index as projectProduct } from '@/routes/projects/product';
 import { index as projectKnowledgeIndex } from '@/routes/projects/knowledge';
 import type { NavItem } from '@/types';
 
@@ -170,6 +172,16 @@ const mainNavItems = computed<NavItem[]>(() => {
                       href: projectInbox(project.ref_id),
                       icon: Inbox,
                       badge: project.inbox,
+                  },
+              ]
+            : []),
+        // What the product is, what was asked of it, what it must do: a project's alone
+        ...(project
+            ? [
+                  {
+                      title: 'Product',
+                      href: projectProduct(project.ref_id),
+                      icon: ListTree,
                   },
               ]
             : []),

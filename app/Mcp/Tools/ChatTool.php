@@ -34,24 +34,7 @@ abstract class ChatTool extends UserTool
      */
     protected function targetProject(Request $request, bool $changes = false): Project
     {
-        $named = trim((string) $request->get('project', ''));
-
-        if ($named === '') {
-            throw ValidationException::withMessages([
-                'project' => 'Chats with customers belong to a project: pass its ref_id or name as "project" (see list-projects).',
-            ]);
-        }
-
-        $project = $this->projectNamed($this->targetUser($request), $named);
-        $role = $project->getRelationValue('pivot')?->getAttribute('role');
-
-        if ($changes && ! in_array($role, [Project::OWNER, Project::EDITOR], true)) {
-            throw ValidationException::withMessages([
-                'project' => "The user is a {$role} in \"{$project->name}\": only its owners and editors answer customers and look after their chats.",
-            ]);
-        }
-
-        return $project;
+        return $this->projectCalled($request, 'Chats with customers', $changes ? 'answer customers and look after their chats' : null);
     }
 
     /**

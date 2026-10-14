@@ -4,6 +4,8 @@ namespace App\Models\Ticket;
 
 use App\Models\Chat\ChatRoom;
 use App\Models\Concerns\HasRefId;
+use App\Models\Product\ProductElement;
+use App\Models\Product\Requirement;
 use App\Models\Project;
 use App\Models\User;
 use Database\Factories\Ticket\TicketFactory;
@@ -11,6 +13,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -191,6 +194,26 @@ class Ticket extends Model
     public function askedIn(): BelongsTo
     {
         return $this->belongsTo(ChatRoom::class, 'asked_in_room_id');
+    }
+
+    /**
+     * The parts of the project's product it is about.
+     *
+     * @return BelongsToMany<ProductElement, $this>
+     */
+    public function elements(): BelongsToMany
+    {
+        return $this->belongsToMany(ProductElement::class, 'element_ticket');
+    }
+
+    /**
+     * The requirements it is work for.
+     *
+     * @return BelongsToMany<Requirement, $this>
+     */
+    public function requirements(): BelongsToMany
+    {
+        return $this->belongsToMany(Requirement::class, 'requirement_ticket');
     }
 
     /**

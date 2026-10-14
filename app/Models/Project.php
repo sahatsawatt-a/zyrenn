@@ -6,6 +6,9 @@ use App\Models\Chat\ChatRoom;
 use App\Models\Concerns\HasRefId;
 use App\Models\Concerns\OwnsContent;
 use App\Models\Drive\DriveFile;
+use App\Models\Product\ProductElement;
+use App\Models\Product\ProductRequest;
+use App\Models\Product\Requirement;
 use App\Models\Table\Table;
 use App\Models\Ticket\Ticket;
 use Database\Factories\ProjectFactory;
@@ -97,6 +100,36 @@ class Project extends Model implements Owner
     public function chatRooms(): HasMany
     {
         return $this->hasMany(ChatRoom::class);
+    }
+
+    /**
+     * The parts of its product, in a tree of any depth.
+     *
+     * @return HasMany<ProductElement, $this>
+     */
+    public function productElements(): HasMany
+    {
+        return $this->hasMany(ProductElement::class);
+    }
+
+    /**
+     * What people asked of its product, word for word.
+     *
+     * @return HasMany<ProductRequest, $this>
+     */
+    public function productRequests(): HasMany
+    {
+        return $this->hasMany(ProductRequest::class);
+    }
+
+    /**
+     * What its product must do.
+     *
+     * @return HasMany<Requirement, $this>
+     */
+    public function requirements(): HasMany
+    {
+        return $this->hasMany(Requirement::class);
     }
 
     /**
