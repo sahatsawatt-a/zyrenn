@@ -23,7 +23,7 @@ import {
     Workflow,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
-import { computed } from 'vue';
+import { computed, onBeforeUnmount } from 'vue';
 import AppLogo from './AppLogo.vue';
 import NavFooter from './NavFooter.vue';
 import NavMain from './NavMain.vue';
@@ -37,6 +37,7 @@ import {
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
+    useSidebar,
 } from '@/components/ui/sidebar';
 import {
     dashboard,
@@ -79,6 +80,16 @@ import type { NavItem } from '@/types';
 
 const page = usePage();
 const unread = useUnreadChats();
+
+// On a phone the menu is a sheet over the page, and it stays across visits
+// with the layout: a page chosen in it -- or reached any other way -- closes it
+const { isMobile, setOpenMobile } = useSidebar();
+const stopClosing = router.on('navigate', () => {
+    if (isMobile.value) {
+        setOpenMobile(false);
+    }
+});
+onBeforeUnmount(stopClosing);
 
 // How many of the project's chats with customers are to be answered: asked for again, a moment
 // after one is written in or changed, so a run of them asks once
