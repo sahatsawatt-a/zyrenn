@@ -1,0 +1,635 @@
+{
+    "about": "Shapes drawn from a path in a 100 by 100 box and fitted to the item. Read by the canvas (composables/shapes.ts) and by the server (App\\Support\\Board\\Shapes), so a shape an MCP client names is the one the canvas draws. path: the outline, filled with the item's fill and drawn in its line. solid: parts filled in the line's colour. noFill: lines only. hit 'box': the whole box takes the pointer. insets: how far inside the box the outline lies at the middle of a side, as a share of it, for a connector to stop on. flat: the sides that are straight edges of the box. text: how far in from each side the label's box starts, as a share of the item -- more than 1 or less than 0 puts the label outside it. defaults: what a new one starts with. rows: 'table' or 'class' -- it holds a list of rows (composables/rows.ts) under a titled band. header: it has a titled band of a fixed depth along its top. slide: a connector's end dropped on it keeps how far along it it was dropped.",
+    "groups": ["Shapes", "Flowchart", "Software", "Architecture"],
+    "shapes": {
+        "pentagon": {
+            "label": "Pentagon",
+            "group": "Shapes",
+            "path": "M50,0 L100,38 L81,100 L19,100 L0,38 Z",
+            "insets": { "left": 0.04, "right": 0.04 },
+            "text": { "top": 0.14, "left": 0.1, "right": 0.1 }
+        },
+        "octagon": {
+            "label": "Octagon",
+            "group": "Shapes",
+            "path": "M29,0 L71,0 L100,29 L100,71 L71,100 L29,100 L0,71 L0,29 Z",
+            "aliases": ["stop"]
+        },
+        "trapezoid": {
+            "label": "Trapezoid",
+            "group": "Shapes",
+            "path": "M20,0 L80,0 L100,100 L0,100 Z",
+            "insets": { "left": 0.1, "right": 0.1 },
+            "flat": ["bottom"],
+            "text": { "left": 0.12, "right": 0.12 }
+        },
+        "cross": {
+            "label": "Cross",
+            "group": "Shapes",
+            "path": "M33,0 H67 V33 H100 V67 H67 V100 H33 V67 H0 V33 H33 Z",
+            "aliases": ["plus"],
+            "defaults": {
+                "width": 160,
+                "height": 160
+            }
+        },
+        "block_arrow": {
+            "label": "Arrow",
+            "group": "Shapes",
+            "path": "M0,28 L58,28 L58,0 L100,50 L58,100 L58,72 L0,72 Z",
+            "aliases": ["block arrow", "direction"],
+            "insets": { "top": 0.28, "bottom": 0.28 },
+            "flat": ["left"],
+            "text": { "top": 0.28, "bottom": 0.28, "right": 0.2 },
+            "defaults": {
+                "width": 220,
+                "height": 120
+            }
+        },
+        "double_arrow": {
+            "label": "Two-way arrow",
+            "group": "Shapes",
+            "path": "M0,50 L26,0 L26,28 L74,28 L74,0 L100,50 L74,100 L74,72 L26,72 L26,100 Z",
+            "aliases": ["both ways"],
+            "insets": { "top": 0.28, "bottom": 0.28 },
+            "text": {
+                "top": 0.28,
+                "bottom": 0.28,
+                "left": 0.14,
+                "right": 0.14
+            },
+            "defaults": {
+                "width": 240,
+                "height": 120
+            }
+        },
+        "chevron": {
+            "label": "Chevron",
+            "group": "Shapes",
+            "path": "M0,0 L72,0 L100,50 L72,100 L0,100 L28,50 Z",
+            "aliases": ["step", "stage"],
+            "insets": { "left": 0.28 },
+            "text": { "left": 0.28, "right": 0.2 },
+            "defaults": {
+                "width": 220,
+                "height": 110
+            }
+        },
+        "tag": {
+            "label": "Tag",
+            "group": "Shapes",
+            "path": "M0,0 L72,0 L100,50 L72,100 L0,100 Z",
+            "aliases": ["label", "signpost"],
+            "flat": ["left"],
+            "text": { "right": 0.22 },
+            "defaults": {
+                "width": 200,
+                "height": 100
+            }
+        },
+        "speech": {
+            "label": "Speech bubble",
+            "group": "Shapes",
+            "path": "M8,0 H92 Q100,0 100,8 V62 Q100,70 92,70 H42 L20,100 L26,70 H8 Q0,70 0,62 V8 Q0,0 8,0 Z",
+            "aliases": ["callout", "comment", "quote"],
+            "insets": { "bottom": 0.3 },
+            "text": { "bottom": 0.3 },
+            "defaults": {
+                "width": 220,
+                "height": 170
+            }
+        },
+        "heart": {
+            "label": "Heart",
+            "group": "Shapes",
+            "path": "M50,100 C18,74 0,56 0,30 A26,26 0 0,1 50,24 A26,26 0 0,1 100,30 C100,56 82,74 50,100 Z",
+            "aliases": ["love", "like"],
+            "insets": { "top": 0.24, "left": 0.02, "right": 0.02 },
+            "text": { "top": 0.22, "bottom": 0.3, "left": 0.1, "right": 0.1 },
+            "defaults": {
+                "width": 180,
+                "height": 170,
+                "fill": "#fecdd3",
+                "stroke": "#e11d48"
+            }
+        },
+        "cube": {
+            "label": "Cube",
+            "group": "Shapes",
+            "path": "M0,22 L22,0 L100,0 L100,78 L78,100 L0,100 Z M0,22 L78,22 L100,0 M78,22 L78,100",
+            "aliases": ["box", "node", "container", "3d"],
+            "text": { "top": 0.22, "right": 0.22 },
+            "defaults": {
+                "width": 180,
+                "height": 160
+            }
+        },
+        "brace": {
+            "label": "Brace",
+            "group": "Shapes",
+            "path": "M100,0 C50,0 70,50 0,50 C70,50 50,100 100,100",
+            "aliases": ["bracket", "group", "curly"],
+            "noFill": true,
+            "hit": "box",
+            "text": { "left": -5, "right": 1.1 },
+            "defaults": {
+                "width": 40,
+                "height": 220,
+                "stroke": "#0f172a",
+                "align": "right"
+            }
+        },
+        "manual_input": {
+            "label": "Manual input",
+            "group": "Flowchart",
+            "path": "M0,28 L100,0 L100,100 L0,100 Z",
+            "aliases": ["keyboard", "typed"],
+            "insets": { "top": 0.14 },
+            "flat": ["bottom", "right"],
+            "text": { "top": 0.2 }
+        },
+        "manual_operation": {
+            "label": "Manual step",
+            "group": "Flowchart",
+            "path": "M0,0 L100,0 L82,100 L18,100 Z",
+            "aliases": ["manual operation", "by hand"],
+            "insets": { "left": 0.09, "right": 0.09 },
+            "flat": ["top"],
+            "text": { "left": 0.1, "right": 0.1 }
+        },
+        "delay": {
+            "label": "Delay",
+            "group": "Flowchart",
+            "path": "M0,0 L55,0 A45,50 0 0,1 55,100 L0,100 Z",
+            "aliases": ["wait"],
+            "flat": ["left"],
+            "text": { "right": 0.14 }
+        },
+        "display": {
+            "label": "Display",
+            "group": "Flowchart",
+            "path": "M20,0 L78,0 A22,50 0 0,1 78,100 L20,100 L0,50 Z",
+            "aliases": ["screen", "output"],
+            "text": { "left": 0.14, "right": 0.1 }
+        },
+        "stored_data": {
+            "label": "Stored data",
+            "group": "Flowchart",
+            "path": "M12,0 L100,0 A12,50 0 0,0 100,100 L12,100 A12,50 0 0,1 12,0 Z",
+            "aliases": ["storage"],
+            "insets": { "right": 0.12 },
+            "flat": ["top", "bottom"],
+            "text": { "left": 0.1, "right": 0.12 }
+        },
+        "internal_storage": {
+            "label": "Internal storage",
+            "group": "Flowchart",
+            "path": "M0,0 H100 V100 H0 Z M0,16 H100 M16,0 V100",
+            "aliases": ["memory"],
+            "flat": ["top", "right", "bottom", "left"],
+            "text": { "top": 0.16, "left": 0.16 }
+        },
+        "card": {
+            "label": "Card",
+            "group": "Flowchart",
+            "path": "M22,0 L100,0 L100,100 L0,100 L0,22 Z",
+            "aliases": ["punched card"],
+            "flat": ["right", "bottom"]
+        },
+        "documents": {
+            "label": "Documents",
+            "group": "Flowchart",
+            "path": "M0,14 L86,14 L86,86 q-21.5,14 -43,3.5 q-21.5,-10.5 -43,3.5 Z M7,14 L7,7 L93,7 L93,77 M14,7 L14,0 L100,0 L100,70",
+            "aliases": ["multi document", "files", "reports"],
+            "insets": { "bottom": 0.11 },
+            "text": { "top": 0.14, "right": 0.14, "bottom": 0.12 }
+        },
+        "loop_limit": {
+            "label": "Loop",
+            "group": "Flowchart",
+            "path": "M16,0 L84,0 L100,22 L100,100 L0,100 L0,22 Z",
+            "aliases": ["loop limit", "repeat", "for each"],
+            "flat": ["bottom"]
+        },
+        "off_page": {
+            "label": "Off-page link",
+            "group": "Flowchart",
+            "path": "M0,0 L100,0 L100,62 L50,100 L0,62 Z",
+            "aliases": ["off page", "continues"],
+            "flat": ["top"],
+            "text": { "bottom": 0.26 },
+            "defaults": {
+                "width": 140,
+                "height": 140
+            }
+        },
+        "merge": {
+            "label": "Merge",
+            "group": "Flowchart",
+            "path": "M0,0 L100,0 L50,100 Z",
+            "aliases": ["join"],
+            "insets": { "left": 0.25, "right": 0.25 },
+            "flat": ["top"],
+            "text": { "bottom": 0.4, "left": 0.14, "right": 0.14 },
+            "defaults": {
+                "width": 180,
+                "height": 150
+            }
+        },
+        "lane": {
+            "label": "Lane",
+            "group": "Flowchart",
+            "path": "M0,0 H100 V100 H0 Z",
+            "aliases": [
+                "swimlane",
+                "pool",
+                "column",
+                "group",
+                "container",
+                "kanban"
+            ],
+            "flat": ["top", "right", "bottom", "left"],
+            "header": true,
+            "defaults": {
+                "width": 300,
+                "height": 420,
+                "stroke": "#94a3b8",
+                "fontSize": 14,
+                "padding": 10,
+                "text": "Lane"
+            }
+        },
+        "table": {
+            "label": "Table",
+            "group": "Software",
+            "path": "M0,0 H100 V100 H0 Z",
+            "aliases": [
+                "entity",
+                "schema",
+                "database",
+                "data model",
+                "er",
+                "sql",
+                "columns"
+            ],
+            "flat": ["top", "right", "bottom", "left"],
+            "rows": "table",
+            "header": true,
+            "defaults": {
+                "width": 240,
+                "height": 110,
+                "stroke": "#0f172a",
+                "fontSize": 13,
+                "padding": 10,
+                "text": "table",
+                "rows": [
+                    {
+                        "name": "id",
+                        "type": "int",
+                        "mark": "pk"
+                    },
+                    {
+                        "name": "name",
+                        "type": "varchar",
+                        "mark": ""
+                    }
+                ]
+            }
+        },
+        "class": {
+            "label": "Class",
+            "group": "Software",
+            "path": "M0,0 H100 V100 H0 Z",
+            "aliases": ["object", "interface", "uml"],
+            "flat": ["top", "right", "bottom", "left"],
+            "rows": "class",
+            "header": true,
+            "defaults": {
+                "width": 230,
+                "height": 130,
+                "stroke": "#0f172a",
+                "fontSize": 13,
+                "padding": 10,
+                "text": "Class",
+                "rows": [
+                    {
+                        "name": "field",
+                        "type": "type",
+                        "mark": "+"
+                    },
+                    {
+                        "name": "method()",
+                        "type": "",
+                        "mark": "+",
+                        "method": true
+                    }
+                ]
+            }
+        },
+        "actor": {
+            "label": "Actor",
+            "group": "Software",
+            "path": "M50,0 A13,13 0 1,1 49.99,0 Z M50,26 L50,64 M16,40 L84,40 M50,64 L20,100 M50,64 L80,100",
+            "aliases": ["person", "stick figure", "use case"],
+            "hit": "box",
+            "text": { "top": 1, "bottom": -0.4, "left": -0.8, "right": -0.8 },
+            "defaults": {
+                "width": 70,
+                "height": 120,
+                "stroke": "#0f172a",
+                "padding": 4,
+                "fontSize": 14,
+                "verticalAlign": "top",
+                "text": "Actor"
+            }
+        },
+        "package": {
+            "label": "Package",
+            "group": "Software",
+            "path": "M0,0 H42 V16 H100 V100 H0 Z M0,16 H42",
+            "aliases": ["folder", "namespace", "module"],
+            "insets": { "top": 0.16 },
+            "flat": ["right", "bottom", "left"],
+            "text": { "top": 0.16 },
+            "defaults": {
+                "width": 240,
+                "height": 170,
+                "stroke": "#0f172a"
+            }
+        },
+        "component": {
+            "label": "Component",
+            "group": "Software",
+            "path": "M10,0 H100 V100 H10 V78 H0 V62 H10 V38 H0 V22 H10 Z M10,22 H22 V38 H10 M10,62 H22 V78 H10",
+            "aliases": ["module", "service"],
+            "insets": { "left": 0.1 },
+            "flat": ["top", "right", "bottom"],
+            "text": { "left": 0.24 },
+            "defaults": {
+                "width": 200,
+                "height": 120,
+                "stroke": "#0f172a"
+            }
+        },
+        "note": {
+            "label": "Note",
+            "group": "Software",
+            "path": "M0,0 H80 L100,20 V100 H0 Z M80,0 V20 H100",
+            "aliases": ["comment", "annotation", "folded corner"],
+            "flat": ["bottom", "left"],
+            "text": { "right": 0.08 },
+            "defaults": {
+                "width": 200,
+                "height": 130,
+                "fill": "#fef9c3",
+                "stroke": "#ca8a04",
+                "align": "left",
+                "verticalAlign": "top",
+                "fontSize": 14
+            }
+        },
+        "lifeline": {
+            "label": "Lifeline",
+            "group": "Software",
+            "path": "M0,0 H100 V14 H0 Z M50,14 V100",
+            "aliases": ["sequence", "participant"],
+            "insets": { "left": 0.5, "right": 0.5 },
+            "flat": ["top"],
+            "header": true,
+            "slide": true,
+            "defaults": {
+                "width": 150,
+                "height": 420,
+                "stroke": "#0f172a",
+                "padding": 4,
+                "fontSize": 14,
+                "text": "Participant"
+            }
+        },
+        "start_state": {
+            "label": "Start",
+            "group": "Software",
+            "path": "M50,0 A50,50 0 1,1 49.99,0 Z",
+            "solid": "M50,0 A50,50 0 1,1 49.99,0 Z",
+            "aliases": ["initial state", "begin"],
+            "text": { "top": 1, "bottom": -1, "left": -2, "right": -2 },
+            "defaults": {
+                "width": 36,
+                "height": 36,
+                "stroke": "#0f172a",
+                "padding": 4,
+                "fontSize": 13,
+                "verticalAlign": "top"
+            }
+        },
+        "end_state": {
+            "label": "End",
+            "group": "Software",
+            "path": "M50,0 A50,50 0 1,1 49.99,0 Z",
+            "solid": "M50,24 A26,26 0 1,1 49.99,24 Z",
+            "aliases": ["final state", "finish", "stop"],
+            "text": { "top": 1, "bottom": -1, "left": -2, "right": -2 },
+            "defaults": {
+                "width": 40,
+                "height": 40,
+                "stroke": "#0f172a",
+                "padding": 4,
+                "fontSize": 13,
+                "verticalAlign": "top"
+            }
+        },
+        "user": {
+            "label": "User",
+            "group": "Architecture",
+            "path": "M50,2 A22,22 0 1,1 49.99,2 Z M6,100 C6,68 28,54 50,54 C72,54 94,68 94,100 Z",
+            "aliases": ["person", "customer", "client", "account"],
+            "hit": "box",
+            "text": { "top": 1, "bottom": -0.5, "left": -0.8, "right": -0.8 },
+            "defaults": {
+                "width": 80,
+                "height": 90,
+                "stroke": "#0f172a",
+                "padding": 4,
+                "fontSize": 14,
+                "verticalAlign": "top",
+                "text": "User"
+            }
+        },
+        "browser": {
+            "label": "Browser",
+            "group": "Architecture",
+            "path": "M0,0 H100 V100 H0 Z M0,18 H100 M8,9 H12 M20,9 H24 M32,9 H36",
+            "aliases": ["window", "web app", "page", "site"],
+            "flat": ["top", "right", "bottom", "left"],
+            "text": { "top": 0.18 },
+            "defaults": {
+                "width": 240,
+                "height": 160,
+                "stroke": "#0f172a"
+            }
+        },
+        "phone": {
+            "label": "Phone",
+            "group": "Architecture",
+            "path": "M12,0 H88 Q100,0 100,7 V93 Q100,100 88,100 H12 Q0,100 0,93 V7 Q0,0 12,0 Z M38,92 H62",
+            "aliases": ["mobile", "app", "device"],
+            "text": { "top": 0.04, "bottom": 0.12 },
+            "defaults": {
+                "width": 110,
+                "height": 200,
+                "stroke": "#0f172a",
+                "fontSize": 14
+            }
+        },
+        "desktop": {
+            "label": "Computer",
+            "group": "Architecture",
+            "path": "M0,0 H100 V72 H0 Z M40,72 L36,92 H64 L60,72 M26,100 H74 L64,92 H36 Z",
+            "aliases": ["monitor", "desktop", "pc", "screen", "laptop"],
+            "hit": "box",
+            "text": { "bottom": 0.28 },
+            "defaults": {
+                "width": 170,
+                "height": 130,
+                "stroke": "#0f172a",
+                "fontSize": 14
+            }
+        },
+        "server": {
+            "label": "Server",
+            "group": "Architecture",
+            "path": "M0,0 H100 V100 H0 Z M0,33.3 H100 M0,66.7 H100 M12,16.7 H24 M12,50 H24 M12,83.3 H24",
+            "aliases": ["host", "machine", "backend", "rack", "vm"],
+            "flat": ["top", "right", "bottom", "left"],
+            "text": { "top": 1, "bottom": -0.4, "left": -0.6, "right": -0.6 },
+            "defaults": {
+                "width": 90,
+                "height": 110,
+                "stroke": "#0f172a",
+                "padding": 4,
+                "fontSize": 14,
+                "verticalAlign": "top",
+                "text": "Server"
+            }
+        },
+        "queue": {
+            "label": "Queue",
+            "group": "Architecture",
+            "path": "M12,0 H88 A12,50 0 0,1 88,100 H12 A12,50 0 0,1 12,0 Z M12,0 A12,50 0 0,1 12,100",
+            "aliases": ["topic", "stream", "pipe", "bus", "kafka"],
+            "flat": ["top", "bottom"],
+            "text": { "left": 0.24, "right": 0.12 },
+            "defaults": {
+                "width": 220,
+                "height": 90,
+                "stroke": "#0f172a"
+            }
+        },
+        "bucket": {
+            "label": "Bucket",
+            "group": "Architecture",
+            "path": "M0,12 A50,12 0 0,1 100,12 L84,90 A34,10 0 0,1 16,90 Z M0,12 A50,12 0 0,0 100,12",
+            "aliases": ["storage", "object store", "s3", "blob", "files"],
+            "insets": { "left": 0.08, "right": 0.08 },
+            "text": { "top": 0.24, "left": 0.14, "right": 0.14 },
+            "defaults": {
+                "width": 130,
+                "height": 140,
+                "stroke": "#0f172a",
+                "fontSize": 14
+            }
+        },
+        "gateway": {
+            "label": "Gateway",
+            "group": "Architecture",
+            "path": "M50,0 L100,50 L50,100 L0,50 Z M30,50 H70 M60,40 L70,50 L60,60 M40,40 L30,50 L40,60",
+            "aliases": ["api", "load balancer", "proxy", "router"],
+            "hit": "box",
+            "text": { "top": 1, "bottom": -0.4, "left": -0.6, "right": -0.6 },
+            "defaults": {
+                "width": 100,
+                "height": 100,
+                "stroke": "#0f172a",
+                "padding": 4,
+                "fontSize": 14,
+                "verticalAlign": "top",
+                "text": "Gateway"
+            }
+        },
+        "firewall": {
+            "label": "Firewall",
+            "group": "Architecture",
+            "path": "M0,0 H100 V100 H0 Z M0,25 H100 M0,50 H100 M0,75 H100 M50,0 V25 M25,25 V50 M75,25 V50 M50,50 V75 M25,75 V100 M75,75 V100",
+            "aliases": ["wall", "security"],
+            "flat": ["top", "right", "bottom", "left"],
+            "text": { "top": 1, "bottom": -0.4, "left": -0.5, "right": -0.5 },
+            "defaults": {
+                "width": 120,
+                "height": 90,
+                "fill": "#fee2e2",
+                "stroke": "#dc2626",
+                "padding": 4,
+                "fontSize": 14,
+                "verticalAlign": "top",
+                "text": "Firewall"
+            }
+        },
+        "globe": {
+            "label": "Internet",
+            "group": "Architecture",
+            "path": "M50,0 A50,50 0 1,1 49.99,0 Z M0,50 H100 M50,0 C22,26 22,74 50,100 M50,0 C78,26 78,74 50,100",
+            "aliases": ["globe", "web", "world", "network", "dns"],
+            "text": { "top": 1, "bottom": -0.4, "left": -0.6, "right": -0.6 },
+            "defaults": {
+                "width": 100,
+                "height": 100,
+                "stroke": "#0f172a",
+                "padding": 4,
+                "fontSize": 14,
+                "verticalAlign": "top",
+                "text": "Internet"
+            }
+        },
+        "mail": {
+            "label": "Mail",
+            "group": "Architecture",
+            "path": "M0,0 H100 V100 H0 Z M0,0 L50,56 L100,0",
+            "aliases": ["email", "message", "envelope", "notification"],
+            "flat": ["top", "right", "bottom", "left"],
+            "text": { "top": 1, "bottom": -0.5, "left": -0.4, "right": -0.4 },
+            "defaults": {
+                "width": 130,
+                "height": 90,
+                "stroke": "#0f172a",
+                "padding": 4,
+                "fontSize": 14,
+                "verticalAlign": "top",
+                "text": "Mail"
+            }
+        },
+        "device": {
+            "label": "Device",
+            "group": "Architecture",
+            "path": "M15,15 H85 V85 H15 Z M30,15 V0 M50,15 V0 M70,15 V0 M30,85 V100 M50,85 V100 M70,85 V100 M15,30 H0 M15,50 H0 M15,70 H0 M85,30 H100 M85,50 H100 M85,70 H100",
+            "aliases": [
+                "chip",
+                "iot",
+                "sensor",
+                "microcontroller",
+                "embedded",
+                "hardware"
+            ],
+            "hit": "box",
+            "text": { "top": 1, "bottom": -0.4, "left": -0.6, "right": -0.6 },
+            "defaults": {
+                "width": 100,
+                "height": 100,
+                "stroke": "#0f172a",
+                "padding": 4,
+                "fontSize": 14,
+                "verticalAlign": "top",
+                "text": "Device"
+            }
+        }
+    }
+}

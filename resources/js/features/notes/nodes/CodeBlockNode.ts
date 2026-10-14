@@ -24,6 +24,8 @@ import CodeBlockView from '@/features/notes/components/CodeBlockView.vue';
 import MermaidBlock from '@/features/notes/components/MermaidBlock.vue';
 // A circuit drawn from a few lines of text, with a board's own symbols
 import CircuitBlock from '@/features/notes/components/CircuitBlock.vue';
+// Signals over time, drawn from a row of steps for each
+import TimingBlock from '@/features/notes/components/TimingBlock.vue';
 // A board shown in the note, chosen from two dropdowns
 import BoardBlock from '@/features/notes/components/BoardBlock.vue';
 // A trip shown in the note, the whole of it or one day
@@ -51,6 +53,7 @@ lowlight.register('plaintext', plaintext);
 // Mermaid source has no highlight.js grammar; keep it from being auto-detected as another language
 lowlight.register('mermaid', plaintext);
 lowlight.register('circuit', plaintext);
+lowlight.register('timing', plaintext);
 // Nor does a board or a trip reference, a place, or a card's link: they are
 // "key: value" lines naming what to show
 lowlight.register('board', plaintext);
@@ -69,6 +72,7 @@ export const CodeBlockNode = CodeBlockLowlight.configure({
         const EMBEDS = [
             'mermaid',
             'circuit',
+            'timing',
             'board',
             'trip',
             'map',
@@ -95,6 +99,7 @@ export const CodeBlockNode = CodeBlockLowlight.configure({
             const views = {
                 mermaid: MermaidBlock,
                 circuit: CircuitBlock,
+                timing: TimingBlock,
                 board: BoardBlock,
                 trip: TripBlock,
                 map: MapBlock,

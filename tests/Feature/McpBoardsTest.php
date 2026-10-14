@@ -252,7 +252,7 @@ class McpBoardsTest extends TestCase
         $user = User::factory()->create();
 
         UserServer::actingAs($user)
-            ->tool(CreateBoard::class, ['title' => 'Bad', 'items' => [['kind' => 'octagon']]])
+            ->tool(CreateBoard::class, ['title' => 'Bad', 'items' => [['kind' => 'dodecagon']]])
             ->assertHasErrors();
 
         UserServer::actingAs($user)

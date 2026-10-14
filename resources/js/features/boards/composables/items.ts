@@ -1,6 +1,10 @@
 // The board's data model. Everything on the canvas is one flat list of items in
 // paint order, which keeps z-order, undo snapshots and hit-testing simple.
 import { symbolOf } from '@/features/boards/circuit/symbols';
+import { makeRow, rowsHeight } from './rows';
+import type { Row } from './rows';
+import { SHAPE_PATHS, shapeOf } from './shapes';
+import type { ShapeKind } from './shapes';
 
 export type ItemKind =
     | 'frame'
@@ -19,6 +23,8 @@ export type ItemKind =
     | 'document'
     | 'process'
     | 'cloud'
+    // The library's shapes: more flowchart, UML, architecture (lib/shapes.json)
+    | ShapeKind
     | 'image'
     // A video from the Drive or a link, played on the board (useVideos)
     | 'video'
@@ -50,6 +56,8 @@ export const PATHS: Partial<Record<ItemKind, string>> = {
     process: 'M0,0 L100,0 L100,100 L0,100 Z M14,0 L14,100 M86,0 L86,100',
     // Four overlapping bumps over a flat base
     cloud: 'M22,78 A20,20 0 0,1 24,40 A22,22 0 0,1 60,27 A20,20 0 0,1 82,46 A17,17 0 0,1 80,78 Z',
+    // ...and every shape the library lists, drawn the same way
+    ...SHAPE_PATHS,
 };
 
 export const isPath = (kind: ItemKind): boolean => kind in PATHS;
@@ -65,14 +73,37 @@ export type Endpoint = {
     side: Side | null;
     x: number;
     y: number;
-    // On a symbol: which of its pins the end is on, making the line a wire
+    // On a symbol: which of its pins the end is on, making the line a wire.
+    // On a table or a class: which of its rows, by the row's id
     pin?: string | null;
+    // On a shape an end can slide along (a lifeline): how far down it the
+    // end was put, 0 to 1, which it keeps as the shape moves and grows
+    along?: number | null;
 };
 
 export type Routing = 'elbow' | 'straight' | 'curved';
 
-/** What either end of a connector is capped with. */
-export type HeadType = 'none' | 'arrow' | 'open' | 'circle' | 'diamond' | 'bar';
+/**
+ * What either end of a connector is capped with: the plain caps, the hollow
+ * ones a class diagram reads by, and the crow's feet of a data model.
+ */
+export type HeadType =
+    | 'none'
+    | 'arrow'
+    | 'open'
+    | 'circle'
+    | 'diamond'
+    | 'bar'
+    // Hollow: "is a kind of", "has", and a ring
+    | 'triangle'
+    | 'diamond_open'
+    | 'circle_open'
+    // How many of the thing at this end: crow's feet
+    | 'one_only'
+    | 'many'
+    | 'one_many'
+    | 'zero_one'
+    | 'zero_many';
 export type LineStyle = 'solid' | 'dashed' | 'dotted';
 
 /** Where a label sits in the box it is written in. */
@@ -138,6 +169,10 @@ export type Item = {
     symbol: string;
     // A logic input only: whether it is set, for the circuit to run from
     on: boolean;
+    // A table or a class only: its columns, or its fields and methods
+    rows?: Row[];
+    // A shape drawn more than one way: a lane with its title down its side
+    variant?: string;
     // Connectors only: where each end is pinned and how the line is drawn
     from: Endpoint | null;
     to: Endpoint | null;
@@ -400,8 +435,38 @@ export const makeItem = (
                 stroke: colours.stroke ?? INK,
                 points: [],
             };
-        default:
-            return base;
+        default: {
+            // A shape from the library starts as the library says it does
+            const shape = shapeOf(kind);
+
+            if (!shape) {
+                return base;
+            }
+
+            const made: Item = {
+                ...base,
+                ...(shape.defaults as Partial<Item> | undefined),
+                fill:
+                    colours.fill ??
+                    (shape.defaults?.fill as string | undefined) ??
+                    base.fill,
+                stroke:
+                    colours.stroke ??
+                    (shape.defaults?.stroke as string | undefined) ??
+                    base.stroke,
+            };
+
+            // A table or a class starts with rows of its own, and as tall
+            // as they need
+            if (shape.rows) {
+                made.rows = (
+                    (shape.defaults?.rows as Partial<Row>[] | undefined) ?? []
+                ).map((row) => makeRow(shape.rows!, { ...row, id: undefined }));
+                made.height = rowsHeight(made);
+            }
+
+            return made;
+        }
     }
 };
 
@@ -426,7 +491,14 @@ export const hydrate = (saved: Partial<Item>): Item => {
 };
 
 export const nameOf = (item: Item): string => {
-    const label = item.text.trim().split('\n')[0];
+    const line = item.text.trim().split('\n')[0];
+    // A rich label is named by its words, not by the marks that set them
+    const label = item.rich
+        ? line
+              .replace(/^(#{1,3}|[-*•])\s+/, '')
+              .replace(/\*\*|(?<![A-Za-z0-9])[*_]|[*_](?![A-Za-z0-9])/g, '')
+              .trim()
+        : line;
 
     if (label) {
         return label.length > 22 ? `${label.slice(0, 22)}…` : label;
@@ -452,6 +524,9 @@ export const nameOf = (item: Item): string => {
         case 'process':
             return 'Predefined process';
         default:
-            return item.kind.charAt(0).toUpperCase() + item.kind.slice(1);
+            return (
+                shapeOf(item.kind)?.label ??
+                item.kind.charAt(0).toUpperCase() + item.kind.slice(1)
+            );
     }
 };

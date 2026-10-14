@@ -42,6 +42,9 @@ final class LabelFit
     /** Heading sizes, against the label's own, for "#", "##" and "###". */
     private const HEADINGS = [1 => 1.6, 2 => 1.3, 3 => 1.1];
 
+    /** How tall the line a rule ("---") takes is, in font sizes. */
+    private const RULE_HEIGHT = 0.7;
+
     /**
      * The box the label is written in, relative to the item.
      *
@@ -54,6 +57,30 @@ final class LabelFit
         $height = (float) ($item['height'] ?? 0);
         $kind = (string) ($item['kind'] ?? '');
         $padding = max(0.0, (float) ($item['padding'] ?? ($kind === 'text' ? 0 : 12)));
+
+        // A table, a class or a lane is named in its band
+        if ((Shapes::find($kind)['header'] ?? false) === true) {
+            $depth = BoardRows::headerDepth($item);
+
+            return ($item['variant'] ?? 'top') === 'left' && BoardRows::kindOf($kind) === null
+                ? ['x' => 0.0, 'y' => 0.0, 'width' => $depth, 'height' => $height]
+                : ['x' => $padding, 'y' => 0.0, 'width' => max(1.0, $width - $padding * 2), 'height' => $depth];
+        }
+
+        // A shape from the library says where its words go, as shares of its box
+        $room = Shapes::find($kind)['text'] ?? null;
+
+        if (is_array($room)) {
+            $left = (float) ($room['left'] ?? 0);
+            $above = (float) ($room['top'] ?? 0);
+
+            return [
+                'x' => $left * $width + $padding,
+                'y' => $above * $height + $padding,
+                'width' => max(1.0, $width * (1 - $left - (float) ($room['right'] ?? 0)) - $padding * 2),
+                'height' => max(1.0, $height * (1 - $above - (float) ($room['bottom'] ?? 0)) - $padding * 2),
+            ];
+        }
 
         $top = match ($kind) {
             'cylinder' => max($padding, $height * 0.2),
@@ -129,6 +156,13 @@ final class LabelFit
         $height = 0.0;
 
         foreach (explode("\n", $text) as $line) {
+            // A line of dashes is a rule across the item, not words
+            if (preg_match('/^\s*-{3,}\s*$/', $line) === 1) {
+                $height += $size * self::RULE_HEIGHT;
+
+                continue;
+            }
+
             $scale = 1.0;
             $bold = false;
             $indent = 0.0;

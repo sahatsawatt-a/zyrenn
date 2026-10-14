@@ -200,7 +200,7 @@ const turnIntoOptions: TurnIntoOption[] = [
         apply: (c) => c.toggleCodeBlock(),
         isCurrent: (node) =>
             is('codeBlock')(node) &&
-            !['mermaid', 'circuit'].includes(node.attrs.language),
+            !['mermaid', 'circuit', 'timing'].includes(node.attrs.language),
     },
     {
         label: 'Callout',
@@ -214,7 +214,7 @@ const turnIntoOptions: TurnIntoOption[] = [
 const canTurnInto = computed(() => {
     const { node } = props.block;
     if (node.type.name === 'codeBlock')
-        return !['mermaid', 'circuit'].includes(node.attrs.language);
+        return !['mermaid', 'circuit', 'timing'].includes(node.attrs.language);
 
     return [
         'paragraph',

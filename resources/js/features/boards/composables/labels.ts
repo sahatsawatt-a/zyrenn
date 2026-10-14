@@ -1,6 +1,8 @@
 import Konva from 'konva';
 import type { Item } from './items';
 import { FONT_FAMILIES } from './items';
+import { hasHeader, headerDepth, headerSide } from './rows';
+import { shapeOf } from './shapes';
 
 // Where a label is written on an item, and how much room its words take.
 // The server works the same out in App\Support\Board\LabelFit, to warn an MCP
@@ -14,6 +16,44 @@ export const INK = '#0f172a';
 /** The box a label is written in, relative to the item. */
 export const labelBox = (item: Item) => {
     const padding = Math.max(0, item.padding ?? 12);
+
+    // A table, a class or a lane is named in its band
+    if (hasHeader(item)) {
+        const depth = headerDepth(item);
+
+        return headerSide(item) === 'left'
+            ? { x: 0, y: 0, width: depth, height: item.height }
+            : {
+                  x: padding,
+                  y: 0,
+                  width: Math.max(1, item.width - padding * 2),
+                  height: depth,
+              };
+    }
+
+    // A shape from the library says where its words go, as shares of its
+    // box: clear of a folder's tab, inside a screen, under a figure
+    const room = shapeOf(item.kind)?.text;
+
+    if (room) {
+        const left = (room.left ?? 0) * item.width + padding;
+        const top = (room.top ?? 0) * item.height + padding;
+
+        return {
+            x: left,
+            y: top,
+            width: Math.max(
+                1,
+                item.width * (1 - (room.left ?? 0) - (room.right ?? 0)) -
+                    padding * 2,
+            ),
+            height: Math.max(
+                1,
+                item.height * (1 - (room.top ?? 0) - (room.bottom ?? 0)) -
+                    padding * 2,
+            ),
+        };
+    }
 
     // A cylinder's lid and a triangle's point leave no room at the edges, so
     // their text starts lower; a predefined process keeps clear of its rails
@@ -36,7 +76,7 @@ export const labelBox = (item: Item) => {
 
 /** Bold for a plain text item, which is a heading more often than not. */
 export const labelStyle = (item: Item) =>
-    item.kind === 'text' && !item.rich ? '600' : 'normal';
+    (item.kind === 'text' && !item.rich) || hasHeader(item) ? '600' : 'normal';
 
 export const fontOf = (item: Item) => FONT_FAMILIES[item.fontFamily] ?? 'Arial';
 
@@ -53,6 +93,8 @@ type Paragraph = {
     /** What stands before a list item: "•" or "1." */
     marker: string | null;
     runs: Run[];
+    /** A line of dashes: a rule right across the item, as a class box has. */
+    rule?: boolean;
 };
 
 /** A piece of a laid-out line, ready to draw. */
@@ -68,7 +110,12 @@ export type Line = {
     height: number;
     size: number;
     fragments: Fragment[];
+    /** Not words but a rule across the item, drawn at the line's middle. */
+    rule?: boolean;
 };
+
+/** How tall a rule's line is, in font sizes. */
+const RULE_HEIGHT = 0.7;
 
 const HEADINGS: Record<number, number> = { 1: 1.6, 2: 1.3, 3: 1.1 };
 
@@ -108,10 +155,21 @@ const runsOf = (line: string, bold: boolean): Run[] => {
 /**
  * The label as light Markdown, a line at a time: "# ", "## " and "### " make
  * headings, "- ", "* " or "• " a bullet, "1. " a numbered item, and
- * **bold** or *italic* words inside any of them.
+ * **bold** or *italic* words inside any of them. A line of nothing but
+ * dashes ("---") is a rule across the whole item.
  */
 export const paragraphsOf = (text: string): Paragraph[] =>
     text.split('\n').map((line) => {
+        if (/^\s*-{3,}\s*$/.test(line)) {
+            return {
+                scale: 1,
+                bold: false,
+                marker: null,
+                runs: [],
+                rule: true,
+            };
+        }
+
         const heading = line.match(/^(#{1,3})\s+(.*)$/);
 
         if (heading) {
@@ -166,6 +224,21 @@ export const layoutRich = (item: Item): { lines: Line[]; height: number } => {
     let y = 0;
 
     for (const paragraph of paragraphsOf(item.text)) {
+        if (paragraph.rule) {
+            const height = item.fontSize * RULE_HEIGHT;
+
+            lines.push({
+                y,
+                height,
+                size: item.fontSize,
+                fragments: [],
+                rule: true,
+            });
+            y += height;
+
+            continue;
+        }
+
         const size = item.fontSize * paragraph.scale;
         const plain = { text: '', bold: paragraph.bold, italic: false };
         const markerFont = fontFor(plain, size, family);
@@ -301,7 +374,7 @@ export const labelHeight = (item: Item): number => {
  * fonts, the block placed down the box by the label's vertical alignment.
  */
 export const drawRich =
-    (item: Item, ink: string = INK) =>
+    (item: Item, ink: string = INK, ruled: string = ink) =>
     (context: Konva.Context) => {
         const { lines, height } = layoutRich(item);
         const box = labelBox(item);
@@ -316,6 +389,21 @@ export const drawRich =
         context.setAttr('textBaseline', 'middle');
 
         for (const line of lines) {
+            if (line.rule) {
+                // From one edge of the item to the other, whatever room the
+                // words are given inside it
+                const at = Math.max(0, top) + line.y + line.height / 2;
+
+                context.beginPath();
+                context.moveTo(-box.x, at);
+                context.lineTo(item.width - box.x, at);
+                context.setAttr('strokeStyle', ruled);
+                context.setAttr('lineWidth', Math.max(1, item.lineWidth));
+                context.stroke();
+
+                continue;
+            }
+
             for (const fragment of line.fragments) {
                 context.setAttr('font', fragment.font);
                 context.fillText(

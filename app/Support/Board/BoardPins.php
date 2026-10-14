@@ -81,6 +81,15 @@ class BoardPins
                 }
             }
 
+            // On a table's row, or part way down a lifeline: held there
+            $held = self::held($ends[$end], $boxes[$host], $facing, $chosen);
+
+            if ($held !== null) {
+                $ends[$end] = ['item' => $host, ...$held];
+
+                continue;
+            }
+
             // Without a side of its own the end follows the shapes, turning to
             // face whatever is at the other end; the point is worked out the
             // same way, so a line never leaves one face while turning as
@@ -91,6 +100,46 @@ class BoardPins
         }
 
         return [...$item, 'from' => $ends['from'], 'to' => $ends['to']];
+    }
+
+    /**
+     * Where an end is held on a shape with a structure of its own, as the
+     * canvas holds it (connectors.ts, heldFor): on the row of a table or a
+     * class it names, at that row's height, or as far along a lifeline as it
+     * says. It leaves by whichever edge faces the far end, unless given one.
+     *
+     * @param  array<string, mixed>  $end
+     * @param  array<string, mixed>  $host
+     * @param  array{x: float, y: float}  $facing
+     * @return array<string, mixed>|null
+     */
+    private static function held(array $end, array $host, array $facing, ?string $chosen): ?array
+    {
+        $edge = in_array($chosen, ['left', 'right'], true)
+            ? $chosen
+            : ($facing['x'] >= (float) $host['x'] + (float) $host['width'] / 2 ? 'right' : 'left');
+        $kept = in_array($chosen, ['left', 'right'], true) ? $chosen : null;
+        $kind = (string) ($host['kind'] ?? '');
+
+        if (is_string($end['pin'] ?? null) && BoardRows::kindOf($kind) !== null) {
+            $row = BoardRows::named($host, $end['pin']);
+
+            return $row === null ? null : ['side' => $kept, 'pin' => $row['id'], ...BoardRows::anchor($host, $row, $edge)];
+        }
+
+        if (is_numeric($end['along'] ?? null) && (Shapes::find($kind)['slide'] ?? false) === true) {
+            $along = max(0.0, min(1.0, (float) $end['along']));
+            $inset = (float) (Shapes::find($kind)['insets'][$edge] ?? 0);
+
+            return [
+                'side' => $kept,
+                'along' => $along,
+                'x' => (float) $host['x'] + (float) $host['width'] * ($edge === 'left' ? $inset : 1 - $inset),
+                'y' => (float) $host['y'] + (float) $host['height'] * $along,
+            ];
+        }
+
+        return null;
     }
 
     /**
@@ -117,6 +166,7 @@ class BoardPins
             'x' => is_numeric($end['x'] ?? null) ? (float) $end['x'] : 0.0,
             'y' => is_numeric($end['y'] ?? null) ? (float) $end['y'] : 0.0,
             ...(is_string($end['pin'] ?? null) && $end['pin'] !== '' ? ['pin' => $end['pin']] : []),
+            ...(is_numeric($end['along'] ?? null) ? ['along' => (float) $end['along']] : []),
         ];
     }
 
@@ -135,7 +185,12 @@ class BoardPins
             return ['x' => self::round($end['x'] ?? 0), 'y' => self::round($end['y'] ?? 0)];
         }
 
-        // On a symbol, the pin is what says where the end is
+        // Part way down a lifeline, that is what says where the end is
+        if (is_numeric($end['along'] ?? null)) {
+            return ['item' => $end['item'], 'along' => round((float) $end['along'], 3), ...(isset($end['side']) ? ['side' => $end['side']] : [])];
+        }
+
+        // On a symbol the pin is, and on a table or a class the row
         return is_string($end['pin'] ?? null)
             ? ['item' => $end['item'], 'pin' => $end['pin'], ...(isset($end['side']) ? ['side' => $end['side']] : [])]
             : ['item' => $end['item'], 'side' => $end['side'] ?? null];

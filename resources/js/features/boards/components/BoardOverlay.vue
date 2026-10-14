@@ -42,7 +42,7 @@ const isAimedAt = (id: string, anchor: Anchor) =>
         <template v-for="shape in connectable" :key="shape.id">
             <Circle
                 v-for="anchor in anchorsOf(shape)"
-                :key="anchor.pin ?? anchor.side ?? ''"
+                :key="`${anchor.pin ?? ''}:${anchor.side ?? ''}`"
                 :config="{
                     x: anchor.x,
                     y: anchor.y,

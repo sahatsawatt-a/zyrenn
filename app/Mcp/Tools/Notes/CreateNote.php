@@ -12,7 +12,7 @@ use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Attributes\Description;
 
-#[Description('Create a note. Content is Markdown: headings, lists, "- [ ]" to-dos, > quotes, ``` code (```mermaid for diagrams, ```circuit for a schematic drawn from lines like "R1: 10k" and "V1 -- R1 -- D1 -- V1"), [[Title]] to link to another page of the same owner by its title -- no address needed; [[Title|shown words]] to show other words, [[board:Title]], [[table:Title]] or [[trip:Title]] for a page that is not a note --, GFM tables, ":::callout 💡 … :::" callouts, $…$ inline math and $$ … $$ math blocks (LaTeX), and "<!-- pagebreak -->" on a line of its own to start a new page in the PDF. Images go in as ![alt](url) on their own line -- upload the picture with upload-file first and use the "markdown" line it returns.')]
+#[Description('Create a note. Content is Markdown: headings, lists, "- [ ]" to-dos, > quotes, ``` code (```mermaid for diagrams, ```circuit for a schematic drawn from lines like "R1: 10k" and "V1 -- R1 -- D1 -- V1", ```timing for signals over time from lines like "CLK: pppp" and "DATA: x=.=x | A | B"), [[Title]] to link to another page of the same owner by its title -- no address needed; [[Title|shown words]] to show other words, [[board:Title]], [[table:Title]] or [[trip:Title]] for a page that is not a note --, GFM tables, ":::callout 💡 … :::" callouts, $…$ inline math and $$ … $$ math blocks (LaTeX), and "<!-- pagebreak -->" on a line of its own to start a new page in the PDF. Images go in as ![alt](url) on their own line -- upload the picture with upload-file first and use the "markdown" line it returns.')]
 class CreateNote extends NoteTool
 {
     protected function arguments(JsonSchema $schema): array

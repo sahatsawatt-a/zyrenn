@@ -8,6 +8,8 @@ import {
 } from '@/features/boards/circuit/symbols';
 import type { Endpoint, HeadType, Item, LineStyle, Side } from './items';
 import { isConnector } from './items';
+import { hasRows, rowAnchor, rowNamed } from './rows';
+import { shapeOf } from './shapes';
 import {
     anchorAt,
     boundsOf,
@@ -21,10 +23,157 @@ export const HEAD_TYPES: { value: HeadType; label: string }[] = [
     { value: 'none', label: 'None' },
     { value: 'arrow', label: 'Arrow' },
     { value: 'open', label: 'Open' },
+    { value: 'triangle', label: 'Hollow arrow (is a kind of)' },
     { value: 'circle', label: 'Circle' },
-    { value: 'diamond', label: 'Diamond' },
-    { value: 'bar', label: 'Bar' },
+    { value: 'circle_open', label: 'Ring' },
+    { value: 'diamond', label: 'Diamond (is made of)' },
+    { value: 'diamond_open', label: 'Hollow diamond (has)' },
+    { value: 'bar', label: 'Bar (one)' },
+    { value: 'one_only', label: 'One and only one' },
+    { value: 'many', label: 'Many' },
+    { value: 'one_many', label: 'One or many' },
+    { value: 'zero_one', label: 'Zero or one' },
+    { value: 'zero_many', label: 'Zero or many' },
 ];
+
+/** What a line is capped and drawn with, as one choice. */
+export type ConnectorLook = Pick<Item, 'startHead' | 'endHead' | 'lineStyle'>;
+
+/**
+ * The kinds of line a diagram is drawn with, each a pair of caps and a dash
+ * chosen together: picking "Inherits" is quicker than knowing it is a solid
+ * line with a hollow arrow.
+ */
+export const CONNECTOR_TYPES: {
+    id: string;
+    label: string;
+    group: 'Lines' | 'Class diagram' | 'Data model';
+    look: ConnectorLook;
+}[] = [
+    {
+        id: 'arrow',
+        label: 'Arrow',
+        group: 'Lines',
+        look: { startHead: 'none', endHead: 'arrow', lineStyle: 'solid' },
+    },
+    {
+        id: 'line',
+        label: 'Line',
+        group: 'Lines',
+        look: { startHead: 'none', endHead: 'none', lineStyle: 'solid' },
+    },
+    {
+        id: 'two-way',
+        label: 'Both ways',
+        group: 'Lines',
+        look: { startHead: 'arrow', endHead: 'arrow', lineStyle: 'solid' },
+    },
+    {
+        id: 'dashed',
+        label: 'Dashed arrow',
+        group: 'Lines',
+        look: { startHead: 'none', endHead: 'arrow', lineStyle: 'dashed' },
+    },
+    {
+        id: 'association',
+        label: 'Uses',
+        group: 'Class diagram',
+        look: { startHead: 'none', endHead: 'open', lineStyle: 'solid' },
+    },
+    {
+        id: 'dependency',
+        label: 'Depends on',
+        group: 'Class diagram',
+        look: { startHead: 'none', endHead: 'open', lineStyle: 'dashed' },
+    },
+    {
+        id: 'inheritance',
+        label: 'Is a kind of',
+        group: 'Class diagram',
+        look: { startHead: 'none', endHead: 'triangle', lineStyle: 'solid' },
+    },
+    {
+        id: 'realization',
+        label: 'Implements',
+        group: 'Class diagram',
+        look: { startHead: 'none', endHead: 'triangle', lineStyle: 'dashed' },
+    },
+    {
+        id: 'aggregation',
+        label: 'Has',
+        group: 'Class diagram',
+        look: {
+            startHead: 'diamond_open',
+            endHead: 'none',
+            lineStyle: 'solid',
+        },
+    },
+    {
+        id: 'composition',
+        label: 'Is made of',
+        group: 'Class diagram',
+        look: { startHead: 'diamond', endHead: 'none', lineStyle: 'solid' },
+    },
+    {
+        id: 'one-to-one',
+        label: 'One to one',
+        group: 'Data model',
+        look: {
+            startHead: 'one_only',
+            endHead: 'one_only',
+            lineStyle: 'solid',
+        },
+    },
+    {
+        id: 'one-to-many',
+        label: 'One to many',
+        group: 'Data model',
+        look: {
+            startHead: 'one_only',
+            endHead: 'one_many',
+            lineStyle: 'solid',
+        },
+    },
+    {
+        id: 'one-to-any',
+        label: 'One to zero or many',
+        group: 'Data model',
+        look: {
+            startHead: 'one_only',
+            endHead: 'zero_many',
+            lineStyle: 'solid',
+        },
+    },
+    {
+        id: 'one-to-optional',
+        label: 'One to zero or one',
+        group: 'Data model',
+        look: {
+            startHead: 'one_only',
+            endHead: 'zero_one',
+            lineStyle: 'solid',
+        },
+    },
+    {
+        id: 'many-to-many',
+        label: 'Many to many',
+        group: 'Data model',
+        look: {
+            startHead: 'one_many',
+            endHead: 'one_many',
+            lineStyle: 'solid',
+        },
+    },
+];
+
+/** The kind of line this one is drawn as, if it is one of them. */
+export const connectorTypeOf = (line: ConnectorLook) =>
+    CONNECTOR_TYPES.find(
+        ({ look }) =>
+            look.startHead === line.startHead &&
+            look.endHead === line.endHead &&
+            look.lineStyle === line.lineStyle,
+    );
 
 /**
  * The side an end leaves by. A stored side is one somebody chose, so it is
@@ -142,6 +291,56 @@ export const pinFor = (
         ? ((end?.pin ? pinOf(host, end.pin) : undefined) ??
           nearestPin(host, facing))
         : undefined;
+
+/** The edge of a shape an end leaves by when it may only be left or right. */
+const edgeFacing = (
+    end: Endpoint,
+    host: Item,
+    facing: { x: number; y: number },
+): 'left' | 'right' =>
+    end.side === 'left' || end.side === 'right'
+        ? end.side
+        : facing.x >= host.x + host.width / 2
+          ? 'right'
+          : 'left';
+
+/**
+ * Where an end is held on a shape with a structure of its own: on the row
+ * of a table or a class it names, at that row's height, or as far along a
+ * lifeline as it was dropped. Either way it leaves by whichever edge faces
+ * the far end, unless it was given one.
+ */
+export const heldFor = (
+    end: Endpoint | null,
+    host: Item | null,
+    facing: { x: number; y: number },
+) => {
+    if (!end || !host) {
+        return undefined;
+    }
+
+    if (end.pin && hasRows(host)) {
+        const row = rowNamed(host, end.pin);
+
+        if (row) {
+            const at = rowAnchor(host, row, edgeFacing(end, host, facing));
+
+            return { name: row.id, x: at.x, y: at.y, side: at.side };
+        }
+    }
+
+    if (typeof end.along === 'number' && shapeOf(host.kind)?.slide) {
+        const side = edgeFacing(end, host, facing);
+
+        return {
+            name: '',
+            side: side as Side,
+            ...anchorAt(host, side, Math.min(1, Math.max(0, end.along))),
+        };
+    }
+
+    return undefined;
+};
 
 /** A wire: a connector with an end on a pin. It is drawn as one, too. */
 export const isWire = (item: Item, byId: Map<string, Item>): boolean =>
@@ -292,23 +491,31 @@ export const connectorPoints = (
 
     // An end on a symbol is on one of its pins, and leaves the way the pin
     // points; a junction's pin points nowhere, and is left towards the far end
-    const fromPin = pinFor(item.from, fromHost, fromFacing);
-    const toPin = pinFor(item.to, toHost, toFacing);
+    // ...and one on a table's row or along a lifeline is held there the same way
+    const fromHeld = heldFor(item.from, fromHost, fromFacing);
+    const toHeld = heldFor(item.to, toHost, toFacing);
+    const fromPin = pinFor(item.from, fromHost, fromFacing) ?? fromHeld;
+    const toPin = pinFor(item.to, toHost, toFacing) ?? toHeld;
 
     // An end with no side of its own turns to face wherever the other end is
     // now, rather than where it was when the line was drawn: drag a shape to
     // the far side and the line comes out of its other face, as it does in
     // every diagram tool. An end somebody put on a particular face stays on it.
-    const fromSide = fromPin
-        ? (item.from.side ??
-          fromPin.side ??
-          sideTowards(fromPin, toPin ?? fromFacing))
-        : sideOf(item.from, fromHost, fromFacing);
-    const toSide = toPin
-        ? (item.to.side ??
-          toPin.side ??
-          sideTowards(toPin, fromPin ?? toFacing))
-        : sideOf(item.to, toHost, toFacing);
+    // (An end held on a row or along a lifeline leaves by the edge it is on.)
+    const fromSide = fromHeld
+        ? fromHeld.side
+        : fromPin
+          ? (item.from.side ??
+            fromPin.side ??
+            sideTowards(fromPin, toPin ?? fromFacing))
+          : sideOf(item.from, fromHost, fromFacing);
+    const toSide = toHeld
+        ? toHeld.side
+        : toPin
+          ? (item.to.side ??
+            toPin.side ??
+            sideTowards(toPin, fromPin ?? toFacing))
+          : sideOf(item.to, toHost, toFacing);
 
     // The point and the side have to come from the same answer, or the line
     // leaves one face while turning as though it left another
@@ -329,7 +536,7 @@ export const connectorPoints = (
 
     // A wire keeps to the grid its pins are on, and turns a corner once
     // where once will do: out of a pin, round, and straight into the other
-    const wire = !!fromPin || !!toPin;
+    const wire = (!!fromPin && !fromHeld) || (!!toPin && !toHeld);
     const stub = wire ? GRID : STUB;
 
     if (wire && item.routing === 'elbow') {
@@ -499,45 +706,103 @@ export const headsOf = (item: Item, points: number[]) => {
 };
 
 /**
- * A head's outline, drawn pointing along +x from the line's end, so the shape
- * only has to be rotated into place.
+ * One piece of a head: a line through points, closed or not, or a circle on
+ * the line. Filled with the line's own colour ("ink"), with whatever lies
+ * behind the line ("paper", which is how a hollow cap hides the line under
+ * it), or not at all.
  */
-export const headPoints = (type: HeadType, size: number): number[] => {
+export type HeadPart = {
+    points?: number[];
+    closed?: boolean;
+    circle?: { x: number; radius: number };
+    fill?: 'ink' | 'paper';
+    // A solid dot is only its fill; every other piece is drawn in the line too
+    stroked: boolean;
+};
+
+/**
+ * A head's pieces, drawn pointing along +x with the line's end at the
+ * origin, so the whole of it only has to be turned into place.
+ */
+export const headParts = (type: HeadType, size: number): HeadPart[] => {
     const width = size * 0.9;
+    const half = width / 2;
+    const point = [-size, -half, 0, 0, -size, half];
+    const kite = [0, 0, -size / 2, -half, -size, 0, -size / 2, half];
+    const bar = (x: number): HeadPart => ({
+        points: [x, -half, x, half],
+        stroked: true,
+    });
+    // The three toes of a crow's foot, spread where the line arrives
+    const foot: HeadPart = {
+        points: [0, -half, -size, 0, 0, half],
+        stroked: true,
+    };
+    const ring = (x: number, radius: number): HeadPart => ({
+        circle: { x, radius },
+        fill: 'paper',
+        stroked: true,
+    });
 
     switch (type) {
         case 'arrow':
-        case 'open':
-            return [-size, -width / 2, 0, 0, -size, width / 2];
-        case 'diamond':
             return [
-                0,
-                0,
-                -size / 2,
-                -width / 2,
-                -size,
-                0,
-                -size / 2,
-                width / 2,
+                { points: point, closed: true, fill: 'ink', stroked: true },
             ];
+        case 'open':
+            return [{ points: point, stroked: true }];
+        case 'triangle':
+            return [
+                { points: point, closed: true, fill: 'paper', stroked: true },
+            ];
+        case 'diamond':
+            return [{ points: kite, closed: true, fill: 'ink', stroked: true }];
+        case 'diamond_open':
+            return [
+                { points: kite, closed: true, fill: 'paper', stroked: true },
+            ];
+        case 'circle':
+            return [
+                {
+                    circle: { x: 0, radius: size * 0.4 },
+                    fill: 'ink',
+                    stroked: false,
+                },
+            ];
+        case 'circle_open':
+            return [ring(0, size * 0.4)];
         case 'bar':
-            return [0, -width / 2, 0, width / 2];
+            return [bar(0)];
+        case 'one_only':
+            return [bar(-size * 0.45), bar(-size * 0.9)];
+        case 'many':
+            return [foot];
+        case 'one_many':
+            return [foot, bar(-size * 1.3)];
+        case 'zero_one':
+            return [bar(-size * 0.45), ring(-size * 1.15, size * 0.32)];
+        case 'zero_many':
+            return [foot, ring(-size * 1.4, size * 0.32)];
         default:
             return [];
     }
 };
 
 /** How far back a head of this type needs the line to stop. */
-const headRoom = (type: HeadType, size: number): number => {
+export const headRoom = (type: HeadType, size: number): number => {
     switch (type) {
         case 'arrow':
         case 'diamond':
+        case 'triangle':
+        case 'diamond_open':
             // Solid caps: the line would show through the middle of them
             return size * 0.9;
         case 'circle':
+        case 'circle_open':
             return size * 0.4;
         default:
-            // An open V or a bar is drawn on the line and wants it to arrive
+            // An open V, a bar or a crow's foot is drawn on the line and
+            // wants it to arrive
             return 0;
     }
 };

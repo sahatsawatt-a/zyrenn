@@ -4,6 +4,7 @@ import { computed } from 'vue';
 import {
     Circle,
     Ellipse,
+    Group,
     Image as KonvaImage,
     Line,
     Path,
@@ -14,12 +15,13 @@ import {
 } from 'vue-konva';
 import {
     dashFor,
-    headPoints,
+    headParts,
     headsOf,
     isSwept,
     midpointOf,
     trimmedPoints,
 } from '@/features/boards/composables/connectors';
+import type { HeadPart } from '@/features/boards/composables/connectors';
 import {
     LABEL_LINE,
     LABEL_SIZE,
@@ -37,6 +39,16 @@ import {
     isConnector,
     isPath,
 } from '@/features/boards/composables/items';
+import {
+    hasHeader,
+    headerDepth,
+    headerSide,
+} from '@/features/boards/composables/rows';
+import { labelledOutside, shapeOf } from '@/features/boards/composables/shapes';
+import {
+    CARD_RADIUS,
+    drawStructure,
+} from '@/features/boards/composables/structure';
 import {
     INK,
     LINE_HEIGHT,
@@ -83,6 +95,48 @@ const theme = useBoardTheme();
 const shown = (colour: string) => theme.value.drawn(colour, props.item);
 
 const SELECTED = '#6366f1';
+
+/**
+ * The colour its label is written in: read against the shape, or -- for one
+ * named outside itself, a figure with its name under it -- against whatever
+ * it stands on.
+ */
+const ink = computed(() =>
+    labelledOutside(props.item.kind)
+        ? theme.value.inkOver(theme.value.behind(props.item))
+        : theme.value.inkOn(props.item),
+);
+
+/** A rule across a rich label is drawn as the shape's own edge is. */
+const ruled = computed(() =>
+    props.item.stroke && props.item.stroke !== 'transparent'
+        ? shown(props.item.stroke)
+        : ink.value,
+);
+
+/** The colour a connector's caps are drawn in: its own, or the selection's. */
+const lineInk = computed(() =>
+    props.selected ? SELECTED : shown(props.item.stroke),
+);
+
+/**
+ * What a piece of a cap is filled with: the line's colour, or -- hollow --
+ * whatever the line lies on, so the line does not show through it.
+ */
+const headFill = (part: HeadPart) =>
+    part.fill === 'ink'
+        ? lineInk.value
+        : part.fill === 'paper'
+          ? theme.value.behind(props.item)
+          : undefined;
+
+/** A drawing of thin lines takes the pointer anywhere in its box. */
+const boxHit = (context: Konva.Context, shape: Konva.Shape) => {
+    context.beginPath();
+    context.rect(0, 0, 100, 100);
+    context.closePath();
+    context.fillStrokeShape(shape);
+};
 
 /**
  * A shape's edge: its own line at its own weight -- none at all, at 0 -- or
@@ -499,17 +553,96 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
         />
     </template>
 
-    <Path
-        v-else-if="isPath(item.kind)"
-        :config="{
-            data: PATHS[item.kind],
-            scaleX: item.width / 100,
-            scaleY: item.height / 100,
-            fill: item.fill,
-            ...edge,
-            strokeScaleEnabled: false,
-        }"
-    />
+    <!-- A shape drawn from a path fitted to its box: the flowchart set, and
+         everything in the shape library -->
+    <template v-else-if="isPath(item.kind)">
+        <!-- A lifeline: who it is in a box of its own depth, however long
+             the dashed line under it is drawn -->
+        <template v-if="shapeOf(item.kind)?.slide">
+            <!-- (the whole of its box takes the pointer, and a message) -->
+            <Rect
+                :config="{
+                    width: item.width,
+                    height: item.height,
+                    fill: 'rgba(0,0,0,0)',
+                }"
+            />
+            <Line
+                :config="{
+                    points: [
+                        item.width / 2,
+                        headerDepth(item),
+                        item.width / 2,
+                        item.height,
+                    ],
+                    stroke: edge.stroke,
+                    strokeWidth: Math.max(1, item.lineWidth * 0.75),
+                    dash: [7, 5],
+                    listening: false,
+                }"
+            />
+            <Rect
+                :config="{
+                    width: item.width,
+                    height: headerDepth(item),
+                    fill: item.fill,
+                    ...edge,
+                    cornerRadius: CARD_RADIUS,
+                    listening: false,
+                }"
+            />
+        </template>
+        <!-- A table, a class or a lane is a card: its corners are rounded
+             whatever its proportions, which a path fitted to the box cannot be -->
+        <Rect
+            v-else-if="hasHeader(item)"
+            :config="{
+                width: item.width,
+                height: item.height,
+                fill: item.fill,
+                ...edge,
+                cornerRadius: CARD_RADIUS,
+            }"
+        />
+        <Path
+            v-else
+            :config="{
+                data: PATHS[item.kind],
+                scaleX: item.width / 100,
+                scaleY: item.height / 100,
+                fill: shapeOf(item.kind)?.noFill ? undefined : item.fill,
+                ...edge,
+                strokeScaleEnabled: false,
+                lineJoin: shapeOf(item.kind) ? 'round' : undefined,
+                lineCap: shapeOf(item.kind) ? 'round' : undefined,
+                hitFunc: shapeOf(item.kind)?.hit === 'box' ? boxHit : undefined,
+            }"
+        />
+        <!-- What is inside a table, a class or a lane: its titled band,
+             and a row for each column or member -->
+        <Shape
+            v-if="hasHeader(item) && !shapeOf(item.kind)?.slide"
+            :config="{
+                sceneFunc: drawStructure(item, {
+                    ink,
+                    line: edge.stroke,
+                    editing,
+                }),
+                listening: false,
+            }"
+        />
+        <!-- The parts filled in the line's colour: an end state's dot -->
+        <Path
+            v-if="shapeOf(item.kind)?.solid"
+            :config="{
+                data: shapeOf(item.kind)!.solid,
+                scaleX: item.width / 100,
+                scaleY: item.height / 100,
+                fill: edge.stroke,
+                listening: false,
+            }"
+        />
+    </template>
 
     <Rect
         v-else-if="item.kind === 'pill'"
@@ -591,40 +724,46 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             }"
         />
 
-        <!-- Each end's cap, rotated to follow the line -->
-        <template v-for="head in headsOf(item, path)" :key="head.key">
-            <Circle
-                v-if="head.type === 'circle'"
-                :config="{
-                    x: head.x,
-                    y: head.y,
-                    radius: item.headSize * 0.4,
-                    fill: selected ? SELECTED : shown(item.stroke),
-                    listening: false,
-                }"
-            />
-            <Line
-                v-else
-                :config="{
-                    x: head.x,
-                    y: head.y,
-                    rotation: head.rotation,
-                    points: headPoints(head.type, item.headSize),
-                    closed: head.type === 'arrow' || head.type === 'diamond',
-                    fill:
-                        head.type === 'arrow' || head.type === 'diamond'
-                            ? selected
-                                ? SELECTED
-                                : shown(item.stroke)
-                            : undefined,
-                    stroke: selected ? SELECTED : shown(item.stroke),
-                    strokeWidth: item.lineWidth,
-                    lineCap: 'round',
-                    lineJoin: 'round',
-                    listening: false,
-                }"
-            />
-        </template>
+        <!-- Each end's cap, turned to follow the line: an arrow is one
+             piece, a crow's foot with its ring two -->
+        <Group
+            v-for="head in headsOf(item, path)"
+            :key="head.key"
+            :config="{
+                x: head.x,
+                y: head.y,
+                rotation: head.rotation,
+                listening: false,
+            }"
+        >
+            <template
+                v-for="(part, index) in headParts(head.type, item.headSize)"
+                :key="index"
+            >
+                <Circle
+                    v-if="part.circle"
+                    :config="{
+                        x: part.circle.x,
+                        radius: part.circle.radius,
+                        fill: headFill(part),
+                        stroke: part.stroked ? lineInk : undefined,
+                        strokeWidth: part.stroked ? item.lineWidth : 0,
+                    }"
+                />
+                <Line
+                    v-else
+                    :config="{
+                        points: part.points,
+                        closed: !!part.closed,
+                        fill: headFill(part),
+                        stroke: lineInk,
+                        strokeWidth: item.lineWidth,
+                        lineCap: 'round',
+                        lineJoin: 'round',
+                    }"
+                />
+            </template>
+        </Group>
 
         <!-- The label sits on a chip so the line does
              not run through the words -->
@@ -671,7 +810,8 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             hasText(item) &&
             item.kind !== 'frame' &&
             item.kind !== 'math' &&
-            item.kind !== 'symbol'
+            item.kind !== 'symbol' &&
+            !(hasHeader(item) && headerSide(item) === 'left')
         "
     >
         <!-- Rich: headings, bullets and bold words, laid out line by line -->
@@ -680,9 +820,9 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             :config="{
                 name: 'rich-label',
                 ...label(item),
-                sceneFunc: drawRich(item, theme.inkOn(item)),
+                sceneFunc: drawRich(item, ink, ruled),
                 hitFunc: labelHit,
-                fill: theme.inkOn(item),
+                fill: ink,
                 listening: item.kind === 'text',
                 opacity: editing ? 0 : 1,
             }"
@@ -697,7 +837,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
                 fontFamily: fontOf(item),
                 fontStyle: labelStyle(item),
                 lineHeight: LINE_HEIGHT,
-                fill: theme.inkOn(item),
+                fill: ink,
                 align: item.align,
                 verticalAlign: item.verticalAlign,
                 // A text item has no shape behind it, so

@@ -10,6 +10,8 @@ import { anchorsOf } from './geometry';
 import type { Anchor } from './geometry';
 import type { Endpoint, Item, Side } from './items';
 import { isConnectable, isConnector } from './items';
+import { hasRows, rowNamed } from './rows';
+import { shapeOf } from './shapes';
 
 /** The name a handle carries, so a drag can tell which end it has hold of. */
 export const ENDPOINT = 'endpoint';
@@ -101,6 +103,21 @@ export function useConnectorEnds({
         item: Item | null,
         point: { x: number; y: number },
     ): Endpoint => {
+        // On a lifeline an end stays as far down it as it was dropped: that
+        // is where in the order of things its message comes
+        if (item && shapeOf(item.kind)?.slide) {
+            return {
+                item: item.id,
+                side: null,
+                along: Math.min(
+                    1,
+                    Math.max(0, (point.y - item.y) / Math.max(1, item.height)),
+                ),
+                x: point.x,
+                y: point.y,
+            };
+        }
+
         const anchor = anchorNear(point);
 
         // On a symbol the dots are its pins, and an end is always on one:
@@ -175,6 +192,16 @@ export function useConnectorEnds({
                 const pin = item[end]?.pin;
 
                 return `${wordsOf(host).name || host.symbol}${pin ? `.${pin}` : ''}`;
+            }
+
+            // On a table or a class, the row it is on: "orders.customer_id"
+            const row =
+                host && hasRows(host) && item[end]?.pin
+                    ? rowNamed(host, item[end]!.pin!)
+                    : undefined;
+
+            if (host && row) {
+                return `${host.text || host.kind}.${row.name}`;
             }
 
             return host ? host.text || host.kind : 'a point';

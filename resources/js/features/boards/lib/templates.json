@@ -1,0 +1,1566 @@
+{
+    "about": "Diagrams a board can be started from. Each is a list of items as an MCP client would write them (kind, words, a box, and for a connector the ids it joins), so the canvas (composables/templates.ts) and the server (App\\Support\\Board\\Templates) read the same list.",
+    "templates": [
+        {
+            "id": "flowchart",
+            "label": "Flowchart",
+            "about": "Steps and a decision, from a start to an end.",
+            "items": [
+                {
+                    "id": "start",
+                    "kind": "pill",
+                    "text": "Start",
+                    "x": 0,
+                    "y": 20,
+                    "width": 140,
+                    "height": 60,
+                    "fill": "#dcfce7",
+                    "stroke": "#86efac"
+                },
+                {
+                    "id": "step",
+                    "kind": "rect",
+                    "text": "Do the first thing",
+                    "x": 220,
+                    "y": 10,
+                    "width": 180,
+                    "height": 80,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "id": "check",
+                    "kind": "diamond",
+                    "text": "All good?",
+                    "x": 480,
+                    "y": -10,
+                    "width": 180,
+                    "height": 120,
+                    "fill": "#fef9c3",
+                    "stroke": "#fde047"
+                },
+                {
+                    "id": "next",
+                    "kind": "rect",
+                    "text": "Carry on",
+                    "x": 740,
+                    "y": 10,
+                    "width": 180,
+                    "height": 80,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "id": "end",
+                    "kind": "pill",
+                    "text": "Done",
+                    "x": 1000,
+                    "y": 20,
+                    "width": 140,
+                    "height": 60,
+                    "fill": "#dcfce7",
+                    "stroke": "#86efac"
+                },
+                {
+                    "id": "fix",
+                    "kind": "rect",
+                    "text": "Put it right",
+                    "x": 480,
+                    "y": 200,
+                    "width": 180,
+                    "height": 80,
+                    "fill": "#ffe4e6",
+                    "stroke": "#fda4af"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "start"
+                    },
+                    "to": {
+                        "item": "step"
+                    },
+                    "stroke": "#475569"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "step"
+                    },
+                    "to": {
+                        "item": "check"
+                    },
+                    "stroke": "#475569"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "check"
+                    },
+                    "to": {
+                        "item": "next"
+                    },
+                    "stroke": "#475569",
+                    "text": "yes"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "next"
+                    },
+                    "to": {
+                        "item": "end"
+                    },
+                    "stroke": "#475569"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "check",
+                        "side": "bottom"
+                    },
+                    "to": {
+                        "item": "fix",
+                        "side": "top"
+                    },
+                    "stroke": "#475569",
+                    "text": "no"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "fix",
+                        "side": "left"
+                    },
+                    "to": {
+                        "item": "step",
+                        "side": "bottom"
+                    },
+                    "stroke": "#475569",
+                    "lineStyle": "dashed"
+                }
+            ]
+        },
+        {
+            "id": "swimlanes",
+            "label": "Swimlanes",
+            "about": "Who does what, in a lane each, with the work crossing between them.",
+            "items": [
+                {
+                    "id": "lane0",
+                    "kind": "lane",
+                    "text": "Customer",
+                    "variant": "left",
+                    "x": 0,
+                    "y": 0,
+                    "width": 1040,
+                    "height": 160,
+                    "fill": "#ffffff",
+                    "stroke": "#3b82f6",
+                    "fontSize": 14
+                },
+                {
+                    "id": "lane1",
+                    "kind": "lane",
+                    "text": "Shop",
+                    "variant": "left",
+                    "x": 0,
+                    "y": 170,
+                    "width": 1040,
+                    "height": 160,
+                    "fill": "#ffffff",
+                    "stroke": "#22c55e",
+                    "fontSize": 14
+                },
+                {
+                    "id": "lane2",
+                    "kind": "lane",
+                    "text": "Warehouse",
+                    "variant": "left",
+                    "x": 0,
+                    "y": 340,
+                    "width": 1040,
+                    "height": 160,
+                    "fill": "#ffffff",
+                    "stroke": "#eab308",
+                    "fontSize": 14
+                },
+                {
+                    "id": "order",
+                    "kind": "pill",
+                    "text": "Places an order",
+                    "x": 90,
+                    "y": 45,
+                    "width": 170,
+                    "height": 70,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "id": "take",
+                    "kind": "rect",
+                    "text": "Takes payment",
+                    "x": 330,
+                    "y": 215,
+                    "width": 170,
+                    "height": 70,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "id": "pick",
+                    "kind": "rect",
+                    "text": "Picks and packs",
+                    "x": 570,
+                    "y": 385,
+                    "width": 170,
+                    "height": 70,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "id": "ship",
+                    "kind": "rect",
+                    "text": "Sends it out",
+                    "x": 810,
+                    "y": 385,
+                    "width": 170,
+                    "height": 70,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "id": "tell",
+                    "kind": "rect",
+                    "text": "Says it is on the way",
+                    "x": 810,
+                    "y": 215,
+                    "width": 170,
+                    "height": 70,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "id": "got",
+                    "kind": "pill",
+                    "text": "Gets the parcel",
+                    "x": 810,
+                    "y": 45,
+                    "width": 170,
+                    "height": 70,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "order"
+                    },
+                    "to": {
+                        "item": "take"
+                    },
+                    "stroke": "#475569"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "take"
+                    },
+                    "to": {
+                        "item": "pick"
+                    },
+                    "stroke": "#475569"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "pick"
+                    },
+                    "to": {
+                        "item": "ship"
+                    },
+                    "stroke": "#475569"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "ship"
+                    },
+                    "to": {
+                        "item": "tell"
+                    },
+                    "stroke": "#475569"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "tell"
+                    },
+                    "to": {
+                        "item": "got"
+                    },
+                    "stroke": "#475569"
+                }
+            ]
+        },
+        {
+            "id": "org-chart",
+            "label": "Org chart",
+            "about": "Who reports to whom, from the top down.",
+            "items": [
+                {
+                    "id": "lead",
+                    "kind": "rect",
+                    "text": "**Name**\nLeads the team",
+                    "x": 420,
+                    "y": 0,
+                    "width": 200,
+                    "height": 80,
+                    "rich": true,
+                    "fill": "#ede9fe",
+                    "stroke": "#c4b5fd"
+                },
+                {
+                    "id": "head0",
+                    "kind": "rect",
+                    "text": "**Name**\nDesign",
+                    "x": 60,
+                    "y": 160,
+                    "width": 200,
+                    "height": 80,
+                    "rich": true,
+                    "fill": "#dbeafe",
+                    "stroke": "#93c5fd"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "lead",
+                        "side": "bottom"
+                    },
+                    "to": {
+                        "item": "head0",
+                        "side": "top"
+                    },
+                    "stroke": "#475569",
+                    "endHead": "none"
+                },
+                {
+                    "id": "p00",
+                    "kind": "rect",
+                    "text": "Name",
+                    "x": -25,
+                    "y": 320,
+                    "width": 170,
+                    "height": 60,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "head0",
+                        "side": "bottom"
+                    },
+                    "to": {
+                        "item": "p00",
+                        "side": "top"
+                    },
+                    "stroke": "#475569",
+                    "endHead": "none"
+                },
+                {
+                    "id": "p01",
+                    "kind": "rect",
+                    "text": "Name",
+                    "x": 165,
+                    "y": 320,
+                    "width": 170,
+                    "height": 60,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "head0",
+                        "side": "bottom"
+                    },
+                    "to": {
+                        "item": "p01",
+                        "side": "top"
+                    },
+                    "stroke": "#475569",
+                    "endHead": "none"
+                },
+                {
+                    "id": "head1",
+                    "kind": "rect",
+                    "text": "**Name**\nEngineering",
+                    "x": 420,
+                    "y": 160,
+                    "width": 200,
+                    "height": 80,
+                    "rich": true,
+                    "fill": "#dbeafe",
+                    "stroke": "#93c5fd"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "lead",
+                        "side": "bottom"
+                    },
+                    "to": {
+                        "item": "head1",
+                        "side": "top"
+                    },
+                    "stroke": "#475569",
+                    "endHead": "none"
+                },
+                {
+                    "id": "p10",
+                    "kind": "rect",
+                    "text": "Name",
+                    "x": 335,
+                    "y": 320,
+                    "width": 170,
+                    "height": 60,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "head1",
+                        "side": "bottom"
+                    },
+                    "to": {
+                        "item": "p10",
+                        "side": "top"
+                    },
+                    "stroke": "#475569",
+                    "endHead": "none"
+                },
+                {
+                    "id": "p11",
+                    "kind": "rect",
+                    "text": "Name",
+                    "x": 525,
+                    "y": 320,
+                    "width": 170,
+                    "height": 60,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "head1",
+                        "side": "bottom"
+                    },
+                    "to": {
+                        "item": "p11",
+                        "side": "top"
+                    },
+                    "stroke": "#475569",
+                    "endHead": "none"
+                },
+                {
+                    "id": "head2",
+                    "kind": "rect",
+                    "text": "**Name**\nOperations",
+                    "x": 780,
+                    "y": 160,
+                    "width": 200,
+                    "height": 80,
+                    "rich": true,
+                    "fill": "#dbeafe",
+                    "stroke": "#93c5fd"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "lead",
+                        "side": "bottom"
+                    },
+                    "to": {
+                        "item": "head2",
+                        "side": "top"
+                    },
+                    "stroke": "#475569",
+                    "endHead": "none"
+                },
+                {
+                    "id": "p20",
+                    "kind": "rect",
+                    "text": "Name",
+                    "x": 695,
+                    "y": 320,
+                    "width": 170,
+                    "height": 60,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "head2",
+                        "side": "bottom"
+                    },
+                    "to": {
+                        "item": "p20",
+                        "side": "top"
+                    },
+                    "stroke": "#475569",
+                    "endHead": "none"
+                },
+                {
+                    "id": "p21",
+                    "kind": "rect",
+                    "text": "Name",
+                    "x": 885,
+                    "y": 320,
+                    "width": 170,
+                    "height": 60,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "head2",
+                        "side": "bottom"
+                    },
+                    "to": {
+                        "item": "p21",
+                        "side": "top"
+                    },
+                    "stroke": "#475569",
+                    "endHead": "none"
+                }
+            ]
+        },
+        {
+            "id": "mind-map",
+            "label": "Mind map",
+            "about": "One idea in the middle, and what comes off it.",
+            "items": [
+                {
+                    "id": "idea",
+                    "kind": "ellipse",
+                    "text": "Main idea",
+                    "x": 400,
+                    "y": 150,
+                    "width": 220,
+                    "height": 120,
+                    "fill": "#c7d2fe",
+                    "stroke": "#6366f1",
+                    "fontSize": 18
+                },
+                {
+                    "id": "b0",
+                    "kind": "pill",
+                    "text": "One",
+                    "x": 60,
+                    "y": 0,
+                    "width": 160,
+                    "height": 60,
+                    "fill": "#fef9c3",
+                    "stroke": "#fde047"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "idea"
+                    },
+                    "to": {
+                        "item": "b0"
+                    },
+                    "stroke": "#475569",
+                    "routing": "curved",
+                    "endHead": "none"
+                },
+                {
+                    "id": "b1",
+                    "kind": "pill",
+                    "text": "Two",
+                    "x": 0,
+                    "y": 180,
+                    "width": 160,
+                    "height": 60,
+                    "fill": "#ffe4e6",
+                    "stroke": "#fda4af"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "idea"
+                    },
+                    "to": {
+                        "item": "b1"
+                    },
+                    "stroke": "#475569",
+                    "routing": "curved",
+                    "endHead": "none"
+                },
+                {
+                    "id": "b2",
+                    "kind": "pill",
+                    "text": "Three",
+                    "x": 60,
+                    "y": 360,
+                    "width": 160,
+                    "height": 60,
+                    "fill": "#dbeafe",
+                    "stroke": "#93c5fd"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "idea"
+                    },
+                    "to": {
+                        "item": "b2"
+                    },
+                    "stroke": "#475569",
+                    "routing": "curved",
+                    "endHead": "none"
+                },
+                {
+                    "id": "b3",
+                    "kind": "pill",
+                    "text": "Four",
+                    "x": 800,
+                    "y": 0,
+                    "width": 160,
+                    "height": 60,
+                    "fill": "#dcfce7",
+                    "stroke": "#86efac"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "idea"
+                    },
+                    "to": {
+                        "item": "b3"
+                    },
+                    "stroke": "#475569",
+                    "routing": "curved",
+                    "endHead": "none"
+                },
+                {
+                    "id": "b4",
+                    "kind": "pill",
+                    "text": "Five",
+                    "x": 860,
+                    "y": 180,
+                    "width": 160,
+                    "height": 60,
+                    "fill": "#ede9fe",
+                    "stroke": "#c4b5fd"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "idea"
+                    },
+                    "to": {
+                        "item": "b4"
+                    },
+                    "stroke": "#475569",
+                    "routing": "curved",
+                    "endHead": "none"
+                },
+                {
+                    "id": "b5",
+                    "kind": "pill",
+                    "text": "Six",
+                    "x": 800,
+                    "y": 360,
+                    "width": 160,
+                    "height": 60,
+                    "fill": "#fef9c3",
+                    "stroke": "#fde047"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "idea"
+                    },
+                    "to": {
+                        "item": "b5"
+                    },
+                    "stroke": "#475569",
+                    "routing": "curved",
+                    "endHead": "none"
+                }
+            ]
+        },
+        {
+            "id": "sequence",
+            "label": "Sequence",
+            "about": "Who asks whom for what, in the order it happens.",
+            "items": [
+                {
+                    "id": "who0",
+                    "kind": "lifeline",
+                    "text": "Browser",
+                    "x": 0,
+                    "y": 0,
+                    "width": 160,
+                    "height": 440,
+                    "stroke": "#0f172a",
+                    "fill": "#ffffff",
+                    "padding": 4,
+                    "fontSize": 14
+                },
+                {
+                    "id": "who1",
+                    "kind": "lifeline",
+                    "text": "Server",
+                    "x": 320,
+                    "y": 0,
+                    "width": 160,
+                    "height": 440,
+                    "stroke": "#0f172a",
+                    "fill": "#ffffff",
+                    "padding": 4,
+                    "fontSize": 14
+                },
+                {
+                    "id": "who2",
+                    "kind": "lifeline",
+                    "text": "Database",
+                    "x": 640,
+                    "y": 0,
+                    "width": 160,
+                    "height": 440,
+                    "stroke": "#0f172a",
+                    "fill": "#ffffff",
+                    "padding": 4,
+                    "fontSize": 14
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "who0",
+                        "along": 0.26
+                    },
+                    "to": {
+                        "item": "who1",
+                        "along": 0.26
+                    },
+                    "stroke": "#475569",
+                    "text": "GET /orders",
+                    "routing": "straight"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "who1",
+                        "along": 0.42
+                    },
+                    "to": {
+                        "item": "who2",
+                        "along": 0.42
+                    },
+                    "stroke": "#475569",
+                    "text": "find the orders",
+                    "routing": "straight"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "who2",
+                        "along": 0.58
+                    },
+                    "to": {
+                        "item": "who1",
+                        "along": 0.58
+                    },
+                    "stroke": "#475569",
+                    "text": "rows",
+                    "routing": "straight",
+                    "lineStyle": "dashed",
+                    "endHead": "open"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "who1",
+                        "along": 0.74
+                    },
+                    "to": {
+                        "item": "who0",
+                        "along": 0.74
+                    },
+                    "stroke": "#475569",
+                    "text": "200 with the list",
+                    "routing": "straight",
+                    "lineStyle": "dashed",
+                    "endHead": "open"
+                }
+            ]
+        },
+        {
+            "id": "data-model",
+            "label": "Data model",
+            "about": "Tables with their columns and keys, and each foreign key drawn to the column it points at.",
+            "items": [
+                {
+                    "id": "customers",
+                    "kind": "table",
+                    "text": "customers",
+                    "x": 0,
+                    "y": 40,
+                    "width": 240,
+                    "rows": [
+                        {
+                            "name": "id",
+                            "type": "int",
+                            "key": "pk"
+                        },
+                        {
+                            "name": "name",
+                            "type": "varchar"
+                        },
+                        {
+                            "name": "email",
+                            "type": "varchar",
+                            "key": "uk"
+                        },
+                        {
+                            "name": "joined_at",
+                            "type": "timestamp"
+                        }
+                    ],
+                    "fill": "#ffffff",
+                    "stroke": "#334155",
+                    "fontSize": 13
+                },
+                {
+                    "id": "orders",
+                    "kind": "table",
+                    "text": "orders",
+                    "x": 400,
+                    "y": 0,
+                    "width": 240,
+                    "rows": [
+                        {
+                            "name": "id",
+                            "type": "int",
+                            "key": "pk"
+                        },
+                        {
+                            "name": "customer_id",
+                            "type": "int",
+                            "key": "fk"
+                        },
+                        {
+                            "name": "placed_at",
+                            "type": "timestamp"
+                        },
+                        {
+                            "name": "total",
+                            "type": "decimal"
+                        },
+                        {
+                            "name": "note",
+                            "type": "text",
+                            "nullable": true
+                        }
+                    ],
+                    "fill": "#ffffff",
+                    "stroke": "#334155",
+                    "fontSize": 13
+                },
+                {
+                    "id": "order_lines",
+                    "kind": "table",
+                    "text": "order_lines",
+                    "x": 800,
+                    "y": 40,
+                    "width": 240,
+                    "rows": [
+                        {
+                            "name": "id",
+                            "type": "int",
+                            "key": "pk"
+                        },
+                        {
+                            "name": "order_id",
+                            "type": "int",
+                            "key": "fk"
+                        },
+                        {
+                            "name": "product_id",
+                            "type": "int",
+                            "key": "fk"
+                        },
+                        {
+                            "name": "quantity",
+                            "type": "int"
+                        }
+                    ],
+                    "fill": "#ffffff",
+                    "stroke": "#334155",
+                    "fontSize": 13
+                },
+                {
+                    "id": "products",
+                    "kind": "table",
+                    "text": "products",
+                    "x": 400,
+                    "y": 260,
+                    "width": 240,
+                    "rows": [
+                        {
+                            "name": "id",
+                            "type": "int",
+                            "key": "pk"
+                        },
+                        {
+                            "name": "name",
+                            "type": "varchar"
+                        },
+                        {
+                            "name": "price",
+                            "type": "decimal"
+                        }
+                    ],
+                    "fill": "#ffffff",
+                    "stroke": "#334155",
+                    "fontSize": 13
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "orders",
+                        "pin": "customer_id"
+                    },
+                    "to": {
+                        "item": "customers",
+                        "pin": "id"
+                    },
+                    "stroke": "#475569",
+                    "startHead": "zero_many",
+                    "endHead": "one_only"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "order_lines",
+                        "pin": "order_id"
+                    },
+                    "to": {
+                        "item": "orders",
+                        "pin": "id"
+                    },
+                    "stroke": "#475569",
+                    "startHead": "one_many",
+                    "endHead": "one_only"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "order_lines",
+                        "pin": "product_id"
+                    },
+                    "to": {
+                        "item": "products",
+                        "pin": "id"
+                    },
+                    "stroke": "#475569",
+                    "startHead": "zero_many",
+                    "endHead": "one_only"
+                }
+            ]
+        },
+        {
+            "id": "class-diagram",
+            "label": "Class diagram",
+            "about": "Classes with their fields and methods: which is a kind of which, and which is made of which.",
+            "items": [
+                {
+                    "id": "shape",
+                    "kind": "class",
+                    "text": "Shape",
+                    "x": 300,
+                    "y": 0,
+                    "width": 230,
+                    "rows": [
+                        {
+                            "name": "x",
+                            "type": "number",
+                            "visibility": "+",
+                            "method": false
+                        },
+                        {
+                            "name": "y",
+                            "type": "number",
+                            "visibility": "+",
+                            "method": false
+                        },
+                        {
+                            "name": "area()",
+                            "type": "number",
+                            "visibility": "+",
+                            "method": true
+                        },
+                        {
+                            "name": "draw()",
+                            "type": "",
+                            "visibility": "+",
+                            "method": true
+                        }
+                    ],
+                    "fill": "#ffffff",
+                    "stroke": "#334155",
+                    "fontSize": 13
+                },
+                {
+                    "id": "circle",
+                    "kind": "class",
+                    "text": "Circle",
+                    "x": 0,
+                    "y": 300,
+                    "width": 230,
+                    "rows": [
+                        {
+                            "name": "radius",
+                            "type": "number",
+                            "visibility": "+",
+                            "method": false
+                        },
+                        {
+                            "name": "area()",
+                            "type": "number",
+                            "visibility": "+",
+                            "method": true
+                        }
+                    ],
+                    "fill": "#ffffff",
+                    "stroke": "#334155",
+                    "fontSize": 13
+                },
+                {
+                    "id": "rect",
+                    "kind": "class",
+                    "text": "Rectangle",
+                    "x": 300,
+                    "y": 300,
+                    "width": 230,
+                    "rows": [
+                        {
+                            "name": "width",
+                            "type": "number",
+                            "visibility": "+",
+                            "method": false
+                        },
+                        {
+                            "name": "height",
+                            "type": "number",
+                            "visibility": "+",
+                            "method": false
+                        },
+                        {
+                            "name": "area()",
+                            "type": "number",
+                            "visibility": "+",
+                            "method": true
+                        }
+                    ],
+                    "fill": "#ffffff",
+                    "stroke": "#334155",
+                    "fontSize": 13
+                },
+                {
+                    "id": "canvas",
+                    "kind": "class",
+                    "text": "Canvas",
+                    "x": 680,
+                    "y": 0,
+                    "width": 230,
+                    "rows": [
+                        {
+                            "name": "shapes",
+                            "type": "Shape[]",
+                            "visibility": "-",
+                            "method": false
+                        },
+                        {
+                            "name": "add(shape)",
+                            "type": "",
+                            "visibility": "+",
+                            "method": true
+                        },
+                        {
+                            "name": "render()",
+                            "type": "",
+                            "visibility": "+",
+                            "method": true
+                        }
+                    ],
+                    "fill": "#ffffff",
+                    "stroke": "#334155",
+                    "fontSize": 13
+                },
+                {
+                    "id": "hint",
+                    "kind": "note",
+                    "text": "A hollow arrow reads \"is a kind of\"; a diamond, \"is made of\".",
+                    "x": 680,
+                    "y": 300,
+                    "width": 230,
+                    "height": 110,
+                    "align": "left",
+                    "verticalAlign": "top",
+                    "fontSize": 14,
+                    "fill": "#fef9c3",
+                    "stroke": "#ca8a04"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "circle",
+                        "side": "top"
+                    },
+                    "to": {
+                        "item": "shape",
+                        "side": "bottom"
+                    },
+                    "stroke": "#475569",
+                    "endHead": "triangle"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "rect",
+                        "side": "top"
+                    },
+                    "to": {
+                        "item": "shape",
+                        "side": "bottom"
+                    },
+                    "stroke": "#475569",
+                    "endHead": "triangle"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "canvas",
+                        "side": "left"
+                    },
+                    "to": {
+                        "item": "shape",
+                        "side": "right"
+                    },
+                    "stroke": "#475569",
+                    "startHead": "diamond",
+                    "endHead": "none"
+                }
+            ]
+        },
+        {
+            "id": "architecture",
+            "label": "Architecture",
+            "about": "What a system is made of and what talks to what.",
+            "items": [
+                {
+                    "id": "user",
+                    "kind": "user",
+                    "text": "Customer",
+                    "x": 0,
+                    "y": 60,
+                    "width": 80,
+                    "height": 90,
+                    "stroke": "#0f172a",
+                    "padding": 4,
+                    "fontSize": 14,
+                    "verticalAlign": "top"
+                },
+                {
+                    "id": "web",
+                    "kind": "browser",
+                    "text": "Web app",
+                    "x": 180,
+                    "y": 30,
+                    "width": 220,
+                    "height": 150,
+                    "stroke": "#0f172a"
+                },
+                {
+                    "id": "gate",
+                    "kind": "gateway",
+                    "text": "API gateway",
+                    "x": 500,
+                    "y": 55,
+                    "width": 100,
+                    "height": 100,
+                    "stroke": "#0f172a",
+                    "padding": 4,
+                    "fontSize": 14,
+                    "verticalAlign": "top"
+                },
+                {
+                    "id": "api",
+                    "kind": "server",
+                    "text": "App server",
+                    "x": 720,
+                    "y": 50,
+                    "width": 90,
+                    "height": 110,
+                    "stroke": "#0f172a",
+                    "padding": 4,
+                    "fontSize": 14,
+                    "verticalAlign": "top"
+                },
+                {
+                    "id": "db",
+                    "kind": "cylinder",
+                    "text": "Database",
+                    "x": 940,
+                    "y": 20,
+                    "width": 140,
+                    "height": 160,
+                    "fill": "#e0e7ff",
+                    "stroke": "#6366f1"
+                },
+                {
+                    "id": "jobs",
+                    "kind": "queue",
+                    "text": "Jobs",
+                    "x": 655,
+                    "y": -170,
+                    "width": 220,
+                    "height": 90,
+                    "stroke": "#0f172a"
+                },
+                {
+                    "id": "files",
+                    "kind": "bucket",
+                    "text": "Files",
+                    "x": 950,
+                    "y": -200,
+                    "width": 130,
+                    "height": 140,
+                    "stroke": "#0f172a",
+                    "fontSize": 14
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "user"
+                    },
+                    "to": {
+                        "item": "web"
+                    },
+                    "stroke": "#475569"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "web"
+                    },
+                    "to": {
+                        "item": "gate"
+                    },
+                    "stroke": "#475569",
+                    "text": "HTTPS"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "gate"
+                    },
+                    "to": {
+                        "item": "api"
+                    },
+                    "stroke": "#475569"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "api"
+                    },
+                    "to": {
+                        "item": "db"
+                    },
+                    "stroke": "#475569",
+                    "text": "SQL"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "api",
+                        "side": "top"
+                    },
+                    "to": {
+                        "item": "jobs",
+                        "side": "bottom"
+                    },
+                    "stroke": "#475569",
+                    "lineStyle": "dashed"
+                },
+                {
+                    "kind": "arrow",
+                    "from": {
+                        "item": "jobs"
+                    },
+                    "to": {
+                        "item": "files"
+                    },
+                    "stroke": "#475569"
+                }
+            ]
+        },
+        {
+            "id": "roadmap",
+            "label": "Roadmap",
+            "about": "What is being done now, what comes next, and what can wait.",
+            "items": [
+                {
+                    "id": "q0",
+                    "kind": "chevron",
+                    "text": "Now",
+                    "x": 0,
+                    "y": 0,
+                    "width": 270,
+                    "height": 80,
+                    "fontSize": 18,
+                    "fill": "#dcfce7",
+                    "stroke": "#86efac"
+                },
+                {
+                    "id": "w00",
+                    "kind": "rect",
+                    "text": "Something to do",
+                    "x": 40,
+                    "y": 110,
+                    "width": 200,
+                    "height": 70,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "id": "w01",
+                    "kind": "rect",
+                    "text": "Something to do",
+                    "x": 40,
+                    "y": 200,
+                    "width": 200,
+                    "height": 70,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "id": "q1",
+                    "kind": "chevron",
+                    "text": "Next",
+                    "x": 250,
+                    "y": 0,
+                    "width": 270,
+                    "height": 80,
+                    "fontSize": 18,
+                    "fill": "#dbeafe",
+                    "stroke": "#93c5fd"
+                },
+                {
+                    "id": "w10",
+                    "kind": "rect",
+                    "text": "Something to do",
+                    "x": 290,
+                    "y": 110,
+                    "width": 200,
+                    "height": 70,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "id": "w11",
+                    "kind": "rect",
+                    "text": "Something to do",
+                    "x": 290,
+                    "y": 200,
+                    "width": 200,
+                    "height": 70,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "id": "q2",
+                    "kind": "chevron",
+                    "text": "Later",
+                    "x": 500,
+                    "y": 0,
+                    "width": 270,
+                    "height": 80,
+                    "fontSize": 18,
+                    "fill": "#ede9fe",
+                    "stroke": "#c4b5fd"
+                },
+                {
+                    "id": "w20",
+                    "kind": "rect",
+                    "text": "Something to do",
+                    "x": 540,
+                    "y": 110,
+                    "width": 200,
+                    "height": 70,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "id": "w21",
+                    "kind": "rect",
+                    "text": "Something to do",
+                    "x": 540,
+                    "y": 200,
+                    "width": 200,
+                    "height": 70,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "id": "q3",
+                    "kind": "chevron",
+                    "text": "Someday",
+                    "x": 750,
+                    "y": 0,
+                    "width": 270,
+                    "height": 80,
+                    "fontSize": 18,
+                    "fill": "#f1f5f9",
+                    "stroke": "#cbd5e1"
+                },
+                {
+                    "id": "w30",
+                    "kind": "rect",
+                    "text": "Something to do",
+                    "x": 790,
+                    "y": 110,
+                    "width": 200,
+                    "height": 70,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                },
+                {
+                    "id": "w31",
+                    "kind": "rect",
+                    "text": "Something to do",
+                    "x": 790,
+                    "y": 200,
+                    "width": 200,
+                    "height": 70,
+                    "fill": "#ffffff",
+                    "stroke": "#94a3b8"
+                }
+            ]
+        },
+        {
+            "id": "retro",
+            "label": "Retro",
+            "about": "What went well, what to improve, and what to do about it.",
+            "items": [
+                {
+                    "id": "c0",
+                    "kind": "pill",
+                    "text": "Went well",
+                    "x": 0,
+                    "y": 0,
+                    "width": 230,
+                    "height": 50,
+                    "fill": "#22c55e",
+                    "stroke": "#22c55e",
+                    "fontSize": 15
+                },
+                {
+                    "id": "s00",
+                    "kind": "sticky",
+                    "text": "",
+                    "x": 5,
+                    "y": 80,
+                    "width": 220,
+                    "height": 170,
+                    "fill": "#bbf7d0"
+                },
+                {
+                    "id": "s01",
+                    "kind": "sticky",
+                    "text": "",
+                    "x": 5,
+                    "y": 270,
+                    "width": 220,
+                    "height": 170,
+                    "fill": "#bbf7d0"
+                },
+                {
+                    "id": "c1",
+                    "kind": "pill",
+                    "text": "To improve",
+                    "x": 260,
+                    "y": 0,
+                    "width": 230,
+                    "height": 50,
+                    "fill": "#f97316",
+                    "stroke": "#f97316",
+                    "fontSize": 15
+                },
+                {
+                    "id": "s10",
+                    "kind": "sticky",
+                    "text": "",
+                    "x": 265,
+                    "y": 80,
+                    "width": 220,
+                    "height": 170,
+                    "fill": "#fde68a"
+                },
+                {
+                    "id": "s11",
+                    "kind": "sticky",
+                    "text": "",
+                    "x": 265,
+                    "y": 270,
+                    "width": 220,
+                    "height": 170,
+                    "fill": "#fde68a"
+                },
+                {
+                    "id": "c2",
+                    "kind": "pill",
+                    "text": "Actions",
+                    "x": 520,
+                    "y": 0,
+                    "width": 230,
+                    "height": 50,
+                    "fill": "#6366f1",
+                    "stroke": "#6366f1",
+                    "fontSize": 15
+                },
+                {
+                    "id": "s20",
+                    "kind": "sticky",
+                    "text": "",
+                    "x": 525,
+                    "y": 80,
+                    "width": 220,
+                    "height": 170,
+                    "fill": "#bfdbfe"
+                },
+                {
+                    "id": "s21",
+                    "kind": "sticky",
+                    "text": "",
+                    "x": 525,
+                    "y": 270,
+                    "width": 220,
+                    "height": 170,
+                    "fill": "#bfdbfe"
+                }
+            ]
+        }
+    ]
+}

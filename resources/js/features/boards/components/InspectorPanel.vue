@@ -36,6 +36,8 @@ import {
     hasOutline,
     hasText,
 } from '@/features/boards/composables/items';
+import { hasHeader } from '@/features/boards/composables/rows';
+import { shapeOf } from '@/features/boards/composables/shapes';
 import type {
     Align,
     Fit,
@@ -55,6 +57,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import ColourPicker from './ColourPicker.vue';
 import ConnectorSettings from './ConnectorSettings.vue';
+import StructureSettings from './StructureSettings.vue';
 
 // The panel over the right of the canvas: what is selected, and every property
 // of it in one place instead of hidden behind a toolbar popover -- colour
@@ -149,6 +152,16 @@ const lineOnly = computed(() =>
 
 // The first shape with an edge of its own, for how heavy that edge is
 const outlined = computed(() => props.selection.find(hasOutline) ?? null);
+
+// One table, class or lane chosen on its own, for what is inside it
+const structured = computed(() =>
+    props.selection.length === 1 &&
+    hasHeader(props.selection[0]) &&
+    // (a lifeline has a title and nothing else to set)
+    !shapeOf(props.selection[0].kind)?.slide
+        ? props.selection[0]
+        : null,
+);
 
 // One part chosen on its own, for its name and its value
 const part = computed(() => {
@@ -272,7 +285,11 @@ const summary = computed(() => {
 
     const [item] = props.selection;
 
-    return (isSymbol(item) && symbolOf(item.symbol)?.label) || item.kind;
+    return (
+        (isSymbol(item) && symbolOf(item.symbol)?.label) ||
+        shapeOf(item.kind)?.label ||
+        item.kind
+    );
 });
 
 const round = (value: number) => Math.round(value);
@@ -434,6 +451,14 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                     />
                 </label>
             </div>
+
+            <!-- What is inside it, when it has a structure of its own: a
+                 table's columns, a class's members, a lane's title -->
+            <StructureSettings
+                v-if="structured"
+                :item="structured"
+                @update="emit('update', $event)"
+            />
 
             <!-- Its colours: a chip each, opened for the swatches and for
                  any other colour, rather than both palettes always out -->

@@ -54,6 +54,8 @@ export function useBoard(initial: Item[] | null = null) {
     const copy = (item: Item): Item => ({
         ...item,
         points: [...item.points],
+        // (a table's rows are its own, not shared with a copy of it)
+        ...(item.rows ? { rows: item.rows.map((row) => ({ ...row })) } : {}),
         from: item.from ? { ...item.from } : null,
         to: item.to ? { ...item.to } : null,
     });

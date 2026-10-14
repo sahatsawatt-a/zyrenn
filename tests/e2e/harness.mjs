@@ -550,7 +550,22 @@ export function boardOn(page) {
             await page.locator('[data-test="tool-shapes"]').click();
         }
 
-        await flyout.locator(`[data-test="tool-${tool}"]`).click();
+        await flyout.waitFor();
+
+        // One of a set kept folded until wanted (UML, architecture): unfold
+        const wanted = flyout.locator(`[data-test="tool-${tool}"]`);
+
+        if (!(await wanted.count())) {
+            const folded = flyout.locator(
+                '.library-fold[aria-expanded="false"]',
+            );
+
+            while (await folded.count()) {
+                await folded.first().click();
+            }
+        }
+
+        await wanted.click();
         await page
             .locator('[data-test="shape-flyout"]')
             .waitFor({ state: 'detached' });

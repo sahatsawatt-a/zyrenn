@@ -12,6 +12,15 @@
     justify-content: center;
 }
 
+/* On a phone there is no gutter to keep: the block handle is for a pointer
+   that hovers, and the room is the words' */
+@media (max-width: 640px) {
+    .editor-surface {
+        padding: 12px 4px 40px;
+        margin: 0;
+    }
+}
+
 .editor-container {
     position: relative; /* anchors the block handle in the left gutter */
     width: 100%;

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { headParts, headRoom } from '@/features/boards/composables/connectors';
+import type { ConnectorLook } from '@/features/boards/composables/connectors';
 import type {
     HeadType,
     LineStyle,
@@ -7,27 +9,68 @@ import type {
 } from '@/features/boards/composables/items';
 
 // Small previews of what each connector setting draws. A picture of a dashed
-// line beats the word "dashed", and a diamond cap is only obvious as a diamond.
+// line beats the word "dashed", and a diamond cap is only obvious as a
+// diamond. A cap is drawn from the same pieces the board draws it from.
 const props = defineProps<{
-    kind: Routing | LineStyle | { head: HeadType; side: 'start' | 'end' };
+    kind:
+        | Routing
+        | LineStyle
+        | { head: HeadType; side: 'start' | 'end' }
+        // A whole line: both of its caps, and its dash
+        | { look: ConnectorLook };
 }>();
 
 const head = computed(() =>
-    typeof props.kind === 'object' ? props.kind : null,
+    typeof props.kind === 'object' && 'head' in props.kind ? props.kind : null,
+);
+const look = computed(() =>
+    typeof props.kind === 'object' && 'look' in props.kind
+        ? props.kind.look
+        : null,
 );
 
-// Head previews draw the cap at the right end; a start cap is the same picture
-// mirrored, which the transform below does.
-const capAt = 25;
+// The line runs between these; a cap sits on whichever end it is for. One
+// cap alone is drawn at the right, and mirrored for a start (below).
+const FROM = 3;
+const TO = 25;
+const MIDDLE = 9;
+// Caps are drawn this big: enough to tell a crow's foot from an arrow
+const SIZE = 6.5;
+
+const caps = computed(() => {
+    if (head.value) {
+        return [{ type: head.value.head, at: TO, turn: 0 }];
+    }
+
+    if (look.value) {
+        return [
+            { type: look.value.startHead, at: FROM, turn: 180 },
+            { type: look.value.endHead, at: TO, turn: 0 },
+        ];
+    }
+
+    return [];
+});
 
 const dash = computed(() => {
-    if (props.kind === 'dashed') return '5 3';
-    if (props.kind === 'dotted') return '1 3';
+    const style = look.value?.lineStyle ?? props.kind;
+
+    if (style === 'dashed') return '4 2.5';
+    if (style === 'dotted') return '1 3';
 
     return undefined;
 });
 
-const routePath = computed(() => {
+const linePath = computed(() => {
+    // Stopped short of a solid cap, so it does not poke through
+    if (head.value) {
+        return `M${FROM} ${MIDDLE} H${TO - headRoom(head.value.head, SIZE)}`;
+    }
+
+    if (look.value) {
+        return `M${FROM + headRoom(look.value.startHead, SIZE)} ${MIDDLE} H${TO - headRoom(look.value.endHead, SIZE)}`;
+    }
+
     switch (props.kind) {
         case 'elbow':
             return 'M3 13 H14 V5 H25';
@@ -36,17 +79,29 @@ const routePath = computed(() => {
         case 'straight':
             return 'M3 13 L25 5';
         default:
-            // A plain rule for the line styles and the head previews
-            return 'M3 9 H25';
+            // A plain rule for the line styles
+            return `M${FROM} ${MIDDLE} H${TO}`;
     }
 });
 
-// Stop the line short of a solid cap so it does not poke through
-const lineEnd = computed(() => {
-    const type = head.value?.head;
+/** A piece's points, as SVG wants them. */
+const pointsOf = (points: number[] = []) =>
+    points
+        .reduce<string[]>(
+            (pairs, value, index) =>
+                index % 2
+                    ? [...pairs.slice(0, -1), `${pairs.at(-1)},${value}`]
+                    : [...pairs, `${value}`],
+            [],
+        )
+        .join(' ');
 
-    return type && type !== 'none' && type !== 'bar' ? capAt - 7 : capAt;
-});
+const fillOf = (fill?: 'ink' | 'paper') =>
+    fill === 'ink'
+        ? 'currentColor'
+        : fill === 'paper'
+          ? 'var(--background)'
+          : 'none';
 </script>
 
 <template>
@@ -59,7 +114,7 @@ const lineEnd = computed(() => {
         aria-hidden="true"
     >
         <path
-            :d="head ? `M3 9 H${lineEnd}` : routePath"
+            :d="linePath"
             fill="none"
             stroke="currentColor"
             stroke-width="1.6"
@@ -67,44 +122,43 @@ const lineEnd = computed(() => {
             stroke-linecap="round"
         />
 
-        <template v-if="head">
-            <polygon
-                v-if="head.head === 'arrow'"
-                :points="`${capAt},9 ${capAt - 7},5.5 ${capAt - 7},12.5`"
-                fill="currentColor"
-            />
-            <polyline
-                v-else-if="head.head === 'open'"
-                :points="`${capAt - 7},5 ${capAt},9 ${capAt - 7},13`"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.6"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-            />
-            <circle
-                v-else-if="head.head === 'circle'"
-                :cx="capAt - 3"
-                cy="9"
-                r="3.2"
-                fill="currentColor"
-            />
-            <polygon
-                v-else-if="head.head === 'diamond'"
-                :points="`${capAt},9 ${capAt - 3.5},5.5 ${capAt - 7},9 ${capAt - 3.5},12.5`"
-                fill="currentColor"
-            />
-            <line
-                v-else-if="head.head === 'bar'"
-                :x1="capAt"
-                y1="4.5"
-                :x2="capAt"
-                y2="13.5"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-            />
-        </template>
+        <g
+            v-for="cap in caps"
+            :key="cap.at"
+            :transform="`translate(${cap.at} ${MIDDLE}) rotate(${cap.turn})`"
+        >
+            <template
+                v-for="(part, index) in headParts(cap.type, SIZE)"
+                :key="index"
+            >
+                <circle
+                    v-if="part.circle"
+                    :cx="part.circle.x"
+                    cy="0"
+                    :r="part.circle.radius"
+                    :fill="fillOf(part.fill)"
+                    :stroke="part.stroked ? 'currentColor' : 'none'"
+                    stroke-width="1.3"
+                />
+                <polygon
+                    v-else-if="part.closed"
+                    :points="pointsOf(part.points)"
+                    :fill="fillOf(part.fill)"
+                    stroke="currentColor"
+                    stroke-width="1.3"
+                    stroke-linejoin="round"
+                />
+                <polyline
+                    v-else
+                    :points="pointsOf(part.points)"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                />
+            </template>
+        </g>
     </svg>
 </template>
 

@@ -88,7 +88,11 @@ class Board extends Model
 
         $labels = array_filter(
             array_map(
-                fn ($item) => is_array($item) ? trim((string) ($item['text'] ?? '')) : '',
+                // (with the names of a table's columns or a class's members)
+                fn ($item) => is_array($item) ? trim(implode(' ', [
+                    trim((string) ($item['text'] ?? '')),
+                    ...array_column(is_array($item['rows'] ?? null) ? $item['rows'] : [], 'name'),
+                ])) : '',
                 $items,
             ),
             fn (string $label) => $label !== '',

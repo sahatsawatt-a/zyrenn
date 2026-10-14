@@ -7,6 +7,8 @@ import {
     Cloud,
     Columns3,
     Database,
+    Ellipsis,
+    LayoutTemplate,
     Diamond,
     FileText,
     Frame,
@@ -27,7 +29,7 @@ import {
     Undo2,
 } from '@lucide/vue';
 import { useLocalStorage } from '@vueuse/core';
-import type { Component } from 'vue';
+import type { Component, Ref } from 'vue';
 import { computed, ref, watch } from 'vue';
 import {
     Popover,
@@ -37,6 +39,9 @@ import {
 import { SYMBOL_GROUPS } from '@/features/boards/circuit/symbols';
 import type { SymbolDef } from '@/features/boards/circuit/symbols';
 import type { Tool } from '@/features/boards/composables/items';
+import { SHAPE_GROUPS } from '@/features/boards/composables/shapes';
+import type { ShapeDef } from '@/features/boards/composables/shapes';
+import ShapeIcon from './ShapeIcon.vue';
 import SymbolIcon from './SymbolIcon.vue';
 
 // The tools along the bottom middle of the canvas: the everyday ones a click
@@ -46,6 +51,11 @@ const props = defineProps<{
     tool: Tool;
     canUndo: boolean;
     canRedo: boolean;
+    // On a phone the bar holds only what is drawn with most; the rest, and
+    // what the bar above has no room for, are under "More"
+    compact?: boolean;
+    // Whether there is a table on the board to write out as SQL
+    hasSchema?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -53,18 +63,33 @@ const emit = defineEmits<{
     'add-picture': [];
     'add-video': [];
     'circuit-text': [];
+    templates: [];
+    schema: [];
     undo: [];
     redo: [];
 }>();
 
-// A shape has an icon and a key; an electrical symbol is drawn as itself
+// A shape has an icon and a key; one from the shape library, or an
+// electrical symbol, is drawn as itself
 type Entry = {
     tool: Tool;
     icon?: Component;
     symbol?: SymbolDef;
+    shape?: ShapeDef;
     label: string;
     key?: string;
 };
+
+// A set of shapes for one kind of diagram, kept to a single row until wanted
+type Fold = 'Software' | 'Architecture' | 'Electrical';
+
+type Group = { name: string; fold?: Fold; entries: Entry[] };
+
+/** The library's shapes filed under a heading, as entries of the flyout. */
+const fromLibrary = (name: string): Entry[] =>
+    (SHAPE_GROUPS.find((group) => group.name === name)?.shapes ?? []).map(
+        (shape) => ({ tool: shape.id, shape, label: shape.label }),
+    );
 
 const titleOf = (entry: Entry) =>
     entry.key ? `${entry.label} (${entry.key})` : entry.label;
@@ -82,10 +107,28 @@ const after: Entry[] = [
     { tool: 'math', icon: Sigma, label: 'Formula', key: 'E' },
 ];
 
+// Of those, the ones a phone's bar still has room for
+const afterShown = computed(() =>
+    props.compact
+        ? after.filter((entry) => ['arrow', 'draw'].includes(entry.tool))
+        : after,
+);
+const afterFolded = computed(() =>
+    after.filter((entry) => !afterShown.value.includes(entry)),
+);
+
+const more = ref(false);
+
+/** Something chosen from under "More", which then shuts. */
+const fromMore = (act: () => void) => {
+    act();
+    more.value = false;
+};
+
 // The electrical symbols, a group for each kind of part
-const electrical = SYMBOL_GROUPS.map((group) => ({
+const electrical = SYMBOL_GROUPS.map((group): Group => ({
     name: group.name,
-    electrical: true,
+    fold: 'Electrical',
     entries: group.symbols.map((symbol): Entry => ({
         tool: `symbol:${symbol.id}`,
         symbol,
@@ -93,7 +136,7 @@ const electrical = SYMBOL_GROUPS.map((group) => ({
     })),
 }));
 
-const groups: { name: string; electrical?: boolean; entries: Entry[] }[] = [
+const groups: Group[] = [
     {
         name: 'Shapes',
         entries: [
@@ -109,6 +152,7 @@ const groups: { name: string; electrical?: boolean; entries: Entry[] }[] = [
             { tool: 'diamond', icon: Diamond, label: 'Decision', key: 'M' },
             { tool: 'hexagon', icon: Hexagon, label: 'Hexagon', key: 'H' },
             { tool: 'star', icon: Star, label: 'Star', key: 'K' },
+            ...fromLibrary('Shapes'),
         ],
     },
     {
@@ -119,7 +163,14 @@ const groups: { name: string; electrical?: boolean; entries: Entry[] }[] = [
             { tool: 'document', icon: FileText, label: 'Document', key: 'U' },
             { tool: 'process', icon: Columns3, label: 'Process', key: 'N' },
             { tool: 'cloud', icon: Cloud, label: 'Cloud', key: 'C' },
+            ...fromLibrary('Flowchart'),
         ],
+    },
+    { name: 'Software', fold: 'Software', entries: fromLibrary('Software') },
+    {
+        name: 'Architecture',
+        fold: 'Architecture',
+        entries: fromLibrary('Architecture'),
     },
     ...electrical,
 ];
@@ -162,24 +213,49 @@ const shown = computed(() => {
                 (entry) =>
                     entry.label.toLowerCase().includes(term) ||
                     entry.symbol?.id.includes(term) ||
-                    entry.symbol?.aliases.some((alias) => alias.includes(term)),
+                    entry.symbol?.aliases.some((alias) =>
+                        alias.includes(term),
+                    ) ||
+                    entry.shape?.id.includes(term) ||
+                    entry.shape?.aliases?.some((alias) => alias.includes(term)),
             ),
         }))
         .filter((group) => group.entries.length);
 });
 
-// Where the electrical symbols begin, to say so once above them
-const firstElectrical = computed(
-    () => shown.value.find((group) => group.electrical)?.name,
-);
+// Where each folded set begins, to say so once above it
+const firstOf = computed(() => {
+    const first = new Map<string, Fold>();
 
-// A board is for any kind of diagram: the electrical symbols are one row
-// until somebody wants them, and then stay open for whoever does. A search
-// looks through them either way.
-const electricalOpen = useLocalStorage('board.electrical', false);
-const unfolded = computed(
-    () => electricalOpen.value || search.value.trim() !== '',
-);
+    for (const group of shown.value) {
+        if (group.fold && ![...first.values()].includes(group.fold)) {
+            first.set(group.name, group.fold);
+        }
+    }
+
+    return first;
+});
+
+// A board is for any kind of diagram: the shapes of one kind of diagram are
+// a row until somebody wants them, and then stay open for whoever does. A
+// search looks through them either way.
+const folds: Record<Fold, { open: Ref<boolean>; title: string }> = {
+    Software: {
+        open: useLocalStorage('board.fold.software', false),
+        title: 'Tables, classes, actors, packages, notes and lifelines',
+    },
+    Architecture: {
+        open: useLocalStorage('board.fold.architecture', false),
+        title: 'Servers, users, screens, queues and storage',
+    },
+    Electrical: {
+        open: useLocalStorage('board.electrical', false),
+        title: 'Symbols for circuits: parts with pins, joined by wires',
+    },
+};
+
+const unfolded = (fold: Fold) =>
+    folds[fold].open.value || search.value.trim() !== '';
 
 const circuitFromText = () => {
     emit('circuit-text');
@@ -224,6 +300,11 @@ const pickShape = (entry: Entry) => {
                         :symbol="lastShape.symbol"
                         class="size-[22px]"
                     />
+                    <ShapeIcon
+                        v-else-if="lastShape.shape"
+                        :shape="lastShape.shape"
+                        class="size-[20px]"
+                    />
                     <component
                         :is="lastShape.icon"
                         v-else
@@ -249,28 +330,36 @@ const pickShape = (entry: Entry) => {
                 </label>
 
                 <template v-for="group in shown" :key="group.name">
-                    <!-- Above the first of the symbols: the row that
-                         unfolds them, and the other way to put a circuit on -->
+                    <!-- Above the first of a folded set: the row that unfolds
+                         it -- and, for circuits, the other way to put one on -->
                     <div
-                        v-if="group.name === firstElectrical"
+                        v-if="firstOf.get(group.name)"
                         class="library-electrical"
                     >
                         <button
                             type="button"
                             class="library-fold"
-                            :aria-expanded="unfolded"
-                            title="Symbols for circuits: parts with pins, joined by wires"
-                            data-test="electrical-toggle"
-                            @click="electricalOpen = !electricalOpen"
+                            :aria-expanded="unfolded(group.fold!)"
+                            :title="folds[group.fold!].title"
+                            :data-test="`${group.fold!.toLowerCase()}-toggle`"
+                            @click="
+                                folds[group.fold!].open.value =
+                                    !folds[group.fold!].open.value
+                            "
                         >
                             <ChevronRight
                                 class="size-3.5 transition-transform"
-                                :class="{ 'rotate-90': unfolded }"
+                                :class="{
+                                    'rotate-90': unfolded(group.fold!),
+                                }"
                             />
-                            Electrical
+                            {{ group.fold }}
                         </button>
                         <button
-                            v-if="unfolded"
+                            v-if="
+                                group.fold === 'Electrical' &&
+                                unfolded(group.fold)
+                            "
                             type="button"
                             class="library-link"
                             title="Write a circuit as text and have it laid out"
@@ -281,10 +370,16 @@ const pickShape = (entry: Entry) => {
                         </button>
                     </div>
                     <section
-                        v-if="!group.electrical || unfolded"
-                        class="mt-2.5"
+                        v-if="!group.fold || unfolded(group.fold)"
+                        :class="group.fold === group.name ? 'mt-1.5' : 'mt-2.5'"
                     >
-                        <p class="library-heading">{{ group.name }}</p>
+                        <!-- A set of one group is named by its row already -->
+                        <p
+                            v-if="group.fold !== group.name"
+                            class="library-heading"
+                        >
+                            {{ group.name }}
+                        </p>
                         <div class="library-grid">
                             <button
                                 v-for="entry in group.entries"
@@ -300,6 +395,11 @@ const pickShape = (entry: Entry) => {
                                     v-if="entry.symbol"
                                     :symbol="entry.symbol"
                                     class="size-7"
+                                />
+                                <ShapeIcon
+                                    v-else-if="entry.shape"
+                                    :shape="entry.shape"
+                                    class="size-6"
                                 />
                                 <component
                                     :is="entry.icon"
@@ -319,7 +419,7 @@ const pickShape = (entry: Entry) => {
         </Popover>
 
         <button
-            v-for="entry in after"
+            v-for="entry in afterShown"
             :key="entry.tool"
             type="button"
             class="rail-button"
@@ -332,9 +432,89 @@ const pickShape = (entry: Entry) => {
             <component :is="entry.icon" class="size-[18px]" />
         </button>
 
+        <!-- On a phone: the tools drawn with less often, pictures and
+             videos, and what the bar above would have no room for -->
+        <Popover v-if="compact" v-model:open="more">
+            <PopoverTrigger as-child>
+                <button
+                    type="button"
+                    class="rail-button"
+                    :class="{
+                        'is-active':
+                            more ||
+                            afterFolded.some((entry) => entry.tool === tool),
+                    }"
+                    title="More to add"
+                    aria-label="More"
+                    data-test="tool-more"
+                >
+                    <Ellipsis class="size-[18px]" />
+                </button>
+            </PopoverTrigger>
+            <PopoverContent
+                side="top"
+                align="center"
+                :side-offset="12"
+                class="w-56 p-1.5"
+                data-test="more-flyout"
+            >
+                <button
+                    v-for="entry in afterFolded"
+                    :key="entry.tool"
+                    type="button"
+                    class="more-item"
+                    :class="{ 'is-active': tool === entry.tool }"
+                    :data-test="`tool-${entry.tool}`"
+                    @click="fromMore(() => emit('update:tool', entry.tool))"
+                >
+                    <component :is="entry.icon" class="size-[18px]" />
+                    {{ entry.label }}
+                </button>
+                <button
+                    type="button"
+                    class="more-item"
+                    data-test="open-image-picker"
+                    @click="fromMore(() => emit('add-picture'))"
+                >
+                    <ImagePlus class="size-[18px]" />
+                    Picture
+                </button>
+                <button
+                    type="button"
+                    class="more-item"
+                    data-test="open-video-picker"
+                    @click="fromMore(() => emit('add-video'))"
+                >
+                    <Clapperboard class="size-[18px]" />
+                    Video
+                </button>
+                <span class="more-rule" />
+                <button
+                    type="button"
+                    class="more-item"
+                    data-test="board-templates"
+                    @click="fromMore(() => emit('templates'))"
+                >
+                    <LayoutTemplate class="size-[18px]" />
+                    Start from a template
+                </button>
+                <button
+                    v-if="hasSchema"
+                    type="button"
+                    class="more-item"
+                    data-test="board-schema"
+                    @click="fromMore(() => emit('schema'))"
+                >
+                    <Database class="size-[18px]" />
+                    Tables as SQL
+                </button>
+            </PopoverContent>
+        </Popover>
+
         <span class="rail-divider" />
 
         <button
+            v-if="!compact"
             type="button"
             class="rail-button"
             title="Add a picture: from this computer, your Drive, a link, or SVG markup"
@@ -345,6 +525,7 @@ const pickShape = (entry: Entry) => {
             <ImagePlus class="size-[18px]" />
         </button>
         <button
+            v-if="!compact"
             type="button"
             class="rail-button"
             title="Add a video: from this computer, your Drive, or a link. It plays on the board."
@@ -355,7 +536,7 @@ const pickShape = (entry: Entry) => {
             <Clapperboard class="size-[18px]" />
         </button>
 
-        <span class="rail-divider" />
+        <span v-if="!compact" class="rail-divider" />
 
         <button
             type="button"
@@ -398,6 +579,7 @@ const pickShape = (entry: Entry) => {
 .rail-button {
     position: relative;
     display: inline-flex;
+    flex: none;
     align-items: center;
     justify-content: center;
     width: 2.25rem;
@@ -430,7 +612,35 @@ const pickShape = (entry: Entry) => {
     opacity: 0.55;
 }
 
+/* What is under "More" on a phone: a row to each, big enough for a thumb */
+.more-item {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    width: 100%;
+    height: 2.5rem;
+    padding: 0 0.625rem;
+    font-size: 0.875rem;
+    color: var(--foreground);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+.more-item:hover {
+    background-color: var(--muted);
+}
+.more-item.is-active {
+    color: var(--primary);
+    background-color: color-mix(in oklab, var(--primary) 12%, transparent);
+}
+.more-rule {
+    display: block;
+    height: 1px;
+    margin: 0.25rem 0.375rem;
+    background-color: var(--border);
+}
+
 .rail-divider {
+    flex: none;
     width: 1px;
     height: 1.25rem;
     margin: 0 0.25rem;

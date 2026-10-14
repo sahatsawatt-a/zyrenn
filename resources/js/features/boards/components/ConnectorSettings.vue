@@ -1,11 +1,23 @@
 <script setup lang="ts">
+import { ChevronDown } from '@lucide/vue';
+import { computed, ref } from 'vue';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
 import type {
     Item,
     LineStyle,
     Routing,
     Side,
 } from '@/features/boards/composables/items';
-import { HEAD_TYPES } from '@/features/boards/composables/connectors';
+import {
+    CONNECTOR_TYPES,
+    HEAD_TYPES,
+    connectorTypeOf,
+} from '@/features/boards/composables/connectors';
+import type { ConnectorLook } from '@/features/boards/composables/connectors';
 import { SIDES } from '@/features/boards/composables/geometry';
 import ConnectorIcon from './ConnectorIcon.vue';
 
@@ -16,6 +28,29 @@ const props = defineProps<{ line: Item }>();
 const emit = defineEmits<{
     update: [Partial<Item>];
 }>();
+
+// The kind of line it is, as one choice: "Is a kind of" sets both caps and
+// the dash, which are still there to set one by one under Ends
+const type = computed(() => connectorTypeOf(props.line));
+const choosingType = ref(false);
+
+const typeGroups = (['Lines', 'Class diagram', 'Data model'] as const).map(
+    (name) => ({
+        name,
+        types: CONNECTOR_TYPES.filter((each) => each.group === name),
+    }),
+);
+
+const setType = (look: ConnectorLook) => {
+    emit('update', { ...look });
+    choosingType.value = false;
+};
+
+/** A cap by the words the fold's summary can say it in. */
+const headLabel = (head: Item['startHead']) =>
+    (HEAD_TYPES.find((each) => each.value === head)?.label ?? head)
+        .replace(/ \(.*\)$/, '')
+        .toLowerCase();
 
 const routings: Routing[] = ['elbow', 'straight', 'curved'];
 const styles: LineStyle[] = ['solid', 'dashed', 'dotted'];
@@ -38,6 +73,52 @@ const pinSide = (end: 'from' | 'to', side: Side | null) => {
 <template>
     <!-- Connector-only controls: how the line is routed and capped -->
     <div class="inspector-connector" data-test="connector-config">
+        <p class="inspector-label">Type</p>
+        <Popover v-model:open="choosingType">
+            <PopoverTrigger as-child>
+                <button
+                    type="button"
+                    class="inspector-type"
+                    title="What kind of line this is: its ends and its dash, chosen together"
+                    data-test="connector-type"
+                >
+                    <ConnectorIcon
+                        :kind="{
+                            look: {
+                                startHead: line.startHead,
+                                endHead: line.endHead,
+                                lineStyle: line.lineStyle,
+                            },
+                        }"
+                    />
+                    <span>{{ type?.label ?? 'Custom' }}</span>
+                    <ChevronDown class="size-3.5 opacity-60" />
+                </button>
+            </PopoverTrigger>
+            <PopoverContent
+                side="left"
+                align="start"
+                class="max-h-[min(26rem,70svh)] w-56 overflow-y-auto p-1.5"
+                data-test="connector-types"
+            >
+                <template v-for="group in typeGroups" :key="group.name">
+                    <p class="type-heading">{{ group.name }}</p>
+                    <button
+                        v-for="each in group.types"
+                        :key="each.id"
+                        type="button"
+                        class="type-option"
+                        :class="{ 'is-on': type?.id === each.id }"
+                        :data-test="`connector-type-${each.id}`"
+                        @click="setType(each.look)"
+                    >
+                        <ConnectorIcon :kind="{ look: each.look }" />
+                        {{ each.label }}
+                    </button>
+                </template>
+            </PopoverContent>
+        </Popover>
+
         <p class="inspector-label">Routing</p>
         <div class="inspector-segments">
             <button
@@ -116,7 +197,10 @@ const pinSide = (end: 'from' | 'to', side: Side | null) => {
         <details class="inspector-fold" data-test="ends-config">
             <summary>
                 Ends
-                <span>{{ line.startHead }} → {{ line.endHead }}</span>
+                <span
+                    >{{ headLabel(line.startHead) }} →
+                    {{ headLabel(line.endHead) }}</span
+                >
             </summary>
             <div
                 v-for="side in ['start', 'end'] as const"
@@ -205,14 +289,69 @@ const pinSide = (end: 'from' | 'to', side: Side | null) => {
     border-color: var(--primary);
 }
 
-.inspector-heads {
+/* The kind of line, as a picture of it and its name */
+.inspector-type {
     display: flex;
     align-items: center;
+    gap: 0.5rem;
+    height: 2rem;
+    padding: 0 0.5rem;
+    font-size: 0.75rem;
+    color: var(--foreground);
+    background-color: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.inspector-type span {
+    flex: 1;
+    text-align: left;
+}
+
+.inspector-type:hover {
+    background-color: var(--muted);
+}
+
+.type-heading {
+    padding: 0.375rem 0.375rem 0.125rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+}
+
+.type-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.25rem 0.375rem;
+    font-size: 0.75rem;
+    color: var(--foreground);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.type-option:hover {
+    background-color: var(--muted);
+}
+
+.type-option.is-on {
+    color: var(--primary);
+    background-color: color-mix(in oklab, var(--primary) 10%, transparent);
+}
+
+/* Each end's caps: its name, then a row of seven and a row of seven */
+.inspector-heads {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 2px;
 }
 
 .inspector-heads span {
-    width: 2.25rem;
+    grid-column: 1 / -1;
     font-size: 0.6875rem;
     text-transform: capitalize;
     color: var(--muted-foreground);
@@ -220,7 +359,6 @@ const pinSide = (end: 'from' | 'to', side: Side | null) => {
 
 .inspector-heads button {
     display: inline-flex;
-    flex: 1;
     align-items: center;
     justify-content: center;
     height: 1.75rem;

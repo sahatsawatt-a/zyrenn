@@ -420,7 +420,9 @@ const statusLabel = computed(() => {
 <template>
     <Head :title="title || 'Untitled'" />
 
-    <div class="mx-8 flex flex-1 flex-col print:mx-0">
+    <!-- On a phone the words run nearly edge to edge: the room either side is
+         for a wide screen, where a line would otherwise be too long to read -->
+    <div class="mx-3 flex flex-1 flex-col sm:mx-8 print:mx-0">
         <NoteToolbar
             :ref-id="note.ref_id"
             :title="title"
@@ -449,7 +451,7 @@ const statusLabel = computed(() => {
         />
 
         <div
-            class="mx-auto w-full px-10 pt-6 print:max-w-none print:px-0 print:pt-0"
+            class="mx-auto w-full px-1 pt-4 sm:px-10 sm:pt-6 print:max-w-none print:px-0 print:pt-0"
             :class="isWide ? 'max-w-none' : 'max-w-[800px]'"
         >
             <input
@@ -462,7 +464,7 @@ const statusLabel = computed(() => {
                 :readonly="
                     !editable || (shared !== null && !shared.synced.value)
                 "
-                class="placeholder:text-muted-foreground/60 w-full bg-transparent text-4xl font-bold tracking-tight outline-none print:hidden"
+                class="placeholder:text-muted-foreground/60 w-full bg-transparent text-3xl font-bold tracking-tight outline-none sm:text-4xl print:hidden"
                 @input="onTitleInput"
                 @keydown.enter.prevent="focusEditor"
             />

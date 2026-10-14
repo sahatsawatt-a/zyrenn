@@ -3,6 +3,8 @@
 import { isSymbol, pinsOf, symbolBox } from '@/features/boards/circuit/symbols';
 import type { Item, ItemKind, Side } from './items';
 import { isStroke } from './items';
+import { rowAnchors } from './rows';
+import { shapeOf } from './shapes';
 
 /** The box an item occupies, including stroke items built from points. */
 export const boundsOf = (item: Item) => {
@@ -115,7 +117,8 @@ const INSETS: Partial<Record<ItemKind, Partial<Record<Side, number>>>> = {
  */
 export const anchorAt = (item: Item, side: Side, along = 0.5) => {
     const { x, y, width, height } = boundsOf(item);
-    const inset = INSETS[item.kind]?.[side] ?? 0;
+    const inset =
+        INSETS[item.kind]?.[side] ?? shapeOf(item.kind)?.insets?.[side] ?? 0;
 
     switch (side) {
         case 'top':
@@ -153,7 +156,7 @@ export const isFlatSide = (item: Item, side: Side): boolean => {
         case 'document':
             return side !== 'bottom';
         default:
-            return false;
+            return shapeOf(item.kind)?.flat?.includes(side) ?? false;
     }
 };
 
@@ -165,7 +168,7 @@ export type Anchor = {
     y: number;
 };
 
-/** Where a connector can hold on: a shape's four faces, a symbol's pins. */
+/** Where a connector can hold on: a shape's four faces, a symbol's pins, a table's rows. */
 export const anchorsOf = (item: Item): Anchor[] =>
     isSymbol(item)
         ? pinsOf(item).map((pin) => ({
@@ -174,7 +177,12 @@ export const anchorsOf = (item: Item): Anchor[] =>
               x: pin.x,
               y: pin.y,
           }))
-        : SIDES.map((side) => ({ side, ...anchorAt(item, side) }));
+        : [
+              // Each row of a table or a class, on either edge: tried first,
+              // so a row is what an end near one lands on
+              ...rowAnchors(item),
+              ...SIDES.map((side) => ({ side, ...anchorAt(item, side) })),
+          ];
 
 /** The way from one point to another, as the face that looks that way. */
 export const sideTowards = (

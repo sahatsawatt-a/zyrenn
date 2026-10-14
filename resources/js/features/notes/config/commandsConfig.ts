@@ -4,6 +4,10 @@ import {
     circuitExamples,
     defaultCircuit,
 } from '@/features/boards/circuit/examples';
+import {
+    defaultTiming,
+    timingExamples,
+} from '@/features/notes/timing/examples';
 import { defaultMermaidTemplate, mermaidTemplates } from './mermaidTemplates';
 
 // Fired on the editor DOM so TiptapEditor opens the LaTeX popover for a new formula
@@ -448,6 +452,36 @@ export const commandItems: SlashCommandItem[] = [
                     type: 'codeBlock',
                     attrs: { language: 'circuit' },
                     content: [{ type: 'text', text: defaultCircuit.source }],
+                })
+                .run();
+        },
+    },
+    {
+        title: 'Timing diagram',
+        description: 'Signals over time, drawn from a row of steps each.',
+        icon: '⎍',
+        keywords: [
+            'timing',
+            'waveform',
+            'signal',
+            'clock',
+            'digital',
+            'protocol',
+            'spi',
+            'i2c',
+            'uart',
+            'pwm',
+            ...timingExamples.map((example) => example.label),
+        ],
+        command: ({ editor, range }) => {
+            editor
+                .chain()
+                .focus()
+                .deleteRange(range)
+                .insertContent({
+                    type: 'codeBlock',
+                    attrs: { language: 'timing' },
+                    content: [{ type: 'text', text: defaultTiming.source }],
                 })
                 .run();
         },

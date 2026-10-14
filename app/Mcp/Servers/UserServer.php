@@ -98,7 +98,12 @@ folder tree, listed by list-board-folders. get-board lists a board's frames, rea
 "frame", and gives a big board in outline; update-board's add_items, update_items and delete_items
 change items by id, sending only what changes -- prefer them to rewriting "items" whole.
 A label can be light Markdown ("rich": "# " headings, "- " bullets, **bold**), in "sans", "serif" or
-"mono", with its own "padding". A circuit can be drawn too: items of kind "symbol" name a part in "symbol"
+"mono", with its own "padding". More shapes come from a library, listed under "kind": more flowchart,
+software (a "table" or a "class" holding "rows" -- columns with a key and a type, members with a
+visibility -- a "lifeline" for a sequence, an actor), architecture (server, user, queue, bucket) and a
+"lane" for swimlanes. A connector's ends can be capped for a class diagram or a data model, hold on
+to one row of a table ("pin"), or sit part way down a lifeline ("along"). create-board's "template"
+starts a board from a ready-made diagram. A circuit can be drawn too: items of kind "symbol" name a part in "symbol"
 (resistor, led, npn, esp32, a "chip:VCC,GND|OUT" of your own, ...) with its designator and value as "text"
 ("R1\n10 kΩ"), and an arrow whose ends name pins -- {"item": "r1", "pin": "2"} -- is a wire. Logic runs on the board as it is drawn:
 gates (and, or, not, nand, nor, xor, xnor, dff) between "input" switches ("on": true sets one) and
@@ -133,6 +138,10 @@ its name says so), then its wires as ends joined by "--": a pin ("Q1.b"), a two-
 through from its first pin to its second, or a net's name ("gnd", "3V3", "sda"). For example
 "V1 -- R1 -- D1 -- V1", or with a board: "U1: esp32", "S1: dht22", "U1.GPIO4 -- S1.DATA" (a chip of your
 own lists its pins: "U2: chip 74HC595 [SER, CLK | QA, QB]"). The note lays it out and draws it.
+To draw signals over time -- a clock, a bus, a chip-select -- put a ```timing fence holding a line
+for each as "NAME: steps", a character to a step: 0 low, 1 high, "." more of the same, p a clock
+pulse (n one that starts low), x unknown, z let go of, = a value named in order after a "|"
+("MOSI: x=.=.x | D7 | D6"); "title: ..." and "mark: 2 start, 10 stop" are lines of their own.
 
 Saved places: pins kept on the map, each in a list such as "Want to go" (list-places, save-place,
 delete-place).

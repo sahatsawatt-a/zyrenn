@@ -20,14 +20,14 @@ class BoardItems
     /** A part of a circuit, drawn from the symbol library (Symbols). */
     public const SYMBOL = 'symbol';
 
-    /** Every kind the canvas can draw. */
+    /** Every kind the canvas draws by itself; the shape library adds its own (kinds()). */
     public const KINDS = [
         'frame', 'sticky', 'text', 'rect', 'pill', 'ellipse', 'triangle',
         'diamond', 'hexagon', 'star', 'cylinder', 'parallelogram', 'document',
         'process', 'cloud', 'image', 'video', 'math', self::SYMBOL, self::CONNECTOR, 'draw',
     ];
 
-    /** Kinds a connector may pin itself to. */
+    /** Kinds a connector may pin itself to, besides the library's shapes (connectable()). */
     public const CONNECTABLE = [
         'sticky', 'text', 'rect', 'pill', 'ellipse', 'triangle', 'diamond',
         'hexagon', 'star', 'cylinder', 'parallelogram', 'document', 'process',
@@ -40,7 +40,35 @@ class BoardItems
 
     public const LINE_STYLES = ['solid', 'dashed', 'dotted'];
 
-    public const HEADS = ['none', 'arrow', 'open', 'circle', 'diamond', 'bar'];
+    /**
+     * What an end of a connector is capped with: the plain caps, the hollow
+     * ones of a class diagram, and the crow's feet of a data model.
+     */
+    public const HEADS = [
+        'none', 'arrow', 'open', 'circle', 'diamond', 'bar',
+        'triangle', 'diamond_open', 'circle_open',
+        'one_only', 'many', 'one_many', 'zero_one', 'zero_many',
+    ];
+
+    /**
+     * Every kind the canvas can draw: its own, and each shape in the library.
+     *
+     * @return list<string>
+     */
+    public static function kinds(): array
+    {
+        return [...self::KINDS, ...Shapes::kinds()];
+    }
+
+    /**
+     * Every kind a connector may pin itself to.
+     *
+     * @return list<string>
+     */
+    public static function connectable(): array
+    {
+        return [...self::CONNECTABLE, ...Shapes::kinds()];
+    }
 
     /** Where a label sits in whatever it is written on. */
     public const ALIGNS = ['left', 'center', 'right'];
@@ -105,6 +133,27 @@ class BoardItems
             foreach (['text', 'fill', 'stroke', 'src', 'fit', 'fontFamily', 'align', 'verticalAlign', 'routing', 'lineStyle', 'startHead', 'endHead'] as $string) {
                 if (is_string($spec[$string] ?? null)) {
                     $item[$string] = $spec[$string];
+                }
+            }
+
+            // A lane's title along its top, or down its side
+            if (in_array($spec['variant'] ?? null, ['top', 'left'], true)) {
+                $item['variant'] = $spec['variant'];
+            }
+
+            // A table's columns, a class's fields and methods: kept as rows,
+            // and the shape made as tall as they need unless told a height
+            $rows = BoardRows::kindOf($kind);
+
+            if ($rows !== null) {
+                $given = is_array($spec['rows'] ?? null);
+
+                if ($given) {
+                    $item['rows'] = BoardRows::fromSpec($spec['rows'], $rows, is_array($item['rows'] ?? null) ? $item['rows'] : []);
+                }
+
+                if (! is_numeric($spec['height'] ?? null) && ($given || ! isset($existing[$id]) || array_key_exists('text', $spec) || array_key_exists('fontSize', $spec))) {
+                    $item['height'] = BoardRows::height($item);
                 }
             }
 
@@ -225,6 +274,15 @@ class BoardItems
                 $spec['text'] = (string) $item['text'];
             }
 
+            // What is inside a table or a class, a row at a time
+            if (BoardRows::kindOf($kind) !== null && is_array($item['rows'] ?? null)) {
+                $spec['rows'] = BoardRows::toSpec($item['rows'], (string) BoardRows::kindOf($kind));
+            }
+
+            if (($item['variant'] ?? 'top') === 'left') {
+                $spec['variant'] = 'left';
+            }
+
             foreach (['fill', 'stroke'] as $colour) {
                 $value = (string) ($item[$colour] ?? '');
 
@@ -331,6 +389,13 @@ class BoardItems
 
             // New words in a text item: let it grow to them, unless a height is given
             if (($merged['kind'] ?? null) === 'text' && array_key_exists('text', $spec) && ! array_key_exists('height', $spec)) {
+                unset($merged['height']);
+            }
+
+            // New rows in a table or a class, or a longer name: as tall as they now need
+            if (BoardRows::kindOf((string) ($merged['kind'] ?? '')) !== null
+                && array_intersect(['rows', 'text', 'fontSize'], array_keys($spec)) !== []
+                && ! array_key_exists('height', $spec)) {
                 unset($merged['height']);
             }
 
@@ -541,9 +606,15 @@ class BoardItems
     {
         $kinds = [];
         $symbols = [];
+        $rows = [];
 
         foreach (self::withIds($specs) as $spec) {
             $kinds[$spec['id']] = is_string($spec['kind'] ?? null) ? $spec['kind'] : 'sticky';
+
+            // The rows a table or a class is sent with, for an end that names one
+            if (is_array($spec['rows'] ?? null) && BoardRows::kindOf($kinds[$spec['id']]) !== null) {
+                $rows[$spec['id']] = BoardRows::fromSpec($spec['rows'], (string) BoardRows::kindOf($kinds[$spec['id']]));
+            }
             $symbols[$spec['id']] = Symbols::find(is_string($spec['symbol'] ?? null) ? $spec['symbol'] : null);
         }
 
@@ -563,14 +634,19 @@ class BoardItems
 
                 if (! array_key_exists($item, $kinds)) {
                     $problems[] = "\"{$end}\" points at \"{$item}\", which is not an item on this board.";
-                } elseif (! in_array($kinds[$item], self::CONNECTABLE, true)) {
+                } elseif (! in_array($kinds[$item], self::connectable(), true)) {
                     $problems[] = "\"{$end}\" points at \"{$item}\", which is a {$kinds[$item]}; connectors can only pin to a shape, a sticky, a text or a picture.";
                 } elseif (is_string($spec[$end]['pin'] ?? null) && $spec[$end]['pin'] !== '') {
                     $symbol = $symbols[$item];
                     $pin = $spec[$end]['pin'];
 
-                    if ($symbol === null) {
-                        $problems[] = "\"{$end}\" names pin \"{$pin}\" of \"{$item}\", which is a {$kinds[$item]}; only a symbol has pins.";
+                    if (BoardRows::kindOf($kinds[$item]) !== null) {
+                        // A row of a table or a class: one of those it is sent with
+                        if (isset($rows[$item]) && BoardRows::named(['rows' => $rows[$item]], $pin) === null) {
+                            $problems[] = "\"{$end}\" names row \"{$pin}\" of \"{$item}\", whose rows are ".BoardRows::names(['rows' => $rows[$item]]).'.';
+                        }
+                    } elseif ($symbol === null) {
+                        $problems[] = "\"{$end}\" names pin \"{$pin}\" of \"{$item}\", which is a {$kinds[$item]}; only a symbol has pins, and a table or a class its rows.";
                     } elseif (Symbols::pinName($symbol, $pin) === null) {
                         $problems[] = "\"{$end}\" names pin \"{$pin}\" of \"{$item}\", a {$symbol['id']}, whose pins are ".implode(', ', array_column($symbol['pins'], 'name')).'.';
                     }
@@ -669,8 +745,29 @@ class BoardItems
             self::SYMBOL => [...$base, 'symbol' => '', 'on' => false, 'width' => 80.0, 'height' => 40.0, 'fill' => 'transparent',
                 'stroke' => '#0f172a', 'fontSize' => 13.0, 'padding' => 0.0],
             self::CONNECTOR, 'draw' => [...$base, 'width' => 0.0, 'height' => 0.0, 'fill' => 'transparent', 'stroke' => '#0f172a'],
-            default => $base,
+            // A shape from the library starts as the library says, as it does from the toolbar
+            default => self::fromLibrary($kind, $base),
         };
+    }
+
+    /**
+     * A shape from the library as it starts: the library's own size, colours
+     * and words, and for a table or a class the rows it begins with.
+     *
+     * @param  array<string, mixed>  $base
+     * @return array<string, mixed>
+     */
+    private static function fromLibrary(string $kind, array $base): array
+    {
+        $item = [...$base, ...Shapes::defaults($kind)];
+        $rows = BoardRows::kindOf($kind);
+
+        if ($rows !== null) {
+            $item['rows'] = BoardRows::fromSpec(is_array($item['rows'] ?? null) ? $item['rows'] : [], $rows);
+            $item['height'] = BoardRows::height($item);
+        }
+
+        return $item;
     }
 
     /** Coordinates are reported whole: nothing on a board needs a half pixel. */
