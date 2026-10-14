@@ -17,11 +17,14 @@ import {
     dashFor,
     headParts,
     headsOf,
+    hopRadius,
     isSwept,
     midpointOf,
     trimmedPoints,
 } from '@/features/boards/composables/connectors';
 import type { HeadPart } from '@/features/boards/composables/connectors';
+import { bumpAt, runsOf, stillOn } from '@/lib/lineHops';
+import type { Hops } from '@/lib/lineHops';
 import {
     LABEL_LINE,
     LABEL_SIZE,
@@ -90,6 +93,8 @@ const props = defineProps<{
     worked?: string;
     // A connector's path, worked out from what it is pinned to
     path: number[];
+    // Where it hops over the lines it crosses, by the run of its path
+    hops?: Hops;
 }>();
 
 // What is high in a running logic circuit is drawn in this
@@ -138,6 +143,47 @@ const headFill = (part: HeadPart) =>
         : part.fill === 'paper'
           ? theme.value.behind(props.item)
           : undefined;
+
+/**
+ * A connector drawn along its path with a bump at each line it crosses:
+ * straight to just before the crossing, half round over it, and on.
+ */
+const hopped =
+    (points: number[], hops: Hops | undefined) =>
+    (context: Konva.Context, shape: Konva.Shape) => {
+        if (!hops?.size || points.length < 4) {
+            return;
+        }
+
+        const radius = hopRadius(props.item);
+
+        context.beginPath();
+        context.moveTo(points[0], points[1]);
+
+        for (const [index, run] of runsOf(points).entries()) {
+            for (const at of hops.get(index) ?? []) {
+                if (!stillOn(run, at, radius)) {
+                    continue;
+                }
+
+                const bump = bumpAt(run, at, radius);
+
+                context.lineTo(bump.before.x, bump.before.y);
+                context.arc(
+                    at.x,
+                    at.y,
+                    radius,
+                    bump.start,
+                    bump.start + Math.PI,
+                    !bump.clockwise,
+                );
+            }
+
+            context.lineTo(run.to.x, run.to.y);
+        }
+
+        context.strokeShape(shape);
+    };
 
 /** A drawing of thin lines takes the pointer anywhere in its box. */
 const boxHit = (context: Konva.Context, shape: Konva.Shape) => {
@@ -741,8 +787,28 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
     <!-- A connector: drawn between two anchors the way
          its own routing, dash and head settings say -->
     <template v-else-if="isConnector(item)">
+        <!-- Where it crosses another line it hops over it. Both stay
+             mounted, the one shown as it crosses or not: vue-konva puts a
+             node mounted later on top, which would cover the caps -->
+        <Shape
+            :config="{
+                visible: !!hops?.size,
+                sceneFunc: hopped(trimmedPoints(item, path), hops),
+                stroke: selected
+                    ? SELECTED
+                    : level === 1
+                      ? LIVE
+                      : shown(item.stroke),
+                strokeWidth: item.lineWidth,
+                dash: dashFor(item.lineStyle),
+                lineCap: 'round',
+                lineJoin: 'round',
+                hitStrokeWidth: 18,
+            }"
+        />
         <Line
             :config="{
+                visible: !hops?.size,
                 points: trimmedPoints(item, path),
                 stroke: selected
                     ? SELECTED

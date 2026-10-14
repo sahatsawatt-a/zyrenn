@@ -45,6 +45,7 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from '@/components/ui/popover';
+import HopEdge from '@/features/workflow/components/editor/HopEdge.vue';
 import StepNode from '@/features/workflow/components/editor/StepNode.vue';
 import StepPalette from '@/features/workflow/components/editor/StepPalette.vue';
 import RunPanel from '@/features/workflow/components/editor/RunPanel.vue';
@@ -188,10 +189,11 @@ const toNode = (step: Step): Node<StepData> => ({
     data: { step: { ...step } },
 });
 
-// An If's two ways out are drawn in their colours
+// An If's two ways out are drawn in their colours, and a line hops over any
+// other it crosses (HopEdge)
 const toEdge = (edge: StepEdge): Edge => ({
     ...edge,
-    type: 'smoothstep',
+    type: 'hop',
     markerEnd: MarkerType.ArrowClosed,
     class: `edge-${edge.sourceHandle}`,
 });
@@ -1234,7 +1236,7 @@ const statusText = computed(
                             v-model:nodes="nodes"
                             v-model:edges="edges"
                             :default-edge-options="{
-                                type: 'smoothstep',
+                                type: 'hop',
                                 markerEnd: MarkerType.ArrowClosed,
                             }"
                             :is-valid-connection="canConnect"
@@ -1271,6 +1273,10 @@ const statusText = computed(
                                 pannable
                                 zoomable
                             />
+
+                            <template #edge-hop="edge">
+                                <HopEdge v-bind="edge" />
+                            </template>
 
                             <template #node-step="step">
                                 <StepNode

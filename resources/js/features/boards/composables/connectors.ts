@@ -10,6 +10,8 @@ import type { Endpoint, HeadType, Item, LineStyle, Side } from './items';
 import { isConnector } from './items';
 import { hasRows, rowAnchor, rowNamed } from './rows';
 import { shapeOf } from './shapes';
+import { lineHops, runsOf } from '@/lib/lineHops';
+import type { Hops } from '@/lib/lineHops';
 import {
     anchorAt,
     boundsOf,
@@ -866,3 +868,34 @@ export type Guide = {
     from: number;
     to: number;
 };
+
+/** How big the bump is where a connector hops over another, by its weight. */
+export const hopRadius = (item: Item): number =>
+    Math.max(8, item.lineWidth * 4);
+
+/**
+ * Where each connector hops over another, by its id: worked out from the
+ * paths the lines are drawn along. A curve sweeps past and hops nothing;
+ * a line out of sight is not there to cross.
+ */
+export const connectorHops = (
+    items: Item[],
+    pathOf: (item: Item) => number[],
+): Map<string, Hops> =>
+    lineHops(
+        items
+            .filter((item) => isConnector(item) && !item.hidden)
+            .flatMap((item) => {
+                const points = pathOf(item);
+
+                return points.length >= 4 && !isSwept(item, points)
+                    ? [
+                          {
+                              id: item.id,
+                              runs: runsOf(points),
+                              radius: hopRadius(item),
+                          },
+                      ]
+                    : [];
+            }),
+    );

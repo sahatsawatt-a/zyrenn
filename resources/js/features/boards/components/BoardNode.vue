@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { Group } from 'vue-konva';
 import type { Item } from '@/features/boards/composables/items';
 import { isConnector } from '@/features/boards/composables/items';
+import type { Hops } from '@/lib/lineHops';
 import BoardItem from './BoardItem.vue';
 
 // One thing on the canvas, in a component of its own so that it is drawn again
@@ -26,6 +27,8 @@ const props = defineProps<{
     // What was worked out for it, when that is asked to be shown
     worked?: string;
     pathOf: (item: Item) => number[];
+    // Where it hops over the lines it crosses
+    hops?: Hops;
     snap: (item: Item) => (position: { x: number; y: number }) => {
         x: number;
         y: number;
@@ -64,6 +67,7 @@ const config = computed(() => ({
             :lit="lit"
             :worked="worked"
             :path="path"
+            :hops="hops"
         />
     </Group>
 </template>

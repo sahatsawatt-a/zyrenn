@@ -66,6 +66,7 @@ import TemplateDialog from './TemplateDialog.vue';
 import { isTable } from '@/features/boards/composables/schema';
 import {
     attachmentsOf,
+    connectorHops,
     connectorPoints,
 } from '@/features/boards/composables/connectors';
 import type { Guide } from '@/features/boards/composables/connectors';
@@ -929,6 +930,9 @@ const isSelected = (item: Item) =>
 // Which connectors hang off each shape: only connectors coming and going
 // change it, so moving shapes about leaves it be
 const attached = computed(() => attachmentsOf(board.items.value));
+// Where lines cross, which hops over which
+const hops = computed(() => connectorHops(board.items.value, connectorPath));
+
 const connectorPath = (item: Item) =>
     connectorPoints(item, board.byId.value, attached.value);
 </script>
@@ -1087,6 +1091,7 @@ const connectorPath = (item: Item) =>
                             worked?.wires.get(item.id)
                         "
                         :path-of="connectorPath"
+                        :hops="hops.get(item.id)"
                         :snap="snapWhileDragging"
                     />
                 </Layer>

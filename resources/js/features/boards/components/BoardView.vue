@@ -5,6 +5,7 @@ import { computed, ref, useTemplateRef, watch } from 'vue';
 import { Group, Layer, Stage } from 'vue-konva';
 import {
     attachmentsOf,
+    connectorHops,
     connectorPoints,
 } from '@/features/boards/composables/connectors';
 import { boundsOf, boundsOfAll } from '@/features/boards/composables/geometry';
@@ -147,6 +148,8 @@ watch(
 const empty = computed(() => shown.value.length === 0);
 const attached = computed(() => attachmentsOf(drawn.value));
 const path = (item: Item) => connectorPoints(item, byId.value, attached.value);
+// Where lines cross, which hops over which
+const hops = computed(() => connectorHops(shown.value, path));
 </script>
 
 <template>
@@ -191,6 +194,7 @@ const path = (item: Item) => connectorPoints(item, byId.value, attached.value);
                         :video="videos.videoFor(item)"
                         :playing="videos.isPlaying(item.id)"
                         :path="path(item)"
+                        :hops="hops.get(item.id)"
                     />
                 </Group>
             </Layer>
