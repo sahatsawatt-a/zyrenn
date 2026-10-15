@@ -1,4 +1,5 @@
 import type { Mermaid } from 'mermaid';
+import { MARKER_ROOM, clearLabels, openRows, spreadEnds } from '@/lib/erTidy';
 import { svgToPng } from '@/lib/svgImage';
 
 let mermaidPromise: Promise<Mermaid> | null = null;
@@ -83,9 +84,6 @@ export function renderMermaid(
 
 type Point = { x: number; y: number };
 
-// How far back from a line's end an ER marker reaches: a zero-or-more's circle
-// sits 28px back with a 6px radius, and the bend before it needs its corner
-const MARKER_ROOM = 45;
 const CORNER = 7;
 
 type Moved = {
@@ -354,7 +352,33 @@ const roundedPath = (kept: Point[]): string => {
     return `${path}L${last.x},${last.y}`;
 };
 
-/** An ER diagram with each relationship's markers on a straight stretch of its line. */
+/** The boxes of an ER diagram's entities, in the drawing's own units. */
+const entityBoxes = (host: Element): Box[] =>
+    [...host.querySelectorAll('g.node')].flatMap((node) => {
+        const at = translateOf(node);
+        const rect = node.querySelector(':scope > rect');
+
+        if (!at || !rect) return [];
+
+        const x = at.x + Number(rect.getAttribute('x') ?? 0);
+        const y = at.y + Number(rect.getAttribute('y') ?? 0);
+
+        return [
+            {
+                left: x,
+                top: y,
+                right: x + Number(rect.getAttribute('width') ?? 0),
+                bottom: y + Number(rect.getAttribute('height') ?? 0),
+            },
+        ];
+    });
+
+/**
+ * An ER diagram made easy to read: the lines meeting one side of a box
+ * spread along it, each relationship's markers on a straight stretch of its
+ * own line, labels kept off the other lines and each other, and their
+ * backgrounds solid, so a line passing behind one is hidden by it.
+ */
 function roomForErMarkers(svg: string): string {
     if (!svg.includes('relationshipLine')) return svg;
 
@@ -362,46 +386,92 @@ function roomForErMarkers(svg: string): string {
     host.innerHTML = svg;
 
     const extents: Box[] = [];
-
-    for (const line of host.querySelectorAll<SVGPathElement>(
-        'path.relationshipLine[data-points]',
-    )) {
-        let points: Point[];
-
+    const paths = [
+        ...host.querySelectorAll<SVGPathElement>(
+            'path.relationshipLine[data-points]',
+        ),
+    ];
+    const lines: Point[][] = paths.map((line) => {
         try {
-            points = JSON.parse(atob(line.dataset.points ?? ''));
+            const points: unknown = JSON.parse(atob(line.dataset.points ?? ''));
+
+            return Array.isArray(points) ? corners(points as Point[]) : [];
         } catch {
+            return [];
+        }
+    });
+    const before = lines.map((points) => JSON.stringify(points));
+
+    // Rows of boxes too close for their lines' markers and labels: the
+    // lower ones moved down, and everything with them
+    const moves = openRows(entityBoxes(host));
+
+    for (const { from, by } of moves) {
+        for (const points of lines) {
+            for (const point of points) {
+                if (point.y >= from) point.y += by;
+            }
+        }
+
+        for (const group of host.querySelectorAll('g.node, g.edgeLabel')) {
+            const at = translateOf(group);
+            const top = group.matches('g.node')
+                ? (at?.y ?? 0) +
+                  Number(
+                      group.querySelector(':scope > rect')?.getAttribute('y') ??
+                          0,
+                  )
+                : (at?.y ?? 0);
+
+            if (at && top >= from) {
+                group.setAttribute(
+                    'transform',
+                    `translate(${at.x}, ${at.y + by})`,
+                );
+            }
+        }
+    }
+
+    if (moves.length) {
+        const grown = moves.reduce((sum, move) => sum + move.by, 0);
+        const box = entityBoxes(host);
+
+        extents.push({
+            left: Math.min(...box.map((b) => b.left)),
+            top: Math.min(...box.map((b) => b.top)),
+            right: Math.max(...box.map((b) => b.right)),
+            bottom: Math.max(...box.map((b) => b.bottom)) + Math.min(grown, 0),
+        });
+    }
+
+    spreadEnds(lines, entityBoxes(host));
+
+    for (const [index, line] of paths.entries()) {
+        const points = lines[index];
+
+        if (points.length >= 4) {
+            const moved: Moved[] = [];
+            const room = (side: Moved | null) => side && moved.push(side);
+            const startMarked = line.hasAttribute('marker-start');
+            const endMarked = line.hasAttribute('marker-end');
+
+            if (endMarked) room(makeRoomAtEnd(points, startMarked));
+
+            if (startMarked) {
+                points.reverse();
+                room(makeRoomAtEnd(points, endMarked));
+                points.reverse();
+            }
+
+            for (const side of moved) {
+                const label = clearLabel(host, line.dataset.id ?? '', side);
+
+                if (label) extents.push(label);
+            }
+        }
+
+        if (points.length < 2 || JSON.stringify(points) === before[index]) {
             continue;
-        }
-
-        if (!Array.isArray(points)) continue;
-
-        points = corners(points);
-
-        if (points.length < 4) continue;
-
-        const before = JSON.stringify(points);
-
-        const moved: Moved[] = [];
-        const room = (side: Moved | null) => side && moved.push(side);
-
-        const startMarked = line.hasAttribute('marker-start');
-        const endMarked = line.hasAttribute('marker-end');
-
-        if (endMarked) room(makeRoomAtEnd(points, startMarked));
-
-        if (startMarked) {
-            points.reverse();
-            room(makeRoomAtEnd(points, endMarked));
-            points.reverse();
-        }
-
-        if (JSON.stringify(points) === before) continue;
-
-        for (const side of moved) {
-            const label = clearLabel(host, line.dataset.id ?? '', side);
-
-            if (label) extents.push(label);
         }
 
         // Room for a marker's width either side of the line
@@ -416,6 +486,63 @@ function roomForErMarkers(svg: string): string {
 
         line.setAttribute('d', roundedPath(points));
         line.dataset.points = btoa(JSON.stringify(points));
+    }
+
+    // Labels off the other lines and each other, slid along their own
+    const placed = [...host.querySelectorAll('g.edgeLabel > g.label')].flatMap(
+        (label) => {
+            const group = label.parentElement;
+            const centre = translateOf(group);
+            const offset = translateOf(label);
+            const line = paths.findIndex(
+                (path) => path.dataset.id === label.getAttribute('data-id'),
+            );
+
+            return group && centre && offset && line >= 0
+                ? [
+                      {
+                          group,
+                          label: {
+                              centre,
+                              half: {
+                                  x: Math.abs(offset.x),
+                                  y: Math.abs(offset.y),
+                              },
+                              line,
+                          },
+                      },
+                  ]
+                : [];
+        },
+    );
+    const centres = clearLabels(
+        placed.map(({ label }) => label),
+        lines,
+    );
+
+    for (const [index, { group, label }] of placed.entries()) {
+        const centre = centres[index];
+
+        if (centre.x === label.centre.x && centre.y === label.centre.y)
+            continue;
+
+        group.setAttribute('transform', `translate(${centre.x}, ${centre.y})`);
+        extents.push({
+            left: centre.x - label.half.x,
+            top: centre.y - label.half.y,
+            right: centre.x + label.half.x,
+            bottom: centre.y + label.half.y,
+        });
+    }
+
+    // A label's background solid: Mermaid's dark one lets lines show through
+    const style = host.querySelector('svg style');
+
+    if (style?.textContent) {
+        style.textContent = style.textContent.replace(
+            /(\.labelBkg\s*\{\s*background-color:\s*rgba\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*,\s*)[\d.]+(\s*\))/g,
+            '$11$2',
+        );
     }
 
     if (extents.length) fitViewBox(host, extents);
