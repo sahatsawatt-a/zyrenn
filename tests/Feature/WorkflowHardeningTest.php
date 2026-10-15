@@ -25,6 +25,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Sleep;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -292,6 +293,40 @@ class WorkflowHardeningTest extends TestCase
         $this->actingAs($user)->patchJson(route('workflows.enable', $workflow), ['enabled' => true])->assertOk();
 
         return $workflow->fresh();
+    }
+
+    public function test_a_webhook_set_to_answer_with_the_result_waits_for_its_runs_answer()
+    {
+        $user = User::factory()->create();
+        $answers = $this->listening($user, $this->node('hook', 'trigger.webhook', ['token' => str_repeat('a', 32), 'answer' => 'result', 'wait' => 5]), $this->node('reply', 'http.respond', ['status' => 201, 'body' => '{{ trigger.body }}']));
+        $this->listening($user, $this->node('hook', 'trigger.webhook', ['token' => str_repeat('c', 32), 'answer' => 'result', 'wait' => 5]), $this->node('reply', 'http.respond', ['status' => 400, 'body' => '{"error": "Say what to do"}']));
+        $this->listening($user, $this->node('hook', 'trigger.webhook', ['token' => str_repeat('b', 32), 'answer' => 'result', 'wait' => 5]), $this->node('log', 'output.log', ['message' => 'hi']));
+        $this->listening($user, $this->node('hook', 'trigger.webhook', ['token' => str_repeat('f', 32), 'answer' => 'result', 'wait' => 1]), $this->node('log', 'output.log', ['message' => 'hi']));
+
+        // Each moment the caller waits, the queue is worked
+        $working = true;
+        Sleep::fake(syncWithCarbon: true);
+        Sleep::whenFakingSleep(function () use (&$working) {
+            if ($working) {
+                $this->work();
+            }
+        });
+
+        // Its answer step's status and body; a record goes as JSON
+        $this->postJson('/hooks/w/'.str_repeat('a', 32), ['text' => 'hello'])->assertStatus(201)->assertExactJson(['text' => 'hello']);
+        $this->assertSame(1, $answers->runs()->count());
+
+        // JSON written as text goes as JSON; other text as it is
+        $this->postJson('/hooks/w/'.str_repeat('c', 32), ['n' => 2])->assertStatus(400)->assertExactJson(['error' => 'Say what to do']);
+
+        // Without one, how the run went
+        $went = $this->postJson('/hooks/w/'.str_repeat('b', 32), ['x' => 1])->assertOk()->json();
+        $this->assertSame([true, 'succeeded'], [$went['ok'], $went['status']]);
+        $this->assertNotEmpty($went['run']);
+
+        // Not done in time: the run, still going
+        $working = false;
+        $this->postJson('/hooks/w/'.str_repeat('f', 32), ['x' => 1])->assertStatus(202)->assertJson(['ok' => true, 'status' => 'queued']);
     }
 
     public function test_a_burst_of_webhooks_starts_one_run_for_each_however_often_each_is_sent()

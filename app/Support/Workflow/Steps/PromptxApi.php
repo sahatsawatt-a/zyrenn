@@ -111,11 +111,14 @@ final class PromptxApi
     }
 
     /**
+     * PromptX's answer as it is, whatever it was -- for a step that reads
+     * one refusal its own way.
+     *
      * @param  callable(): Response  $ask
      *
-     * @throws StepFailed
+     * @throws StepFailed when PromptX cannot be reached
      */
-    private static function reach(callable $ask): Response
+    public static function reach(callable $ask): Response
     {
         try {
             return $ask();

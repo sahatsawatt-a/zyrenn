@@ -5,16 +5,21 @@ namespace App\Http\Controllers\Workflow;
 use App\Http\Controllers\Controller;
 use App\Models\Connection;
 use App\Models\Workflow\WorkflowListener;
+use App\Models\Workflow\WorkflowRun;
 use App\Support\Connections\Meta;
 use App\Support\Connections\Services;
 use App\Support\Workflow\Inbound\Envelope;
 use App\Support\Workflow\Ingest;
 use App\Support\Workflow\Listeners;
+use App\Support\Workflow\NodeStatus;
+use App\Support\Workflow\NodeTypes;
 use App\Support\Workflow\References;
+use App\Support\Workflow\RunStatus;
 use App\Support\Workflow\Steps\ChannelApi;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 
 /**
@@ -295,14 +300,73 @@ class HookController extends Controller
             ? data_get($envelope['body'], (string) $settings['dedupe'])
             : null;
 
+        $run = null;
         Ingest::fire(
             "webhook:{$token}",
             is_scalar($own) && $own !== '' ? (string) $own : (string) Str::uuid(),
             $envelope,
             collect([$listener]),
+            started: function (WorkflowRun $started) use (&$run) {
+                $run = $started;
+            },
         );
 
-        return response()->json(['ok' => true], 202);
+        if (($settings['answer'] ?? 'at_once') !== 'result' || $run === null) {
+            return response()->json(['ok' => true], 202);
+        }
+
+        return $this->answer($run, max(1, min(NodeTypes::MOST_ANSWER_WAIT, (int) ($settings['wait'] ?? 25))));
+    }
+
+    /**
+     * What a run started by a webhook gives its caller, once it has it: the
+     * first "Answer the webhook" step done, or how the run went -- or, the
+     * time up first, the run, still going.
+     */
+    private function answer(WorkflowRun $run, int $seconds): JsonResponse|Response
+    {
+        $answers = [];
+
+        foreach ((array) ($run->version->definition['nodes'] ?? []) as $node) {
+            if (is_array($node) && ($node['type'] ?? null) === 'http.respond') {
+                $answers[] = (string) $node['key'];
+            }
+        }
+        $until = now()->addSeconds($seconds);
+
+        do {
+            $answered = $answers === [] ? null : $run->steps()
+                ->whereIn('node_key', $answers)
+                ->where('status', NodeStatus::Succeeded->value)
+                ->orderBy('id')
+                ->first();
+
+            if ($answered !== null) {
+                $body = $answered->output['body'] ?? null;
+                $status = (int) ($answered->output['status'] ?? 200);
+                // JSON written out as text goes as JSON
+                $body = is_string($body) && is_array($decoded = json_decode($body, true)) ? $decoded : $body;
+
+                return is_array($body) || $body === null
+                    ? response()->json($body ?? new \stdClass, $status)
+                    : response((string) $body, $status, ['Content-Type' => 'text/plain; charset=utf-8']);
+            }
+
+            $run->refresh();
+
+            if ($run->status !== RunStatus::Queued && $run->status !== RunStatus::Running) {
+                return response()->json(array_filter([
+                    'ok' => $run->status === RunStatus::Succeeded,
+                    'run' => $run->ref_id,
+                    'status' => $run->status->value,
+                    'error' => $run->status === RunStatus::Failed ? $run->steps()->where('status', NodeStatus::Failed->value)->orderBy('id')->first()?->error['message'] ?? null : null,
+                ], fn ($part) => $part !== null));
+            }
+
+            Sleep::usleep(200_000);
+        } while (now()->lt($until));
+
+        return response()->json(['ok' => true, 'run' => $run->ref_id, 'status' => $run->status->value], 202);
     }
 
     /**

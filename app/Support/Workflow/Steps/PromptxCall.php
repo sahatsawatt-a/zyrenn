@@ -6,13 +6,17 @@ use Illuminate\Support\Carbon;
 use stdClass;
 
 /**
- * PromptX's calls, each a kind of step of its own (ServiceKinds names
- * them; this runs them): making a flow, reading one, importing a
- * definition into one and publishing it, and reading its runs.
+ * PromptX's calls about whole flows and their runs, each a kind of step of
+ * its own (ServiceKinds names them; this runs them): listing flows, making
+ * one, reading one or one of its versions, importing a definition into
+ * one, publishing it, switching it on or off, putting an old version back,
+ * deleting it, and reading its runs. Steps inside a flow are PromptxEdit's,
+ * running flows PromptxRun's, and the project's own things PromptxProject's.
  *
  * Making a flow leaves something new, so it is recorded and never simply
  * made twice. An import puts the same draft each time, a publish publishes
- * the draft there is, and the rest only ask: those can be made again.
+ * the draft there is, a switch sets what it says, and the rest only ask:
+ * those can be made again.
  */
 final class PromptxCall implements Step
 {
@@ -34,15 +38,42 @@ final class PromptxCall implements Step
         $in = PromptxApi::project($step, $account);
 
         return new StepResult(match ($step->node['type']) {
+            'promptx.flows' => self::flows($step, $in),
             'promptx.flow_create' => self::create($step, $in),
             'promptx.flow' => self::read($step, $in),
             'promptx.flow_import' => self::import($step, $in),
             'promptx.flow_publish' => self::publish($step, $in),
+            'promptx.flow_status' => self::status($step, $in, (string) $step->setting('status')),
+            'promptx.flow_delete' => self::delete($step, $in),
+            'promptx.flow_versions' => self::versions($step, $in),
+            'promptx.flow_restore' => self::restore($step, $in),
             'promptx.runs' => self::runs($step, $in),
             'promptx.run' => self::detail($step, $in),
 
             default => throw new StepFailed("This app doesn't know the PromptX step \"{$step->node['type']}\"."),
         });
+    }
+
+    /**
+     * The project's flows, newest changed first, or those of one folder.
+     *
+     * @param  array{token: string, project: string}  $in
+     * @return array{flows: list<array<string, mixed>>, count: int}
+     */
+    private static function flows(StepContext $step, array $in): array
+    {
+        $folder = trim($step->text('folder'));
+        $flows = PromptxApi::call(fn () => PromptxApi::as($in['token'])->get(PromptxApi::FLOWS.'/flows', [
+            'projectId' => $in['project'],
+            'limit' => max(1, min(100, (int) ($step->setting('count') ?: 100))),
+        ]))->json('data');
+        $flows = array_values(array_filter(
+            is_array($flows) ? $flows : [],
+            fn ($flow) => is_array($flow) && ($folder === '' || ($flow['folderId'] ?? null) === $folder),
+        ));
+        $flows = array_map(fn (array $flow) => [...self::flow($flow), 'folder' => $flow['folderId'] ?? null], $flows);
+
+        return ['flows' => $flows, 'count' => count($flows)];
     }
 
     /**
@@ -65,8 +96,15 @@ final class PromptxCall implements Step
      */
     private static function read(StepContext $step, array $in): array
     {
-        $flow = (array) PromptxApi::call(fn () => PromptxApi::as($in['token'])->get(PromptxApi::FLOWS.'/flows/'.self::id($step, 'flow', 'flow')))->json();
+        $version = trim($step->text('version'));
+        $read = PromptxApi::call(fn () => PromptxApi::as($in['token'])->get(
+            PromptxApi::FLOWS.'/flows/'.self::id($step, 'flow', 'flow'),
+            $version === '' ? [] : ['versionId' => self::id($step, 'version', 'version')],
+        ));
+        $flow = (array) $read->json();
         $version = (array) ($flow['version'] ?? []);
+        // Read again as objects, so each empty is the one PromptX meant
+        $exact = json_decode($read->body())->version ?? new stdClass;
 
         return [
             ...self::flow($flow),
@@ -77,6 +115,14 @@ final class PromptxCall implements Step
                 'valid' => $version['valid'] ?? null,
                 'schemaVersion' => $version['schemaVersion'] ?? null,
             ],
+            // The same, as JSON written just as PromptX keeps it: what a
+            // backup keeps, and what an import takes back exactly
+            'definition_json' => (string) json_encode([
+                'displayName' => $exact->displayName ?? null,
+                'trigger' => $exact->trigger ?? null,
+                'valid' => $exact->valid ?? null,
+                'schemaVersion' => $exact->schemaVersion ?? null,
+            ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
         ];
     }
 
@@ -126,10 +172,106 @@ final class PromptxCall implements Step
      */
     private static function publish(StepContext $step, array $in): array
     {
-        $published = PromptxApi::call(fn () => PromptxApi::as($in['token'])->withBody('{"type":"LOCK_AND_PUBLISH","request":{}}')
-            ->post(PromptxApi::FLOWS.'/flows/'.self::id($step, 'flow', 'flow')));
+        $id = self::id($step, 'flow', 'flow');
+        $then = (string) ($step->setting('then') ?: 'on');
+        // A flow published for the first time is switched on by PromptX
+        $was = $then === 'as_was'
+            ? (string) PromptxApi::call(fn () => PromptxApi::as($in['token'])->get(PromptxApi::FLOWS.'/flows/'.$id))->json('status')
+            : null;
 
-        return self::flow((array) $published->json());
+        $published = self::flow((array) PromptxApi::call(fn () => PromptxApi::as($in['token'])->withBody('{"type":"LOCK_AND_PUBLISH","request":{}}')
+            ->post(PromptxApi::FLOWS.'/flows/'.$id))->json());
+
+        $off = $then === 'off' || ($then === 'as_was' && $was === 'DISABLED');
+
+        return $off && $published['status'] !== 'DISABLED'
+            ? self::status($step, $in, 'DISABLED')
+            : $published;
+    }
+
+    /**
+     * Switches a flow on or off. Off, it keeps its steps and runs and only
+     * stops starting.
+     *
+     * @param  array{token: string, project: string}  $in
+     * @return array<string, mixed>
+     */
+    private static function status(StepContext $step, array $in, string $status): array
+    {
+        if (! in_array($status, ['ENABLED', 'DISABLED'], true)) {
+            throw new StepFailed('Say whether to switch the flow on or off.');
+        }
+
+        try {
+            $switched = PromptxApi::call(fn () => PromptxApi::as($in['token'])
+                ->post(PromptxApi::FLOWS.'/flows/'.self::id($step, 'flow', 'flow'), ['type' => 'CHANGE_STATUS', 'request' => ['status' => $status]]));
+        } catch (StepFailed $failed) {
+            // PromptX's own words for "never published" come from the inside
+            throw str_contains($failed->getMessage(), 'publishedFlowVersionId')
+                ? new StepFailed('This flow has never been published, so it cannot be switched on: publish it first.')
+                : $failed;
+        }
+
+        return self::flow((array) $switched->json());
+    }
+
+    /**
+     * Deletes a flow with all its versions and runs. One gone already is
+     * said so, rather than failing a run tried again.
+     *
+     * @param  array{token: string, project: string}  $in
+     * @return array{id: string, deleted: bool, was_there: bool}
+     */
+    private static function delete(StepContext $step, array $in): array
+    {
+        $id = self::id($step, 'flow', 'flow');
+        $answer = PromptxApi::reach(fn () => PromptxApi::as($in['token'])->delete(PromptxApi::FLOWS.'/flows/'.$id));
+
+        if ($answer->status() !== 404) {
+            PromptxApi::result($answer);
+        }
+
+        return ['id' => $id, 'deleted' => true, 'was_there' => $answer->status() !== 404];
+    }
+
+    /**
+     * A flow's versions, newest first: each published one is kept, locked.
+     *
+     * @param  array{token: string, project: string}  $in
+     * @return array{versions: list<array<string, mixed>>, count: int}
+     */
+    private static function versions(StepContext $step, array $in): array
+    {
+        $versions = PromptxApi::call(fn () => PromptxApi::as($in['token'])->get(PromptxApi::FLOWS.'/flows/'.self::id($step, 'flow', 'flow').'/versions', [
+            'limit' => max(1, min(100, (int) ($step->setting('count') ?: 25))),
+        ]))->json('data');
+        $versions = array_map(fn ($version) => [
+            'id' => $version['id'] ?? null,
+            'name' => $version['displayName'] ?? null,
+            'state' => $version['state'] ?? null,
+            'valid' => $version['valid'] ?? null,
+            'created' => $version['created'] ?? null,
+            'updated' => $version['updated'] ?? null,
+        ], array_values(array_filter(is_array($versions) ? $versions : [], 'is_array')));
+
+        return ['versions' => $versions, 'count' => count($versions)];
+    }
+
+    /**
+     * Puts one of a flow's versions back as its draft, in place of the draft
+     * there is. What runs stays as it was until the flow is published.
+     *
+     * @param  array{token: string, project: string}  $in
+     * @return array<string, mixed>
+     */
+    private static function restore(StepContext $step, array $in): array
+    {
+        $restored = PromptxApi::call(fn () => PromptxApi::as($in['token'])->post(
+            PromptxApi::FLOWS.'/flows/'.self::id($step, 'flow', 'flow'),
+            ['type' => 'USE_AS_DRAFT', 'request' => ['versionId' => self::id($step, 'version', 'version')]],
+        ));
+
+        return self::flow((array) $restored->json());
     }
 
     /**
@@ -227,7 +369,7 @@ final class PromptxCall implements Step
      * @param  array<string, mixed>  $flow
      * @return array<string, mixed>
      */
-    private static function flow(array $flow): array
+    public static function flow(array $flow): array
     {
         $version = (array) ($flow['version'] ?? []);
 
@@ -251,7 +393,7 @@ final class PromptxCall implements Step
      * @param  array<string, mixed>  $run
      * @return array<string, mixed>
      */
-    private static function summary(array $run): array
+    public static function summary(array $run): array
     {
         $failed = $run['failedStep'] ?? null;
         $at = fn (mixed $time) => is_string($time) && strtotime($time) !== false ? Carbon::parse($time) : null;
@@ -276,7 +418,7 @@ final class PromptxCall implements Step
      *
      * @return list<array<string, mixed>>
      */
-    private static function outline(mixed $node): array
+    public static function outline(mixed $node): array
     {
         $steps = [];
 
@@ -300,7 +442,7 @@ final class PromptxCall implements Step
      *
      * @return list<stdClass>
      */
-    private static function nodes(mixed $node): array
+    public static function nodes(mixed $node): array
     {
         if (! $node instanceof stdClass) {
             return [];
@@ -379,7 +521,7 @@ final class PromptxCall implements Step
      *
      * @throws StepFailed
      */
-    private static function id(StepContext $step, string $setting, string $what): string
+    public static function id(StepContext $step, string $setting, string $what): string
     {
         $id = trim($step->text($setting));
 

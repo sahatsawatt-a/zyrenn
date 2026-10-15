@@ -135,9 +135,9 @@ const failedEditor = await runBoard(
             (
                 await settings.locator('#setting-connection').innerText()
             ).includes(ACCOUNT_NAME) &&
-                (await settings.locator('#setting-status').innerText()).includes(
-                    'Failed',
-                ),
+                (
+                    await settings.locator('#setting-status').innerText()
+                ).includes('Failed'),
             await settings.locator('#setting-status').innerText(),
         );
         await page.screenshot({ path: `${SHOTS}/workflow-promptx.png` });
@@ -183,7 +183,9 @@ const failedPhone = await runBoard(
                     document.documentElement.clientWidth,
             ),
         );
-        await page.screenshot({ path: `${SHOTS}/connection-promptx-phone.png` });
+        await page.screenshot({
+            path: `${SHOTS}/connection-promptx-phone.png`,
+        });
     },
     { canvas: false, width: 390, height: 844 },
 );

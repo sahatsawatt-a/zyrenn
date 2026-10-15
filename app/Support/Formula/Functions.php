@@ -27,7 +27,7 @@ final class Functions
         'ceil' => 'ceil(number)',
         'abs' => 'abs(number)',
         'filter' => 'filter(list, tests)',
-        'coalesce' => 'coalesce(values…)',
+        'coalesce' => 'coalesce(values…): the first not empty; a part not there, like trigger.body.folder when none was sent, counts as empty',
         'number' => 'number(text)',
         'text' => 'text(value, format)',
         'upper' => 'upper(text)',

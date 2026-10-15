@@ -47,6 +47,9 @@ use App\Support\Workflow\Steps\Log;
 use App\Support\Workflow\Steps\ManualTrigger;
 use App\Support\Workflow\Steps\MergeStep;
 use App\Support\Workflow\Steps\PromptxCall;
+use App\Support\Workflow\Steps\PromptxEdit;
+use App\Support\Workflow\Steps\PromptxProject;
+use App\Support\Workflow\Steps\PromptxRun;
 use App\Support\Workflow\Steps\RunCode;
 use App\Support\Workflow\Steps\SerpApiCall;
 use App\Support\Workflow\Steps\SetData;
@@ -65,6 +68,7 @@ use App\Support\Workflow\Steps\TelegramSend;
 use App\Support\Workflow\Steps\TelegramSendFile;
 use App\Support\Workflow\Steps\ThreadsCall;
 use App\Support\Workflow\Steps\ThreadsPost;
+use App\Support\Workflow\Steps\WebhookAnswer;
 use App\Support\Workflow\Steps\WhatsAppCall;
 use App\Support\Workflow\Steps\WhatsAppFile;
 use App\Support\Workflow\Steps\WhatsAppSend;
@@ -155,6 +159,7 @@ final class Engine
         'ai.chat' => AskAi::class,
         'data.code' => RunCode::class,
         'http.request' => HttpRequest::class,
+        'http.respond' => WebhookAnswer::class,
         'serpapi.google' => SerpApiCall::class,
         'serpapi.news' => SerpApiCall::class,
         'serpapi.images' => SerpApiCall::class,
@@ -174,6 +179,28 @@ final class Engine
         'promptx.flow_publish' => PromptxCall::class,
         'promptx.runs' => PromptxCall::class,
         'promptx.run' => PromptxCall::class,
+        'promptx.flows' => PromptxCall::class,
+        'promptx.flow_status' => PromptxCall::class,
+        'promptx.flow_delete' => PromptxCall::class,
+        'promptx.flow_versions' => PromptxCall::class,
+        'promptx.flow_restore' => PromptxCall::class,
+        'promptx.step_update' => PromptxEdit::class,
+        'promptx.step_add' => PromptxEdit::class,
+        'promptx.step_delete' => PromptxEdit::class,
+        'promptx.step_move' => PromptxEdit::class,
+        'promptx.trigger_update' => PromptxEdit::class,
+        'promptx.flow_run' => PromptxRun::class,
+        'promptx.flow_test' => PromptxRun::class,
+        'promptx.run_retry' => PromptxRun::class,
+        'promptx.runs_cancel' => PromptxRun::class,
+        'promptx.run_resume' => PromptxRun::class,
+        'promptx.projects' => PromptxProject::class,
+        'promptx.connections' => PromptxProject::class,
+        'promptx.folders' => PromptxProject::class,
+        'promptx.folder_create' => PromptxProject::class,
+        'promptx.tables' => PromptxProject::class,
+        'promptx.table_records' => PromptxProject::class,
+        'promptx.table_add' => PromptxProject::class,
         'telegram.send' => TelegramSend::class,
         'telegram.send_file' => TelegramSendFile::class,
         'line.send' => LineSend::class,

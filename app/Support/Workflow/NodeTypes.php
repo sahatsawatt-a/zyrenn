@@ -71,6 +71,9 @@ final class NodeTypes
     /** A Switch's way when none of its others is taken. */
     public const OTHERWISE = 'otherwise';
 
+    /** The longest a webhook keeps its caller waiting for a run's answer, in seconds. */
+    public const MOST_ANSWER_WAIT = 55;
+
     /** How a chat's messages that come quickly are run (Engine::start). */
     private const PER_CHAT = [
         'name' => 'per_chat',
@@ -455,6 +458,16 @@ final class NodeTypes
                         'options' => ['none' => 'Nothing to answer', 'whatsapp' => 'Answer WhatsApp\'s check', 'slack' => 'Answer Slack\'s check'],
                     ],
                     ['name' => 'dedupe', 'label' => 'Its own id', 'type' => 'text', 'required' => false, 'placeholder' => 'event_id', 'help' => 'Where in the body the sender puts an id of its own, so the same thing sent twice starts one run. Dots go deeper: data.id.'],
+                    [
+                        'name' => 'answer',
+                        'label' => 'Answer the caller',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'at_once',
+                        'options' => ['at_once' => 'At once: that it was taken', 'result' => 'With what the run gives'],
+                        'help' => 'With what the run gives: the caller waits for an "Answer the webhook" step, or, without one, for how the run went -- {ok, run, status} -- or else for the time to be up.',
+                    ],
+                    ['name' => 'wait', 'label' => 'Wait at most', 'type' => 'number', 'required' => false, 'default' => 25, 'help' => 'Seconds, at most '.self::MOST_ANSWER_WAIT.'. Past it, the caller is answered with the run, still going.', 'when' => ['answer' => 'result']],
                 ],
             ],
             [
@@ -1021,6 +1034,21 @@ final class NodeTypes
 
             // --- Outside ---
             [
+                'type' => 'http.respond',
+                'version' => 1,
+                'label' => 'Answer the webhook',
+                'group' => 'web',
+                'icon' => 'reply',
+                'description' => 'What a webhook set to answer "With what the run gives" sends back to its caller: a status and a body. A body that is a record or a list goes as JSON. Gives out status and body.',
+                'trigger' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'status', 'label' => 'Status', 'type' => 'number', 'required' => false, 'default' => 200],
+                    ['name' => 'body', 'label' => 'Body', 'type' => 'template', 'required' => false, 'placeholder' => '{{ node("flows") }}', 'help' => 'Text, or a value worked out here: a record or a list goes as JSON.'],
+                ],
+            ],
+            [
                 'type' => 'http.request',
                 'version' => 1,
                 'label' => 'HTTP request',
@@ -1420,8 +1448,10 @@ final class NodeTypes
                 'Allowance' => ['tavily.usage'],
             ],
             'promptx' => [
-                'Flows' => ['promptx.flow_create', 'promptx.flow', 'promptx.flow_import', 'promptx.flow_publish'],
-                'Runs' => ['promptx.runs', 'promptx.run'],
+                'Flows' => ['promptx.flows', 'promptx.flow_create', 'promptx.flow', 'promptx.flow_import', 'promptx.flow_publish', 'promptx.flow_status', 'promptx.flow_versions', 'promptx.flow_restore', 'promptx.flow_delete'],
+                'Steps' => ['promptx.step_update', 'promptx.step_add', 'promptx.step_delete', 'promptx.step_move', 'promptx.trigger_update'],
+                'Runs' => ['promptx.flow_run', 'promptx.flow_test', 'promptx.runs', 'promptx.run', 'promptx.run_retry', 'promptx.runs_cancel', 'promptx.run_resume'],
+                'Project' => ['promptx.projects', 'promptx.connections', 'promptx.folders', 'promptx.folder_create', 'promptx.tables', 'promptx.table_records', 'promptx.table_add'],
             ],
             'telegram' => [
                 'Messages' => ['trigger.telegram', 'telegram.send', 'telegram.send_file', 'telegram.album', 'telegram.sticker', 'telegram.location', 'telegram.contact', 'telegram.poll', 'telegram.forward', 'telegram.copy', 'telegram.action', 'telegram.file'],

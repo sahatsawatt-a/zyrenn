@@ -69,10 +69,10 @@ final class Evaluator
                 }
             }
 
-            throw new FormulaError("There is no \"{$name}\" here.");
+            throw new MissingPart("There is no \"{$name}\" here.");
         }
 
-        throw new FormulaError(self::kind($object)." has no parts, so it has no \"{$name}\".");
+        throw new MissingPart(self::kind($object)." has no parts, so it has no \"{$name}\".");
     }
 
     /**
@@ -221,6 +221,17 @@ final class Evaluator
         // Only the branch taken is worked out, unless the choice is a list
         if ($name === 'if') {
             return $this->choose($node['args']);
+        }
+
+        // A part not there is empty to it: coalesce(trigger.body.folder, "")
+        if ($name === 'coalesce') {
+            return Functions::call($name, array_values(array_map(function ($arg) {
+                try {
+                    return $this->value($arg);
+                } catch (MissingPart) {
+                    return null;
+                }
+            }, $node['args'])));
         }
 
         $args = array_values(array_map(fn ($arg) => $this->value($arg), $node['args']));

@@ -116,6 +116,16 @@ class FormulaTest extends TestCase
         $this->assertSame('fallback', $this->text('coalesce(note, "fallback")'));
     }
 
+    public function test_coalesce_takes_a_part_not_there_as_empty_but_nothing_else_wrong()
+    {
+        $this->assertSame('Indigo', $this->text('coalesce(hotel.stars, hotel.name)'));
+        $this->assertSame('none', $this->text('coalesce(kind.size, "none")'));
+        $this->assertSame('', $this->text('coalesce(hotel.stars)'));
+        // Elsewhere a part not there is still said so, and so is a mistake inside coalesce
+        $this->assertSame('There is no "stars" here.', Formula::attempt('hotel.stars', $this->scope())['error']);
+        $this->assertNotNull(Formula::attempt('coalesce(nope(1), "x")', $this->scope())['error']);
+    }
+
     public function test_another_tables_columns_are_lists_worked_on_whole()
     {
         $this->assertSame('750', $this->text('sum(budget.thb)'));

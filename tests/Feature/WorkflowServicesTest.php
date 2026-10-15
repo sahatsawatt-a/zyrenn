@@ -1759,6 +1759,178 @@ class WorkflowServicesTest extends TestCase
         $this->assertStringNotContainsString($account->secret('access_token'), $shown);
     }
 
+    /**
+     * PromptX faked as it keeps one flow: each change to its draft made on
+     * it, so what a step reads back is what PromptX would hold.
+     */
+    private function fakePromptxDraft(): void
+    {
+        $draft = json_decode(self::PROMPTX_DRAFT);
+        $find = function (string $name) use (&$draft): ?\stdClass {
+            for ($at = $draft->version->trigger; $at !== null; $at = $at->nextAction ?? null) {
+                if ($at->name === $name) {
+                    return $at;
+                }
+            }
+
+            return null;
+        };
+
+        Http::fake(function (Request $request) use (&$draft, $find) {
+            $path = (string) parse_url($request->url(), PHP_URL_PATH);
+            $flow = fn () => Http::response((string) json_encode($draft));
+
+            if ($path === '/api/v1/flows/F1' && $request->method() === 'POST') {
+                $asked = json_decode($request->body())->request;
+
+                switch (json_decode($request->body())->type) {
+                    case 'UPDATE_ACTION':
+                        $node = $find($asked->name);
+                        [$node->displayName, $node->settings] = [$asked->displayName, $asked->settings];
+                        break;
+                    case 'ADD_ACTION':
+                        $parent = $find($asked->parentStep);
+                        $asked->action->nextAction = $parent->nextAction ?? null;
+                        $parent->nextAction = $asked->action;
+                        break;
+                    case 'DELETE_ACTION':
+                        for ($at = $draft->version->trigger; $at !== null; $at = $at->nextAction ?? null) {
+                            while (isset($at->nextAction) && in_array($at->nextAction->name, $asked->names, true)) {
+                                $at->nextAction = $at->nextAction->nextAction ?? null;
+                            }
+                        }
+                        break;
+                    case 'IMPORT_FLOW':
+                        $draft->version->trigger = $asked->trigger;
+                        break;
+                    case 'CHANGE_STATUS':
+                        if ($asked->status === 'ENABLED' && $draft->publishedVersionId === null) {
+                            return Http::response(['message' => 'publishedFlowVersionId is required is null or undefined'], 500);
+                        }
+                        $draft->status = $asked->status;
+                        break;
+                    case 'LOCK_AND_PUBLISH':
+                        [$draft->publishedVersionId, $draft->status] = ['V2', 'ENABLED'];
+                        break;
+                }
+
+                return $flow();
+            }
+
+            return match (true) {
+                str_ends_with($path, '/workflow-api/v1/get-user') => Http::response(['wfAuth' => ['accessToken' => 'flows-usual', 'projectId' => 'usual']]),
+                $path === '/api/v1/flows/F1' => $flow(),
+                $path === '/api/v1/flows' => Http::response(['data' => [
+                    ['id' => 'F1', 'folderId' => 'D1', 'status' => 'DISABLED', 'publishedVersionId' => null, 'version' => ['id' => 'V1', 'displayName' => 'Daily', 'state' => 'DRAFT', 'valid' => true]],
+                    ['id' => 'F2', 'folderId' => null, 'status' => 'ENABLED', 'publishedVersionId' => 'V9', 'version' => ['id' => 'V9', 'displayName' => 'Other', 'state' => 'LOCKED', 'valid' => true]],
+                ]]),
+                $path === '/api/v1/flows/F2' => Http::response(['message' => 'Not found.'], 404),
+                str_starts_with($path, '/api/v1/webhooks/F1') => Http::response(['heard' => json_decode($request->body(), true), 'at' => $path]),
+                $path === '/api/v1/app-connections' => Http::response(['data' => [['id' => 'C1', 'displayName' => 'Gmail', 'externalId' => 'gmail_1', 'pieceName' => '@activepieces/piece-gmail', 'status' => 'ACTIVE', 'value' => ['token' => 'never-shown']]]]),
+                $path === '/api/v1/fields' => Http::response(['data' => [['id' => 'f1', 'name' => 'Name', 'type' => 'TEXT'], ['id' => 'f2', 'name' => 'Email', 'type' => 'TEXT']]]),
+                $path === '/api/v1/records' && $request->method() === 'POST' => Http::response([['id' => 'r9']], 201),
+                $path === '/api/v1/records' => Http::response(['data' => [['id' => 'r1', 'cells' => ['f1' => ['value' => 'Ada', 'fieldName' => 'Name'], 'f2' => ['value' => 'ada@example.com', 'fieldName' => 'Email']]]]]),
+                default => Http::response(['message' => "Nothing at {$path}."], 404),
+            };
+        });
+    }
+
+    public function test_promptx_flows_are_listed_switched_changed_a_step_at_a_time_and_run()
+    {
+        $this->fakePromptxDraft();
+        $user = User::factory()->create();
+        $account = Connection::factory()->promptx()->for($user)->create();
+        $on = fn (array $settings = []) => ['connection' => $account->ref_id, 'flow' => 'F1', ...$settings];
+
+        $run = $this->runChain($user, [
+            $this->node('flows', 'promptx.flows', ['connection' => $account->ref_id, 'folder' => 'D1']),
+            $this->node('off', 'promptx.flow_status', $on(['status' => 'DISABLED'])),
+            // As typed: a new line, and PromptX's own {{ }}, go as they are
+            $this->node('change', 'promptx.step_update', $on(['step' => 'step_1', 'input' => '{"url": "https://example.com/{{trigger.body.id}}", "body": "one\ntwo"}', 'settings' => '', 'label' => 'Fetch it'])),
+            $this->node('add', 'promptx.step_add', $on(['after' => 'step_1', 'step' => '{"displayName": "Tell", "pieceName": "@activepieces/piece-slack", "pieceVersion": "0.9.1", "actionName": "send_message", "input": {"text": "{{step_1.body}}", "blocks": {}}}'])),
+            $this->node('drop', 'promptx.step_delete', $on(['steps' => 'step_4, step_9'])),
+            $this->node('hook', 'promptx.trigger_update', $on(['kind' => 'webhook'])),
+            $this->node('read', 'promptx.flow', $on()),
+            $this->node('publish', 'promptx.flow_publish', $on(['then' => 'off'])),
+            $this->node('ask', 'promptx.flow_run', ['flow' => 'F1', 'body' => '{{ trigger.order }}', 'wait' => 'yes', 'seconds' => 5]),
+            $this->node('try', 'promptx.flow_test', ['flow' => 'F1', 'body' => '']),
+            $this->node('gone', 'promptx.flow_delete', $on(['flow' => 'F2'])),
+            $this->node('conns', 'promptx.connections', ['connection' => $account->ref_id]),
+            $this->node('rows', 'promptx.table_records', ['connection' => $account->ref_id, 'table' => 'T1']),
+            $this->node('more', 'promptx.table_add', ['connection' => $account->ref_id, 'table' => 'T1', 'records' => '{{ trigger.person }}']),
+        ], ['order' => ['id' => 7], 'person' => ['Name' => 'Bo', 'Email' => 'bo@example.com']]);
+
+        $this->assertAllWentThrough($run);
+        $out = fn (string $key) => $this->step($run, $key)->output;
+        $sent = Http::recorded()->map(fn (array $pair) => $pair[0])->filter(fn (Request $r) => $r->method() === 'POST' && str_ends_with($r->url(), '/flows/F1'))->map(fn (Request $r) => json_decode($r->body()))->values();
+
+        $this->assertSame(['F1'], array_column($out('flows')['flows'], 'id'));
+        $this->assertSame('D1', $out('flows')['flows'][0]['folder']);
+        $this->assertSame('DISABLED', $out('off')['status']);
+
+        // One step changed, as written, the rest of its input kept, and read back
+        $changed = $sent->first(fn ($one) => $one->type === 'UPDATE_ACTION')->request;
+        $this->assertFalse(isset($changed->nextAction));
+        $this->assertEquals(new \stdClass, $changed->settings->inputUiInfo);
+        $this->assertEquals(new \stdClass, $changed->settings->input->headers);
+        $this->assertFalse(isset($changed->settings->sampleData));
+        $step = $out('change')['step'];
+        $this->assertSame(['step_1', 'Fetch it'], [$step['name'], $step['label']]);
+        $this->assertSame(['url' => 'https://example.com/{{trigger.body.id}}', 'headers' => [], 'files' => [], 'body' => "one\ntwo"], $step['input']);
+        $this->assertStringContainsString('"headers":{},"files":[]', $step['settings_json']);
+
+        // Added as PromptX writes a step, with the next free name
+        $added = $sent->first(fn ($one) => $one->type === 'ADD_ACTION')->request;
+        $this->assertSame(['step_1', 'AFTER', 'step_4', 'PIECE'], [$added->parentStep, $added->stepLocationRelativeToParent, $added->action->name, $added->action->type]);
+        $this->assertSame('@activepieces/piece-slack', $added->action->settings->pieceName);
+        $this->assertEquals(new \stdClass, $added->action->settings->input->blocks);
+        $this->assertSame(['continueOnFailure' => ['value' => false], 'retryOnFailure' => ['value' => false]], json_decode((string) json_encode($added->action->settings->errorHandlingOptions), true));
+        $this->assertSame('step_4', $out('add')['step']['name']);
+        $this->assertSame(['flow' => 'F1', 'deleted' => ['step_4'], 'missing' => ['step_9']], $out('drop'));
+
+        // A webhook starts it, the steps after kept
+        $hook = $out('hook');
+        $this->assertSame(['@activepieces/piece-webhook', 'catch_webhook', true], [$hook['trigger']['piece'], $hook['trigger']['action'], $hook['kept_steps']]);
+        $this->assertSame(['authType' => 'none', 'authFields' => []], $hook['trigger']['input']);
+        $this->assertStringContainsString('"authFields":{}', $hook['trigger']['settings_json']);
+        $this->assertSame('https://wf.promptxai.com/api/v1/webhooks/F1/sync', $hook['webhook_sync']);
+
+        // The definition just as PromptX keeps it
+        $exact = json_decode($out('read')['definition_json']);
+        $this->assertEquals(new \stdClass, $exact->trigger->settings->input->authFields);
+        $this->assertSame([], $exact->trigger->nextAction->settings->input->files);
+        $this->assertEquals(new \stdClass, $exact->trigger->nextAction->settings->input->headers);
+
+        // Published, then switched off again
+        $this->assertSame(['LOCK_AND_PUBLISH', 'CHANGE_STATUS'], $sent->map(fn ($one) => $one->type)->filter(fn ($type) => in_array($type, ['LOCK_AND_PUBLISH', 'CHANGE_STATUS'], true))->values()->slice(1)->values()->all());
+        $this->assertSame(['DISABLED', true], [$out('publish')['status'], $out('publish')['published']]);
+
+        // Its webhook, waited on; its draft, tried
+        $this->assertSame(['status' => 200, 'ok' => true, 'answer' => ['heard' => ['id' => 7], 'at' => '/api/v1/webhooks/F1/sync'], 'timed_out' => false], $out('ask'));
+        $this->assertSame('/api/v1/webhooks/F1/draft/sync', $out('try')['answer']['at']);
+        $this->assertSame([], $out('try')['answer']['heard']);
+        $this->assertSame(['id' => 'F2', 'deleted' => true, 'was_there' => false], $out('gone'));
+
+        // A connection by name, never what it holds
+        $this->assertSame([['id' => 'C1', 'name' => 'Gmail', 'external_id' => 'gmail_1', 'piece' => '@activepieces/piece-gmail', 'status' => 'ACTIVE']], $out('conns')['connections']);
+        $this->assertStringNotContainsString('never-shown', (string) json_encode($run->steps()->get()->toArray()));
+        $this->assertSame([['id' => 'r1', 'Name' => 'Ada', 'Email' => 'ada@example.com']], $out('rows')['records']);
+        $this->assertSame(['added' => 1, 'ids' => ['r9']], $out('more'));
+        Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/api/v1/records') && $r->method() === 'POST'
+            && $r->data() === ['tableId' => 'T1', 'records' => [[['fieldId' => 'f1', 'value' => 'Bo'], ['fieldId' => 'f2', 'value' => 'bo@example.com']]]]);
+    }
+
+    public function test_a_promptx_flow_never_published_is_said_so_when_switched_on()
+    {
+        $this->fakePromptxDraft();
+        $user = User::factory()->create();
+        $account = Connection::factory()->promptx()->for($user)->create();
+
+        $run = $this->runChain($user, [$this->node('on', 'promptx.flow_status', ['connection' => $account->ref_id, 'flow' => 'F1', 'status' => 'ENABLED'])], ['none' => '']);
+
+        $this->assertSame('This flow has never been published, so it cannot be switched on: publish it first.', $this->step($run, 'on')->error['message']);
+    }
+
     public function test_a_promptx_sign_in_renews_itself_near_its_end_and_says_when_it_is_gone()
     {
         $grants = [];

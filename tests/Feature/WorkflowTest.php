@@ -82,7 +82,7 @@ class WorkflowTest extends TestCase
                 ->where('workflow.published', null)
                 ->where('workflow.problems', [])
                 ->where('workflow.can.update', true)
-                ->has('nodeTypes', 152)
+                ->has('nodeTypes', 176)
                 ->has('groups'));
     }
 

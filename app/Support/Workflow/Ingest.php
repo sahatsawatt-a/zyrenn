@@ -26,6 +26,7 @@ final class Ingest
      * @param  Collection<int, WorkflowListener>  $listeners
      * @param  (Closure(WorkflowListener): bool)|null  $wants  whether a listener's own settings take it
      * @param  WorkflowRun|null  $origin  the run that caused it, when one did
+     * @param  (Closure(WorkflowRun): void)|null  $started  told of each run started, for a caller that waits on it
      * @return int how many runs were started (0 for something already seen)
      */
     public static function fire(
@@ -35,8 +36,9 @@ final class Ingest
         Collection $listeners,
         ?Closure $wants = null,
         ?WorkflowRun $origin = null,
+        ?Closure $started = null,
     ): int {
-        return DB::transaction(function () use ($source, $eventId, $envelope, $listeners, $wants, $origin) {
+        return DB::transaction(function () use ($source, $eventId, $envelope, $listeners, $wants, $origin, $started) {
             $kept = DB::table('inbound_events')->insertOrIgnore([
                 'source' => mb_substr($source, 0, 120),
                 'event_id' => mb_substr($eventId, 0, 191),
@@ -54,14 +56,14 @@ final class Ingest
                 return 0;
             }
 
-            $started = 0;
+            $count = 0;
 
             foreach ($listeners as $listener) {
                 if ($wants !== null && ! $wants($listener)) {
                     continue;
                 }
 
-                Engine::start(
+                $run = Engine::start(
                     $listener->workflow,
                     $listener->version,
                     null,
@@ -70,12 +72,16 @@ final class Ingest
                     $envelope,
                     $origin,
                 );
-                $started++;
+                $count++;
+
+                if ($started !== null) {
+                    $started($run);
+                }
             }
 
-            InboundEvent::where('source', $source)->where('event_id', $eventId)->update(['runs' => $started]);
+            InboundEvent::where('source', $source)->where('event_id', $eventId)->update(['runs' => $count]);
 
-            return $started;
+            return $count;
         });
     }
 }
