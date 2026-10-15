@@ -4,7 +4,7 @@ namespace App\Support\Workflow;
 
 /**
  * The kinds of step that are one call to a service each -- SerpApi, Tavily,
- * Telegram, LINE, WhatsApp, LinkedIn, Facebook, Instagram, Threads -- beside the ones
+ * PromptX, Telegram, LINE, WhatsApp, LinkedIn, Facebook, Instagram, Threads -- beside the ones
  * NodeTypes lists itself: every call a service offers is a step of its own,
  * in that service's group. Run by that service's ...Call class.
  *
@@ -28,7 +28,7 @@ final class ServiceKinds
      */
     public static function all(): array
     {
-        return [...self::serpapi(), ...self::tavily(), ...self::telegram(), ...self::line(), ...self::whatsapp(), ...self::channel(), ...self::linkedin(), ...self::facebook(), ...self::instagram(), ...self::threads()];
+        return [...self::serpapi(), ...self::tavily(), ...self::promptx(), ...self::telegram(), ...self::line(), ...self::whatsapp(), ...self::channel(), ...self::linkedin(), ...self::facebook(), ...self::instagram(), ...self::threads()];
     }
 
     // --- SerpApi ---
@@ -164,6 +164,48 @@ final class ServiceKinds
                 $more,
             ]),
             self::kind('tavily.usage', 'Tavily: credits used', 'gauge', 'Asks Tavily what the key has used. Gives out used and limit for the key, left, and the plan with plan_used and plan_limit. Free.', [$key]),
+        ];
+    }
+
+    // --- PromptX ---
+
+    /**
+     * @return list<NodeType>
+     */
+    private static function promptx(): array
+    {
+        $as = ['name' => 'connection', 'label' => 'Account', 'type' => 'connection', 'required' => true, 'services' => ['promptx']];
+        $project = ['name' => 'project', 'label' => 'Project', 'type' => 'template', 'required' => false, 'placeholder' => 'Ab3dEf6hIj9kLm2nOp5qR', 'help' => 'Its id: in the address of a PromptX page, after /projects/. Left empty, the account\'s usual project.'];
+        $flow = ['name' => 'flow', 'label' => 'Flow', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("new_flow").id }}', 'help' => 'Its id: in the address of the flow\'s page, after /flows/.'];
+        $gives = ' Gives out the flow: id, name, status (ENABLED or DISABLED), version, valid, published and draft.';
+
+        return [
+            self::kind('promptx.flow_create', 'PromptX: new flow', 'pencil', 'Makes an empty flow in the project, switched off, for "PromptX: import a flow" to fill.'.$gives, [
+                $as,
+                $project,
+                ['name' => 'name', 'label' => 'Name', 'type' => 'template', 'required' => true, 'placeholder' => 'Daily report'],
+            ], sends: true),
+            self::kind('promptx.flow', 'PromptX: read a flow', 'split', 'Reads a flow as its draft is now.'.$gives.' With them, steps -- each with its name, label, type, piece and action -- and definition, which "PromptX: import a flow" takes back once changed.', [$as, $project, $flow]),
+            self::kind('promptx.flow_import', 'PromptX: import a flow', 'file-up', 'Puts a definition in a flow\'s draft, in place of all of its steps. What runs stays the published version until "PromptX: publish a flow".'.$gives, [
+                $as,
+                $project,
+                $flow,
+                ['name' => 'definition', 'label' => 'Definition', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("read_flow").definition }}', 'help' => 'A trigger with the steps after it, as "PromptX: read a flow" gives out its definition: changed by a step before this one, or JSON exported from PromptX.'],
+                ['name' => 'name', 'label' => 'Rename it to', 'type' => 'template', 'required' => false, 'help' => 'Left empty, the definition\'s own name.'],
+            ]),
+            self::kind('promptx.flow_publish', 'PromptX: publish a flow', 'megaphone', 'Publishes a flow\'s draft, which then runs in place of the version before, and switches the flow on.'.$gives, [$as, $project, $flow]),
+            self::kind('promptx.runs', 'PromptX: list runs', 'list', 'Lists the newest runs of a flow, or of the whole project. Gives out runs -- each with its id, flow, flow_name, status, started, finished, seconds and failed_step -- and count.', [
+                $as,
+                $project,
+                [...$flow, 'required' => false, 'placeholder' => '', 'help' => 'Left empty, every flow\'s runs.'],
+                ['name' => 'status', 'label' => 'Only', 'type' => 'choice', 'required' => true, 'default' => 'any', 'options' => ['any' => 'Any', 'FAILED' => 'Failed', 'SUCCEEDED' => 'Succeeded', 'RUNNING' => 'Running', 'PAUSED' => 'Paused', 'TIMEOUT' => 'Timed out', 'INTERNAL_ERROR' => 'Went wrong inside PromptX', 'QUOTA_EXCEEDED' => 'Out of allowance']],
+                ['name' => 'count', 'label' => 'At most', 'type' => 'number', 'required' => false, 'default' => 10, 'help' => 'At most 100.'],
+            ]),
+            self::kind('promptx.run', 'PromptX: read a run', 'text-search', 'Reads one run: how it went, failed_step and its error, and steps -- each with its name, type, status, ms, error, input and output, those in a loop with loop and round -- each input and output cut short where long. kept is false for a run so old that PromptX keeps only how it went.', [
+                $as,
+                $project,
+                ['name' => 'run', 'label' => 'Run', 'type' => 'template', 'required' => true, 'placeholder' => '{{ item(node("list_runs").runs, 1).id }}'],
+            ]),
         ];
     }
 

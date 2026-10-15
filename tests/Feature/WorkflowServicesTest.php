@@ -10,6 +10,7 @@ use App\Models\Workflow\WorkflowNodeRun;
 use App\Models\Workflow\WorkflowRun;
 use App\Models\Workflow\WorkflowVersion;
 use App\Support\Connections\Meta;
+use App\Support\Connections\PromptxSignIn;
 use App\Support\Workflow\Engine;
 use App\Support\Workflow\Inbound\Envelope;
 use App\Support\Workflow\NodeStatus;
@@ -17,6 +18,7 @@ use App\Support\Workflow\NodeTypes;
 use App\Support\Workflow\References;
 use App\Support\Workflow\RunStatus;
 use App\Support\Workflow\Steps\WhatsAppApi;
+use Database\Factories\ConnectionFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -1628,5 +1630,172 @@ class WorkflowServicesTest extends TestCase
         $this->assertStringContainsString('at most 20 pages', $run('tavily.extract', ['urls' => implode("\n", array_map(fn (int $n) => "https://example.com/{$n}", range(1, 21)))])->error['message']);
         $this->assertStringContainsString('no site to start from', $run('tavily.map', ['url' => '{{ trigger.none }}'])->error['message']);
         Http::assertSentCount(5);
+    }
+
+    // --- PromptX ---
+
+    /** A flow's draft as PromptX sends it: empty objects and empty lists, each where it means one. */
+    private const PROMPTX_DRAFT = '{"id":"F1","projectId":"other","status":"DISABLED","publishedVersionId":null,"updated":"2026-10-15T00:00:00.000Z","version":{"id":"V1","displayName":"Daily","state":"DRAFT","valid":true,"schemaVersion":"10","trigger":{"name":"trigger","type":"PIECE_TRIGGER","displayName":"Every day","valid":true,"settings":{"pieceName":"@activepieces/piece-schedule","triggerName":"cron_expression","input":{"cronExpression":"0 9 * * *"},"propertySettings":{},"sampleData":{}},"nextAction":{"name":"step_1","type":"PIECE","displayName":"Fetch","valid":true,"settings":{"pieceName":"@activepieces/piece-http","actionName":"send_request","input":{"url":"https://example.com","headers":{},"files":[]},"propertySettings":{},"sampleData":{}},"nextAction":{"name":"step_2","type":"LOOP_ON_ITEMS","displayName":"Each","valid":true,"settings":{"items":"{{step_1}}","sampleData":{}},"firstLoopAction":{"name":"step_3","type":"CODE","displayName":"Shape","valid":true,"settings":{"input":{},"sourceCode":{"code":"x","packageJson":"{}"},"sampleDataSettings":[]}}}}}}}';
+
+    /**
+     * PromptX faked: the account's way into flows, a project switched to,
+     * one flow, its runs, and one run whose second time round a loop failed.
+     */
+    private function fakePromptx(): void
+    {
+        $flow = fn (string $status, ?string $published) => ['id' => 'F1', 'projectId' => 'other', 'status' => $status, 'publishedVersionId' => $published, 'updated' => '2026-10-15T00:00:00.000Z', 'version' => ['id' => 'V2', 'displayName' => 'Daily', 'state' => $published ? 'LOCKED' : 'DRAFT', 'valid' => true]];
+
+        Http::fake(function (Request $request) use ($flow) {
+            $path = (string) parse_url($request->url(), PHP_URL_PATH);
+
+            return match (true) {
+                str_ends_with($path, '/workflow-api/v1/get-user') => Http::response(['wfAuth' => ['accessToken' => 'flows-usual', 'projectId' => 'usual']]),
+                str_ends_with($path, '/authentication/switch-project') => Http::response(['token' => 'flows-other']),
+                $path === '/api/v1/flows' => Http::response(['id' => 'F1', 'projectId' => 'usual', 'status' => 'DISABLED', 'publishedVersionId' => null, 'version' => ['id' => 'V1', 'displayName' => 'Daily', 'state' => 'DRAFT', 'valid' => false]], 201),
+                $path === '/api/v1/flows/F1' && $request->method() === 'GET' => Http::response(self::PROMPTX_DRAFT),
+                $path === '/api/v1/flows/F1' => Http::response($request['type'] === 'LOCK_AND_PUBLISH' ? $flow('ENABLED', 'V2') : $flow('DISABLED', null)),
+                $path === '/api/v1/flow-runs' => Http::response(['data' => [['id' => 'R1', 'flowId' => 'F1', 'flowVersionId' => 'V2', 'flowVersion' => ['displayName' => 'Daily'], 'status' => 'FAILED', 'startTime' => '2026-10-15T09:00:00.000Z', 'finishTime' => '2026-10-15T09:00:12.500Z', 'failedStep' => ['name' => 'step_3', 'displayName' => 'Shape'], 'logsFileId' => 'L1']], 'next' => null]),
+                $path === '/api/v1/flow-runs/R1' => Http::response([
+                    'id' => 'R1', 'flowId' => 'F1', 'flowVersionId' => 'V2', 'flowVersion' => ['displayName' => 'Daily'], 'status' => 'FAILED',
+                    'startTime' => '2026-10-15T09:00:00.000Z', 'finishTime' => '2026-10-15T09:00:12.500Z', 'logsFileId' => 'L1',
+                    'failedStep' => ['name' => 'step_3', 'displayName' => 'Shape'],
+                    'steps' => [
+                        'trigger' => ['type' => 'PIECE_TRIGGER', 'status' => 'SUCCEEDED', 'input' => [], 'output' => []],
+                        'step_1' => ['type' => 'PIECE', 'status' => 'SUCCEEDED', 'duration' => 812.4, 'input' => ['url' => 'https://example.com'], 'output' => str_repeat('a', 5000)],
+                        'step_2' => ['type' => 'LOOP_ON_ITEMS', 'status' => 'SUCCEEDED', 'duration' => 11000, 'input' => ['items' => [1, 2]], 'output' => ['item' => 2, 'index' => 2, 'iterations' => [
+                            ['step_3' => ['type' => 'CODE', 'status' => 'SUCCEEDED', 'duration' => 5, 'input' => ['n' => 1], 'output' => 1]],
+                            ['step_3' => ['type' => 'CODE', 'status' => 'FAILED', 'duration' => 7, 'input' => ['n' => 2], 'errorMessage' => 'boom']],
+                        ]]],
+                    ],
+                ]),
+                default => Http::response(['message' => "Nothing at {$path}."], 404),
+            };
+        });
+    }
+
+    public function test_each_promptx_call_is_a_step_with_a_flows_token_traded_for_in_the_project_it_names()
+    {
+        $this->fakePromptx();
+        $user = User::factory()->create();
+        $account = Connection::factory()->promptx()->for($user)->create();
+        $on = fn (array $settings = []) => ['connection' => $account->ref_id, 'project' => '{{ trigger.project }}', ...$settings];
+        // A step new to the flow, as data: a router's lists stay lists, and anything else empty is an object
+        $added = ['displayName' => 'Daily', 'schemaVersion' => '10', 'trigger' => ['name' => 'trigger', 'type' => 'PIECE_TRIGGER', 'settings' => ['input' => ['cronExpression' => '0 9 * * *'], 'propertySettings' => []], 'nextAction' => [
+            'name' => 'step_9', 'type' => 'ROUTER', 'settings' => ['inputUiInfo' => [], 'branches' => [['branchType' => 'CONDITION', 'conditions' => [[['operator' => 'TEXT_CONTAINS']]]], ['branchType' => 'FALLBACK', 'conditions' => []]]], 'children' => [null, null],
+        ]]];
+
+        $run = $this->runChain($user, [
+            $this->node('new', 'promptx.flow_create', $on(['project' => '', 'name' => 'Daily'])),
+            $this->node('read', 'promptx.flow', $on(['flow' => 'F1'])),
+            $this->node('back', 'promptx.flow_import', $on(['flow' => 'F1', 'definition' => '{{ node("read").definition }}', 'name' => 'Daily, again'])),
+            $this->node('add', 'promptx.flow_import', $on(['flow' => 'F1', 'definition' => '{{ trigger.added }}'])),
+            $this->node('text', 'promptx.flow_import', $on(['flow' => 'F1', 'definition' => '{"displayName":"As typed","trigger":{"name":"trigger","settings":{"input":{"files":[]},"sampleData":{}}}}'])),
+            $this->node('publish', 'promptx.flow_publish', $on(['flow' => 'F1'])),
+            $this->node('failed', 'promptx.runs', $on(['flow' => 'F1', 'status' => 'FAILED', 'count' => 500])),
+            $this->node('why', 'promptx.run', $on(['run' => '{{ item(node("failed").runs, 1).id }}'])),
+        ], ['project' => 'other', 'added' => $added]);
+
+        $this->assertAllWentThrough($run);
+        $asked = Http::recorded()->map(fn (array $pair) => $pair[0])->values();
+        $account->refresh();
+
+        // Every step trades the account token for a flows token; one in another project switches to it with that
+        $this->assertSame(8, $asked->filter(fn (Request $r) => str_ends_with($r->url(), '/get-user') && $r->hasHeader('Authorization', 'Bearer '.$account->secret('access_token')))->count());
+        $switched = $asked->filter(fn (Request $r) => str_ends_with($r->url(), '/switch-project'));
+        $this->assertSame(7, $switched->count());
+        $this->assertTrue($switched->every(fn (Request $r) => $r->hasHeader('Authorization', 'Bearer flows-usual') && $r->data() === ['projectId' => 'other']));
+        $flows = $asked->filter(fn (Request $r) => str_contains($r->url(), 'wf.promptxai.com') && ! str_ends_with($r->url(), '/switch-project'))->values();
+        $this->assertTrue($flows->slice(1)->every(fn (Request $r) => $r->hasHeader('Authorization', 'Bearer flows-other')));
+
+        // Made in the account's usual project, once
+        $this->assertTrue($flows[0]->hasHeader('Authorization', 'Bearer flows-usual'));
+        $this->assertSame(['POST', ['displayName' => 'Daily', 'projectId' => 'usual']], [$flows[0]->method(), $flows[0]->data()]);
+        $this->assertSame(['id' => 'F1', 'name' => 'Daily', 'status' => 'DISABLED', 'project' => 'usual', 'version' => 'V1', 'valid' => false, 'published' => false, 'draft' => true, 'updated' => null], $this->step($run, 'new')->output);
+
+        $read = $this->step($run, 'read')->output;
+        $this->assertSame(['trigger', 'step_1', 'step_2', 'step_3'], array_column($read['steps'], 'name'));
+        $this->assertSame(['name' => 'step_1', 'label' => 'Fetch', 'type' => 'PIECE', 'piece' => '@activepieces/piece-http', 'action' => 'send_request', 'valid' => true], $read['steps'][1]);
+        $this->assertSame('cron_expression', $read['steps'][0]['action']);
+
+        // Each import reads the draft first; the empties in what went back are the draft's own
+        $imports = $flows->filter(fn (Request $r) => $r->method() === 'POST' && str_ends_with($r->url(), '/flows/F1') && ($r->data()['type'] ?? null) === 'IMPORT_FLOW')->values();
+        $this->assertCount(3, $imports);
+        $back = json_decode($imports[0]->body())->request;
+        $this->assertSame(['Daily, again', '10', true], [$back->displayName, $back->schemaVersion, $back->valid]);
+        $this->assertSame((string) json_encode(json_decode(self::PROMPTX_DRAFT)->version->trigger), (string) json_encode($back->trigger));
+
+        $new = json_decode($imports[1]->body())->request->trigger;
+        $this->assertEquals(new \stdClass, $new->settings->propertySettings);
+        $this->assertEquals(new \stdClass, $new->nextAction->settings->inputUiInfo);
+        $this->assertSame([[['operator' => 'TEXT_CONTAINS']]], json_decode((string) json_encode($new->nextAction->settings->branches[0]->conditions), true));
+        $this->assertSame([], $new->nextAction->settings->branches[1]->conditions);
+        $this->assertSame([null, null], $new->nextAction->children);
+
+        // JSON as typed says what it means, and goes as it is
+        $this->assertSame('{"displayName":"As typed","trigger":{"name":"trigger","settings":{"input":{"files":[]},"sampleData":{}}},"valid":true,"schemaVersion":"10"}', (string) json_encode(json_decode($imports[2]->body())->request, JSON_UNESCAPED_SLASHES));
+
+        $published = $flows->first(fn (Request $r) => $r->method() === 'POST' && ($r->data()['type'] ?? null) === 'LOCK_AND_PUBLISH');
+        $this->assertSame('{"type":"LOCK_AND_PUBLISH","request":{}}', $published->body());
+        $this->assertSame(['ENABLED', true, false], [$this->step($run, 'publish')->output['status'], $this->step($run, 'publish')->output['published'], $this->step($run, 'publish')->output['draft']]);
+
+        $runs = $flows->first(fn (Request $r) => str_contains($r->url(), '/flow-runs?'));
+        parse_str((string) parse_url($runs->url(), PHP_URL_QUERY), $query);
+        $this->assertSame(['projectId' => 'other', 'limit' => '100', 'flowId' => 'F1', 'status' => 'FAILED'], $query);
+        $this->assertSame(['id' => 'R1', 'flow' => 'F1', 'flow_name' => 'Daily', 'version' => 'V2', 'status' => 'FAILED', 'started' => '2026-10-15T09:00:00.000Z', 'finished' => '2026-10-15T09:00:12.500Z', 'seconds' => 12.5, 'failed_step' => ['name' => 'step_3', 'label' => 'Shape']], $this->step($run, 'failed')->output['runs'][0]);
+
+        // The run: the step that failed, why, and each time round the loop
+        $why = $this->step($run, 'why')->output;
+        $this->assertSame(['FAILED', 'boom', true, 0], [$why['status'], $why['error'], $why['kept'], $why['more']]);
+        $this->assertSame([['trigger', null, null], ['step_1', null, null], ['step_2', null, null], ['step_3', 'step_2', 1], ['step_3', 'step_2', 2]], array_map(fn (array $one) => [$one['name'], $one['loop'] ?? null, $one['round'] ?? null], $why['steps']));
+        $this->assertSame([812, 11000], [$why['steps'][1]['ms'], $why['steps'][2]['ms']]);
+        $this->assertSame(['item' => 2, 'index' => 2], $why['steps'][2]['output']);
+        $this->assertSame(['FAILED', 'boom'], [$why['steps'][4]['status'], $why['steps'][4]['error']]);
+        $this->assertSame(4001, mb_strlen($why['steps'][1]['output']));
+        $this->assertStringEndsWith('…', $why['steps'][1]['output']);
+
+        // The tokens are never in what a run shows
+        $shown = (string) json_encode($run->steps()->get()->toArray());
+        $this->assertStringNotContainsString('flows-other', $shown);
+        $this->assertStringNotContainsString($account->secret('access_token'), $shown);
+    }
+
+    public function test_a_promptx_sign_in_renews_itself_near_its_end_and_says_when_it_is_gone()
+    {
+        $grants = [];
+        Http::fake(function (Request $request) use (&$grants) {
+            $path = (string) parse_url($request->url(), PHP_URL_PATH);
+
+            if (str_ends_with($path, '/pmtx/login')) {
+                $grants[] = $request->data();
+
+                return $request['refresh_token'] === 'refresh-1'
+                    ? Http::response(['access_token' => ConnectionFactory::jwt(['exp' => now()->addDays(30)->getTimestamp()]), 'refresh_token' => 'refresh-2'])
+                    : Http::response(['error' => 'invalid_grant'], 400);
+            }
+
+            return match (true) {
+                str_ends_with($path, '/get-user') => Http::response(['wfAuth' => ['accessToken' => 'flows-usual', 'projectId' => 'usual']]),
+                str_ends_with($path, '/switch-project') => Http::response(['statusCode' => 403, 'message' => 'Forbidden'], 403),
+                default => Http::response(['statusCode' => 401, 'message' => 'Unauthorized'], 401),
+            };
+        });
+        $user = User::factory()->create();
+        $runs = fn (Connection $account, string $project = '') => $this->step($this->runChain($user, [$this->node('it', 'promptx.runs', ['connection' => $account->ref_id, 'project' => $project])], ['none' => '']), 'it');
+
+        // Three days from its end, it is renewed, and the refresh token it was renewed with is replaced
+        $near = Connection::factory()->promptx(days: 3)->for($user)->create();
+        $this->assertStringContainsString('no longer takes this sign-in', $runs($near)->error['message']);
+        $this->assertSame(['grant_type' => 'refresh_token', 'refresh_token' => 'refresh-1'], array_diff_key($grants[0], ['basic_auth' => true]));
+        $this->assertSame('refresh-2', $near->fresh()->secret('refresh_token'));
+        $this->assertTrue(PromptxSignIn::until((string) $near->fresh()->secret('access_token'))->isAfter(now()->addDays(29)));
+
+        // Plenty left: nothing renewed
+        $this->assertStringContainsString('has no project "other"', $runs(Connection::factory()->promptx()->for($user)->create(), 'other')->error['message']);
+        $this->assertCount(1, $grants);
+
+        // Run out, and its refresh token refused: only its password signs it in again
+        $gone = Connection::factory()->promptx(days: -1, refresh: 'refresh-old')->for($user)->create();
+        $this->assertStringContainsString('type its password on the connection', $runs($gone)->error['message']);
+        $this->assertSame('refresh-old', $gone->fresh()->secret('refresh_token'));
     }
 }

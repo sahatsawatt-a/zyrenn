@@ -73,8 +73,11 @@ if (form.service) {
     choose(form.service);
 }
 
+// One spent on signing in is never kept: what it signed in to stands for it
 const saved = (field: Field) =>
-    props.connection?.saved_secrets.includes(field.name) ?? false;
+    field.spent
+        ? (props.connection?.saved_secrets.length ?? 0) > 0
+        : (props.connection?.saved_secrets.includes(field.name) ?? false);
 
 const error = (where: 'settings' | 'secrets', field: Field) =>
     (form.errors as Record<string, string>)[`${where}.${field.name}`];
@@ -400,7 +403,7 @@ async function save() {
                         variant="secondary"
                         class="font-normal"
                     >
-                        <Lock /> Saved
+                        <Lock /> {{ field.spent ? 'Signed in' : 'Saved' }}
                     </Badge>
                 </Label>
                 <Input
@@ -415,7 +418,9 @@ async function save() {
                     data-form-type="other"
                     :placeholder="
                         saved(field)
-                            ? 'Leave blank to keep the saved one'
+                            ? field.spent
+                                ? 'Leave blank to stay signed in'
+                                : 'Leave blank to keep the saved one'
                             : field.placeholder
                     "
                 />

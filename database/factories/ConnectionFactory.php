@@ -130,6 +130,29 @@ class ConnectionFactory extends Factory
     }
 
     /**
+     * A PromptX account signed in, its account token running out in $days.
+     */
+    public function promptx(int $days = 30, string $refresh = 'refresh-1'): static
+    {
+        return $this->state(['name' => 'PromptX', 'service' => Services::PROMPTX, 'settings' => ['login' => 'ada@example.com'], 'secrets' => [
+            'access_token' => self::jwt(['email' => 'ada@example.com', 'firstname' => 'Ada', 'lastname' => 'Lovelace', 'exp' => now()->addDays($days)->getTimestamp()]),
+            'refresh_token' => $refresh,
+        ]]);
+    }
+
+    /**
+     * A token that says what it is given of itself, unsigned.
+     *
+     * @param  array<string, mixed>  $claims
+     */
+    public static function jwt(array $claims): string
+    {
+        $part = fn (array $data) => rtrim(strtr(base64_encode((string) json_encode($data)), '+/', '-_'), '=');
+
+        return $part(['alg' => 'none']).'.'.$part($claims).'.sig';
+    }
+
+    /**
      * A project's, made by $by (a new member, unless given).
      */
     public function forProject(Project $project, ?User $by = null): static

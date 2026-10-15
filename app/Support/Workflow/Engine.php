@@ -45,6 +45,7 @@ use App\Support\Workflow\Steps\LinkedInPost;
 use App\Support\Workflow\Steps\Log;
 use App\Support\Workflow\Steps\ManualTrigger;
 use App\Support\Workflow\Steps\MergeStep;
+use App\Support\Workflow\Steps\PromptxCall;
 use App\Support\Workflow\Steps\RunCode;
 use App\Support\Workflow\Steps\SerpApiCall;
 use App\Support\Workflow\Steps\SetData;
@@ -165,6 +166,12 @@ final class Engine
         'tavily.crawl' => TavilyCall::class,
         'tavily.map' => TavilyCall::class,
         'tavily.usage' => TavilyCall::class,
+        'promptx.flow_create' => PromptxCall::class,
+        'promptx.flow' => PromptxCall::class,
+        'promptx.flow_import' => PromptxCall::class,
+        'promptx.flow_publish' => PromptxCall::class,
+        'promptx.runs' => PromptxCall::class,
+        'promptx.run' => PromptxCall::class,
         'telegram.send' => TelegramSend::class,
         'telegram.send_file' => TelegramSendFile::class,
         'line.send' => LineSend::class,

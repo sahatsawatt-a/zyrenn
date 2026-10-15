@@ -211,6 +211,10 @@ const TONES: Record<string, { strip: string; tile: string }> = {
         strip: 'bg-rose-500',
         tile: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
     },
+    promptx: {
+        strip: 'bg-purple-500',
+        tile: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
+    },
     telegram: {
         strip: 'bg-sky-500',
         tile: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',

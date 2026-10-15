@@ -14,7 +14,7 @@ use Illuminate\Validation\Rule;
  * whether it wants a key, and whether the address is typed without its /v1.
  * Anything else is "custom".
  *
- * @phpstan-type Field array{name: string, label: string, type: string, required: bool, placeholder?: string, help?: string, options?: array<string, string>, default?: string}
+ * @phpstan-type Field array{name: string, label: string, type: string, required: bool, placeholder?: string, help?: string, options?: array<string, string>, default?: string, spent?: bool}
  * A service whose member signs in on its own pages (LinkedIn) is given what
  * that brings -- a token, who it is, until when -- beside what is typed:
  * 'granted' names those, and they are kept through every change of the rest.
@@ -69,6 +69,9 @@ final class Services
 
     /** Search made for a model to read, and pages read whole, by a key (tavily.com). */
     public const TAVILY = 'tavily';
+
+    /** A PromptX account, for workflows to make, change and publish its flows and read their runs (PromptxSignIn). */
+    public const PROMPTX = 'promptx';
 
     /** A header sent with requests to one address: an API's key or bearer token. */
     public const HTTP_HEADER = 'http_header';
@@ -336,6 +339,20 @@ final class Services
             ],
         ];
 
+        $services[self::PROMPTX] = [
+            'label' => 'PromptX',
+            'group' => self::HTTP,
+            'hint' => 'A PromptX account, for workflows to make, change and publish its flows and read how their runs went. The password is used once, to sign in, and never kept: the sign-in renews itself from then on.',
+            'testable' => true,
+            'settings' => [
+                ['name' => 'login', 'label' => 'Email', 'type' => 'text', 'required' => true, 'placeholder' => 'you@example.com'],
+            ],
+            'secrets' => [
+                ['name' => 'password', 'label' => 'Password', 'type' => 'secret', 'required' => true, 'spent' => true],
+            ],
+            'granted' => ['settings' => [], 'secrets' => ['access_token', 'refresh_token']],
+        ];
+
         $services[self::HTTP_HEADER] = [
             'label' => 'API key',
             'group' => self::HTTP,
@@ -435,8 +452,11 @@ final class Services
         }
 
         foreach ($service['secrets'] as $field) {
+            // One spent on signing in is never saved: what it signed in to stands for it
+            $has = ($field['spent'] ?? false) ? self::granted($service['granted']['secrets'] ?? [], $saved) !== [] : filled($saved[$field['name']] ?? null);
+
             $rules["secrets.{$field['name']}"] = [
-                $complete && $field['required'] && blank($saved[$field['name']] ?? null) ? 'required' : 'nullable',
+                $complete && $field['required'] && ! $has ? 'required' : 'nullable',
                 'string',
                 'max:2000',
             ];

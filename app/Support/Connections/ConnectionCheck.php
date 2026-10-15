@@ -15,9 +15,9 @@ use Illuminate\Support\Facades\Http;
  * way it offers: the models a host lists, the bot Telegram says a token is,
  * the channel LINE says a token opens, the member or the Page a sign-in is
  * of, the number WhatsApp says a token speaks for, what is left of a search
- * key's allowance. A failure is an answer too, so it
- * comes back as ok: false rather than as an error. A token is never repeated
- * in what comes back, even when the service says it.
+ * key's allowance, the way into a PromptX account's flows. A failure is an
+ * answer too, so it comes back as ok: false rather than as an error. A token
+ * is never repeated in what comes back, even when the service says it.
  */
 class ConnectionCheck
 {
@@ -45,6 +45,7 @@ class ConnectionCheck
             Services::WHATSAPP => $this->whatsapp($connection),
             Services::SERPAPI => $this->serpapi($connection),
             Services::TAVILY => $this->tavily($connection),
+            Services::PROMPTX => $this->promptx($connection),
             Services::MCP => $this->mcp($connection),
             default => ['ok' => true, 'message' => 'Nothing to try ahead: it is checked when it is used.'],
         };
@@ -243,6 +244,49 @@ class ConnectionCheck
         $plan = $response->json('plan_name');
 
         return ['ok' => true, 'message' => 'Works'.(is_numeric($left) ? ': '.number_format((int) $left).((int) $left === 1 ? ' search' : ' searches').' left'.(is_string($plan) && $plan !== '' ? " ({$plan})" : '') : '').'.'];
+    }
+
+    /**
+     * A password typed is tried by signing in with it, and nothing is kept;
+     * without one, the sign-in it holds. Either way PromptX is asked for the
+     * way into its flows, which every step needs.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    private function promptx(Connection $connection): array
+    {
+        $password = $connection->secret('password');
+
+        if ($password !== null) {
+            $signedIn = PromptxSignIn::signIn((string) $connection->setting('login'), $password);
+
+            if (is_string($signedIn)) {
+                return ['ok' => false, 'message' => $signedIn];
+            }
+
+            $token = $signedIn['access_token'];
+        } else {
+            $token = PromptxSignIn::accountToken($connection);
+
+            if ($token === null) {
+                return ['ok' => false, 'message' => $connection->secret('refresh_token') === null ? 'Type the password to sign in.' : 'PromptX no longer takes its sign-in: type the password to sign in again.'];
+            }
+        }
+
+        try {
+            $response = Http::timeout(25)->acceptJson()->withToken($token)->get(PromptxSignIn::ACCOUNT.'/workflow-api/v1/get-user');
+        } catch (ConnectionException) {
+            return ['ok' => false, 'message' => 'Could not reach PromptX.'];
+        }
+
+        if (! $response->successful() || blank($response->json('wfAuth.accessToken'))) {
+            return ['ok' => false, 'message' => "PromptX signed in, but gave no way into its flows: it answered with {$response->status()}."];
+        }
+
+        $claims = PromptxSignIn::claims($token);
+        $name = trim(($claims['firstname'] ?? '').' '.($claims['lastname'] ?? '')) ?: ($claims['email'] ?? '');
+
+        return ['ok' => true, 'message' => $name !== '' ? "Works: signed in as {$name}." : 'Works.'];
     }
 
     /**

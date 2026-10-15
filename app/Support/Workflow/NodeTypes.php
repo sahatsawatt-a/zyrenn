@@ -1364,6 +1364,7 @@ final class NodeTypes
             'web' => 'Web',
             'serpapi' => 'SerpApi',
             'tavily' => 'Tavily',
+            'promptx' => 'PromptX',
             'telegram' => 'Telegram',
             'line' => 'LINE',
             'whatsapp' => 'WhatsApp',
@@ -1393,6 +1394,10 @@ final class NodeTypes
                 'Search and read' => ['tavily.search', 'tavily.extract'],
                 'A whole site' => ['tavily.crawl', 'tavily.map'],
                 'Allowance' => ['tavily.usage'],
+            ],
+            'promptx' => [
+                'Flows' => ['promptx.flow_create', 'promptx.flow', 'promptx.flow_import', 'promptx.flow_publish'],
+                'Runs' => ['promptx.runs', 'promptx.run'],
             ],
             'telegram' => [
                 'Messages' => ['trigger.telegram', 'telegram.send', 'telegram.send_file', 'telegram.album', 'telegram.sticker', 'telegram.location', 'telegram.contact', 'telegram.poll', 'telegram.forward', 'telegram.copy', 'telegram.action', 'telegram.file'],

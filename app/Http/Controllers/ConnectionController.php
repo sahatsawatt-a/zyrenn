@@ -12,6 +12,7 @@ use App\Support\Chat\AiFailed;
 use App\Support\Connections\ConnectionCheck;
 use App\Support\Connections\InstagramSignIn;
 use App\Support\Connections\Meta;
+use App\Support\Connections\PromptxSignIn;
 use App\Support\Connections\Services;
 use App\Support\Connections\SignIns;
 use App\Support\Connections\ThreadsSignIn;
@@ -80,6 +81,7 @@ class ConnectionController extends Controller
             'settings' => Services::settings($validated['service'], $validated['settings'] ?? []),
         ]);
         $connection->secrets = Services::secrets($validated['service'], $validated['secrets'] ?? []) ?: null;
+        PromptxSignIn::spend($connection);
         $connection->ownedBy($owner, $request->user())->save();
         Audit::record($connection, 'connection.added', $request->user(), ['service' => $connection->service]);
 
@@ -120,6 +122,7 @@ class ConnectionController extends Controller
             'settings' => Services::settings($validated['service'], $validated['settings'] ?? [], $sameKind ? $before['settings'] : []),
         ]);
         $connection->secrets = Services::secrets($validated['service'], $validated['secrets'] ?? [], $saved) ?: null;
+        PromptxSignIn::spend($connection);
         $connection->save();
 
         // Which fields changed, never what they hold

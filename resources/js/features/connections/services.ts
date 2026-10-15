@@ -15,6 +15,7 @@ import {
     ShieldCheck,
     Sparkles,
     Webhook,
+    Workflow,
 } from '@lucide/vue';
 import type { Component } from 'vue';
 
@@ -28,6 +29,8 @@ export type Field = {
     help?: string;
     options?: Record<string, string>;
     default?: string;
+    // A secret used once, to sign in, and never kept
+    spent?: boolean;
 };
 
 export type ServiceGroup = 'ai' | 'messaging' | 'social' | 'search' | 'http';
@@ -159,6 +162,8 @@ export function lookOf(service: string, group?: ServiceGroup): Look {
             return { icon: Search, tone: TONES.cyan };
         case 'tavily':
             return { icon: Radar, tone: TONES.rose };
+        case 'promptx':
+            return { icon: Workflow, tone: TONES.violet };
         case 'http_header':
             return { icon: KeyRound, tone: TONES.amber };
         case 'webhook_secret':
@@ -215,6 +220,10 @@ export function detailOf(
                 ? 'Searches the web and reads pages, by its key'
                 : 'Searches Google and other engines, by its key';
         default:
+            if (connection.service === 'promptx') {
+                return `Signed in as ${s.login ?? ''}`;
+            }
+
             if (connection.service === 'http_header') {
                 return `${s.header_name ?? 'Authorization'} header, only for ${host(s.base_url)}`;
             }

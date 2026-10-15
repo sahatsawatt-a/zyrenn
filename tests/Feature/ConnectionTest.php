@@ -8,6 +8,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Support\Connections\Meta;
 use App\Support\Workflow\Steps\WhatsAppApi;
+use Database\Factories\ConnectionFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
@@ -1029,5 +1030,57 @@ class ConnectionTest extends TestCase
             ->where('services.tavily.group', 'search')
             ->where('connections.0.saved_secrets', ['api_key'])
             ->where('connections.0.hook', null));
+    }
+
+    public function test_a_promptx_password_is_spent_on_signing_in_and_only_the_tokens_it_signs_in_to_are_kept()
+    {
+        $logins = [];
+        Http::fake(function (Request $request) use (&$logins) {
+            if (str_ends_with($request->url(), '/pmtx/login')) {
+                $logins[] = $request->data();
+
+                return $request['password'] === 'right'
+                    ? Http::response(['access_token' => ConnectionFactory::jwt(['firstname' => 'Ada', 'lastname' => 'Lovelace', 'exp' => now()->addDays(30)->getTimestamp()]), 'refresh_token' => 'refresh-'.count($logins)])
+                    // A wrong password is a 500 that says so
+                    : Http::response(['error' => 'Invalid Username or Password'], 500);
+            }
+
+            return Http::response(['wfAuth' => ['accessToken' => 'flows', 'projectId' => 'usual']]);
+        });
+        $user = User::factory()->create();
+        $typed = ['name' => 'PromptX', 'service' => 'promptx', 'settings' => ['login' => 'ada@example.com']];
+
+        $this->actingAs($user)->post(route('connections.store'), $typed)->assertSessionHasErrors('secrets.password');
+        $this->actingAs($user)->post(route('connections.store'), [...$typed, 'secrets' => ['password' => 'wrong']])
+            ->assertSessionHasErrors(['secrets.password' => 'PromptX did not take that email and password.']);
+        $this->assertSame(0, $user->connections()->count());
+
+        // Tried before it is kept: signed in, and nothing kept
+        $this->actingAs($user)->postJson(route('connections.check'), [...$typed, 'secrets' => ['password' => 'right']])
+            ->assertExactJson(['ok' => true, 'message' => 'Works: signed in as Ada Lovelace.']);
+        $this->assertSame(0, $user->connections()->count());
+
+        $this->actingAs($user)->post(route('connections.store'), [...$typed, 'secrets' => ['password' => 'right']])->assertSessionHasNoErrors();
+        $connection = $user->connections()->sole();
+        $this->assertSame(['access_token', 'refresh_token'], array_keys($connection->secrets));
+        $this->assertSame('refresh-3', $connection->secret('refresh_token'));
+        $this->assertSame(['login' => 'ada@example.com'], $connection->settings);
+        $this->assertSame(['grant_type' => 'password', 'username' => 'ada@example.com', 'password' => 'right'], array_intersect_key($logins[2], array_flip(['grant_type', 'username', 'password'])));
+
+        // Signed in, it is changed without the password, and asked of with what it holds
+        $this->actingAs($user)->patch(route('connections.update', $connection), [...$typed, 'name' => 'Work'])->assertSessionHasNoErrors();
+        $this->assertSame(['Work', 'refresh-3'], [$connection->fresh()->name, $connection->fresh()->secret('refresh_token')]);
+        $this->actingAs($user)->getJson(route('connections.test', $connection))->assertJson(['ok' => true]);
+        $this->assertCount(3, $logins);
+
+        // Typed again, it signs in again
+        $this->actingAs($user)->patch(route('connections.update', $connection), [...$typed, 'secrets' => ['password' => 'right']])->assertSessionHasNoErrors();
+        $this->assertSame('refresh-4', $connection->fresh()->secret('refresh_token'));
+        $this->assertStringNotContainsString('right', (string) json_encode($connection->fresh()->secrets));
+
+        $this->actingAs($user)->get(route('connections.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('services.promptx.secrets.0.spent', true)
+                ->where('connections.0.saved_secrets', ['access_token', 'refresh_token']));
     }
 }
