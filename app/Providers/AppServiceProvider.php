@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\Board\Board;
+use App\Models\Browser\BrowserSuite;
 use App\Models\Chat\ChatRoom;
 use App\Models\Connection;
 use App\Models\Drive\DriveFile;
@@ -13,6 +14,7 @@ use App\Models\Map\Trip;
 use App\Models\Note\Note;
 use App\Models\Project;
 use App\Models\Table\Table;
+use App\Models\User;
 use App\Models\Workflow\Workflow;
 use App\Policies\ChatPolicy;
 use App\Policies\ContentPolicy;
@@ -52,11 +54,14 @@ class AppServiceProvider extends ServiceProvider
 
         // One policy for everything a user or a project owns; the Gate finds
         // Folder's for each kind of folder
-        foreach ([Note::class, Board::class, Table::class, Trip::class, PlaceList::class, Place::class, DriveFile::class, Folder::class, Connection::class, Workflow::class] as $model) {
+        foreach ([Note::class, Board::class, Table::class, Trip::class, PlaceList::class, Place::class, DriveFile::class, Folder::class, Connection::class, Workflow::class, BrowserSuite::class] as $model) {
             Gate::policy($model, ContentPolicy::class);
         }
 
         Gate::policy(ChatRoom::class, ChatPolicy::class);
+
+        // Whoever runs the app itself: what is about the app, not anyone's content
+        Gate::define('admin', fn (User $user) => $user->is_admin);
 
         $this->configureOwnedRoutes();
     }

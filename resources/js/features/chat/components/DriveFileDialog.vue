@@ -25,7 +25,7 @@ const props = withDefaults(
     defineProps<{
         room?: string;
         // Without a chat: which of the Drive's files to offer
-        kind?: 'image' | 'video';
+        kind?: 'image' | 'video' | 'any';
         title?: string;
         description?: string;
     }>(),

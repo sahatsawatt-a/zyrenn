@@ -6,11 +6,52 @@
 //
 //     node tests/e2e/board.mjs          # watch it happen
 //     HEADED=0 node tests/e2e/board.mjs # quietly
+//     FULL=1 SLOWMO=600 node tests/e2e/inbox.mjs # full screen, slow enough to watch, a cursor drawn,
+//                                                # and up for LINGER (5) seconds at the end
+//     FULL=1 SLOWMO=800 READ=2 node ...          # and each check written on the page, held 2s to read
 import { execFileSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { caption, glideTo, typeInto } from '../../docker/chrome/pace.mjs';
+import { drawCursor } from '../../resources/js/features/browser/cursor.js';
+
+// tests/e2e/.env (git-ignored): values a run may need that stay on this
+// machine -- the real-services account's password, say. What the shell sets
+// wins over it.
+try {
+    for (const line of readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), '.env'),
+        'utf8',
+    ).split('\n')) {
+        const found = /^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
+
+        if (
+            found &&
+            !line.trim().startsWith('#') &&
+            process.env[found[1]] === undefined
+        ) {
+            process.env[found[1]] = found[2].replace(/^(['"])(.*)\1$/, '$2');
+        }
+    }
+} catch {
+    // No such file: nothing more to read
+}
+
+// E2E_ACCOUNT=real: the account kept for real services (E2E_REAL_*), for
+// this run alone -- never by itself, so no suite strays onto it
+if (process.env.E2E_ACCOUNT === 'real') {
+    if (!process.env.E2E_REAL_PASSWORD) {
+        throw new Error(
+            'E2E_ACCOUNT=real needs E2E_REAL_PASSWORD, in tests/e2e/.env',
+        );
+    }
+
+    process.env.E2E_EMAIL =
+        process.env.E2E_REAL_EMAIL ?? 'zyrenn.dev@gmail.com';
+    process.env.E2E_PASSWORD = process.env.E2E_REAL_PASSWORD;
+}
 
 const APP = process.env.APP_URL ?? 'http://127.0.0.1:8001';
 
@@ -80,9 +121,13 @@ export async function steady(read, { timeout = 8000, every = 150 } = {}) {
 
 /** The page's app is up: its first screen is drawn, and can be clicked. */
 export const mounted = (page) =>
-    page.waitForFunction(
-        () => document.getElementById('app')?.childElementCount > 0,
-    );
+    page.waitForFunction(() => {
+        const app = document.getElementById('app');
+
+        // Drawn, and Vue's: a page drawn on the server takes no clicks until
+        // Vue has taken it over
+        return app?.childElementCount > 0 && Boolean(app.__vue_app__);
+    });
 
 /**
  * Opens `url` and waits for the app to be up -- not for the network to fall
@@ -170,6 +215,109 @@ const BROWSER_NOISE =
 // runs -- someone else at work in the same checkout, not the app going wrong
 const DEV_SERVER_NOISE = /\/@vite\/client|^\[vite\] /;
 
+// A pointer drawn on the page where the mouse is, moving there rather than
+// jumping, and a ring where it presses: so someone watching a headed run can
+// follow what the suite does. On by itself whenever the browser is shown
+// (CURSOR=0 leaves it out); never in a headless run. It takes no clicks.
+const SHOW_CURSOR =
+    process.env.HEADED !== '0' && (process.env.CURSOR ?? '1') !== '0';
+
+// FULL=1 with the browser shown: Chrome opens maximized and the page fills
+// the whole window, for someone watching, rather than a set 1500x950. Off
+// by itself, since some suites go by where things are on a page that size.
+const FULL = process.env.HEADED !== '0' && process.env.FULL === '1';
+
+// How long a full-screen run leaves the window up after its last step, in
+// seconds (LINGER), so whoever watches sees where it ended. Not a wait for
+// anything: the suite is done by then.
+const LINGER = FULL ? Number(process.env.LINGER ?? 5) : 0;
+
+// READ=n on a full-screen run: each check is written across the foot of the
+// page and held there n seconds, for whoever watches to read what was just
+// checked and the screen it was checked on. Like LINGER, not a wait for
+// anything, and off unless asked for.
+const READ = FULL ? Number(process.env.READ ?? 0) : 0;
+
+// Each check across the foot of the page (docker/chrome/pace.mjs, as the browser checks write theirs)
+const showCheck = (page, label, passed) =>
+    caption(page, label, passed ? 'ok' : 'failed');
+
+/** What Chrome is started with: maximized, for a full-screen run. */
+export const LAUNCH_ARGS = FULL ? ['--start-maximized'] : [];
+
+// On a full-screen run, how long the drawn pointer takes to glide to where
+// the mouse goes, in ms -- long enough to follow it from one thing to the next
+const GLIDE = FULL ? 350 : 160;
+
+// Drawn as the tours of the app draw it (resources/js/features/browser/cursor.js),
+// following the real mouse
+const CURSOR = `(${String((draw, glide) => {
+    const follow = () => {
+        if (!document.body || document.getElementById('e2e-cursor')) {
+            return;
+        }
+
+        const cursor = draw();
+        addEventListener(
+            'mousemove',
+            (event) => cursor.moveTo(event.clientX, event.clientY, glide),
+            true,
+        );
+        addEventListener(
+            'mousedown',
+            (event) => cursor.press(event.clientX, event.clientY),
+            true,
+        );
+    };
+
+    if (document.readyState === 'loading') {
+        addEventListener('DOMContentLoaded', follow);
+    } else {
+        follow();
+    }
+})})(${String(drawCursor)}, ${GLIDE})`;
+
+/**
+ * A full-screen run is watched: the mouse goes to what it clicks or hovers,
+ * and waits for the drawn pointer to get there, before it presses -- so the
+ * press is seen where and when it happens, not after what it chose has
+ * already changed; and what is filled in is typed, key by key. Like LINGER,
+ * waits only for whoever watches, and only on a FULL run.
+ */
+function watched(page) {
+    const Locator = Object.getPrototypeOf(page.locator('body'));
+
+    if (Locator.watched) {
+        return;
+    }
+
+    const { click, hover, fill } = Locator;
+
+    Object.assign(Locator, {
+        watched: true,
+        async click(options) {
+            await glideTo(this, GLIDE);
+
+            return click.call(this, options);
+        },
+        async hover(options) {
+            await glideTo(this, GLIDE);
+
+            return hover.call(this, options);
+        },
+        async fill(value, options) {
+            await glideTo(this, GLIDE);
+
+            // Through the unpatched click and fill, so it glides only the once
+            return typeInto(this, value, 45, {
+                click: (o) => click.call(this, o),
+                fill: (v, o) => fill.call(this, v, o),
+                options,
+            });
+        },
+    });
+}
+
 /**
  * A page signed in as `email`, by a session kept from the last time -- the
  * form is filled in only when there is none yet, or it has run out. Opens
@@ -189,7 +337,8 @@ async function signedIn(
     mkdirSync(SHOTS, { recursive: true });
     mkdirSync(KEPT, { recursive: true });
     const kept = `${KEPT}/session-${email}.json`;
-    const screen = { viewport, deviceScaleFactor };
+    // A full-screen run takes the window's own size, which no pixel ratio can be set beside
+    const screen = FULL ? { viewport: null } : { viewport, deviceScaleFactor };
     let context;
 
     try {
@@ -198,8 +347,16 @@ async function signedIn(
         context = await browser.newContext(screen);
     }
 
+    if (SHOW_CURSOR) {
+        await context.addInitScript(CURSOR);
+    }
+
     const page = await context.newPage();
     watch(page);
+
+    if (FULL) {
+        watched(page);
+    }
     await open(page, `${base}${path}`);
 
     if (new URL(page.url()).pathname === '/login') {
@@ -227,6 +384,7 @@ export async function openBoard(path = '/demo/konva', size = {}) {
         channel: 'chrome',
         headless: process.env.HEADED === '0',
         slowMo: Number(process.env.SLOWMO ?? 40),
+        args: LAUNCH_ARGS,
     });
     const { page } = await signedIn(
         browser,
@@ -283,8 +441,17 @@ export async function openBoard(path = '/demo/konva', size = {}) {
             `${passed ? 'PASS' : 'FAIL'}  ${label}${detail ? ` — ${detail}` : ''}`,
         );
 
+        // E2E_LIVE=1: each check said as it happens too, for run.mjs to follow
+        if (process.env.E2E_LIVE === '1') {
+            console.log(`LIVE ${results.at(-1)}`);
+        }
+
         if (!passed) {
             problems.push(label);
+        }
+
+        if (READ > 0) {
+            void showCheck(page, label, passed);
         }
     };
 
@@ -302,6 +469,10 @@ export async function openBoard(path = '/demo/konva', size = {}) {
             typeof detail === 'function' ? await detail() : detail,
         );
 
+        if (READ > 0) {
+            await new Promise((resolve) => setTimeout(resolve, READ * 1000));
+        }
+
         return answer;
     };
 
@@ -316,6 +487,11 @@ export async function openBoard(path = '/demo/konva', size = {}) {
     const afterwards = (cleanup) => cleanups.push(cleanup);
 
     const done = async () => {
+        // Left up a moment for someone watching, as the suite left it, before it is tidied away
+        if (LINGER > 0) {
+            await new Promise((resolve) => setTimeout(resolve, LINGER * 1000));
+        }
+
         for (const cleanup of cleanups.reverse()) {
             try {
                 await cleanup();

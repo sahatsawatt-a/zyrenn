@@ -4,6 +4,7 @@ import AppShell from '@/components/app/AppShell.vue';
 import AppSidebar from '@/components/app/AppSidebar.vue';
 import AppSidebarHeader from '@/components/app/AppSidebarHeader.vue';
 import { Toaster } from '@/components/ui/sonner';
+import TourPlayer from '@/features/browser/TourPlayer.vue';
 import type { BreadcrumbItem } from '@/types';
 
 type Props = {
@@ -23,5 +24,6 @@ withDefaults(defineProps<Props>(), {
             <slot />
         </AppContent>
         <Toaster />
+        <TourPlayer />
     </AppShell>
 </template>

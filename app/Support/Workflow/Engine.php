@@ -14,6 +14,7 @@ use App\Support\Live\Live;
 use App\Support\Workflow\Steps\Approval;
 use App\Support\Workflow\Steps\AskAgent;
 use App\Support\Workflow\Steps\AskAi;
+use App\Support\Workflow\Steps\BrowserChecks;
 use App\Support\Workflow\Steps\ChannelSend;
 use App\Support\Workflow\Steps\ChatFetch;
 use App\Support\Workflow\Steps\ChatRoomStep;
@@ -150,6 +151,7 @@ final class Engine
         'drive.find' => DriveFind::class,
         'drive.read' => DriveRead::class,
         'drive.link' => DriveLink::class,
+        'browser.run' => BrowserChecks::class,
         'ai.chat' => AskAi::class,
         'data.code' => RunCode::class,
         'http.request' => HttpRequest::class,

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Board\Board;
 use App\Models\Board\BoardFolder;
+use App\Models\Browser\BrowserSuite;
 use App\Models\Drive\DriveFile;
 use App\Models\Drive\DriveFolder;
 use App\Models\Map\Place;
@@ -116,4 +117,9 @@ interface Owner
      * @return HasMany<WorkflowFolder, covariant Model&Owner>
      */
     public function workflowFolders(): HasMany;
+
+    /**
+     * @return HasMany<BrowserSuite, covariant Model&Owner>
+     */
+    public function browserSuites(): HasMany;
 }

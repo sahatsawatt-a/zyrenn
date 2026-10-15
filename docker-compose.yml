@@ -241,7 +241,8 @@ services:
 
     # The PDF printer: a headless Chrome that prints a note as the app draws it
     # (docker/chrome/server.mjs). The app hands it a URL on `web` and the user's
-    # own session cookie, and gets the bytes back.
+    # own session cookie, and gets the bytes back. It also does browser checks
+    # (docker/chrome/check.mjs): steps on a public site, never on this network.
     #
     # The Playwright image ships the browsers but not the npm package, and ESM
     # ignores NODE_PATH, so the package is installed into /work with the server
@@ -256,11 +257,14 @@ services:
         working_dir: /srv
         volumes:
             - ./docker/chrome:/srv:ro
+            # The pointer a check draws, the one the app's tours and tests draw
+            - ./resources/js/features/browser/cursor.js:/shared/cursor.js:ro
         command: >
             bash -lc "mkdir -p /work && cd /work &&
                       { [ -d node_modules/playwright ] || npm i playwright@1.61.0 >/tmp/npm.log 2>&1 ||
                         { echo 'npm install failed:'; tail -20 /tmp/npm.log; exit 1; }; } &&
-                      cp /srv/server.mjs /work/server.mjs && exec node /work/server.mjs"
+                      cp /srv/*.mjs /work/ && cp /shared/cursor.js /work/cursor.mjs &&
+                      exec node /work/server.mjs"
         expose:
             - '3000'
         healthcheck:

@@ -22,6 +22,7 @@ import {
     FileText,
     FileUp,
     FolderSearch,
+    MonitorCheck,
     Forward,
     Gauge,
     Globe,
@@ -113,6 +114,7 @@ const ICONS: Record<string, Component> = {
     'table-2': Table2,
     'hard-drive-download': HardDriveDownload,
     'folder-search': FolderSearch,
+    'monitor-check': MonitorCheck,
     'file-text': FileText,
     'file-down': FileDown,
     'file-up': FileUp,
@@ -194,6 +196,10 @@ const TONES: Record<string, { strip: string; tile: string }> = {
     drive: {
         strip: 'bg-orange-500',
         tile: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
+    },
+    browser: {
+        strip: 'bg-lime-600',
+        tile: 'bg-lime-600/10 text-lime-700 dark:text-lime-400',
     },
     ai: {
         strip: 'bg-fuchsia-500',

@@ -18,10 +18,19 @@
  *                    size (a board's frames, App\Support\BoardRender).
  *   POST /png     -> {url, cookies, width, height} -> image/png of what the
  *                    page drew at that size: a board, or one of its frames.
+ *   POST /check   -> {steps:[{do, url|target|text|key}]} -> JSON of what each
+ *                    step did, on any public site (check.mjs).
+ *   POST /live    -> {steps, size} -> a page kept open, with an id, the steps
+ *                    done on it, and what is on it; /live/<id>/step {step}
+ *                    does one more there; /live/<id>/close closes it.
+ *   POST /look    -> {steps} -> the same, done quickly, and what is on the page
+ *                    they lead to: its fields, buttons, links and writing, and
+ *                    a picture of it, for choosing what a next step is about.
  *   Any failure is a JSON {"error"} with a 4xx/5xx -- never an empty 200.
  */
 import http from 'node:http';
 import { chromium } from 'playwright';
+import { closeLive, openLive, runCheck, stepLive } from './check.mjs';
 
 const PORT = Number(process.env.PDF_PORT || 3000);
 const MAX_BODY = 1024 * 1024; // a URL and a cookie; anything bigger is a mistake
@@ -57,8 +66,13 @@ async function browser() {
     }
     // --no-sandbox: already in a container, and the sandbox needs privileges.
     // --disable-dev-shm-usage: Docker's 64M /dev/shm crashes Chrome mid-render.
+    // WebRTC kept to the proxy: a browser check's page has no way round it.
     launching = chromium.launch({
-        args: ['--no-sandbox', '--disable-dev-shm-usage'],
+        args: [
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+        ],
     });
 
     return launching;
@@ -302,7 +316,13 @@ const server = http.createServer(async (req, res) => {
         return res.end('ok');
     }
 
-    if (req.method !== 'POST' || (path !== '/pdf' && path !== '/png')) {
+    // A live page, kept open while a check is built: /live, /live/<id>/step, /live/<id>/close
+    const living = /^\/live(?:\/([0-9a-f-]{36})\/(step|close))?$/.exec(path);
+
+    if (
+        req.method !== 'POST' ||
+        (!living && !['/pdf', '/png', '/check', '/look'].includes(path))
+    ) {
         return fail(res, 404, `no route for ${req.method} ${path}`);
     }
 
@@ -315,6 +335,39 @@ const server = http.createServer(async (req, res) => {
 
             return fail(res, 400, 'body is not valid JSON');
         }
+
+        if (living) {
+            const [, id, what] = living;
+            const out = JSON.stringify(
+                !id
+                    ? await openLive(await browser(), body)
+                    : what === 'step'
+                      ? await stepLive(id, body)
+                      : (await closeLive(id), { ok: true }),
+            );
+            res.writeHead(200, {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(out),
+            });
+
+            return res.end(out);
+        }
+
+        if (path === '/check' || path === '/look') {
+            const out = JSON.stringify(
+                await runCheck(await browser(), {
+                    ...body,
+                    look: path === '/look',
+                }),
+            );
+            res.writeHead(200, {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(out),
+            });
+
+            return res.end(out);
+        }
+
         if (typeof body.url !== 'string' || !/^https?:\/\//.test(body.url)) {
             return fail(res, 400, 'url is required and must be http(s)');
         }

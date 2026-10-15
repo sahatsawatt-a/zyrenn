@@ -4,6 +4,7 @@ namespace App\Models\Concerns;
 
 use App\Models\Board\Board;
 use App\Models\Board\BoardFolder;
+use App\Models\Browser\BrowserSuite;
 use App\Models\Connection;
 use App\Models\Drive\DriveFile;
 use App\Models\Drive\DriveFolder;
@@ -152,5 +153,13 @@ trait OwnsContent
     public function workflowFolders(): HasMany
     {
         return $this->hasMany(WorkflowFolder::class);
+    }
+
+    /**
+     * @return HasMany<BrowserSuite, $this>
+     */
+    public function browserSuites(): HasMany
+    {
+        return $this->hasMany(BrowserSuite::class);
     }
 }

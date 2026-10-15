@@ -51,6 +51,7 @@ require __DIR__.'/features/knowledge.php';
 require __DIR__.'/features/agents.php';
 require __DIR__.'/features/product.php';
 require __DIR__.'/features/workflows.php';
+require __DIR__.'/features/checks.php';
 require __DIR__.'/hooks.php';
 require __DIR__.'/features/projects.php';
 require __DIR__.'/features/tickets.php';

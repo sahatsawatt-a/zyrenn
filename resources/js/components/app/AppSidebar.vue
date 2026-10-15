@@ -14,11 +14,13 @@ import {
     LayoutGrid,
     Bot,
     MessagesSquare,
+    MonitorCheck,
     NotebookPen,
     FileSpreadsheet,
     ChartNoAxesCombined,
     Presentation,
     Settings,
+    TestTubes,
     Ticket,
     Workflow,
 } from '@lucide/vue';
@@ -49,7 +51,9 @@ import {
 } from '@/routes';
 import { inboxChanges, useUnreadChats } from '@/composables/useUnreadChats';
 import { owned } from '@/lib/projects';
+import { page as testRunsPage } from '@/routes/admin/test-runs';
 import { index as boardsIndex } from '@/routes/boards';
+import { index as checksIndex } from '@/routes/checks';
 import { index as chatsIndex } from '@/routes/chats';
 import { index as driveIndex } from '@/routes/drive';
 import { index as notesIndex } from '@/routes/notes';
@@ -60,6 +64,7 @@ import {
     edit as projectSettings,
 } from '@/routes/projects';
 import { index as projectBoardsIndex } from '@/routes/projects/boards';
+import { index as projectChecksIndex } from '@/routes/projects/checks';
 import { index as projectDriveIndex } from '@/routes/projects/drive';
 import { index as projectNotesIndex } from '@/routes/projects/notes';
 import { index as mapsIndex } from '@/routes/maps';
@@ -143,6 +148,12 @@ const mainNavItems = computed<NavItem[]>(() => {
             title: 'Workflows',
             href: owned(workflowsIndex, projectWorkflowsIndex)(),
             icon: Workflow,
+        },
+        // Checks of a site, done in a real browser: tested, or filmed for a demo
+        {
+            title: 'Browser checks',
+            href: owned(checksIndex, projectChecksIndex)(),
+            icon: MonitorCheck,
         },
         // Who answers: a model with its instructions, every version kept
         {
@@ -238,7 +249,7 @@ const mainNavItems = computed<NavItem[]>(() => {
     ];
 });
 
-const footerNavItems: NavItem[] = [
+const footerNavItems = computed<NavItem[]>(() => [
     {
         title: 'Repository',
         href: 'https://github.com/sahatsawatt-a/zyrenn',
@@ -249,7 +260,11 @@ const footerNavItems: NavItem[] = [
         href: guide(),
         icon: BookOpen,
     },
-];
+    // About the app itself, for whoever runs it: apart from anyone's own pages
+    ...(page.props.auth.user?.is_admin
+        ? [{ title: 'Test runs', href: testRunsPage(), icon: TestTubes }]
+        : []),
+]);
 </script>
 
 <template>

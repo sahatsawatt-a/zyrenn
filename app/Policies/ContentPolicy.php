@@ -3,6 +3,7 @@
 namespace App\Policies;
 
 use App\Models\Board\Board;
+use App\Models\Browser\BrowserSuite;
 use App\Models\Connection;
 use App\Models\Drive\DriveFile;
 use App\Models\Folder;
@@ -25,7 +26,7 @@ class ContentPolicy
     /**
      * Determine whether the user can view the thing.
      */
-    public function view(User $user, Note|Board|Table|Trip|PlaceList|Place|DriveFile|Folder|Connection|Workflow $thing): bool
+    public function view(User $user, Note|Board|Table|Trip|PlaceList|Place|DriveFile|Folder|Connection|Workflow|BrowserSuite $thing): bool
     {
         return $this->role($user, $thing) !== null;
     }
@@ -33,7 +34,7 @@ class ContentPolicy
     /**
      * Determine whether the user can update the thing.
      */
-    public function update(User $user, Note|Board|Table|Trip|PlaceList|Place|DriveFile|Folder|Connection|Workflow $thing): bool
+    public function update(User $user, Note|Board|Table|Trip|PlaceList|Place|DriveFile|Folder|Connection|Workflow|BrowserSuite $thing): bool
     {
         return $this->canChange($user, $thing);
     }
@@ -41,12 +42,12 @@ class ContentPolicy
     /**
      * Determine whether the user can delete the thing.
      */
-    public function delete(User $user, Note|Board|Table|Trip|PlaceList|Place|DriveFile|Folder|Connection|Workflow $thing): bool
+    public function delete(User $user, Note|Board|Table|Trip|PlaceList|Place|DriveFile|Folder|Connection|Workflow|BrowserSuite $thing): bool
     {
         return $this->canChange($user, $thing);
     }
 
-    private function canChange(User $user, Note|Board|Table|Trip|PlaceList|Place|DriveFile|Folder|Connection|Workflow $thing): bool
+    private function canChange(User $user, Note|Board|Table|Trip|PlaceList|Place|DriveFile|Folder|Connection|Workflow|BrowserSuite $thing): bool
     {
         return in_array($this->role($user, $thing), [Project::OWNER, Project::EDITOR], true);
     }
@@ -55,7 +56,7 @@ class ContentPolicy
      * The user's role over the thing, or null when they have none. Someone's
      * own things are theirs to do anything with, as a project's owner can.
      */
-    private function role(User $user, Note|Board|Table|Trip|PlaceList|Place|DriveFile|Folder|Connection|Workflow $thing): ?string
+    private function role(User $user, Note|Board|Table|Trip|PlaceList|Place|DriveFile|Folder|Connection|Workflow|BrowserSuite $thing): ?string
     {
         if ($thing->user_id !== null) {
             return $thing->user_id === $user->id ? Project::OWNER : null;

@@ -111,7 +111,7 @@ export function uploadToDrive(
  * optionally filtered by name.
  */
 export async function listDriveMedia(
-    kind: MediaKind,
+    kind: MediaKind | 'any',
     query = '',
 ): Promise<DriveFile[]> {
     const response = await fetch(

@@ -86,8 +86,14 @@ function onKey(event: KeyboardEvent) {
                     </Button>
                 </template>
             </div>
+            <!-- A picture held in the page (a data: URL) is saved as it is -->
             <a
-                :href="`${file.url}?download=1`"
+                :href="
+                    file.url.startsWith('data:')
+                        ? file.url
+                        : `${file.url}?download=1`
+                "
+                :download="file.url.startsWith('data:') ? file.name : undefined"
                 class="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 self-start text-xs underline-offset-2 hover:underline"
             >
                 <Download class="size-3.5" />

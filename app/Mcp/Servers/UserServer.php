@@ -8,6 +8,17 @@ use App\Mcp\Tools\Boards\GetBoard;
 use App\Mcp\Tools\Boards\ListBoardFolders;
 use App\Mcp\Tools\Boards\ListBoards;
 use App\Mcp\Tools\Boards\UpdateBoard;
+use App\Mcp\Tools\BrowserChecks\CloseBrowserPage;
+use App\Mcp\Tools\BrowserChecks\DoBrowserStep;
+use App\Mcp\Tools\BrowserChecks\EditBrowserCheck;
+use App\Mcp\Tools\BrowserChecks\GetBrowserRun;
+use App\Mcp\Tools\BrowserChecks\GetBrowserSuite;
+use App\Mcp\Tools\BrowserChecks\ListBrowserSuites;
+use App\Mcp\Tools\BrowserChecks\LookAtPage;
+use App\Mcp\Tools\BrowserChecks\OpenBrowserPage;
+use App\Mcp\Tools\BrowserChecks\RunBrowserSuite;
+use App\Mcp\Tools\BrowserChecks\SaveBrowserCheck;
+use App\Mcp\Tools\BrowserChecks\SaveBrowserSuite;
 use App\Mcp\Tools\Chats\GetChat;
 use App\Mcp\Tools\Chats\ListChats;
 use App\Mcp\Tools\Chats\SayInChat;
@@ -97,6 +108,20 @@ several places, so read get-product-part's "impact" before changing one. Request
 word as they were asked; what they mean is written as requirements (REQ-n) with acceptance criteria, and a
 requirement is verified only once every criterion is met. Tickets linked to a part are its work and its
 bugs. Everything is named by its code, and they always take "project".
+
+Browser checks: suites of checks of a public site -- the user's own, or a project's, such as a
+customer's (list-browser-suites, get-browser-suite, save-browser-suite, save-browser-check,
+edit-browser-check, look-at-page, open-browser-page, do-browser-step, close-browser-page,
+run-browser-suite, get-browser-run). Each check is a few steps done in a real browser -- open, click, point at (hover), type,
+choose, add a file, press, go back, scroll, expect to see or not to see, expect the address, take a picture --
+each going by what a person reads on the page. look-at-page opens a page (after some steps, if
+given) and lists what is on it by the names steps go by, so write steps from it rather than guess.
+A check is written whole (save-browser-check), changed a step at a time (edit-browser-check), or
+built on the page itself: open-browser-page for a check, then do-browser-step with "keep" for each
+step -- each is done there once, and kept only when it works. run-browser-suite runs a quick "test",
+or a "demo" filmed into the owner's Drive, captioned with each step's "note" -- what its writer tells
+whoever watches. Asked to test a site: open-browser-page, do-browser-step
+with "keep" until the check is whole, close-browser-page, then run-browser-suite with "wait".
 
 Chats with customers: a project's inbox -- each person who writes to it on LINE, Telegram, WhatsApp,
 Instagram or a custom channel has a chat (list-chats, get-chat, say-in-chat, update-chat), open (to be
@@ -264,6 +289,17 @@ class UserServer extends Server
             new CreateTrip,
             new UpdateTrip,
             new DeleteTrip,
+            new ListBrowserSuites,
+            new GetBrowserSuite,
+            new SaveBrowserSuite,
+            new LookAtPage,
+            new RunBrowserSuite,
+            new GetBrowserRun,
+            new SaveBrowserCheck,
+            new EditBrowserCheck,
+            new OpenBrowserPage,
+            new DoBrowserStep,
+            new CloseBrowserPage,
             new ListWorkflows,
             new GetWorkflow,
             new ListWorkflowFolders,

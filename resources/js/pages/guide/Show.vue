@@ -1,15 +1,25 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import { ArrowLeft, ArrowRight, BookOpen } from '@lucide/vue';
+import {
+    ArrowLeft,
+    ArrowRight,
+    BookOpen,
+    MousePointerClick,
+} from '@lucide/vue';
 import type { JSONContent } from '@tiptap/vue-3';
 import { computed } from 'vue';
 import PageHeader from '@/components/common/PageHeader.vue';
+import { Button } from '@/components/ui/button';
+import { play } from '@/features/browser/tour';
+import { toursFor } from '@/features/browser/tours';
 import TiptapEditor from '@/features/notes/components/TiptapEditor.vue';
 import { guide } from '@/routes';
 
 // How the app is used: the topics down the side (along the top on a phone),
 // and the one being read. A topic is a Markdown file in resources/guide,
 // and its parts the files in a folder beside it, listed under it.
+// Where there is a tour for it, "Show me" does it in the app, with a cursor
+// to follow (features/browser/tours.ts).
 
 type TopicRef = { slug: string; title: string };
 
@@ -35,6 +45,7 @@ const at = computed(() =>
 );
 const before = computed(() => reading.value[at.value - 1] ?? null);
 const after = computed(() => reading.value[at.value + 1] ?? null);
+const tours = computed(() => toursFor(props.topic.slug));
 </script>
 
 <template>
@@ -130,6 +141,30 @@ const after = computed(() => reading.value[at.value + 1] ?? null);
                 <h2 class="mb-4 text-2xl font-semibold tracking-tight">
                     {{ topic.title }}
                 </h2>
+                <ul
+                    v-if="tours.length"
+                    class="mb-6 flex flex-col gap-2"
+                    data-guide-tours
+                >
+                    <li
+                        v-for="tour in tours"
+                        :key="tour.id"
+                        class="flex flex-wrap items-center gap-x-3 gap-y-1"
+                    >
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            :data-test="`tour-play-${tour.id}`"
+                            @click="play(tour)"
+                        >
+                            <MousePointerClick />
+                            Show me: {{ tour.title }}
+                        </Button>
+                        <span class="text-muted-foreground text-xs">{{
+                            tour.makes ? `Makes ${tour.makes}` : tour.about
+                        }}</span>
+                    </li>
+                </ul>
                 <!-- The same reading surface as a chat answer: a note, only read -->
                 <TiptapEditor
                     :key="topic.slug"

@@ -90,13 +90,14 @@ class DriveController extends Controller
     {
         $request->validate([
             'q' => ['nullable', 'string', 'max:255'],
-            'kind' => ['nullable', Rule::in(['image', 'video'])],
+            'kind' => ['nullable', Rule::in(['image', 'video', 'any'])],
         ]);
 
         $mimes = $request->input('kind') === 'video' ? DriveFile::VIDEO_MIMES : DriveFile::IMAGE_MIMES;
 
         $files = $this->owner($request)->driveFiles()
-            ->whereIn('mime', $mimes)
+            // Any file at all: one a browser check adds to a page, say
+            ->when($request->input('kind') !== 'any', fn ($query) => $query->whereIn('mime', $mimes))
             ->when($request->filled('q'), fn ($query) => $query->whereLike('name', '%'.$request->string('q').'%'))
             ->latest()
             ->limit(120)

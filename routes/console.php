@@ -2,6 +2,8 @@
 
 use App\Jobs\ReadKnowledge;
 use App\Models\Knowledge\KnowledgeBase;
+use App\Models\User;
+use App\Support\Browser\SuiteRun;
 use App\Support\Workflow\Engine;
 use App\Support\Workflow\Health;
 use App\Support\Workflow\Inbound\Schedules;
@@ -15,6 +17,31 @@ use Illuminate\Support\Facades\Schedule;
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+// Who runs the app itself: they see what is about the app, such as its own test runs
+Artisan::command('users:admin {email} {--off}', function (string $email) {
+    $user = User::where('email', $email)->first();
+
+    if ($user === null) {
+        $this->error("No one signs in as {$email}");
+
+        return 1;
+    }
+
+    $user->forceFill(['is_admin' => ! $this->option('off')])->save();
+    $this->info($user->is_admin ? "{$email} is an admin" : "{$email} is no longer an admin");
+})->purpose('Make someone an admin of the app, or no longer one with --off');
+
+// Browser checks that run by themselves, when their time has come
+Artisan::command('browser-checks:due', function () {
+    $started = SuiteRun::due();
+
+    if ($started > 0) {
+        $this->info("{$started} suites of browser checks started");
+    }
+})->purpose('Start the browser check suites whose timetable says it is time');
+
+Schedule::command('browser-checks:due')->everyMinute()->withoutOverlapping();
 
 // Workflow steps a dead worker or a lost job left behind: handed on, woken, or settled
 Artisan::command('workflows:recover', function () {
