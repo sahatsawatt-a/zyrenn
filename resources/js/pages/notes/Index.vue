@@ -36,5 +36,10 @@ defineProps<{
         :items="notes"
         :filters="filters"
         :all-folders="allFolders"
+        :exports="{
+            label: 'Export as Markdown',
+            own: routes.exportMethod,
+            project: projectRoutes.exportMethod,
+        }"
     />
 </template>

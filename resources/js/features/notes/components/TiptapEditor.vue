@@ -93,6 +93,7 @@ import {
 import type { SlashCommandItem } from '@/features/notes/composables/useSlashCommands';
 import { PageBreak } from '@/features/notes/nodes/PageBreak';
 import { RevealNode } from '@/features/notes/nodes/RevealNode';
+import { BlockAnchors } from '@/features/notes/nodes/BlockAnchors';
 import { PdfHidden } from '@/features/notes/nodes/PdfHidden';
 import { ImageNode } from '@/features/notes/nodes/ImageNode';
 import { VideoNode } from '@/features/notes/nodes/VideoNode';
@@ -306,6 +307,7 @@ const editor = useEditor({
 
         // Blocks kept in the note but left out of its PDF (BlockMenu turns it on)
         PdfHidden,
+        BlockAnchors,
         // Where the printed note starts a new page (/page break)
         PageBreak,
 

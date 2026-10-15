@@ -34,7 +34,9 @@ export async function fetchExport(
         );
     }
 
-    const warning = response.headers.get('X-Pdf-Warning');
+    const warning =
+        response.headers.get('X-Export-Warning') ??
+        response.headers.get('X-Pdf-Warning');
 
     if (warning) {
         toast.warning(warning);

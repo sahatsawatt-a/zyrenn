@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Note\NoteController;
+use App\Http\Controllers\Note\NoteExportController;
 use App\Http\Controllers\Note\NoteFolderController;
 use App\Http\Controllers\Note\NotePdfController;
 use App\Http\Controllers\Note\NoteValueController;
@@ -13,6 +14,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::owned(function () {
         Route::resource('notes', NoteController::class)->only(['index', 'store']);
         Route::resource('note-folders', NoteFolderController::class)->only(['store']);
+        // A folder of notes, or all of them, as Markdown files in a zip; each
+        // pictures its diagrams in a browser on the server
+        Route::get('notes-export', [NoteExportController::class, 'show'])
+            ->middleware('throttle:6,1')
+            ->name('notes.export');
     });
 
     Route::resource('notes', NoteController::class)->only(['show', 'update', 'destroy']);

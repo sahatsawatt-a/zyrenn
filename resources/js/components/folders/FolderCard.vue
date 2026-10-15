@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import type { InertiaLinkProps } from '@inertiajs/vue3';
-import { Folder } from '@lucide/vue';
+import { Download, Folder } from '@lucide/vue';
 import Highlight from '@/components/common/Highlight.vue';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import ItemActions from './ItemActions.vue';
 
 // A folder in a folder view. Drag and drop handlers bound on it fall through to the card.
@@ -13,9 +14,11 @@ defineProps<{
     query: string;
     over: boolean;
     dragging: boolean;
+    // A kind whose folders can be taken away whole, e.g. notes as Markdown
+    exportLabel?: string;
 }>();
 
-defineEmits<{ rename: []; move: []; remove: [] }>();
+defineEmits<{ rename: []; move: []; remove: []; export: [] }>();
 </script>
 
 <template>
@@ -56,6 +59,12 @@ defineEmits<{ rename: []; move: []; remove: [] }>();
             @rename="$emit('rename')"
             @move="$emit('move')"
             @remove="$emit('remove')"
-        />
+        >
+            <template v-if="exportLabel" #default>
+                <DropdownMenuItem @select="$emit('export')">
+                    <Download /> {{ exportLabel }}
+                </DropdownMenuItem>
+            </template>
+        </ItemActions>
     </div>
 </template>

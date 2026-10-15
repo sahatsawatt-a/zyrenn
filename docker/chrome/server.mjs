@@ -230,6 +230,7 @@ async function rendered(opts, media, use) {
     const b = await browser();
     const ctx = await b.newContext({
         viewport: { width: opts.width, height: opts.height ?? 1100 },
+        deviceScaleFactor: opts.scale ?? 1,
     });
     try {
         const cookies = cleanCookies(opts.cookies);
@@ -290,6 +291,36 @@ const renderPng = (opts) =>
         page.screenshot({ type: 'png', timeout: PDF_TIMEOUT }),
     );
 
+/**
+ * Pictures of blocks of a note, found by their ids (`data-block-id`, put on by
+ * BlockAnchors.ts): the note opened once, as it prints, and each block shot on
+ * its own. A block not on the page, or that would not draw, is left out.
+ */
+const renderShots = (opts) =>
+    rendered(opts, 'print', async (page) => {
+        const shots = {};
+
+        for (const id of opts.ids) {
+            const block = page.locator(`[data-block-id="${id}"]`).first();
+
+            try {
+                if (!(await block.count())) continue;
+                await block.scrollIntoViewIfNeeded({ timeout: 5_000 });
+                shots[id] = (
+                    await block.screenshot({
+                        type: 'png',
+                        animations: 'disabled',
+                        timeout: 15_000,
+                    })
+                ).toString('base64');
+            } catch (e) {
+                console.error('[shots]', id, e && e.message ? e.message : e);
+            }
+        }
+
+        return shots;
+    });
+
 /** A size the page may be drawn at: a whole number of pixels, within reason. */
 const pixels = (value, fallback, most) =>
     Number.isFinite(+value) && +value > 0
@@ -321,7 +352,8 @@ const server = http.createServer(async (req, res) => {
 
     if (
         req.method !== 'POST' ||
-        (!living && !['/pdf', '/png', '/check', '/look'].includes(path))
+        (!living &&
+            !['/pdf', '/png', '/shots', '/check', '/look'].includes(path))
     ) {
         return fail(res, 404, `no route for ${req.method} ${path}`);
     }
@@ -370,6 +402,33 @@ const server = http.createServer(async (req, res) => {
 
         if (typeof body.url !== 'string' || !/^https?:\/\//.test(body.url)) {
             return fail(res, 400, 'url is required and must be http(s)');
+        }
+
+        if (path === '/shots') {
+            const ids = (Array.isArray(body.ids) ? body.ids : [])
+                .filter(
+                    (id) => typeof id === 'string' && /^[\w-]{1,32}$/.test(id),
+                )
+                .slice(0, 200);
+            const out = await renderShots({
+                url: body.url,
+                cookies: body.cookies,
+                width: pixels(body.width, DEFAULT_WIDTH, 2000),
+                scale: Math.min(3, Math.max(1, +body.scale || 1)),
+                ids,
+            });
+            const json = JSON.stringify({
+                shots: out.buffer,
+                finalUrl: out.finalUrl,
+                painted: out.paint.settled,
+            });
+
+            res.writeHead(200, {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(json),
+            });
+
+            return res.end(json);
         }
 
         if (path === '/png') {

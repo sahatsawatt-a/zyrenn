@@ -1,9 +1,10 @@
 <script setup lang="ts" generic="T extends ListItem">
 import { Form, Head } from '@inertiajs/vue3';
-import { FolderPlus, Plus, SearchX } from '@lucide/vue';
+import { Download, FolderPlus, Plus, SearchX } from '@lucide/vue';
 import { useLocalStorage } from '@vueuse/core';
 import type { Component } from 'vue';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import { toast } from 'vue-sonner';
 import DeleteDialog from '@/components/common/DeleteDialog.vue';
 import EmptyState from '@/components/common/EmptyState.vue';
 import FolderCard from './FolderCard.vue';
@@ -19,6 +20,7 @@ import type { FolderItem } from '@/composables/useFolderDialogs';
 import { useFolderPage } from '@/composables/useFolderPage';
 import type { FolderRef } from '@/composables/useFolderPage';
 import { useListFilters } from '@/composables/useListFilters';
+import { deliver, fetchExport } from '@/lib/exporting';
 import { canChange, owned } from '@/lib/projects';
 import type { OwnRoute, ProjectRoute } from '@/lib/projects';
 
@@ -77,6 +79,13 @@ const props = defineProps<{
     items: T[];
     filters: { q: string; sort: string; edited: string | null };
     allFolders: { ref_id: string; path: string }[];
+    // A kind that can be taken away a folder at a time: what it comes as,
+    // and the routes, the user's own and a project's, that make the zip
+    exports?: {
+        label: string;
+        own: OwnRoute<'get'>;
+        project: ProjectRoute<'get'>;
+    };
 }>();
 
 defineSlots<{
@@ -89,6 +98,41 @@ defineSlots<{
 }>();
 
 const isEmpty = computed(() => !props.folders.length && !props.items.length);
+
+// A folder, or the whole top level, made into a zip on the server and
+// downloaded; it can take a while, so the toast says it is on its way
+const exporter = props.exports
+    ? owned(props.exports.own, props.exports.project)
+    : null;
+const exporting = ref(false);
+
+async function exportFolder(target: { ref_id: string; name: string } | null) {
+    if (!exporter || exporting.value) return;
+
+    exporting.value = true;
+    const name = target?.name ?? props.rootLabel;
+    const job = fetchExport(
+        exporter.url({ query: target ? { folder: target.ref_id } : {} }),
+        `${name}.zip`,
+        'application/zip',
+        `Couldn’t export “${name}”.`,
+    ).then((file) => deliver(file, 'download'));
+
+    toast.promise(job, {
+        loading: `Exporting “${name}”…`,
+        success: `Exported “${name}”`,
+        error: (error: unknown) =>
+            error instanceof Error ? error.message : 'Couldn’t export it.',
+    });
+
+    try {
+        await job;
+    } catch {
+        // Said by the toast
+    } finally {
+        exporting.value = false;
+    }
+}
 
 // A project's viewers look, but make nothing
 const editable = computed(canChange);
@@ -192,6 +236,16 @@ const plural = computed(() => props.rootLabel.toLowerCase());
         >
             <!-- Ways of making one that only some kinds have -->
             <slot name="actions" :editable="editable" />
+            <Button
+                v-if="exports && !isEmpty"
+                variant="outline"
+                :disabled="exporting"
+                :title="`${exports.label}: ${folder?.name ?? rootLabel}`"
+                @click="exportFolder(folder)"
+            >
+                <Download />
+                <span class="max-sm:sr-only">Export</span>
+            </Button>
             <Button v-if="editable" variant="outline" @click="newFolder">
                 <FolderPlus />
                 New folder
@@ -254,6 +308,8 @@ const plural = computed(() => props.rootLabel.toLowerCase());
                     :query="props.filters.q"
                     :over="isOver(item.ref_id)"
                     :dragging="isDragging(item)"
+                    :export-label="exports?.label"
+                    @export="exportFolder(item)"
                     @rename="rename(folderItem(item))"
                     @move="move(folderItem(item))"
                     @remove="remove(folderItem(item))"
