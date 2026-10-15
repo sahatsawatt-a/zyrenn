@@ -58,6 +58,51 @@ class Shapes
     }
 
     /**
+     * The ways a kind can be drawn besides its usual one, by name: its own
+     * ("stacked", "shaded"), and for a kind with an icon "card", "badge" and
+     * "icon" -- as designsOf() in composables/shapes.ts lists them.
+     *
+     * @return list<string>
+     */
+    public static function designs(string $kind): array
+    {
+        static $designs;
+
+        $designs ??= json_decode(
+            (string) file_get_contents(resource_path('js/features/boards/lib/shapes.json')),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        )['designs'] ?? [];
+
+        $spec = $designs[$kind] ?? null;
+
+        if (! is_array($spec)) {
+            return [];
+        }
+
+        return [
+            'classic',
+            ...array_column($spec['more'] ?? [], 'id'),
+            ...(isset($spec['icon']) ? ['card', 'badge', 'icon'] : []),
+        ];
+    }
+
+    /**
+     * Where a label is written in a shape drawn in a design of its own: a
+     * card's under its icon, a badge's and a bare icon's under the shape.
+     *
+     * @return array<string, float|int>|null
+     */
+    public static function designText(string $kind, ?string $variant): ?array
+    {
+        return match (in_array($variant, self::designs($kind), true) ? $variant : null) {
+            'card' => ['top' => 0.54, 'left' => 0.06, 'right' => 0.06, 'bottom' => 0.04],
+            'badge', 'icon' => ['top' => 1, 'bottom' => -0.4, 'left' => -0.6, 'right' => -0.6],
+            default => null,
+        };
+    }
+
+    /**
      * The kinds by the group the toolbar shows them in, for telling a client
      * what there is: "Flowchart" => "manual_input, delay, ...".
      *

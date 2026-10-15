@@ -34,7 +34,9 @@ export type ItemKind =
     // symbol library, with pins a wire holds on to (circuit/symbols)
     | 'symbol'
     | 'arrow'
-    | 'draw';
+    | 'draw'
+    // A vector line or shape: SVG path data, drawn from its own box
+    | 'path';
 
 /** Shapes drawn as a closed polygon fitted to the item's box. */
 export const POLYGONS: ItemKind[] = ['triangle', 'diamond', 'hexagon'];
@@ -134,6 +136,20 @@ export const ALIGNS: Align[] = ['left', 'center', 'right'];
 
 export const VERTICAL_ALIGNS: VerticalAlign[] = ['top', 'middle', 'bottom'];
 
+/** A colour a fade passes through, and where: 0 at its start, 1 at its end. */
+export type GradientStop = { at: number; color: string };
+
+/** How an item's pixels mix with what is under it, as the canvas names them. */
+export type Blend =
+    | 'source-over'
+    | 'multiply'
+    | 'screen'
+    | 'overlay'
+    | 'darken'
+    | 'lighten'
+    | 'color-dodge'
+    | 'soft-light';
+
 export type Item = {
     id: string;
     kind: ItemKind;
@@ -171,8 +187,72 @@ export type Item = {
     on: boolean;
     // A table or a class only: its columns, or its fields and methods
     rows?: Row[];
-    // A shape drawn more than one way: a lane with its title down its side
+    // A shape drawn more than one way: a lane with its title down its side,
+    // a database as a card with an icon (composables/shapes, designsOf)
     variant?: string;
+    // The colour its words are written in; left out, whatever reads best
+    // on its fill
+    color?: string;
+    // Lifted off the board by a soft shadow under it
+    shadow?: boolean;
+    // How round its corners are, in board units; left out, its kind's own
+    radius?: number;
+    // How see-through it is, 0 (not at all) to 1 (gone); left out, solid
+    opacity?: number;
+    // A second colour its fill fades to, and which way: degrees as CSS
+    // writes them, 180 (the default) top to bottom
+    gradient?: string;
+    gradientAngle?: number;
+    // A fade through more colours than two, and whether it runs straight
+    // (the default) or out from the middle
+    gradientStops?: GradientStop[];
+    gradientType?: 'linear' | 'radial';
+    // The inside and the line made see-through on their own, 0 to 1
+    fillOpacity?: number;
+    strokeOpacity?: number;
+    // A line that fades: to a second colour, or through stops, at an angle
+    // as CSS writes one (90, the default, left to right); a connector's
+    // fades from its start to its end
+    strokeGradient?: string;
+    strokeStops?: GradientStop[];
+    strokeAngle?: number;
+    // A shadow of its own, in place of the soft one `shadow` puts under it
+    shadowColor?: string;
+    shadowBlur?: number;
+    shadowX?: number;
+    shadowY?: number;
+    shadowOpacity?: number;
+    // A light round it, in a colour, so far out
+    glow?: string;
+    glowSize?: number;
+    // Softened, by so many board units; and how it mixes with what is under
+    blur?: number;
+    blend?: Blend;
+    // Its words spread apart, set in capitals, or fading to a second colour
+    letterSpacing?: number;
+    caps?: boolean;
+    colorTo?: string;
+    // A picture filling its box ("cover"): the point of it kept in view,
+    // 0 to 1 across and down; left out, the middle
+    focusX?: number;
+    focusY?: number;
+    // As tall as its words need, growing and shrinking with them
+    hug?: boolean;
+    // A video only: a picture shown in its place until it plays, and the
+    // moment of it shown otherwise, in seconds (left out, its first frame)
+    poster?: string;
+    posterAt?: number;
+    // A frame only: what the presenter says over it, shown to them alone
+    notes?: string;
+    // A frame only: the part of the deck it begins, for a footer's {section}
+    section?: string;
+    // A frame only: no header, footer or number of the deck's on it
+    bare?: boolean;
+    // A path only: its points as SVG path data, starting at 0,0, and the box
+    // they span -- drawn scaled from that box to the item's
+    d?: string;
+    viewWidth?: number;
+    viewHeight?: number;
     // Connectors only: where each end is pinned and how the line is drawn
     from: Endpoint | null;
     to: Endpoint | null;
@@ -239,6 +319,7 @@ export const bumpIdsTo = (highest: number): void => {
 export const hasText = (item: Item): boolean =>
     item.kind !== 'arrow' &&
     item.kind !== 'draw' &&
+    item.kind !== 'path' &&
     item.kind !== 'video' &&
     // A junction is only its dot
     !(item.kind === 'symbol' && symbolOf(item.symbol)?.labels === 'none');

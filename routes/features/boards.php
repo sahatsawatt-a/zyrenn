@@ -19,6 +19,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::resource('boards', BoardController::class)->only(['show', 'update', 'destroy']);
 
+    // The presenter's own window while a board is shown as slides: the notes,
+    // the next slide and the time, kept in step with the show in the browser
+    Route::get('boards/{board}/presenter', [BoardController::class, 'presenter'])
+        ->name('boards.presenter');
+
     // Each one holds a browser on the server for a few seconds. A board's
     // pictures come a frame at a time, so they are allowed more of them
     Route::get('boards/{board}/pdf', [BoardRenderController::class, 'pdf'])

@@ -8,7 +8,7 @@ import {
     wordsOf,
 } from '@/features/boards/circuit/symbols';
 import { STICKY_COLOURS, bumpIdsTo, hydrate, makeItem, newId } from './items';
-import { labelHeight } from './labels';
+import { huggedHeight, labelHeight } from './labels';
 import { groupKeys, keepOnFrames } from './layers';
 import type { Item, ItemKind } from './items';
 
@@ -374,16 +374,47 @@ export function useBoard(initial: Item[] | null = null) {
         if (item.kind === 'text') {
             item.height = Math.max(item.height, Math.ceil(labelHeight(item)));
         }
+
+        hug(item);
+    };
+
+    // An item that hugs its words is as tall as they are, whatever changed
+    const hug = (item: Item) => {
+        const height = huggedHeight(item);
+
+        if (height !== null && height !== item.height) {
+            item.height = height;
+        }
     };
 
     /** Apply a partial change to everything selected, as one undo step. */
+    /** Changes that differ from item to item, made as one step to undo. */
+    const updateEach = (changes: Map<string, Partial<Item>>) => {
+        if (!changes.size) {
+            return;
+        }
+
+        commit();
+        items.value.forEach((item) => {
+            const change = changes.get(item.id);
+
+            if (change) {
+                Object.assign(item, change);
+                hug(item);
+            }
+        });
+    };
+
     const updateSelected = (patch: Partial<Item>) => {
         if (!selected.value.length) {
             return;
         }
 
         commit();
-        selected.value.forEach((item) => Object.assign(item, patch));
+        selected.value.forEach((item) => {
+            Object.assign(item, patch);
+            hug(item);
+        });
     };
 
     const paintStroke = (colour: string) => {
@@ -414,6 +445,9 @@ export function useBoard(initial: Item[] | null = null) {
                 item.stroke = colour;
             } else {
                 item.fill = colour;
+                // Its words were coloured for the fill it had: on a fill
+                // picked by hand they go back to what reads best on it
+                delete item.color;
             }
         });
     };
@@ -536,6 +570,7 @@ export function useBoard(initial: Item[] | null = null) {
         setText,
         paint,
         paintStroke,
+        updateEach,
         updateSelected,
         commit,
         undo,

@@ -13,7 +13,11 @@ type Show = {
     camera: {
         focus: (
             box: { x: number; y: number; width: number; height: number } | null,
-            options?: { animate?: boolean; padding?: number },
+            options?: {
+                animate?: boolean;
+                padding?: number;
+                inset?: { bottom?: number };
+            },
         ) => void;
     };
     /** The size of the canvas, which changes as the panels come and go. */
@@ -23,6 +27,8 @@ type Show = {
     screen?: () => HTMLElement | null;
     /** Back to everything on the board, once the show is over. */
     overview?: (options: { animate: boolean }) => void;
+    /** Room kept clear under the slide: the speaker notes, when shown. */
+    below?: () => number;
 };
 
 /**
@@ -41,9 +47,19 @@ export function usePresenting({
     screen,
     overview = ({ animate }) =>
         camera.focus(boundsOfAll(board.items.value), { animate }),
+    below = () => 0,
 }: Show) {
     const presenting = ref(false);
     const frameIndex = ref(0);
+    // When this showing began, for the presenter's clock
+    const startedAt = ref(0);
+
+    const fit = (frame: Item, animate = false) =>
+        camera.focus(boundsOf(frame), {
+            animate,
+            padding: 24,
+            inset: { bottom: below() },
+        });
 
     const currentFrame = computed(
         () => board.frames.value[frameIndex.value] ?? null,
@@ -57,10 +73,14 @@ export function usePresenting({
         }
 
         frameIndex.value = Math.min(frames.length - 1, Math.max(0, index));
-        camera.focus(boundsOf(frames[frameIndex.value]), {
-            animate: true,
-            padding: 24,
-        });
+        fit(frames[frameIndex.value], true);
+    };
+
+    /** The slide fitted again: the room under it has changed. */
+    const refit = () => {
+        if (presenting.value && currentFrame.value) {
+            fit(currentFrame.value, true);
+        }
     };
 
     let refitOnResize: 'all' | null = null;
@@ -70,7 +90,7 @@ export function usePresenting({
             const frame = currentFrame.value;
 
             if (frame) {
-                camera.focus(boundsOf(frame), { padding: 24 });
+                fit(frame);
             }
 
             return;
@@ -89,13 +109,24 @@ export function usePresenting({
 
         board.select([]);
         presenting.value = true;
+        startedAt.value = Date.now();
         showFrame(0);
+        enterFullScreen();
+    };
 
-        // The whole screen, as a slideshow should be. A browser that won't
-        // (or a frame embedded somewhere) presents inside the page instead.
+    // The whole screen, as a slideshow should be. A browser that won't
+    // (or a frame embedded somewhere) presents inside the page instead.
+    const fullScreen = ref(false);
+    const enterFullScreen = () =>
         void screen?.()
             ?.requestFullscreen?.()
             .catch(() => undefined);
+
+    // Opening a window of its own (the presenter's) takes the browser out of
+    // full screen: the show goes on in the page rather than ending
+    let keepUntil = 0;
+    const keepShowing = () => {
+        keepUntil = Date.now() + 2000;
     };
 
     const stopPresenting = () => {
@@ -108,9 +139,16 @@ export function usePresenting({
         }
     };
 
-    // Esc leaves full screen before the page hears it: leaving it ends the show
+    // Esc leaves full screen before the page hears it: leaving it ends the
+    // show, unless the show was told to keep going
     useEventListener(document, 'fullscreenchange', () => {
-        if (!document.fullscreenElement && presenting.value) {
+        fullScreen.value = !!document.fullscreenElement;
+
+        if (
+            !document.fullscreenElement &&
+            presenting.value &&
+            Date.now() > keepUntil
+        ) {
             stopPresenting();
         }
     });
@@ -120,6 +158,11 @@ export function usePresenting({
         frameIndex,
         currentFrame,
         showFrame,
+        refit,
+        startedAt,
+        fullScreen,
+        enterFullScreen,
+        keepShowing,
         startPresenting,
         stopPresenting,
     };

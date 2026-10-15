@@ -69,6 +69,19 @@ class BoardController extends Controller
     }
 
     /**
+     * The presenter's window for a board being shown as slides. What it shows
+     * comes from the show itself, in the same browser (usePresenterLink).
+     */
+    public function presenter(Board $board): Response
+    {
+        Gate::authorize('view', $board);
+
+        return Inertia::render('boards/Presenter', [
+            'board' => $board->only(['ref_id', 'title']),
+        ]);
+    }
+
+    /**
      * Autosave the board's title and contents, or move it to another folder.
      */
     public function update(Request $request, Board $board): JsonResponse|RedirectResponse
@@ -153,6 +166,7 @@ class BoardController extends Controller
             'ref_id' => $board->ref_id,
             'title' => $board->title,
             'items' => $board->content['items'] ?? [],
+            'deck' => $board->content['deck'] ?? null,
         ]);
     }
 

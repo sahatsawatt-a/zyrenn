@@ -8,6 +8,7 @@ use App\Support\Board\BoardItemProblem;
 use App\Support\Board\BoardItems;
 use App\Support\Board\BoardParts;
 use App\Support\Board\CircuitLayout;
+use App\Support\Board\Deck;
 use App\Support\Live\Collab;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
@@ -28,6 +29,8 @@ To change what is on it, send only what changes, by item id (from get-board):
 - "delete_items": the ids to take off.
 - "delete_frames": frames (by id or title) to take off with everything on them.
 - "frame_order": every frame's id, in the order they should be presented.
+- "add_slides": slides laid out for you after the last frame, each from a layout (a title, two
+  columns, a big number...) in the deck's look.
 An id can't be both deleted and added in one call. Whatever sits on a frame is kept drawn above it.
 If someone has the board open, only those items change for them, live. If one change can't be made,
 none are.
@@ -35,9 +38,14 @@ none are.
 "items" instead replaces the whole board: every item, in the order drawn, and any missing is removed.
 An item keeps what it had only when you send its own "id" and kind; one without an id is new.
 Connectors of kind "arrow" re-pin themselves to whatever their "from" and "to" name.
+
+"deck" makes the frames a deck: a theme, and a header, footer and slide number written on every
+slide. Set it before "add_slides", in the same call, and they are laid out in its look.
 TEXT)]
 class UpdateBoard extends BoardTool
 {
+    use MakesDecks;
+
     protected function arguments(JsonSchema $schema): array
     {
         return [
@@ -51,6 +59,8 @@ class UpdateBoard extends BoardTool
             'delete_frames' => $schema->array()->max(self::MAX_ITEMS)->items($schema->string()->max(255))->description('Frames, by id or title, to take off along with everything on them and any connector joined to it.'),
             'frame_order' => $schema->array()->max(self::MAX_ITEMS)->items($schema->string()->max(64))->description('Every frame\'s id, once each, in the order they are presented. Whatever is on a frame stays drawn above it.'),
             'items' => $this->itemsArgument($schema, 'The whole board, drawn back to front; replaces what is on it. Pass [] to clear it.'),
+            'deck' => $this->deckArgument($schema),
+            'add_slides' => $this->slidesArgument($schema, 'Slides to add after the last frame, in order, each laid out from a layout in the deck\'s look.'),
             'folder' => $this->folderArgument($schema, 'Move the board to this folder; folders that don\'t exist yet are created.'),
         ];
     }
@@ -77,6 +87,7 @@ class UpdateBoard extends BoardTool
             ...$this->itemRules(sometimes: true),
             ...$this->itemRules(sometimes: true, key: 'add_items'),
             ...$this->itemRules(sometimes: true, key: 'update_items', kindRequired: false),
+            ...$this->deckRules('add_slides'),
         ]);
 
         /** @var Board|null $board */
@@ -86,8 +97,19 @@ class UpdateBoard extends BoardTool
             return $this->notFound($validated['ref_id']);
         }
 
-        $byItem = array_intersect_key($validated, array_flip(['add_items', 'add_circuit', 'update_items', 'delete_items', 'delete_frames', 'frame_order'])) !== [];
+        $byItem = array_intersect_key($validated, array_flip(['add_items', 'add_circuit', 'update_items', 'delete_items', 'delete_frames', 'frame_order', 'add_slides'])) !== [];
         $also = [];
+
+        // The deck as it will be: what was sent said over what it was
+        $decked = array_key_exists('deck', $validated);
+
+        if ($decked) {
+            Collab::flush($board);
+            $board->refresh();
+        }
+
+        $deck = ! $decked ? Deck::of($board->content)
+            : ($validated['deck'] === null ? null : Deck::merged(Deck::of($board->content), $validated['deck']));
 
         if ($byItem && array_key_exists('items', $validated)) {
             return Response::error('Send the whole board as "items", or changes as add_items, update_items, delete_items, delete_frames and frame_order -- not both.');
@@ -119,6 +141,11 @@ class UpdateBoard extends BoardTool
 
             try {
                 $add = $this->specs($validated, 'add_items');
+
+                // Slides laid out after the last frame, in the deck's look
+                if (isset($validated['add_slides'])) {
+                    $add = [...$add, ...Deck::slideSpecs($this->slides($validated, 'add_slides'), [...$current, ...$add], $deck)];
+                }
 
                 // A circuit written as text is laid out, and added with the rest
                 if (filled($validated['add_circuit'] ?? null)) {
@@ -153,10 +180,11 @@ class UpdateBoard extends BoardTool
                 ['do' => 'set', 'items' => $done['set']],
                 ['do' => 'delete', 'ids' => $done['deleted']],
                 ...($order !== $stacked ? [['do' => 'order', 'ids' => $order]] : []),
+                ...($decked ? [['do' => 'deck', 'deck' => $deck]] : []),
             ], $user);
 
             if ($live === null) {
-                $board->content = ['items' => $done['items']];
+                $board->content = Deck::content($done['items'], $deck);
             } else {
                 $board->refresh();
             }
@@ -183,8 +211,21 @@ class UpdateBoard extends BoardTool
                 return Response::error($problem);
             }
 
-            $board->content = ['items' => BoardItems::fromSpec($specs, $current)];
+            $board->content = Deck::content(BoardItems::fromSpec($specs, $current), $deck);
             $also = $this->overflow($board->content['items']);
+        }
+
+        // Only the deck changed: in the live copy when it is open, as above
+        if ($decked && ! $byItem && ! array_key_exists('items', $validated)) {
+            if (Collab::apply($board, [['do' => 'deck', 'deck' => $deck]], $user) === null) {
+                $board->content = Deck::content(array_values(array_filter($board->content['items'] ?? [], 'is_array')), $deck);
+            } else {
+                $board->refresh();
+            }
+        }
+
+        if ($decked) {
+            $also['deck'] = $deck;
         }
 
         if (array_key_exists('title', $validated)) {

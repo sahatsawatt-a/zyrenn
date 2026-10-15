@@ -1,4 +1,5 @@
 import type Konva from 'konva';
+import { huggedHeight } from './labels';
 import type { ComputedRef, Ref } from 'vue';
 import { nextTick, ref } from 'vue';
 import {
@@ -646,7 +647,10 @@ export function useDrawing({
                 );
             } else {
                 item.width = Math.max(12, item.width * scaleX);
-                item.height = Math.max(12, item.height * scaleY);
+                // One that hugs its words is as tall as they are at its new width
+                item.height =
+                    huggedHeight({ ...item, width: item.width }) ??
+                    Math.max(12, item.height * scaleY);
             }
 
             node.scaleX(1);

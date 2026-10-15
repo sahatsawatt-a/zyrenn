@@ -1,7 +1,11 @@
 import Konva from 'konva';
 import type { ComputedRef, Ref } from 'vue';
 import { onBeforeUnmount, ref, watch } from 'vue';
+import { holdPrint } from '@/lib/printReady';
 import type { Item } from './items';
+
+/** The longest a picture or a PDF waits for a video's still, in ms. */
+const STILL_WAIT = 8000;
 
 /** Konva name of a video's play button, so a click can tell it from the rest. */
 export const VIDEO_PLAY = 'video-play';
@@ -62,11 +66,24 @@ export function useVideos(
     const create = (item: Item): HTMLVideoElement => {
         const video = document.createElement('video');
         const id = item.id;
+        // The moment shown while it isn't playing: the item's own, or the start
+        const still = Math.max(0.01, item.posterAt ?? 0.01);
+        // A picture or a PDF of the board waits for that still, rather than
+        // showing a black box where the video is
+        const drawn = holdPrint();
+        window.setTimeout(drawn, STILL_WAIT);
+        video.addEventListener('error', drawn);
 
         video.preload = 'metadata';
         video.playsInline = true;
 
         video.addEventListener('loadedmetadata', () => {
+            if (still > 0.01) {
+                video.currentTime = Math.min(still, video.duration || still);
+
+                return;
+            }
+
             // Some browsers stop at the metadata and have no frame to show;
             // asking for a moment just past the start makes them fetch one
             if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
@@ -74,11 +91,21 @@ export function useVideos(
             }
         });
         video.addEventListener('loadeddata', () => {
+            if (still > 0.01 && video.currentTime < still - 0.05) {
+                return;
+            }
+
             mark(ready, id, true);
             redraw();
+            drawn();
         });
-        // Scrubbing while paused: show the frame it landed on
-        video.addEventListener('seeked', redraw);
+        // Scrubbing while paused: show the frame it landed on -- the first
+        // time, the still asked for
+        video.addEventListener('seeked', () => {
+            mark(ready, id, true);
+            redraw();
+            drawn();
+        });
         video.addEventListener('play', () => mark(playing, id, true));
         video.addEventListener('pause', () => {
             mark(playing, id, false);
@@ -120,6 +147,15 @@ export function useVideos(
         }
 
         video ??= create(item);
+
+        // Another still asked for: shown at once, unless it is playing
+        const still = String(item.posterAt ?? 0);
+
+        if ((video.dataset.still ?? still) !== still && video.paused) {
+            video.currentTime = Math.max(0.01, item.posterAt ?? 0.01);
+        }
+
+        video.dataset.still = still;
 
         return ready.value.has(item.id) ? video : undefined;
     };

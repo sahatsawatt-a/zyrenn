@@ -55,7 +55,7 @@ final class Collab
     {
         return $thing instanceof Note
             ? ['content' => $thing->content, 'title' => $thing->title, 'is_wide' => $thing->is_wide]
-            : ['items' => $thing->content['items'] ?? [], 'title' => $thing->title];
+            : ['items' => $thing->content['items'] ?? [], 'deck' => $thing->content['deck'] ?? null, 'title' => $thing->title];
     }
 
     /**
@@ -70,11 +70,13 @@ final class Collab
         $changed = [];
 
         foreach ($thing->getChanges() as $column => $value) {
-            // A board's items live in its content
-            $key = $thing instanceof Board && $column === 'content' ? 'items' : $column;
+            // A board's items and deck live in its content
+            $keys = $thing instanceof Board && $column === 'content' ? ['items', 'deck'] : [$column];
 
-            if (array_key_exists($key, $values)) {
-                $changed[$key] = $values[$key];
+            foreach ($keys as $key) {
+                if (array_key_exists($key, $values)) {
+                    $changed[$key] = $values[$key];
+                }
             }
         }
 

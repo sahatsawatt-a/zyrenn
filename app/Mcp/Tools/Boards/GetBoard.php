@@ -7,6 +7,7 @@ use App\Models\Board\Board;
 use App\Support\Board\BoardItems;
 use App\Support\Board\BoardParts;
 use App\Support\Board\BoardRender;
+use App\Support\Board\Deck;
 use App\Support\Live\Collab;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Http\Client\ConnectionException;
@@ -116,6 +117,8 @@ class GetBoard extends BoardTool
             ...$this->summary($board),
             'frames' => $frames,
             ...($frames !== [] ? ['loose_items' => $looseCount] : []),
+            // The deck the frames make, when it has a look or words of its own
+            ...(Deck::of($board->content) !== null ? ['deck' => Deck::of($board->content)] : []),
             ...($frame ? ['frame' => $frame['id']] : []),
             ...($listed ? ['items' => $outline ? BoardParts::outline($items) : $full] : []),
             ...(($validated['check'] ?? false)

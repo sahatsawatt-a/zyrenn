@@ -22,7 +22,11 @@ void test('a board opens with its items in order, and reads back the same', () =
 
     boards.seed(document, { items, title: 'Map' });
 
-    assert.deepEqual(boards.read(document), { items, title: 'Map' });
+    assert.deepEqual(boards.read(document), {
+        items,
+        title: 'Map',
+        deck: null,
+    });
 });
 
 void test('an item left out of the order is still on the board, on top', () => {
@@ -70,7 +74,26 @@ void test('a change from elsewhere replaces the items and the title', () => {
     assert.deepEqual(boards.read(document), {
         items: [sticky('n', 'New')],
         title: 'Renamed',
+        deck: null,
     });
+});
+
+void test('a board keeps the deck its frames make, beside its items', () => {
+    const document = new Y.Doc();
+    const deck = { theme: 'night', footer: '{section}', numbers: true };
+    boards.seed(document, { items: [sticky('a', 'A')], title: '', deck });
+
+    assert.deepEqual(boards.read(document).deck, deck);
+
+    boards.edit(document, [{ do: 'deck', deck: { theme: 'ivory' } }]);
+    assert.deepEqual(boards.read(document).deck, { theme: 'ivory' });
+
+    // A change to the items alone leaves the deck as it was
+    boards.replace(document, { items: [] });
+    assert.deepEqual(boards.read(document).deck, { theme: 'ivory' });
+
+    boards.replace(document, { deck: null });
+    assert.equal(boards.read(document).deck, null);
 });
 
 void test('a note keeps its title and width beside the body', () => {

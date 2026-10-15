@@ -58,10 +58,37 @@ export const groupKeys = (items: Item[]): Map<string, string> => {
             continue;
         }
 
+        // Pinned to nothing: where its loose ends are, by the middle of them
+        const loose = [item.from, item.to].filter(
+            (end) => end && !end.item && end.x !== undefined,
+        );
+        const middle = loose.length
+            ? {
+                  x:
+                      loose.reduce((sum, end) => sum + (end?.x ?? 0), 0) /
+                      loose.length,
+                  y:
+                      loose.reduce((sum, end) => sum + (end?.y ?? 0), 0) /
+                      loose.length,
+              }
+            : null;
+        const holding = middle
+            ? frames
+                  .filter(
+                      (frame) =>
+                          middle.x >= frame.x &&
+                          middle.x <= frame.x + frame.width &&
+                          middle.y >= frame.y &&
+                          middle.y <= frame.y + frame.height,
+                  )
+                  .sort((a, b) => a.width * a.height - b.width * b.height)[0]
+            : undefined;
+
         keys.set(
             item.id,
             keys.get(item.from?.item ?? '') ??
                 keys.get(item.to?.item ?? '') ??
+                holding?.id ??
                 'board',
         );
     }

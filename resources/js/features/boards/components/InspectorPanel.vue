@@ -15,10 +15,11 @@ import {
     Plus,
     RotateCw,
     SendToBack,
+    Paintbrush,
     SlidersHorizontal,
     Trash2,
 } from '@lucide/vue';
-import { useLocalStorage } from '@vueuse/core';
+import { useLocalStorage, useMediaQuery } from '@vueuse/core';
 import type { Component } from 'vue';
 import { computed, ref } from 'vue';
 import {
@@ -37,7 +38,9 @@ import {
     hasText,
 } from '@/features/boards/composables/items';
 import { hasHeader } from '@/features/boards/composables/rows';
-import { shapeOf } from '@/features/boards/composables/shapes';
+import { designsOf, shapeOf } from '@/features/boards/composables/shapes';
+import type { Deck } from '@/features/boards/composables/deck';
+import { styled } from '@/features/boards/composables/styles';
 import type {
     Align,
     Fit,
@@ -56,7 +59,12 @@ import {
 } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import ColourPicker from './ColourPicker.vue';
+import LookSettings from './LookSettings.vue';
+import SlideSettings from './SlideSettings.vue';
+import DeckSettings from './DeckSettings.vue';
 import ConnectorSettings from './ConnectorSettings.vue';
+import DesignPicker from './DesignPicker.vue';
+import StylePicker from './StylePicker.vue';
 import StructureSettings from './StructureSettings.vue';
 
 // The panel over the right of the canvas: what is selected, and every property
@@ -71,6 +79,9 @@ const props = defineProps<{
     frameCount: number;
     // What a selected connector joins, e.g. "rect → database"
     link?: string;
+    // The deck the frames make, once it can be changed
+    deck?: Deck | null;
+    deckReady?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -83,7 +94,45 @@ const emit = defineEmits<{
     update: [Partial<Item>];
     turn: [];
     close: [];
+    // Changes that differ item by item: a style put on, as each kind takes it
+    restyle: [Map<string, Partial<Item>>];
+    // The whole board put in one colour set and style
+    'restyle-board': [{ set: string; style: string }];
+    // The deck changed, and every slide put in its look
+    deck: [Deck | null];
+    'restyle-deck': [];
 }>();
+
+// A picker opens beside the panel; on a phone, where the panel is a sheet
+// across the foot of the screen, it opens above it
+const narrow = useMediaQuery('(max-width: 719px)');
+const beside = computed(() => (narrow.value ? 'top' : 'left'));
+
+// ------------------------------------------------------- designs and styles
+// The ways the selected kind can be drawn, when every one chosen is that kind
+const designed = computed(() => {
+    const [first] = props.selection;
+
+    return first &&
+        designsOf(first.kind).length &&
+        props.selection.every((item) => item.kind === first.kind)
+        ? first
+        : null;
+});
+
+// A ready-made style put on everything chosen, as each kind takes it
+const onStyle = ({ style, colour }: { style: string; colour: string }) =>
+    emit(
+        'restyle',
+        new Map(
+            props.selection.map((item) => [
+                item.id,
+                styled(item, style, colour),
+            ]),
+        ),
+    );
+
+const shadowed = computed(() => props.selection.some((item) => item.shadow));
 
 const connectors = computed(() =>
     props.selection.filter((item) => item.kind === 'arrow'),
@@ -460,9 +509,45 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                 @update="emit('update', $event)"
             />
 
+            <!-- The ways it can be drawn: a database as a cylinder, a
+                 stack of discs, a card with an icon -->
+            <div v-if="designed" class="inspector-section">
+                <p class="inspector-label">Design</p>
+                <DesignPicker
+                    :kind="designed.kind"
+                    :variant="designed.variant"
+                    @pick="emit('update', { variant: $event })"
+                />
+            </div>
+
             <!-- Its colours: a chip each, opened for the swatches and for
-                 any other colour, rather than both palettes always out -->
+                 any other colour, rather than both palettes always out --
+                 and a ready-made style, opened for the sets to choose from -->
             <div class="inspector-colours">
+                <Popover>
+                    <PopoverTrigger as-child>
+                        <button
+                            type="button"
+                            title="A ready-made style: colours that go together"
+                            data-test="style-chip"
+                        >
+                            <Paintbrush class="size-3.5" />
+                            Style
+                        </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                        :side="beside"
+                        align="start"
+                        :collision-padding="8"
+                        class="w-72 p-3"
+                    >
+                        <StylePicker
+                            :shadow="shadowed"
+                            @pick="onStyle"
+                            @shadow="emit('update', { shadow: $event })"
+                        />
+                    </PopoverContent>
+                </Popover>
                 <Popover v-if="!lineOnly">
                     <PopoverTrigger as-child>
                         <button
@@ -482,7 +567,12 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                             Fill
                         </button>
                     </PopoverTrigger>
-                    <PopoverContent side="left" align="start" class="w-64 p-3">
+                    <PopoverContent
+                        :side="beside"
+                        align="start"
+                        :collision-padding="8"
+                        class="w-64 p-3"
+                    >
                         <ColourPicker
                             :model-value="fill"
                             label="Fill"
@@ -509,7 +599,12 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                             Line
                         </button>
                     </PopoverTrigger>
-                    <PopoverContent side="left" align="start" class="w-64 p-3">
+                    <PopoverContent
+                        :side="beside"
+                        align="start"
+                        :collision-padding="8"
+                        class="w-64 p-3"
+                    >
                         <ColourPicker
                             :model-value="stroke"
                             label="Line"
@@ -538,6 +633,15 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                 />
                 <span>{{ outlined.lineWidth }}</span>
             </label>
+
+            <!-- Corners, how see-through, a fading fill, a box as tall as its
+                 words, a picture's point in view, a video's still -->
+            <LookSettings
+                v-if="!lineOnly"
+                :selection="selection"
+                :beside="beside"
+                @update="emit('update', $event)"
+            />
 
             <!-- Where the label sits in whatever it is written on -->
             <div v-if="label" class="inspector-align" data-test="align-config">
@@ -664,6 +768,20 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
                 </label>
             </div>
 
+            <!-- A slide's background picture, its section and its notes -->
+            <SlideSettings
+                v-if="frames.length === 1"
+                :frame="frames[0]"
+                @update="emit('update', $event)"
+            />
+            <DeckSettings
+                v-if="frames.length && deckReady"
+                :deck="deck ?? null"
+                :side="beside"
+                @update="emit('deck', $event)"
+                @restyle="emit('restyle-deck')"
+            />
+
             <!-- How a picture fills its box -->
             <div v-if="picture" class="inspector-align" data-test="fit-config">
                 <p class="inspector-label">Picture</p>
@@ -769,10 +887,52 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
             </details>
         </div>
 
-        <p v-else class="inspector-hint">
-            Pick a tool from the bar below and drag it out on the canvas, or
-            click something to change its colour, size and stacking.
-        </p>
+        <div v-else class="inspector-body">
+            <p class="inspector-hint">
+                Pick a tool from the bar below and drag it out on the canvas, or
+                click something to change its colour, size and stacking.
+            </p>
+
+            <!-- Everything at once: one colour set, one style -->
+            <Popover v-if="itemCount">
+                <PopoverTrigger as-child>
+                    <button
+                        type="button"
+                        class="inspector-wide"
+                        title="Put every shape on the board in one colour set and style"
+                        data-test="restyle-board"
+                    >
+                        <Paintbrush class="size-3.5" />
+                        Restyle the board
+                    </button>
+                </PopoverTrigger>
+                <PopoverContent
+                    :side="beside"
+                    align="start"
+                    :collision-padding="8"
+                    class="w-72 p-3"
+                >
+                    <StylePicker
+                        board
+                        @pick="
+                            emit('restyle-board', {
+                                set: $event.set,
+                                style: $event.style,
+                            })
+                        "
+                    />
+                </PopoverContent>
+            </Popover>
+
+            <!-- The slides' look, and what is written on each -->
+            <DeckSettings
+                v-if="frameCount && deckReady"
+                :deck="deck ?? null"
+                :side="beside"
+                @update="emit('deck', $event)"
+                @restyle="emit('restyle-deck')"
+            />
+        </div>
     </aside>
 </template>
 
@@ -825,8 +985,7 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     text-transform: capitalize;
 }
 
-.inspector-sub,
-.inspector-hint {
+.inspector-sub {
     font-size: 0.75rem;
     color: var(--muted-foreground);
 }
@@ -841,6 +1000,13 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     display: flex;
     gap: 2px;
 }
+
+.inspector-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
 .inspector-actions button {
     display: inline-flex;
     flex: 1;
@@ -904,30 +1070,12 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     border-radius: var(--radius-sm);
 }
 
-.inspector-align {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-}
-
 .inspector-check {
     display: flex;
     align-items: center;
     gap: 0.375rem;
     font-size: 0.6875rem;
     color: var(--muted-foreground);
-    cursor: pointer;
-}
-
-/* Something on or off: its name, and a switch at the far end */
-.inspector-switch {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    min-height: 1.75rem;
-    font-size: 0.75rem;
-    color: var(--foreground);
     cursor: pointer;
 }
 
@@ -952,27 +1100,10 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
 .inspector-colours button[data-state='open'] {
     background-color: var(--muted);
 }
-.inspector-chip {
-    width: 1.125rem;
-    height: 1.125rem;
-    flex-shrink: 0;
-    border: 1px solid rgb(0 0 0 / 0.2);
-    border-radius: 999px;
-}
 /* A line's colour is a ring, as a line is */
 .inspector-chip.is-line {
     background-color: transparent;
     border-width: 3px;
-}
-.inspector-chip.is-none {
-    border: 1px solid var(--border);
-    background: linear-gradient(
-        to top left,
-        transparent calc(50% - 1px),
-        #ef4444 calc(50% - 1px),
-        #ef4444 calc(50% + 1px),
-        transparent calc(50% + 1px)
-    );
 }
 
 .inspector-row {
@@ -1035,38 +1166,6 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     display: flex;
     flex-direction: column;
     gap: 0.375rem;
-}
-
-.inspector-label {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--muted-foreground);
-}
-
-.inspector-segments {
-    display: flex;
-    gap: 2px;
-}
-.inspector-segments button {
-    display: inline-flex;
-    flex: 1;
-    align-items: center;
-    justify-content: center;
-    height: 1.75rem;
-    font-size: 0.6875rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-}
-.inspector-segments button:hover {
-    background-color: var(--muted);
-}
-.inspector-segments button.is-on {
-    color: var(--primary-foreground);
-    background-color: var(--primary);
-    border-color: var(--primary);
 }
 
 .inspector-heads {
@@ -1184,6 +1283,101 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
     height: 1.25rem;
     margin: 0 0.25rem;
     background-color: var(--border);
+}
+</style>
+
+<!-- The panel's controls, shared with the settings drawn inside it
+     (LookSettings, SlideSettings), which a scoped style would not reach -->
+<style>
+/* A word on how to use what is above it */
+.inspector-hint {
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+}
+
+/* A button across the panel: "Restyle the board", the deck */
+.inspector-wide {
+    display: inline-flex;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: 2rem;
+    font-size: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+.inspector-wide:hover,
+.inspector-wide[data-state='open'] {
+    background-color: var(--muted);
+}
+
+/* Something on or off: its name, and a switch at the far end */
+.inspector-switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: 1.75rem;
+    font-size: 0.75rem;
+    color: var(--foreground);
+    cursor: pointer;
+}
+
+.inspector-align {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+.inspector-chip {
+    width: 1.125rem;
+    height: 1.125rem;
+    flex-shrink: 0;
+    border: 1px solid rgb(0 0 0 / 0.2);
+    border-radius: 999px;
+}
+.inspector-chip.is-none {
+    border: 1px solid var(--border);
+    background: linear-gradient(
+        to top left,
+        transparent calc(50% - 1px),
+        #ef4444 calc(50% - 1px),
+        #ef4444 calc(50% + 1px),
+        transparent calc(50% + 1px)
+    );
+}
+
+.inspector-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+}
+
+.inspector-segments {
+    display: flex;
+    gap: 2px;
+}
+.inspector-segments button {
+    display: inline-flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    height: 1.75rem;
+    font-size: 0.6875rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+.inspector-segments button:hover {
+    background-color: var(--muted);
+}
+.inspector-segments button.is-on {
+    color: var(--primary-foreground);
+    background-color: var(--primary);
+    border-color: var(--primary);
 }
 
 .inspector-slider {

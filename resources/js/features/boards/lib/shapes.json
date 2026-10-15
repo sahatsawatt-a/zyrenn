@@ -1,5 +1,5 @@
 {
-    "about": "Shapes drawn from a path in a 100 by 100 box and fitted to the item. Read by the canvas (composables/shapes.ts) and by the server (App\\Support\\Board\\Shapes), so a shape an MCP client names is the one the canvas draws. path: the outline, filled with the item's fill and drawn in its line. solid: parts filled in the line's colour. noFill: lines only. hit 'box': the whole box takes the pointer. insets: how far inside the box the outline lies at the middle of a side, as a share of it, for a connector to stop on. flat: the sides that are straight edges of the box. text: how far in from each side the label's box starts, as a share of the item -- more than 1 or less than 0 puts the label outside it. defaults: what a new one starts with. rows: 'table' or 'class' -- it holds a list of rows (composables/rows.ts) under a titled band. header: it has a titled band of a fixed depth along its top. slide: a connector's end dropped on it keeps how far along it it was dropped.",
+    "about": "Shapes drawn from a path in a 100 by 100 box and fitted to the item. Read by the canvas (composables/shapes.ts) and by the server (App\\Support\\Board\\Shapes), so a shape an MCP client names is the one the canvas draws. path: the outline, filled with the item's fill and drawn in its line. solid: parts filled in the line's colour. noFill: lines only. hit 'box': the whole box takes the pointer. insets: how far inside the box the outline lies at the middle of a side, as a share of it, for a connector to stop on. flat: the sides that are straight edges of the box. text: how far in from each side the label's box starts, as a share of the item -- more than 1 or less than 0 puts the label outside it. defaults: what a new one starts with. rows: 'table' or 'class' -- it holds a list of rows (composables/rows.ts) under a titled band. header: it has a titled band of a fixed depth along its top. slide: a connector's end dropped on it keeps how far along it it was dropped. designs: other ways to draw a kind, chosen by an item's \"variant\" -- 'more' lists drawings of its own (path, solid, and shade: parts filled a little darker than the fill, for depth), and 'icon' (one of lib/icons.json) adds three drawn with it: a card with the icon over its label, a badge (the icon on a disc) and the icon alone, the label under the last two.",
     "groups": ["Shapes", "Flowchart", "Software", "Architecture"],
     "shapes": {
         "pentagon": {
@@ -630,6 +630,90 @@
                 "verticalAlign": "top",
                 "text": "Device"
             }
+        }
+    },
+    "designs": {
+        "cylinder": {
+            "icon": "database",
+            "more": [
+                {
+                    "id": "stacked",
+                    "label": "Stacked",
+                    "path": "M0,14 L0,86 a50,14 0 0,0 100,0 L100,14 a50,14 0 0,0 -100,0 a50,14 0 0,0 100,0 M0,38 a50,14 0 0,0 100,0 M0,62 a50,14 0 0,0 100,0"
+                },
+                {
+                    "id": "shaded",
+                    "label": "Shaded",
+                    "path": "M0,14 L0,86 a50,14 0 0,0 100,0 L100,14 a50,14 0 0,0 -100,0 a50,14 0 0,0 100,0",
+                    "shade": "M0,14 a50,14 0 0,0 100,0 a50,14 0 0,0 -100,0 Z"
+                }
+            ]
+        },
+        "cloud": {
+            "icon": "cloud"
+        },
+        "document": {
+            "icon": "file-text"
+        },
+        "server": {
+            "icon": "server",
+            "more": [
+                {
+                    "id": "shaded",
+                    "label": "Shaded",
+                    "path": "M0,0 H100 V100 H0 Z M0,33.3 H100 M0,66.7 H100",
+                    "shade": "M0,0 H100 V33.3 H0 Z M0,66.7 H100 V100 H0 Z",
+                    "solid": "M12,14.7 h12 v4 h-12 Z M12,48 h12 v4 h-12 Z M12,81.3 h12 v4 h-12 Z M80,16.7 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 M80,50 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 M80,83.3 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0"
+                }
+            ]
+        },
+        "user": {
+            "icon": "user"
+        },
+        "actor": {
+            "icon": "user"
+        },
+        "browser": {
+            "icon": "app-window"
+        },
+        "phone": {
+            "icon": "smartphone"
+        },
+        "desktop": {
+            "icon": "monitor"
+        },
+        "queue": {
+            "icon": "layers"
+        },
+        "bucket": {
+            "icon": "box"
+        },
+        "gateway": {
+            "icon": "network"
+        },
+        "firewall": {
+            "icon": "shield"
+        },
+        "globe": {
+            "icon": "globe"
+        },
+        "mail": {
+            "icon": "mail"
+        },
+        "device": {
+            "icon": "cpu"
+        },
+        "package": {
+            "icon": "package"
+        },
+        "component": {
+            "icon": "box"
+        },
+        "note": {
+            "icon": "file-text"
+        },
+        "cube": {
+            "icon": "box"
         }
     }
 }

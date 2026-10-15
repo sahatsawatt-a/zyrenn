@@ -2,7 +2,7 @@ import Konva from 'konva';
 import type { Item } from './items';
 import { FONT_FAMILIES } from './items';
 import { hasHeader, headerDepth, headerSide } from './rows';
-import { shapeOf } from './shapes';
+import { lookOf } from './shapes';
 
 // Where a label is written on an item, and how much room its words take.
 // The server works the same out in App\Support\Board\LabelFit, to warn an MCP
@@ -33,7 +33,7 @@ export const labelBox = (item: Item) => {
 
     // A shape from the library says where its words go, as shares of its
     // box: clear of a folder's tab, inside a screen, under a figure
-    const room = shapeOf(item.kind)?.text;
+    const room = lookOf(item).text;
 
     if (room) {
         const left = (room.left ?? 0) * item.width + padding;
@@ -82,8 +82,8 @@ export const fontOf = (item: Item) => FONT_FAMILIES[item.fontFamily] ?? 'Arial';
 
 // --------------------------------------------------------------- Rich text
 
-/** A stretch of words in one style. */
-type Run = { text: string; bold: boolean; italic: boolean };
+/** A stretch of words in one style; code is set in mono on a tint. */
+type Run = { text: string; bold: boolean; italic: boolean; code?: boolean };
 
 /** One line of the label as written: a heading, a bullet, or words. */
 type Paragraph = {
@@ -102,6 +102,8 @@ export type Fragment = {
     text: string;
     x: number;
     font: string;
+    /** Inline code: drawn on a tint, its run with room either side. */
+    code?: boolean;
 };
 
 export type Line = {
@@ -119,38 +121,68 @@ const RULE_HEIGHT = 0.7;
 
 const HEADINGS: Record<number, number> = { 1: 1.6, 2: 1.3, 3: 1.1 };
 
-/** **bold**, *italic* and _italic_, inside one line. */
-const runsOf = (line: string, bold: boolean): Run[] => {
+/**
+ * `code`, a mark escaped with a backslash, **bold**, *italic* and _italic_.
+ * An underscore inside a word is only an underscore, as in Markdown, so a
+ * snake_case name stays as it is. The server reads the same (LabelFit::runs).
+ */
+const MARKS =
+    /(`[^`]+`|\\[\\`*_#~[\]-]|\*\*[^*]+\*\*|\*[^*\s][^*]*\*|(?<![\p{L}\p{N}_])_[^_\s](?:[^_]*[^_\s])?_(?![\p{L}\p{N}_]))/gu;
+
+/** **bold**, *italic* and _italic_ and `code`, inside one line. */
+export const runsOf = (line: string, bold: boolean): Run[] => {
     const runs: Run[] = [];
-    const pattern = /(\*\*[^*]+\*\*|\*[^*\s][^*]*\*|_[^_\s][^_]*_)/g;
+    const plain = (text: string) => {
+        const before = runs[runs.length - 1];
+
+        // Text either side of an escaped mark is one word, not three
+        if (before && !before.code && !before.italic && before.bold === bold) {
+            before.text += text;
+        } else {
+            runs.push({ text, bold, italic: false });
+        }
+    };
     let last = 0;
 
-    for (const match of line.matchAll(pattern)) {
+    for (const match of line.matchAll(MARKS)) {
         if (match.index > last) {
-            runs.push({
-                text: line.slice(last, match.index),
-                bold,
-                italic: false,
-            });
+            plain(line.slice(last, match.index));
         }
 
         const token = match[0];
         const strong = token.startsWith('**');
 
-        runs.push({
-            text: token.slice(strong ? 2 : 1, strong ? -2 : -1),
-            bold: bold || strong,
-            italic: !strong,
-        });
+        if (token.startsWith('\\')) {
+            plain(token.slice(1));
+        } else if (token.startsWith('`')) {
+            runs.push({
+                text: token.slice(1, -1),
+                bold,
+                italic: false,
+                code: true,
+            });
+        } else {
+            // Read inside too: `code` and escapes in bold or italic words
+            for (const run of runsOf(
+                token.slice(strong ? 2 : 1, strong ? -2 : -1),
+                bold || strong,
+            )) {
+                runs.push({ ...run, italic: run.italic || !strong });
+            }
+        }
+
         last = match.index + token.length;
     }
 
     if (last < line.length) {
-        runs.push({ text: line.slice(last), bold, italic: false });
+        plain(line.slice(last));
     }
 
     return runs;
 };
+
+/** The room either side of inline code, for its tint, in font sizes. */
+const CODE_PAD = 0.25;
 
 /**
  * The label as light Markdown, a line at a time: "# ", "## " and "### " make
@@ -196,21 +228,27 @@ export const paragraphsOf = (text: string): Paragraph[] =>
     });
 
 let measurer: CanvasRenderingContext2D | null = null;
+// The room added after each letter of the label being laid out
+let spacing = 0;
 
 const widthOf = (text: string, font: string) => {
     measurer ??= document.createElement('canvas').getContext('2d');
 
     if (!measurer) {
-        return text.length * 8;
+        return text.length * (8 + spacing);
     }
 
     measurer.font = font;
 
-    return measurer.measureText(text).width;
+    return measurer.measureText(text).width + spacing * text.length;
 };
 
+/** The words as shown: in capitals, when the label is set that way. */
+export const shownText = (item: Item): string =>
+    item.caps ? item.text.toUpperCase() : item.text;
+
 const fontFor = (run: Run, size: number, family: string) =>
-    `${run.italic ? 'italic ' : ''}${run.bold ? 'bold ' : ''}${size}px ${family}`;
+    `${run.italic ? 'italic ' : ''}${run.bold ? 'bold ' : ''}${size}px ${run.code ? FONT_FAMILIES.mono : family}`;
 
 /**
  * A rich label laid out in its box: each paragraph wrapped at word breaks to
@@ -223,7 +261,9 @@ export const layoutRich = (item: Item): { lines: Line[]; height: number } => {
     const lines: Line[] = [];
     let y = 0;
 
-    for (const paragraph of paragraphsOf(item.text)) {
+    spacing = item.letterSpacing ?? 0;
+
+    for (const paragraph of paragraphsOf(shownText(item))) {
         if (paragraph.rule) {
             const height = item.fontSize * RULE_HEIGHT;
 
@@ -265,6 +305,11 @@ export const layoutRich = (item: Item): { lines: Line[]; height: number } => {
 
         for (const run of paragraph.runs) {
             const font = fontFor(run, size, family);
+            const code = run.code ? { code: true } : {};
+
+            if (run.code) {
+                x += size * CODE_PAD;
+            }
 
             // Words and the spaces between them, so a line breaks at a space
             for (const piece of run.text.split(/(\s+)/)) {
@@ -296,14 +341,18 @@ export const layoutRich = (item: Item): { lines: Line[]; height: number } => {
                         cut--;
                     }
 
-                    line.push({ text: rest.slice(0, cut), x, font });
+                    line.push({ text: rest.slice(0, cut), x, font, ...code });
                     finish();
                     rest = rest.slice(cut);
                     wide = widthOf(rest, font);
                 }
 
-                line.push({ text: rest, x, font });
+                line.push({ text: rest, x, font, ...code });
                 x += wide;
+            }
+
+            if (run.code) {
+                x += size * CODE_PAD;
             }
         }
 
@@ -340,7 +389,7 @@ export const labelHeight = (item: Item): number => {
     }
 
     const width = labelBox(item).width;
-    const key = `${width}|${item.fontSize}|${item.fontFamily}|${item.rich}|${item.align}|${labelStyle(item)}|${item.text}`;
+    const key = `${width}|${item.fontSize}|${item.fontFamily}|${item.rich}|${item.align}|${labelStyle(item)}|${item.letterSpacing ?? 0}|${item.caps ? 1 : 0}|${item.text}`;
     let height = heights.get(key);
 
     if (height === undefined) {
@@ -349,7 +398,8 @@ export const labelHeight = (item: Item): number => {
         } else {
             probe ??= new Konva.Text({ lineHeight: LINE_HEIGHT, wrap: 'word' });
             probe.setAttrs({
-                text: item.text,
+                text: shownText(item),
+                letterSpacing: item.letterSpacing ?? 0,
                 width,
                 fontSize: item.fontSize,
                 fontFamily: fontOf(item),
@@ -385,8 +435,19 @@ export const drawRich =
                   ? (box.height - height) / 2
                   : 0;
 
-        context.setAttr('fillStyle', ink);
+        // Words that fade across the label, from their colour to another
+        if (item.colorTo) {
+            const fade = context.createLinearGradient(0, 0, box.width, 0);
+
+            fade.addColorStop(0, ink);
+            fade.addColorStop(1, item.colorTo);
+            context.setAttr('fillStyle', fade);
+        } else {
+            context.setAttr('fillStyle', ink);
+        }
+
         context.setAttr('textBaseline', 'middle');
+        context.setAttr('letterSpacing', `${item.letterSpacing ?? 0}px`);
 
         for (const line of lines) {
             if (line.rule) {
@@ -404,6 +465,41 @@ export const drawRich =
                 continue;
             }
 
+            const middle = Math.max(0, top) + line.y + line.height / 2;
+            const pad = line.size * CODE_PAD;
+
+            // Inline code on a light tint of the words' own colour: one for
+            // each stretch of it on the line
+            for (let at = 0; at < line.fragments.length; at++) {
+                const first = line.fragments[at];
+
+                if (!first.code) continue;
+
+                let end = at;
+
+                while (line.fragments[end + 1]?.code) end++;
+
+                const last = line.fragments[end];
+                const right = last.x + widthOf(last.text, last.font) + pad;
+
+                context.save();
+                context.setAttr(
+                    'globalAlpha',
+                    context._context.globalAlpha * 0.12,
+                );
+                context.beginPath();
+                context.roundRect(
+                    first.x - pad,
+                    middle - line.size * 0.65,
+                    right - first.x + pad,
+                    line.size * 1.3,
+                    line.size * 0.2,
+                );
+                context.fill();
+                context.restore();
+                at = end;
+            }
+
             for (const fragment of line.fragments) {
                 context.setAttr('font', fragment.font);
                 context.fillText(
@@ -414,3 +510,15 @@ export const drawRich =
             }
         }
     };
+
+/** Kinds that can be as tall as their words: their label sits a padding in. */
+export const HUGGING: Item['kind'][] = ['rect', 'sticky', 'pill', 'process'];
+
+/**
+ * The height an item that hugs its words should have -- the words and the
+ * padding above and below them -- or null for one that doesn't hug.
+ */
+export const huggedHeight = (item: Item): number | null =>
+    item.hug && HUGGING.includes(item.kind) && item.text
+        ? Math.ceil(labelHeight(item) + item.padding * 2)
+        : null;

@@ -20,7 +20,10 @@ export type BoardTheme = {
     behind: (item: Item) => string;
     /** A line of this item's as it is drawn: the board's ink, kept readable. */
     drawn: (colour: string, item: Item) => string;
-    /** The colour to write in, on this item or on whatever it lies on. */
+    /**
+     * The colour to write in, on this item or on whatever it lies on: the
+     * colour its words were given, or what reads best there.
+     */
     inkOn: (item: Item) => string;
     /** The colour to write in on a colour. */
     inkOver: (colour: string) => string;
@@ -28,12 +31,17 @@ export type BoardTheme = {
 
 const PAPER = '#ffffff';
 
+// On a light board words are ink, but white on a fill too dark for ink
+const onLight = (colour: string) =>
+    (lightnessOf(colour) ?? 1) > 0.55 ? INK : '#ffffff';
+
 const LIGHT: BoardTheme = {
     dark: false,
     paper: PAPER,
     behind: () => PAPER,
     drawn: (colour) => colour,
-    inkOn: () => INK,
+    inkOn: (item) =>
+        item.color || (item.kind === 'frame' ? INK : onLight(item.fill)),
     inkOver: () => INK,
 };
 
@@ -76,7 +84,11 @@ const lightness = new Map<string, number | null>();
 let probe: CanvasRenderingContext2D | null = null;
 
 const lightnessOf = (colour: string): number | null => {
-    if (!colour || colour === 'transparent') {
+    if (
+        !colour ||
+        colour === 'transparent' ||
+        typeof document === 'undefined'
+    ) {
         return null;
     }
 
@@ -175,7 +187,9 @@ const darkTheme = (
         behind,
         drawn: (colour, item) =>
             colour.toLowerCase() === INK ? inkOver(behind(item)) : colour,
+        // A colour given to its words is theirs, as a fill is the shape's
         inkOn: (item) =>
+            item.color ||
             inkOver(
                 item.kind !== 'frame' && opaque(item.fill)
                     ? item.fill

@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import {
+    paint,
+    strokePaint,
+    withAlpha,
+} from '@/features/boards/composables/paint';
 import type Konva from 'konva';
 import { computed } from 'vue';
 import {
@@ -35,8 +40,11 @@ import {
 } from '@/features/boards/circuit/symbols';
 import { WARNED, besideRun } from '@/features/boards/circuit/values';
 import { polygonPoints } from '@/features/boards/composables/geometry';
+import type { SlideDecor } from '@/features/boards/composables/deck';
+import { useSlideDecor } from '@/features/boards/composables/deck';
 import type { Item } from '@/features/boards/composables/items';
 import {
+    FONT_FAMILIES,
     PATHS,
     POLYGONS,
     hasText,
@@ -48,19 +56,25 @@ import {
     headerDepth,
     headerSide,
 } from '@/features/boards/composables/rows';
-import { labelledOutside, shapeOf } from '@/features/boards/composables/shapes';
+import {
+    labelledOutside,
+    lookOf,
+    shapeOf,
+} from '@/features/boards/composables/shapes';
+import { iconPath } from '@/features/boards/composables/styles';
 import {
     CARD_RADIUS,
     drawStructure,
 } from '@/features/boards/composables/structure';
 import {
-    INK,
-    LINE_HEIGHT,
     drawRich,
     fontOf,
+    INK,
     labelBox,
     labelHeight,
     labelStyle,
+    LINE_HEIGHT,
+    shownText,
 } from '@/features/boards/composables/labels';
 import { useBoardTheme } from '@/features/boards/composables/useBoardTheme';
 import { FRAME_TITLE } from '@/features/boards/composables/useLabelEditor';
@@ -110,13 +124,47 @@ const shown = (colour: string) => theme.value.drawn(colour, props.item);
 
 const SELECTED = '#6366f1';
 
+// A slide's header, footer and number, as the deck writes them on it
+const slideDecor = useSlideDecor();
+const decor = computed(() =>
+    props.item.kind === 'frame'
+        ? slideDecor.value.get(props.item.id)
+        : undefined,
+);
+
+/** One line of them: at the top of the slide or its foot, either side. */
+const decorLine = (
+    on: SlideDecor,
+    text: string,
+    edge: 'top' | 'bottom',
+    align: 'left' | 'right',
+) => {
+    const size = 12 * on.scale;
+    const inset = 22 * on.scale;
+
+    return {
+        direction: DIRECTION,
+        text,
+        x: on.margin,
+        y: edge === 'top' ? inset : props.item.height - inset - size,
+        width: props.item.width - on.margin * 2,
+        fontSize: size,
+        fontFamily: FONT_FAMILIES[on.font],
+        fill: on.color,
+        align,
+        wrap: 'none',
+        ellipsis: true,
+        listening: false,
+    };
+};
+
 /**
  * The colour its label is written in: read against the shape, or -- for one
  * named outside itself, a figure with its name under it -- against whatever
  * it stands on.
  */
 const ink = computed(() =>
-    labelledOutside(props.item.kind)
+    labelledOutside(props.item.kind, props.item.variant)
         ? theme.value.inkOver(theme.value.behind(props.item))
         : theme.value.inkOn(props.item),
 );
@@ -198,11 +246,135 @@ const boxHit = (context: Konva.Context, shape: Konva.Shape) => {
  * the selection's colour over it, heavy enough to see.
  */
 const edge = computed(() => ({
-    stroke: props.selected ? SELECTED : shown(props.item.stroke),
+    stroke: props.selected
+        ? SELECTED
+        : withAlpha(shown(props.item.stroke), props.item.strokeOpacity),
     strokeWidth: props.selected
         ? Math.max(2, props.item.lineWidth)
         : props.item.lineWidth,
+    ...effects.value,
 }));
+
+/**
+ * What lifts it off the board or lights it: a glow round it in a colour;
+ * else a shadow -- the soft one `shadow` puts under the fill, or one of its
+ * own. A line with nothing inside casts it from the line itself.
+ */
+const effects = computed(() => {
+    const item = props.item;
+    const hollow = !item.fill || item.fill === 'transparent';
+
+    if (item.glow) {
+        return {
+            shadowColor: item.glow,
+            shadowBlur: item.glowSize ?? 24,
+            shadowOpacity: 0.9,
+            shadowOffsetX: 0,
+            shadowOffsetY: 0,
+            shadowForStrokeEnabled: hollow,
+        };
+    }
+
+    if (item.shadow || item.shadowColor) {
+        return {
+            shadowColor: item.shadowColor ?? '#0f172a',
+            shadowOpacity: item.shadowOpacity ?? 0.2,
+            shadowBlur: item.shadowBlur ?? 16,
+            shadowOffsetX: item.shadowX ?? 0,
+            shadowOffsetY: item.shadowY ?? 6,
+            shadowForStrokeEnabled: hollow,
+        };
+    }
+
+    return {};
+});
+
+/**
+ * A connector's line: the selection's colour, a live wire's, or its own --
+ * fading from its start to its end when it has a gradient.
+ */
+const lineStroke = (points: number[]) => {
+    if (props.selected) {
+        return { stroke: SELECTED };
+    }
+
+    if (props.level === 1) {
+        return { stroke: LIVE };
+    }
+
+    return strokePaint(
+        { ...props.item, stroke: shown(props.item.stroke) },
+        0,
+        0,
+        points.length >= 4
+            ? {
+                  start: { x: points[0], y: points[1] },
+                  end: {
+                      x: points[points.length - 2],
+                      y: points[points.length - 1],
+                  },
+              }
+            : undefined,
+    );
+};
+
+// ------------------------------------------------------------------ designs
+// How a shape drawn from a path looks: its kind's own drawing, or the design
+// picked for it -- a database as a stack of discs, or as a card with an icon
+const look = computed(() => lookOf(props.item));
+
+/** A colour a shade darker: a lid or a side, for depth. */
+const darker = (colour: string): string => {
+    const found = /^#([0-9a-f]{6})$/i.exec(colour);
+
+    if (!found) {
+        return 'rgba(15,23,42,0.12)';
+    }
+
+    const value = parseInt(found[1], 16);
+    const channel = (shift: number) =>
+        Math.round(((value >> shift) & 255) * 0.86)
+            .toString(16)
+            .padStart(2, '0');
+
+    return `#${channel(16)}${channel(8)}${channel(0)}`;
+};
+
+/**
+ * Where a design's icon goes, and how big it is drawn, square whatever the
+ * box: over the words on a card, in the middle of a badge's disc, or
+ * filling the box on its own.
+ */
+const iconBox = computed(() => {
+    const { width, height } = props.item;
+
+    if (look.value.frame === 'card') {
+        const size = Math.min(width * 0.36, height * 0.4);
+
+        return { x: (width - size) / 2, y: height * 0.1, size };
+    }
+
+    // A badge or a bare icon sits at the foot of its box, just over the
+    // name written under it
+    const round = Math.min(width, height);
+    const size = round * (look.value.frame === 'badge' ? 0.52 : 0.9);
+
+    return {
+        x: (width - size) / 2,
+        y: height - round / 2 - size / 2,
+        size,
+    };
+});
+
+// The icon is drawn in the words' colour on a card or a badge, where it sits
+// on the fill; on its own it is the shape's line
+const iconColour = computed(() =>
+    props.selected
+        ? SELECTED
+        : look.value.frame
+          ? theme.value.inkOn(props.item)
+          : shown(props.item.stroke),
+);
 
 /** The video's own shape, as large as fits the item, with bars round it. */
 const fitted = (item: Item, video: HTMLVideoElement) => {
@@ -244,12 +416,13 @@ const pictured = (item: Item, image: HTMLImageElement) => {
         const across = item.width / scale;
         const down = item.height / scale;
 
+        // The point kept in view: the middle, unless the item names another
         return {
             width: item.width,
             height: item.height,
             crop: {
-                x: (width - across) / 2,
-                y: (height - down) / 2,
+                x: (width - across) * (item.focusX ?? 0.5),
+                y: (height - down) * (item.focusY ?? 0.5),
                 width: across,
                 height: down,
             },
@@ -388,15 +561,44 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
         :config="{
             width: item.width,
             height: item.height,
-            fill: item.fill,
+            ...paint(item, item.width, item.height),
             stroke: selected ? SELECTED : shown(item.stroke),
             strokeWidth: 1,
+            cornerRadius: item.radius ?? 0,
             shadowColor: 'black',
             shadowOpacity: 0.06,
             shadowBlur: 18,
             shadowForStrokeEnabled: false,
         }"
     />
+    <!-- A slide's own background picture, filling it unless told to fit -->
+    <KonvaImage
+        v-if="item.kind === 'frame' && image"
+        :config="{
+            image,
+            ...pictured(
+                { ...item, fit: item.fit === 'contain' ? 'contain' : 'cover' },
+                image,
+            ),
+            cornerRadius: item.radius ?? 0,
+            listening: false,
+        }"
+    />
+    <!-- What the deck writes on every slide: under whatever is put on it -->
+    <template v-if="decor">
+        <Text
+            v-if="decor.header"
+            :config="decorLine(decor, decor.header, 'top', 'left')"
+        />
+        <Text
+            v-if="decor.footer"
+            :config="decorLine(decor, decor.footer, 'bottom', 'left')"
+        />
+        <Text
+            v-if="decor.number"
+            :config="decorLine(decor, decor.number, 'bottom', 'right')"
+        />
+    </template>
     <!-- The frame's title sits above it and is edited
          on its own, the way a slide is named -->
     <Text
@@ -419,8 +621,8 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
         :config="{
             width: item.width,
             height: item.height,
-            fill: item.fill,
-            cornerRadius: 4,
+            ...paint(item, item.width, item.height),
+            cornerRadius: item.radius ?? 4,
             shadowColor: 'black',
             shadowOpacity: 0.12,
             shadowBlur: 8,
@@ -436,9 +638,9 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
         :config="{
             width: item.width,
             height: item.height,
-            fill: item.fill,
+            ...paint(item, item.width, item.height),
             ...edge,
-            cornerRadius: 8,
+            cornerRadius: item.radius ?? 8,
         }"
     />
 
@@ -451,7 +653,13 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
                 fill: 'rgba(0,0,0,0)',
             }"
         />
-        <KonvaImage :config="{ image: image, ...pictured(item, image) }" />
+        <KonvaImage
+            :config="{
+                image: image,
+                ...pictured(item, image),
+                cornerRadius: item.radius ?? 0,
+            }"
+        />
         <!-- A border, in the item's line colour -->
         <Rect
             v-if="item.stroke && item.stroke !== 'transparent'"
@@ -490,8 +698,17 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
         <KonvaImage
             :config="{
                 image: video,
-                visible: !!video,
+                visible: !!video && !(image && !playing),
                 ...(video ? fitted(item, video) : {}),
+            }"
+        />
+        <!-- Its poster, in place of a still while it isn't playing -->
+        <KonvaImage
+            :config="{
+                image: image,
+                visible: !!image && !playing,
+                ...(image ? pictured({ ...item, fit: 'contain' }, image) : {}),
+                listening: false,
             }"
         />
         <Shape
@@ -684,18 +901,72 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
                 cornerRadius: CARD_RADIUS,
             }"
         />
+        <!-- A design with a frame of its own: a card's corners are
+             rounded whatever its proportions, and a badge is a round disc -->
+        <Rect
+            v-else-if="look.frame === 'card'"
+            :config="{
+                width: item.width,
+                height: item.height,
+                fill: item.fill,
+                ...edge,
+                cornerRadius: Math.min(14, item.width / 4, item.height / 4),
+            }"
+        />
+        <Circle
+            v-else-if="look.frame === 'badge'"
+            :config="{
+                x: item.width / 2,
+                y: item.height - Math.min(item.width, item.height) / 2,
+                radius: Math.min(item.width, item.height) / 2,
+                fill: item.fill,
+                ...edge,
+                hitFunc: boxHit,
+            }"
+        />
         <Path
             v-else
             :config="{
-                data: PATHS[item.kind],
+                data: look.path ?? PATHS[item.kind],
                 scaleX: item.width / 100,
                 scaleY: item.height / 100,
-                fill: shapeOf(item.kind)?.noFill ? undefined : item.fill,
+                ...(look.noFill ? {} : paint(item, 100, 100)),
                 ...edge,
                 strokeScaleEnabled: false,
                 lineJoin: shapeOf(item.kind) ? 'round' : undefined,
                 lineCap: shapeOf(item.kind) ? 'round' : undefined,
-                hitFunc: shapeOf(item.kind)?.hit === 'box' ? boxHit : undefined,
+                hitFunc: look.hit === 'box' ? boxHit : undefined,
+            }"
+        />
+        <!-- A design's darker parts, for depth: a lid, a side -->
+        <Path
+            v-if="look.shade"
+            :config="{
+                data: look.shade,
+                scaleX: item.width / 100,
+                scaleY: item.height / 100,
+                fill: darker(item.fill),
+                stroke: edge.stroke,
+                strokeWidth: edge.strokeWidth,
+                strokeScaleEnabled: false,
+                lineJoin: 'round',
+                listening: false,
+            }"
+        />
+        <!-- A design's icon (lib/icons.json, from Lucide), kept square -->
+        <Path
+            v-if="look.icon && iconPath(look.icon)"
+            :config="{
+                data: iconPath(look.icon),
+                x: iconBox.x,
+                y: iconBox.y,
+                scaleX: iconBox.size / 24,
+                scaleY: iconBox.size / 24,
+                stroke: iconColour,
+                strokeWidth: 2,
+                lineCap: 'round',
+                lineJoin: 'round',
+                listening: false,
             }"
         />
         <!-- What is inside a table, a class or a lane: its titled band,
@@ -713,9 +984,9 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
         />
         <!-- The parts filled in the line's colour: an end state's dot -->
         <Path
-            v-if="shapeOf(item.kind)?.solid"
+            v-if="look.solid"
             :config="{
-                data: shapeOf(item.kind)!.solid,
+                data: look.solid,
                 scaleX: item.width / 100,
                 scaleY: item.height / 100,
                 fill: edge.stroke,
@@ -729,7 +1000,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
         :config="{
             width: item.width,
             height: item.height,
-            fill: item.fill,
+            ...paint(item, item.width, item.height),
             ...edge,
             cornerRadius: Math.min(item.width, item.height) / 2,
         }"
@@ -740,7 +1011,7 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
         :config="{
             points: polygonPoints(item),
             closed: true,
-            fill: item.fill,
+            ...paint(item, item.width, item.height),
             ...edge,
             lineJoin: 'round',
         }"
@@ -754,7 +1025,13 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             numPoints: 5,
             innerRadius: Math.min(item.width, item.height) / 4,
             outerRadius: Math.min(item.width, item.height) / 2,
-            fill: item.fill,
+            ...paint(
+                item,
+                item.width,
+                item.height,
+                -item.width / 2,
+                -item.height / 2,
+            ),
             ...edge,
         }"
     />
@@ -766,11 +1043,44 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             y: item.height / 2,
             radiusX: item.width / 2,
             radiusY: item.height / 2,
-            fill: item.fill,
+            ...paint(
+                item,
+                item.width,
+                item.height,
+                -item.width / 2,
+                -item.height / 2,
+            ),
             ...edge,
         }"
     />
 
+    <!-- A vector path: its points scaled from their own box to the item's,
+         its line kept the width it was given whatever the scale -->
+    <Path
+        v-else-if="item.kind === 'path'"
+        :config="{
+            data: item.d ?? '',
+            scaleX: item.width / Math.max(1, item.viewWidth ?? item.width),
+            scaleY: item.height / Math.max(1, item.viewHeight ?? item.height),
+            ...paint(
+                item,
+                Math.max(1, item.viewWidth ?? item.width),
+                Math.max(1, item.viewHeight ?? item.height),
+            ),
+            ...edge,
+            ...(selected
+                ? {}
+                : strokePaint(
+                      { ...item, stroke: shown(item.stroke) },
+                      Math.max(1, item.viewWidth ?? item.width),
+                      Math.max(1, item.viewHeight ?? item.height),
+                  )),
+            strokeScaleEnabled: false,
+            lineCap: 'round',
+            lineJoin: 'round',
+            hitStrokeWidth: Math.max(12, item.lineWidth),
+        }"
+    />
     <Line
         v-else-if="item.kind === 'draw'"
         :config="{
@@ -794,11 +1104,8 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             :config="{
                 visible: !!hops?.size,
                 sceneFunc: hopped(trimmedPoints(item, path), hops),
-                stroke: selected
-                    ? SELECTED
-                    : level === 1
-                      ? LIVE
-                      : shown(item.stroke),
+                ...lineStroke(trimmedPoints(item, path)),
+                ...effects,
                 strokeWidth: item.lineWidth,
                 dash: dashFor(item.lineStyle),
                 lineCap: 'round',
@@ -810,11 +1117,8 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             :config="{
                 visible: !hops?.size,
                 points: trimmedPoints(item, path),
-                stroke: selected
-                    ? SELECTED
-                    : level === 1
-                      ? LIVE
-                      : shown(item.stroke),
+                ...lineStroke(trimmedPoints(item, path)),
+                ...effects,
                 strokeWidth: item.lineWidth,
                 dash: dashFor(item.lineStyle),
                 bezier: isSwept(item, path),
@@ -947,13 +1251,31 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             v-else
             :config="{
                 direction: DIRECTION,
-                text: item.text,
+                text: shownText(item),
                 ...label(item),
                 fontSize: item.fontSize,
                 fontFamily: fontOf(item),
                 fontStyle: labelStyle(item),
                 lineHeight: LINE_HEIGHT,
+                letterSpacing: item.letterSpacing ?? 0,
                 fill: ink,
+                // Words that fade across the label to a second colour
+                ...(item.colorTo
+                    ? {
+                          fillPriority: 'linear-gradient',
+                          fillLinearGradientStartPoint: { x: 0, y: 0 },
+                          fillLinearGradientEndPoint: {
+                              x: labelBox(item).width,
+                              y: 0,
+                          },
+                          fillLinearGradientColorStops: [
+                              0,
+                              ink,
+                              1,
+                              item.colorTo,
+                          ],
+                      }
+                    : {}),
                 align: item.align,
                 verticalAlign: item.verticalAlign,
                 // A text item has no shape behind it, so

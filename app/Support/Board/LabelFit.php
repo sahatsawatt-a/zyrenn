@@ -17,6 +17,9 @@ final class LabelFit
 {
     public const LINE_HEIGHT = 1.3;
 
+    /** The room after each letter of the label being measured, in board units. */
+    private static float $spacing = 0.0;
+
     /** Arial's advance widths, in thousandths of the font size. */
     private const WIDTHS = [
         ' ' => 278, '!' => 278, '"' => 355, '#' => 556, '$' => 556, '%' => 889, '&' => 667, "'" => 191,
@@ -41,6 +44,9 @@ final class LabelFit
 
     /** Heading sizes, against the label's own, for "#", "##" and "###". */
     private const HEADINGS = [1 => 1.6, 2 => 1.3, 3 => 1.1];
+
+    /** The room either side of inline code, in font sizes (labels.ts). */
+    private const CODE_PAD = 0.25;
 
     /** How tall the line a rule ("---") takes is, in font sizes. */
     private const RULE_HEIGHT = 0.7;
@@ -67,8 +73,10 @@ final class LabelFit
                 : ['x' => $padding, 'y' => 0.0, 'width' => max(1.0, $width - $padding * 2), 'height' => $depth];
         }
 
-        // A shape from the library says where its words go, as shares of its box
-        $room = Shapes::find($kind)['text'] ?? null;
+        // A shape from the library says where its words go, as shares of its
+        // box -- or the design it is drawn in does: under a card's icon
+        $room = Shapes::designText($kind, is_string($item['variant'] ?? null) ? $item['variant'] : null)
+            ?? Shapes::find($kind)['text'] ?? null;
 
         if (is_array($room)) {
             $left = (float) ($room['left'] ?? 0);
@@ -104,7 +112,9 @@ final class LabelFit
      */
     public static function needed(array $item): float
     {
-        $text = (string) ($item['text'] ?? '');
+        // As the canvas shows it: in capitals, and spread apart, when set so
+        $text = ($item['caps'] ?? false) === true ? mb_strtoupper((string) ($item['text'] ?? '')) : (string) ($item['text'] ?? '');
+        self::$spacing = (float) ($item['letterSpacing'] ?? 0);
 
         if ($text === '') {
             return 0.0;
@@ -123,7 +133,7 @@ final class LabelFit
         $height = 0.0;
 
         foreach (explode("\n", $text) as $line) {
-            $height += self::lines([[$line, $bold]], $width, 0.0, $size, $font) * $size * self::LINE_HEIGHT;
+            $height += self::lines([[$line, $bold, false]], $width, 0.0, $size, $font) * $size * self::LINE_HEIGHT;
         }
 
         return $height;
@@ -138,7 +148,7 @@ final class LabelFit
      */
     public static function overflows(array $item): bool
     {
-        if (in_array($item['kind'] ?? '', ['frame', 'arrow', 'math', 'draw', 'video', 'symbol'], true)) {
+        if (in_array($item['kind'] ?? '', ['frame', 'arrow', 'math', 'draw', 'video', 'symbol', 'path'], true)) {
             return false;
         }
 
@@ -184,28 +194,49 @@ final class LabelFit
     }
 
     /**
-     * A line's runs of words, each bold or not, with the **, * and _ marks
-     * that set them taken out.
+     * A line's runs of words, each bold or not and code or not, with the
+     * marks that set them taken out: `code`, a mark escaped with a backslash,
+     * **, * and _ -- an underscore inside a word staying an underscore
+     * (labels.ts, runsOf).
      *
-     * @return list<array{string, bool}>
+     * @return list<array{string, bool, bool}>
      */
     private static function runs(string $line, bool $bold): array
     {
         $runs = [];
-        $parts = preg_split('/(\*\*[^*]+\*\*|\*[^*\s][^*]*\*|_[^_\s][^_]*_)/u', $line, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [$line];
+        // Plain words so far, which an escaped mark joins rather than splits
+        $words = null;
+        $parts = preg_split('/(`[^`]+`|\\\\[\\\\`*_#~[\]-]|\*\*[^*]+\*\*|\*[^*\s][^*]*\*|(?<![\p{L}\p{N}_])_[^_\s](?:[^_]*[^_\s])?_(?![\p{L}\p{N}_]))/u', $line, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [$line];
 
         foreach ($parts as $index => $part) {
             if ($part === '') {
                 continue;
             }
 
-            if ($index % 2 === 0) {
-                $runs[] = [$part, $bold];
-            } elseif (str_starts_with($part, '**')) {
-                $runs[] = [substr($part, 2, -2), true];
-            } else {
-                $runs[] = [substr($part, 1, -1), $bold];
+            if ($index % 2 === 0 || str_starts_with($part, '\\')) {
+                $text = $index % 2 === 0 ? $part : substr($part, 1);
+
+                $words = ($words ?? '').$text;
+
+                continue;
             }
+
+            if ($words !== null) {
+                $runs[] = [$words, $bold, false];
+                $words = null;
+            }
+
+            if (str_starts_with($part, '`')) {
+                $runs[] = [substr($part, 1, -1), $bold, true];
+            } else {
+                // Read inside too: `code` and escapes in bold or italic words
+                $strong = str_starts_with($part, '**');
+                array_push($runs, ...self::runs($strong ? substr($part, 2, -2) : substr($part, 1, -1), $bold || $strong));
+            }
+        }
+
+        if ($words !== null) {
+            $runs[] = [$words, $bold, false];
         }
 
         return $runs;
@@ -216,16 +247,19 @@ final class LabelFit
      * line after the first starting at $indent, and a word longer than the
      * line broken where it runs out.
      *
-     * @param  list<array{string, bool}>  $runs
+     * @param  list<array{string, bool, bool}>  $runs
      */
     private static function lines(array $runs, float $width, float $indent, float $size, string $font): int
     {
         $count = 1;
         $used = $indent;
 
-        foreach ($runs as [$text, $bold]) {
+        foreach ($runs as [$text, $bold, $code]) {
+            // Code is set in mono, with room either side for its tint
+            $used += $code ? $size * self::CODE_PAD * 2 : 0;
+
             foreach (preg_split('/(\s+)/u', $text, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY) ?: [] as $piece) {
-                $wide = self::measure($piece, $size, $font, $bold);
+                $wide = self::measure($piece, $size, $code ? 'mono' : $font, $bold);
 
                 if (trim($piece) === '') {
                     if ($used > $indent) {
@@ -255,9 +289,12 @@ final class LabelFit
 
     private static function measure(string $text, float $size, string $font, bool $bold): float
     {
+        // Spread apart: the room after each letter, on top of its own width
+        $spread = self::$spacing * mb_strlen($text);
+
         if ($font === 'mono') {
             // Courier New: every letter the same, bold or not
-            return mb_strlen($text) * 0.6 * $size;
+            return mb_strlen($text) * 0.6 * $size + $spread;
         }
 
         $total = 0;
@@ -266,6 +303,6 @@ final class LabelFit
             $total += self::WIDTHS[$character] ?? (strlen($character) >= 3 && preg_match('/\p{Han}|\p{Hangul}|\p{Hiragana}|\p{Katakana}/u', $character) ? 1000 : 600);
         }
 
-        return $total / 1000 * $size * ($bold ? self::BOLD : 1) * ($font === 'serif' ? self::SERIF : 1);
+        return $total / 1000 * $size * ($bold ? self::BOLD : 1) * ($font === 'serif' ? self::SERIF : 1) + $spread;
     }
 }

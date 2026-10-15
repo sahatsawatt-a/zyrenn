@@ -21,11 +21,42 @@ class BoardItems
     public const SYMBOL = 'symbol';
 
     /** Every kind the canvas draws by itself; the shape library adds its own (kinds()). */
+    /**
+     * How an item is painted beyond its colours, each a number kept only when
+     * said: rounded corners, how see-through, which way a gradient runs, the
+     * point of a picture kept in view, and the moment of a video shown still.
+     */
+    public const LOOKS = [
+        'radius', 'opacity', 'gradientAngle', 'focusX', 'focusY', 'posterAt',
+        'fillOpacity', 'strokeOpacity', 'strokeAngle',
+        'shadowBlur', 'shadowX', 'shadowY', 'shadowOpacity', 'glowSize', 'blur', 'letterSpacing',
+    ];
+
+    /**
+     * The same, in words: a second colour a fill or a line fades to, which
+     * way a fade runs, a shadow's and a glow's colours, how it mixes with
+     * what is under it, a second colour for its words, a video's poster,
+     * and a frame's notes and part of the deck.
+     */
+    public const WORDS = ['gradient', 'gradientType', 'strokeGradient', 'shadowColor', 'glow', 'blend', 'colorTo', 'poster', 'notes', 'section'];
+
+    /** Fades through more colours than two: each stop where it falls, 0 to 1. */
+    public const STOPS = ['gradientStops', 'strokeStops'];
+
+    /** How an item can mix with what is under it, as the canvas names them. */
+    public const BLENDS = ['source-over', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'color-dodge', 'soft-light'];
+
+    /** Kinds that can be as tall as their words: their label sits a padding in. */
+    public const HUGGING = ['rect', 'sticky', 'pill', 'process'];
+
     public const KINDS = [
         'frame', 'sticky', 'text', 'rect', 'pill', 'ellipse', 'triangle',
         'diamond', 'hexagon', 'star', 'cylinder', 'parallelogram', 'document',
-        'process', 'cloud', 'image', 'video', 'math', self::SYMBOL, self::CONNECTOR, 'draw',
+        'process', 'cloud', 'image', 'video', 'math', self::SYMBOL, self::CONNECTOR, 'draw', self::PATH,
     ];
+
+    /** A vector path: SVG path data, drawn scaled from its own box to the item's. */
+    public const PATH = 'path';
 
     /** Kinds a connector may pin itself to, besides the library's shapes (connectable()). */
     public const CONNECTABLE = [
@@ -124,6 +155,13 @@ class BoardItems
             $item['id'] = $id;
             $item['kind'] = $kind;
 
+            // A ready-made style first, so that a colour said as well wins
+            $styled = is_string($spec['style'] ?? null) ? Styles::parse($spec['style']) : null;
+
+            if ($styled !== null) {
+                $item = [...$item, ...Styles::styled($kind, ...$styled)];
+            }
+
             foreach (['x', 'y', 'width', 'height', 'rotation', 'fontSize', 'padding', 'lineWidth', 'headSize'] as $number) {
                 if (is_numeric($spec[$number] ?? null)) {
                     $item[$number] = (float) $spec[$number];
@@ -136,9 +174,47 @@ class BoardItems
                 }
             }
 
-            // A lane's title along its top, or down its side
-            if (in_array($spec['variant'] ?? null, ['top', 'left'], true)) {
+            // A lane's title along its top, or down its side; or another of
+            // the ways a kind is drawn -- a database as a card with an icon
+            if (in_array($spec['variant'] ?? null, ['top', 'left', ...Shapes::designs($kind)], true)) {
                 $item['variant'] = $spec['variant'];
+            }
+
+            if (is_string($spec['color'] ?? null)) {
+                $item['color'] = $spec['color'];
+            }
+
+            if (is_bool($spec['shadow'] ?? null)) {
+                $item['shadow'] = $spec['shadow'];
+            }
+
+            // How it is painted beyond its colours, a frame's notes and part
+            // of the deck, and a video's still: each kept only when said
+            foreach (self::LOOKS as $look) {
+                if (is_numeric($spec[$look] ?? null)) {
+                    $item[$look] = (float) $spec[$look];
+                }
+            }
+
+            foreach (self::WORDS as $words) {
+                if (is_string($spec[$words] ?? null)) {
+                    $item[$words] = $spec[$words];
+                }
+            }
+
+            foreach (self::STOPS as $stops) {
+                if (is_array($spec[$stops] ?? null)) {
+                    $item[$stops] = array_values(array_map(
+                        fn (array $stop) => ['at' => min(1.0, max(0.0, (float) ($stop['at'] ?? 0))), 'color' => (string) ($stop['color'] ?? '#000000')],
+                        array_filter($spec[$stops], 'is_array'),
+                    ));
+                }
+            }
+
+            foreach (['hug', 'caps'] as $flag) {
+                if (is_bool($spec[$flag] ?? null)) {
+                    $item[$flag] = $spec[$flag];
+                }
             }
 
             // A table's columns, a class's fields and methods: kept as rows,
@@ -171,16 +247,41 @@ class BoardItems
                 }
             }
 
-            foreach (['hidden', 'locked', 'rich', 'pdfHidden', 'on'] as $flag) {
+            foreach (['hidden', 'locked', 'rich', 'pdfHidden', 'on', 'bare'] as $flag) {
                 if (is_bool($spec[$flag] ?? null)) {
                     $item[$flag] = $spec[$flag];
                 }
+            }
+
+            // A path's points: measured, moved to start at its corner, and the
+            // item put where they were -- or, given x and y, where those say
+            if ($kind === self::PATH && is_string($spec['d'] ?? null)) {
+                $segments = PathData::parse($spec['d']);
+                $box = PathData::bounds($segments);
+                $placed = is_numeric($spec['x'] ?? null) && is_numeric($spec['y'] ?? null);
+                $item['d'] = PathData::toString(PathData::translate($segments, -$box['x'], -$box['y']));
+                $item['viewWidth'] = max(1.0, $box['width']);
+                $item['viewHeight'] = max(1.0, $box['height']);
+                $item['x'] = ($placed ? (float) $spec['x'] : 0.0) + $box['x'];
+                $item['y'] = ($placed ? (float) $spec['y'] : 0.0) + $box['y'];
+                $item['width'] = is_numeric($spec['width'] ?? null) ? (float) $spec['width'] : $item['viewWidth'];
+                $item['height'] = is_numeric($spec['height'] ?? null) ? (float) $spec['height'] : $item['viewHeight'];
+                $spec['x'] ??= $item['x'];
+                $spec['y'] ??= $item['y'];
             }
 
             // A text item is only its words: unless told how tall it is, it is as
             // tall as they need, the way it grows on the canvas
             if ($kind === 'text' && ! is_numeric($spec['height'] ?? null)) {
                 $item['height'] = max((float) $item['height'], ceil(LabelFit::needed($item)));
+            }
+
+            // One that hugs its words is as tall as they are and its padding,
+            // whatever height it was given -- as on the canvas (labels.ts)
+            $hugged = self::hugged($item);
+
+            if ($hugged !== null) {
+                $item['height'] = $hugged;
             }
 
             // Coordinates are missing far more often than not: a client says
@@ -270,6 +371,13 @@ class BoardItems
                 $spec['symbol'] = (string) ($item['symbol'] ?? '');
             }
 
+            // A path's points, in its own box, and how big that box is
+            if ($kind === self::PATH) {
+                $spec['d'] = (string) ($item['d'] ?? '');
+                $spec['viewWidth'] = round((float) ($item['viewWidth'] ?? 1), 2);
+                $spec['viewHeight'] = round((float) ($item['viewHeight'] ?? 1), 2);
+            }
+
             if (trim((string) ($item['text'] ?? '')) !== '') {
                 $spec['text'] = (string) $item['text'];
             }
@@ -279,8 +387,43 @@ class BoardItems
                 $spec['rows'] = BoardRows::toSpec($item['rows'], (string) BoardRows::kindOf($kind));
             }
 
-            if (($item['variant'] ?? 'top') === 'left') {
-                $spec['variant'] = 'left';
+            $variant = $item['variant'] ?? 'top';
+
+            if ($variant === 'left' || ($variant !== 'classic' && in_array($variant, Shapes::designs($kind), true))) {
+                $spec['variant'] = $variant;
+            }
+
+            if (is_string($item['color'] ?? null) && $item['color'] !== '') {
+                $spec['color'] = $item['color'];
+            }
+
+            if (($item['shadow'] ?? false) === true) {
+                $spec['shadow'] = true;
+            }
+
+            // Kept to a fraction: opacity and a focus run from 0 to 1
+            foreach (self::LOOKS as $look) {
+                if (is_numeric($item[$look] ?? null)) {
+                    $spec[$look] = round((float) $item[$look], 3);
+                }
+            }
+
+            foreach (self::WORDS as $words) {
+                if (is_string($item[$words] ?? null) && $item[$words] !== '') {
+                    $spec[$words] = $item[$words];
+                }
+            }
+
+            foreach (self::STOPS as $stops) {
+                if (is_array($item[$stops] ?? null) && $item[$stops] !== []) {
+                    $spec[$stops] = $item[$stops];
+                }
+            }
+
+            foreach (['hug', 'caps'] as $flag) {
+                if (($item[$flag] ?? false) === true) {
+                    $spec[$flag] = true;
+                }
             }
 
             foreach (['fill', 'stroke'] as $colour) {
@@ -300,7 +443,7 @@ class BoardItems
                 }
             }
 
-            foreach (['hidden', 'locked', 'rich', 'pdfHidden', 'on'] as $flag) {
+            foreach (['hidden', 'locked', 'rich', 'pdfHidden', 'on', 'bare'] as $flag) {
                 if (($item[$flag] ?? false) === true) {
                     $spec[$flag] = true;
                 }
@@ -387,9 +530,29 @@ class BoardItems
 
             $merged = [...$specs[$id], ...$spec];
 
+            // A style put on takes the place of the colours it had, but not
+            // of any sent with it
+            if (is_string($spec['style'] ?? null)) {
+                foreach (['fill', 'stroke', 'color', 'lineWidth'] as $field) {
+                    if (! array_key_exists($field, $spec)) {
+                        unset($merged[$field]);
+                    }
+                }
+            }
+
             // New words in a text item: let it grow to them, unless a height is given
             if (($merged['kind'] ?? null) === 'text' && array_key_exists('text', $spec) && ! array_key_exists('height', $spec)) {
                 unset($merged['height']);
+            }
+
+            // New points for a path are where they say, the size they say:
+            // its old place and size are kept only when sent with them
+            if (($merged['kind'] ?? null) === self::PATH && array_key_exists('d', $spec)) {
+                foreach (['x', 'y', 'width', 'height'] as $field) {
+                    if (! array_key_exists($field, $spec)) {
+                        unset($merged[$field]);
+                    }
+                }
             }
 
             // New rows in a table or a class, or a longer name: as tall as they now need
@@ -403,7 +566,8 @@ class BoardItems
         }
 
         $added = [];
-        $next = self::nextNumber(array_keys($specs));
+        // Past the ids taken off too, so a made-up one is never one going
+        $next = self::nextNumber([...array_keys($specs), ...$delete]);
 
         foreach ($add as $spec) {
             $id = is_string($spec['id'] ?? null) && $spec['id'] !== '' ? $spec['id'] : 'i'.$next++;
@@ -469,6 +633,21 @@ class BoardItems
         }
 
         return $specs;
+    }
+
+    /**
+     * The height an item that hugs its words should have -- the words and the
+     * padding above and below them -- or null for one that doesn't hug.
+     *
+     * @param  array<string, mixed>  $item
+     */
+    public static function hugged(array $item): ?float
+    {
+        if (($item['hug'] ?? false) !== true || ! in_array($item['kind'] ?? '', self::HUGGING, true) || trim((string) ($item['text'] ?? '')) === '') {
+            return null;
+        }
+
+        return ceil(LabelFit::needed($item) + 2 * (float) ($item['padding'] ?? 12));
     }
 
     /**
@@ -745,6 +924,8 @@ class BoardItems
             self::SYMBOL => [...$base, 'symbol' => '', 'on' => false, 'width' => 80.0, 'height' => 40.0, 'fill' => 'transparent',
                 'stroke' => '#0f172a', 'fontSize' => 13.0, 'padding' => 0.0],
             self::CONNECTOR, 'draw' => [...$base, 'width' => 0.0, 'height' => 0.0, 'fill' => 'transparent', 'stroke' => '#0f172a'],
+            // A line until it is given a fill: open paths are lines, closed ones shapes
+            self::PATH => [...$base, 'd' => '', 'viewWidth' => 1.0, 'viewHeight' => 1.0, 'fill' => 'transparent', 'stroke' => '#0f172a', 'lineWidth' => 3.0],
             // A shape from the library starts as the library says, as it does from the toolbar
             default => self::fromLibrary($kind, $base),
         };

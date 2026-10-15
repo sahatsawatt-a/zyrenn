@@ -1,0 +1,319 @@
+{
+    "about": "Ready-made looks for what is drawn on a board, read by the canvas (composables/styles.ts) and by the server (App\\Support\\Board\\Styles), so a style an MCP client names is the one the canvas paints. colours: families of shades (Tailwind's), and 'solid': the shade white words read on at 4.5:1 or better. sets: colour sets to choose from, in their own order -- the last is the set's grey, for lines and what has no colour of its own. styles: how a colour is put on a shape -- the shade of its fill, its line and its words ('white', or a shade), and the line's width. A connector takes its style's line; a text item, its words.",
+    "colours": {
+        "slate": {
+            "label": "Slate",
+            "shades": {
+                "50": "#f8fafc",
+                "100": "#f1f5f9",
+                "200": "#e2e8f0",
+                "300": "#cbd5e1",
+                "500": "#64748b",
+                "600": "#475569",
+                "700": "#334155",
+                "800": "#1e293b",
+                "900": "#0f172a"
+            },
+            "solid": "600"
+        },
+        "stone": {
+            "label": "Stone",
+            "shades": {
+                "50": "#fafaf9",
+                "100": "#f5f5f4",
+                "200": "#e7e5e4",
+                "300": "#d6d3d1",
+                "500": "#78716c",
+                "600": "#57534e",
+                "700": "#44403c",
+                "800": "#292524",
+                "900": "#1c1917"
+            },
+            "solid": "600"
+        },
+        "red": {
+            "label": "Red",
+            "shades": {
+                "50": "#fef2f2",
+                "100": "#fee2e2",
+                "200": "#fecaca",
+                "300": "#fca5a5",
+                "500": "#ef4444",
+                "600": "#dc2626",
+                "700": "#b91c1c",
+                "800": "#991b1b",
+                "900": "#7f1d1d"
+            },
+            "solid": "600"
+        },
+        "orange": {
+            "label": "Orange",
+            "shades": {
+                "50": "#fff7ed",
+                "100": "#ffedd5",
+                "200": "#fed7aa",
+                "300": "#fdba74",
+                "500": "#f97316",
+                "600": "#ea580c",
+                "700": "#c2410c",
+                "800": "#9a3412",
+                "900": "#7c2d12"
+            },
+            "solid": "700"
+        },
+        "amber": {
+            "label": "Amber",
+            "shades": {
+                "50": "#fffbeb",
+                "100": "#fef3c7",
+                "200": "#fde68a",
+                "300": "#fcd34d",
+                "500": "#f59e0b",
+                "600": "#d97706",
+                "700": "#b45309",
+                "800": "#92400e",
+                "900": "#78350f"
+            },
+            "solid": "700"
+        },
+        "lime": {
+            "label": "Lime",
+            "shades": {
+                "50": "#f7fee7",
+                "100": "#ecfccb",
+                "200": "#d9f99d",
+                "300": "#bef264",
+                "500": "#84cc16",
+                "600": "#65a30d",
+                "700": "#4d7c0f",
+                "800": "#3f6212",
+                "900": "#365314"
+            },
+            "solid": "700"
+        },
+        "green": {
+            "label": "Green",
+            "shades": {
+                "50": "#f0fdf4",
+                "100": "#dcfce7",
+                "200": "#bbf7d0",
+                "300": "#86efac",
+                "500": "#22c55e",
+                "600": "#16a34a",
+                "700": "#15803d",
+                "800": "#166534",
+                "900": "#14532d"
+            },
+            "solid": "700"
+        },
+        "emerald": {
+            "label": "Emerald",
+            "shades": {
+                "50": "#ecfdf5",
+                "100": "#d1fae5",
+                "200": "#a7f3d0",
+                "300": "#6ee7b7",
+                "500": "#10b981",
+                "600": "#059669",
+                "700": "#047857",
+                "800": "#065f46",
+                "900": "#064e3b"
+            },
+            "solid": "700"
+        },
+        "teal": {
+            "label": "Teal",
+            "shades": {
+                "50": "#f0fdfa",
+                "100": "#ccfbf1",
+                "200": "#99f6e4",
+                "300": "#5eead4",
+                "500": "#14b8a6",
+                "600": "#0d9488",
+                "700": "#0f766e",
+                "800": "#115e59",
+                "900": "#134e4a"
+            },
+            "solid": "700"
+        },
+        "cyan": {
+            "label": "Cyan",
+            "shades": {
+                "50": "#ecfeff",
+                "100": "#cffafe",
+                "200": "#a5f3fc",
+                "300": "#67e8f9",
+                "500": "#06b6d4",
+                "600": "#0891b2",
+                "700": "#0e7490",
+                "800": "#155e75",
+                "900": "#164e63"
+            },
+            "solid": "700"
+        },
+        "sky": {
+            "label": "Sky",
+            "shades": {
+                "50": "#f0f9ff",
+                "100": "#e0f2fe",
+                "200": "#bae6fd",
+                "300": "#7dd3fc",
+                "500": "#0ea5e9",
+                "600": "#0284c7",
+                "700": "#0369a1",
+                "800": "#075985",
+                "900": "#0c4a6e"
+            },
+            "solid": "700"
+        },
+        "blue": {
+            "label": "Blue",
+            "shades": {
+                "50": "#eff6ff",
+                "100": "#dbeafe",
+                "200": "#bfdbfe",
+                "300": "#93c5fd",
+                "500": "#3b82f6",
+                "600": "#2563eb",
+                "700": "#1d4ed8",
+                "800": "#1e40af",
+                "900": "#1e3a8a"
+            },
+            "solid": "600"
+        },
+        "indigo": {
+            "label": "Indigo",
+            "shades": {
+                "50": "#eef2ff",
+                "100": "#e0e7ff",
+                "200": "#c7d2fe",
+                "300": "#a5b4fc",
+                "500": "#6366f1",
+                "600": "#4f46e5",
+                "700": "#4338ca",
+                "800": "#3730a3",
+                "900": "#312e81"
+            },
+            "solid": "600"
+        },
+        "violet": {
+            "label": "Violet",
+            "shades": {
+                "50": "#f5f3ff",
+                "100": "#ede9fe",
+                "200": "#ddd6fe",
+                "300": "#c4b5fd",
+                "500": "#8b5cf6",
+                "600": "#7c3aed",
+                "700": "#6d28d9",
+                "800": "#5b21b6",
+                "900": "#4c1d95"
+            },
+            "solid": "600"
+        },
+        "pink": {
+            "label": "Pink",
+            "shades": {
+                "50": "#fdf2f8",
+                "100": "#fce7f3",
+                "200": "#fbcfe8",
+                "300": "#f9a8d4",
+                "500": "#ec4899",
+                "600": "#db2777",
+                "700": "#be185d",
+                "800": "#9d174d",
+                "900": "#831843"
+            },
+            "solid": "600"
+        },
+        "rose": {
+            "label": "Rose",
+            "shades": {
+                "50": "#fff1f2",
+                "100": "#ffe4e6",
+                "200": "#fecdd3",
+                "300": "#fda4af",
+                "500": "#f43f5e",
+                "600": "#e11d48",
+                "700": "#be123c",
+                "800": "#9f1239",
+                "900": "#881337"
+            },
+            "solid": "600"
+        }
+    },
+    "sets": [
+        {
+            "id": "classic",
+            "label": "Classic",
+            "colours": ["indigo", "sky", "emerald", "amber", "rose", "slate"]
+        },
+        {
+            "id": "ocean",
+            "label": "Ocean",
+            "colours": ["blue", "sky", "cyan", "teal", "indigo", "slate"]
+        },
+        {
+            "id": "sunset",
+            "label": "Sunset",
+            "colours": ["orange", "amber", "rose", "pink", "red", "stone"]
+        },
+        {
+            "id": "forest",
+            "label": "Forest",
+            "colours": ["emerald", "green", "teal", "lime", "amber", "stone"]
+        },
+        {
+            "id": "berry",
+            "label": "Berry",
+            "colours": ["violet", "pink", "rose", "indigo", "sky", "slate"]
+        },
+        {
+            "id": "mono",
+            "label": "Mono",
+            "colours": ["slate", "blue", "red", "stone"]
+        }
+    ],
+    "styles": [
+        {
+            "id": "soft",
+            "label": "Soft",
+            "fill": "100",
+            "stroke": "500",
+            "color": "900",
+            "lineWidth": 1.5
+        },
+        {
+            "id": "solid",
+            "label": "Solid",
+            "fill": "solid",
+            "stroke": "800",
+            "color": "white",
+            "lineWidth": 1.5
+        },
+        {
+            "id": "outline",
+            "label": "Outline",
+            "fill": "white",
+            "stroke": "600",
+            "color": "800",
+            "lineWidth": 2
+        },
+        {
+            "id": "bold",
+            "label": "Bold",
+            "fill": "900",
+            "stroke": "700",
+            "color": "white",
+            "lineWidth": 1.5
+        },
+        {
+            "id": "light",
+            "label": "Light",
+            "fill": "50",
+            "stroke": "200",
+            "color": "700",
+            "lineWidth": 1
+        }
+    ]
+}

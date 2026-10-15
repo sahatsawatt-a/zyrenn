@@ -1,0 +1,329 @@
+{
+    "about": "How a board's frames are made into a deck: its themes (a few colours and two typefaces), the parts each kind of slide is laid out from on a 960 x 540 frame, and the type each part is set in. Read by the canvas (composables/deck.ts) and by the server (App\\Support\\Board\\Deck), so a slide is laid out the same wherever it is asked for.",
+    "frame": { "width": 960, "height": 540, "margin": 56 },
+    "themes": [
+        {
+            "id": "paper",
+            "label": "Paper",
+            "background": "#ffffff",
+            "ink": "#0f172a",
+            "muted": "#64748b",
+            "accent": "#4f46e5",
+            "font": "sans",
+            "headingFont": "sans"
+        },
+        {
+            "id": "ivory",
+            "label": "Ivory",
+            "background": "#faf7f0",
+            "ink": "#1c1917",
+            "muted": "#78716c",
+            "accent": "#b45309",
+            "font": "sans",
+            "headingFont": "serif"
+        },
+        {
+            "id": "night",
+            "label": "Night",
+            "background": "#0f172a",
+            "ink": "#f8fafc",
+            "muted": "#94a3b8",
+            "accent": "#38bdf8",
+            "font": "sans",
+            "headingFont": "sans"
+        },
+        {
+            "id": "forest",
+            "label": "Forest",
+            "background": "#052e2b",
+            "ink": "#ecfdf5",
+            "muted": "#86b7a6",
+            "accent": "#fbbf24",
+            "font": "sans",
+            "headingFont": "serif"
+        },
+        {
+            "id": "indigo",
+            "label": "Indigo",
+            "background": "#4338ca",
+            "ink": "#ffffff",
+            "muted": "#c7d2fe",
+            "accent": "#fde68a",
+            "font": "sans",
+            "headingFont": "sans"
+        },
+        {
+            "id": "mono",
+            "label": "Mono",
+            "background": "#f8fafc",
+            "ink": "#111827",
+            "muted": "#6b7280",
+            "accent": "#111827",
+            "font": "mono",
+            "headingFont": "sans"
+        }
+    ],
+    "roles": {
+        "kicker": {
+            "fontSize": 14,
+            "font": "body",
+            "color": "accent",
+            "caps": true,
+            "letterSpacing": 3
+        },
+        "title": { "fontSize": 44, "font": "heading", "color": "ink" },
+        "subtitle": {
+            "fontSize": 22,
+            "font": "body",
+            "color": "muted",
+            "rich": true
+        },
+        "heading": { "fontSize": 32, "font": "heading", "color": "ink" },
+        "body": {
+            "fontSize": 20,
+            "font": "body",
+            "color": "ink",
+            "rich": true
+        },
+        "caption": {
+            "fontSize": 16,
+            "font": "body",
+            "color": "muted",
+            "rich": true
+        },
+        "big": { "fontSize": 120, "font": "heading", "color": "accent" },
+        "quote": { "fontSize": 32, "font": "heading", "color": "ink" },
+        "picture": {}
+    },
+    "layouts": [
+        {
+            "id": "title",
+            "label": "Title",
+            "about": "The deck's first slide: a small line above its title, and one under it. No header or footer.",
+            "bare": true,
+            "parts": [
+                {
+                    "slot": "kicker",
+                    "role": "kicker",
+                    "x": 56,
+                    "y": 176,
+                    "width": 848,
+                    "height": 24
+                },
+                {
+                    "slot": "title",
+                    "role": "title",
+                    "x": 56,
+                    "y": 206,
+                    "width": 848,
+                    "height": 112
+                },
+                {
+                    "slot": "subtitle",
+                    "role": "subtitle",
+                    "x": 56,
+                    "y": 330,
+                    "width": 848,
+                    "height": 64
+                }
+            ]
+        },
+        {
+            "id": "section",
+            "label": "Section",
+            "about": "Begins a part of the deck: its title, big, which is what a footer's {section} says from here on.",
+            "section": "title",
+            "parts": [
+                {
+                    "slot": "kicker",
+                    "role": "kicker",
+                    "x": 56,
+                    "y": 200,
+                    "width": 848,
+                    "height": 24
+                },
+                {
+                    "slot": "title",
+                    "role": "title",
+                    "x": 56,
+                    "y": 230,
+                    "width": 848,
+                    "height": 112
+                }
+            ]
+        },
+        {
+            "id": "title-body",
+            "label": "Title and text",
+            "about": "One point: a title saying it, and the words or bullets that back it up.",
+            "parts": [
+                {
+                    "slot": "title",
+                    "role": "heading",
+                    "x": 56,
+                    "y": 48,
+                    "width": 848,
+                    "height": 48
+                },
+                {
+                    "slot": "body",
+                    "role": "body",
+                    "x": 56,
+                    "y": 124,
+                    "width": 848,
+                    "height": 360
+                }
+            ]
+        },
+        {
+            "id": "two-columns",
+            "label": "Two columns",
+            "about": "A title over two columns: before and after, this and that.",
+            "parts": [
+                {
+                    "slot": "title",
+                    "role": "heading",
+                    "x": 56,
+                    "y": 48,
+                    "width": 848,
+                    "height": 48
+                },
+                {
+                    "slot": "left",
+                    "role": "body",
+                    "x": 56,
+                    "y": 124,
+                    "width": 412,
+                    "height": 360
+                },
+                {
+                    "slot": "right",
+                    "role": "body",
+                    "x": 492,
+                    "y": 124,
+                    "width": 412,
+                    "height": 360
+                }
+            ]
+        },
+        {
+            "id": "picture-right",
+            "label": "Text and picture",
+            "about": "A title, words down the left and a picture on the right.",
+            "parts": [
+                {
+                    "slot": "title",
+                    "role": "heading",
+                    "x": 56,
+                    "y": 48,
+                    "width": 848,
+                    "height": 48
+                },
+                {
+                    "slot": "body",
+                    "role": "body",
+                    "x": 56,
+                    "y": 124,
+                    "width": 412,
+                    "height": 360
+                },
+                {
+                    "slot": "picture",
+                    "role": "picture",
+                    "x": 492,
+                    "y": 124,
+                    "width": 412,
+                    "height": 360
+                }
+            ]
+        },
+        {
+            "id": "big-number",
+            "label": "Big number",
+            "about": "One figure, big, and what it means under it.",
+            "parts": [
+                {
+                    "slot": "kicker",
+                    "role": "kicker",
+                    "x": 56,
+                    "y": 104,
+                    "width": 848,
+                    "height": 24
+                },
+                {
+                    "slot": "number",
+                    "role": "big",
+                    "x": 56,
+                    "y": 132,
+                    "width": 848,
+                    "height": 150
+                },
+                {
+                    "slot": "caption",
+                    "role": "subtitle",
+                    "x": 56,
+                    "y": 296,
+                    "width": 848,
+                    "height": 96
+                }
+            ]
+        },
+        {
+            "id": "quote",
+            "label": "Quote",
+            "about": "Someone's words, and who said them.",
+            "parts": [
+                {
+                    "slot": "quote",
+                    "role": "quote",
+                    "x": 96,
+                    "y": 140,
+                    "width": 768,
+                    "height": 200
+                },
+                {
+                    "slot": "by",
+                    "role": "caption",
+                    "x": 96,
+                    "y": 356,
+                    "width": 768,
+                    "height": 32
+                }
+            ]
+        },
+        {
+            "id": "title-only",
+            "label": "Title only",
+            "about": "A title, with the rest of the slide left for a diagram, a table or a picture.",
+            "parts": [
+                {
+                    "slot": "title",
+                    "role": "heading",
+                    "x": 56,
+                    "y": 48,
+                    "width": 848,
+                    "height": 48
+                }
+            ]
+        },
+        {
+            "id": "blank",
+            "label": "Blank",
+            "about": "An empty slide in the deck's colours.",
+            "parts": []
+        }
+    ],
+    "placeholders": {
+        "kicker": "Kicker",
+        "title": "Title",
+        "subtitle": "What it is about, in a line",
+        "body": "- A point\n- Another point",
+        "left": "- This",
+        "right": "- That",
+        "picture": "Picture",
+        "number": "42%",
+        "caption": "What the number means",
+        "quote": "“Words worth repeating.”",
+        "by": "— Who said them"
+    }
+}

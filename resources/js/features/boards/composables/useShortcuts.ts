@@ -22,6 +22,7 @@ const TOOL_KEYS: Record<string, Tool> = {
     c: 'cloud',
     a: 'arrow',
     d: 'draw',
+    l: 'path',
     f: 'frame',
 };
 

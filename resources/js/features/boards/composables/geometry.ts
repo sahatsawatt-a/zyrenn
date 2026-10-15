@@ -4,7 +4,7 @@ import { isSymbol, pinsOf, symbolBox } from '@/features/boards/circuit/symbols';
 import type { Item, ItemKind, Side } from './items';
 import { isStroke } from './items';
 import { rowAnchors } from './rows';
-import { shapeOf } from './shapes';
+import { designOf, shapeOf } from './shapes';
 
 /** The box an item occupies, including stroke items built from points. */
 export const boundsOf = (item: Item) => {
@@ -117,8 +117,12 @@ const INSETS: Partial<Record<ItemKind, Partial<Record<Side, number>>>> = {
  */
 export const anchorAt = (item: Item, side: Side, along = 0.5) => {
     const { x, y, width, height } = boundsOf(item);
+    // A design drawn its own way -- a card -- says where its outline is
     const inset =
-        INSETS[item.kind]?.[side] ?? shapeOf(item.kind)?.insets?.[side] ?? 0;
+        designOf(item)?.insets?.[side] ??
+        INSETS[item.kind]?.[side] ??
+        shapeOf(item.kind)?.insets?.[side] ??
+        0;
 
     switch (side) {
         case 'top':
@@ -138,6 +142,12 @@ export const anchorAt = (item: Item, side: Side, along = 0.5) => {
  * curve: anywhere but the middle would be off the shape.
  */
 export const isFlatSide = (item: Item, side: Side): boolean => {
+    const design = designOf(item);
+
+    if (design?.flat) {
+        return design.flat.includes(side);
+    }
+
     switch (item.kind) {
         case 'rect':
         case 'sticky':

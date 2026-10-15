@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Board\Board;
 use App\Support\Board\BoardParts;
 use App\Support\Board\BoardRender;
+use App\Support\Board\Deck;
 use App\Support\Live\Collab;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
@@ -42,6 +43,9 @@ class BoardRenderController extends Controller
             'frame' => $validated['frame'] ?? null,
             // A page for each frame the PDF keeps
             'frames' => BoardRender::pages($items),
+            // What the deck writes on every slide
+            'deck' => Deck::of($board->content),
+            'title' => $board->title,
         ]);
     }
 

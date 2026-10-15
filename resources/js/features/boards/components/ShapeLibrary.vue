@@ -7,14 +7,15 @@ import {
     Cloud,
     Columns3,
     Database,
-    Ellipsis,
-    LayoutTemplate,
     Diamond,
+    Ellipsis,
     FileText,
     Frame,
     Hexagon,
     ImagePlus,
+    LayoutTemplate,
     MousePointer2,
+    PenTool,
     Pencil,
     RectangleHorizontal,
     Redo2,
@@ -102,7 +103,13 @@ const before: Entry[] = [
 
 const after: Entry[] = [
     { tool: 'arrow', icon: ArrowUpRight, label: 'Connector', key: 'A' },
-    { tool: 'draw', icon: Pencil, label: 'Pen', key: 'D' },
+    { tool: 'draw', icon: Pencil, label: 'Pencil', key: 'D' },
+    {
+        tool: 'path',
+        icon: PenTool,
+        label: 'Vector pen: click for corners, drag for curves',
+        key: 'L',
+    },
     { tool: 'frame', icon: Frame, label: 'Frame', key: 'F' },
     { tool: 'math', icon: Sigma, label: 'Formula', key: 'E' },
 ];

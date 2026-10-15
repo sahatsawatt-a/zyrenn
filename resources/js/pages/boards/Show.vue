@@ -6,6 +6,7 @@ import { computed, onBeforeUnmount, ref, watchEffect } from 'vue';
 import { toast } from 'vue-sonner';
 import BoardCanvas from '@/features/boards/components/BoardCanvas.vue';
 import BoardView from '@/features/boards/components/BoardView.vue';
+import type { Deck } from '@/features/boards/composables/deck';
 import type { Item } from '@/features/boards/composables/items';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,9 +30,11 @@ import {
     index as ownIndex,
     pdf,
     png,
+    presenter,
     show,
     update,
 } from '@/routes/boards';
+import { presenterChannel } from '@/features/boards/composables/usePresenterLink';
 import PdfPreview from '@/components/media/PdfPreview.vue';
 import NoteBacklinks from '@/features/notes/components/NoteBacklinks.vue';
 import { fetchExport } from '@/lib/exporting';
@@ -40,7 +43,7 @@ import { index as projectIndex } from '@/routes/projects/boards';
 type Board = {
     ref_id: string;
     title: string;
-    content: { items?: Item[] } | null;
+    content: { items?: Item[]; deck?: Deck | null } | null;
     updated_at: string;
 };
 
@@ -72,6 +75,8 @@ const { others } = usePresence(() => `boards.${props.board.ref_id}`, {
 
 const title = ref(props.board.title);
 let items: Item[] = props.board.content?.items ?? [];
+// The deck its frames make: one look, and what every slide says
+const deck = ref<Deck | null>(props.board.content?.deck ?? null);
 
 // Drawn on live with everyone who has it open, when the collaboration server
 // is on: the items are the shared document, the title a map beside it. The
@@ -85,6 +90,12 @@ meta?.observe(() => {
 
     if (typeof next === 'string' && next !== title.value) {
         title.value = next;
+    }
+
+    const nextDeck = (meta.get('deck') as Deck | null | undefined) ?? null;
+
+    if (JSON.stringify(nextDeck) !== JSON.stringify(deck.value)) {
+        deck.value = nextDeck;
     }
 });
 
@@ -133,7 +144,7 @@ function sendSave(keepalive = false): Promise<void> | null {
     }
 
     if (dirty.has('content')) {
-        payload.content = { items };
+        payload.content = deck.value ? { items, deck: deck.value } : { items };
     }
 
     dirty.clear();
@@ -200,6 +211,19 @@ function onBoardChange(next: Item[]): void {
     }
 
     items = next;
+    markDirty('content');
+}
+
+function onDeckChange(next: Deck | null): void {
+    deck.value = next;
+
+    if (meta) {
+        // Kept as plain JSON, not the reactive copy the canvas handed over
+        meta.set('deck', next && JSON.parse(JSON.stringify(next)));
+
+        return;
+    }
+
     markDirty('content');
 }
 
@@ -427,7 +451,7 @@ const statusLabel = computed(() => {
             </Button>
         </div>
         <div class="min-h-0 flex-1 overflow-hidden rounded-xl border">
-            <BoardView :items="viewed" />
+            <BoardView :items="viewed" :deck="deck" :title="title" />
         </div>
     </div>
 
@@ -438,7 +462,14 @@ const statusLabel = computed(() => {
         :status="statusLabel"
         :shared="shared"
         :picture-of-frame="pictureOfFrame"
+        :deck="deck"
+        :deck-ready="shared === null || shared.synced.value"
+        :presenter="{
+            url: presenter.url(props.board.ref_id),
+            channel: presenterChannel(props.board.ref_id),
+        }"
         @change="onBoardChange"
+        @deck="onDeckChange"
     >
         <template #title>
             <input

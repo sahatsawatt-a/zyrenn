@@ -6,6 +6,8 @@ import {
     LayoutTemplate,
     Maximize,
     Minus,
+    MonitorUp,
+    NotebookText,
     PanelLeftOpen,
     PanelRightOpen,
     Play,
@@ -61,7 +63,9 @@ import CircuitTextDialog from './CircuitTextDialog.vue';
 import BoardSchema from './BoardSchema.vue';
 import BoardShortcuts from './BoardShortcuts.vue';
 import BoardVideoControls from './BoardVideoControls.vue';
+import PenOverlay from './PenOverlay.vue';
 import ShapeLibrary from './ShapeLibrary.vue';
+import SlideMenu from './SlideMenu.vue';
 import TemplateDialog from './TemplateDialog.vue';
 import { isTable } from '@/features/boards/composables/schema';
 import {
@@ -85,6 +89,7 @@ import {
     simulate,
 } from '@/features/boards/circuit/logic';
 import { boardValues } from '@/features/boards/circuit/values';
+import { restyled } from '@/features/boards/composables/styles';
 import { Button } from '@/components/ui/button';
 import {
     isSymbol,
@@ -106,8 +111,23 @@ import {
     useLabelEditor,
 } from '@/features/boards/composables/useLabelEditor';
 import { usePresenting } from '@/features/boards/composables/usePresenting';
+import type { PresenterState } from '@/features/boards/composables/usePresenterLink';
+import { useShowLink } from '@/features/boards/composables/usePresenterLink';
+import type {
+    Deck,
+    SlideDecor,
+    SlideLayout,
+} from '@/features/boards/composables/deck';
+import {
+    nextSlideAt,
+    provideDeck,
+    slideOf,
+    slidesRestyled,
+} from '@/features/boards/composables/deck';
+import { groupKeys } from '@/features/boards/composables/layers';
 import { useConnectorEnds } from '@/features/boards/composables/useConnectorEnds';
 import { useDrawing } from '@/features/boards/composables/useDrawing';
+import { usePen } from '@/features/boards/composables/usePen';
 import { useGestures } from '@/features/boards/composables/useGestures';
 import { useShortcuts } from '@/features/boards/composables/useShortcuts';
 import { usePictures } from '@/features/boards/composables/usePictures';
@@ -139,6 +159,13 @@ const props = withDefaults(
         // on a frame offers to save it. The demo board is saved nowhere, so
         // there is nothing for the server to draw and no menu.
         pictureOfFrame?: ((frame: Item) => Promise<File>) | null;
+        // The deck its frames make: one look, and what every slide says;
+        // and whether it can be changed yet (shared, once it has arrived)
+        deck?: Deck | null;
+        deckReady?: boolean;
+        // The presenter's window: where it opens, and the channel it hears
+        // the show on. The demo board has none.
+        presenter?: { url: string; channel: string } | null;
     }>(),
     {
         items: null,
@@ -146,15 +173,24 @@ const props = withDefaults(
         status: '',
         shared: null,
         pictureOfFrame: null,
+        deck: null,
+        deckReady: true,
+        presenter: null,
     },
 );
 
-const emit = defineEmits<{ change: [Item[]] }>();
+const emit = defineEmits<{ change: [Item[]]; deck: [Deck | null] }>();
 
 const board = useBoard(props.items);
 
 // Light, or dark with the rest of the app: everything drawn below follows it
 const theme = provideBoardTheme(() => board.items.value);
+// ...and every slide has what the deck writes on it
+const slideDecor = provideDeck(
+    () => board.items.value,
+    () => props.deck,
+    () => props.title,
+);
 
 if (props.shared) {
     useBoardSync(board, props.shared.document, props.shared.synced);
@@ -234,11 +270,21 @@ const paintStroke = (colour: string) => {
     strokeColour.value = colour;
     board.paintStroke(colour);
 };
+// The speaker notes under the slide while presenting, for one screen: the
+// presenter's own window is for a second
+const notesShown = useLocalStorage('board.present-notes', false);
+const NOTES_ROOM = 0.28;
+
 const {
     presenting,
     frameIndex,
     currentFrame,
     showFrame,
+    refit,
+    startedAt,
+    fullScreen,
+    enterFullScreen,
+    keepShowing,
     startPresenting,
     stopPresenting,
 } = usePresenting({
@@ -248,7 +294,99 @@ const {
     height,
     screen: () => page.value,
     overview: (options) => fitAll(options),
+    below: () => (notesShown.value ? height.value * NOTES_ROOM : 0),
 });
+
+watch(notesShown, refit);
+
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+    const typing = (event.target as HTMLElement | null)?.closest?.(
+        'input, textarea, [contenteditable="true"]',
+    );
+
+    if (presenting.value && !typing && event.key.toLowerCase() === 'n') {
+        notesShown.value = !notesShown.value;
+    }
+});
+
+/** A slide as the presenter's window draws it: its frame and what is on it. */
+const presenterSlide = (
+    frame: Item | undefined,
+    homes: Map<string, string>,
+    decor: Map<string, SlideDecor>,
+) =>
+    frame
+        ? {
+              id: frame.id,
+              title: frame.text,
+              notes: frame.notes ?? '',
+              items: board.items.value.filter(
+                  (item) =>
+                      item.id === frame.id || homes.get(item.id) === frame.id,
+              ),
+              decor: decor.get(frame.id) ?? null,
+          }
+        : null;
+
+const presenterState = (): PresenterState => {
+    if (!presenting.value) {
+        return {
+            presenting: false,
+            index: 0,
+            count: 0,
+            current: null,
+            next: null,
+            deck: null,
+            title: props.title,
+            startedAt: 0,
+        };
+    }
+
+    const frames = board.frames.value;
+    const homes = groupKeys(board.items.value);
+
+    return {
+        presenting: true,
+        index: frameIndex.value,
+        count: frames.length,
+        current: presenterSlide(
+            frames[frameIndex.value],
+            homes,
+            slideDecor.value,
+        ),
+        next: presenterSlide(
+            frames[frameIndex.value + 1],
+            homes,
+            slideDecor.value,
+        ),
+        deck: props.deck,
+        title: props.title,
+        startedAt: startedAt.value,
+    };
+};
+
+const presenterLink = useShowLink(
+    () => props.presenter?.channel ?? null,
+    presenterState,
+    { go: (index) => showFrame(index), stop: () => stopPresenting() },
+);
+
+const openPresenter = () => {
+    if (props.presenter) {
+        keepShowing();
+        presenterLink.open(props.presenter.url);
+    }
+};
+
+/** A new slide after the last one, laid out, in the deck's look. */
+const addSlide = (layout: SlideLayout) => {
+    const slide = slideOf(layout, nextSlideAt(board.items.value), props.deck);
+
+    board.place(slide);
+    board.select([slide[0].id]);
+    tool.value = 'select';
+    camera.reveal(boundsOf(slide[0]), { inset: uncovered() });
+};
 
 const spaceHeld = ref(false);
 
@@ -407,8 +545,20 @@ const {
     connectorPath: (item) => connectorPath(item),
 });
 
+// The vector pen: drawing a path a point at a time, and moving a path's
+// points about once it is double-clicked
+const pen = usePen({
+    board,
+    camera,
+    stage,
+    tool,
+    fill: fillColour,
+    stroke: strokeColour,
+});
+
 // Which pointer that is, where there are several: a pen, the hand resting
-// beside it, and the fingers that slide and pinch the board
+// beside it, and the fingers that slide and pinch the board. While the
+// vector pen is at work, it has the pointer instead
 const { onStagePointerDown, onStagePointerMove } = useGestures({
     stage,
     surface: canvas,
@@ -416,11 +566,35 @@ const { onStagePointerDown, onStagePointerMove } = useGestures({
     tool,
     panning,
     select: board.select,
-    onPointerDown,
-    onPointerMove,
-    onPointerUp,
+    onPointerDown: (event) =>
+        pen.active() && !panning.value ? pen.down() : onPointerDown(event),
+    onPointerMove: (event) =>
+        pen.active() ? pen.move() : onPointerMove(event),
+    onPointerUp: () => (pen.active() ? pen.up() : onPointerUp()),
     cancelPointer,
 });
+
+// A double-click opens a path's points. While one is being drawn the pen
+// tells a double-click itself, by a second click on the same point: two
+// quick clicks in different places are two points
+const onDouble = (event: Konva.KonvaEventObject<MouseEvent>) => {
+    if (pen.drawing.value) {
+        return;
+    }
+
+    const id = event.target
+        .findAncestor(
+            (node: Konva.Node) => board.byId.value.has(node.id()),
+            true,
+        )
+        ?.id();
+
+    if (id && tool.value === 'select' && pen.edit(id)) {
+        return;
+    }
+
+    onDoubleClick(event);
+};
 
 // --------------------------------------------------- A frame, right-clicked
 const frameMenu = ref<{ frame: Item; x: number; y: number } | null>(null);
@@ -1016,6 +1190,8 @@ const connectorPath = (item: Item) =>
                 <!-- Nothing to press on a phone -->
                 <BoardShortcuts v-if="!compact" />
 
+                <SlideMenu :compact="compact" @add="addSlide" />
+
                 <button
                     type="button"
                     class="board-present"
@@ -1037,6 +1213,13 @@ const connectorPath = (item: Item) =>
         <div
             ref="canvas"
             :data-zoom="Math.round(camera.scale.value * 100)"
+            :data-pen="
+                pen.editing.value
+                    ? 'editing'
+                    : pen.drawing.value
+                      ? 'drawing'
+                      : undefined
+            "
             @dragover.prevent
             @drop="onDropFiles"
             @pointermove="onCanvasPointer"
@@ -1067,8 +1250,8 @@ const connectorPath = (item: Item) =>
                 @touchstart="onStagePress"
                 @mouseover="onStageHover"
                 @mouseout="onStageHover"
-                @dblclick="onDoubleClick"
-                @dbltap="onDoubleClick"
+                @dblclick="onDouble"
+                @dbltap="onDouble"
                 @contextmenu="onContextMenu"
             >
                 <Layer ref="contentLayer">
@@ -1079,7 +1262,10 @@ const connectorPath = (item: Item) =>
                         :selected="isSelected(item)"
                         :editing="editingId === item.id"
                         :can-drag="
-                            !presenting && tool === 'select' && !spaceHeld
+                            !presenting &&
+                            tool === 'select' &&
+                            !spaceHeld &&
+                            !pen.editing.value
                         "
                         :image="imageFor(item)"
                         :video="videos.videoFor(item)"
@@ -1108,6 +1294,11 @@ const connectorPath = (item: Item) =>
                         :endpoint-name="ENDPOINT"
                         :guides="guides"
                         :marquee="marquee"
+                        :scale="camera.scale.value"
+                    />
+
+                    <PenOverlay
+                        :preview="pen.preview.value"
                         :scale="camera.scale.value"
                     />
 
@@ -1258,6 +1449,14 @@ const connectorPath = (item: Item) =>
                     :item-count="board.items.value.length"
                     :frame-count="board.frames.value.length"
                     :link="connectorLink"
+                    :deck="deck"
+                    :deck-ready="deckReady"
+                    @deck="emit('deck', $event)"
+                    @restyle-deck="
+                        board.updateEach(
+                            slidesRestyled(board.items.value, deck),
+                        )
+                    "
                     @paint="paintFill"
                     @paint-stroke="paintStroke"
                     @resize="resizeSelection"
@@ -1265,6 +1464,16 @@ const connectorPath = (item: Item) =>
                     @remove="removeSelection"
                     @reorder="board.reorder"
                     @update="board.updateSelected"
+                    @restyle="board.updateEach"
+                    @restyle-board="
+                        board.updateEach(
+                            restyled(
+                                board.items.value,
+                                $event.set,
+                                $event.style,
+                            ),
+                        )
+                    "
                     @turn="turnSelection"
                     @close="panelOpen = false"
                 />
@@ -1328,6 +1537,26 @@ const connectorPath = (item: Item) =>
                 </button>
             </div>
 
+            <!-- Presenting, with the notes shown: what is said over this
+                 slide, under it, where the camera keeps it clear -->
+            <div
+                v-if="presenting && notesShown"
+                class="bg-background/95 absolute inset-x-0 bottom-0 overflow-y-auto border-t px-6 pt-3 pb-16 text-lg leading-relaxed"
+                :style="{ height: `${NOTES_ROOM * 100}%` }"
+                data-test="present-notes"
+            >
+                <p
+                    v-if="currentFrame?.notes?.trim()"
+                    class="mx-auto max-w-3xl whitespace-pre-wrap"
+                >
+                    {{ currentFrame.notes }}
+                </p>
+                <p v-else class="text-muted-foreground mx-auto max-w-3xl">
+                    No notes on this slide. Write them in the panel, under
+                    Speaker notes.
+                </p>
+            </div>
+
             <!-- Presenting: frame position, arrows, and a way out -->
             <div
                 v-if="presenting"
@@ -1342,7 +1571,10 @@ const connectorPath = (item: Item) =>
                 >
                     <ChevronLeft class="size-4" />
                 </button>
-                <span class="px-1 text-sm" data-test="frame-position">
+                <span
+                    class="max-w-[40vw] truncate px-1 text-sm whitespace-nowrap"
+                    data-test="frame-position"
+                >
                     {{ frameIndex + 1 }} / {{ board.frames.value.length }}
                     <span class="text-muted-foreground">
                         · {{ currentFrame?.text }}
@@ -1356,6 +1588,40 @@ const connectorPath = (item: Item) =>
                     @click="showFrame(frameIndex + 1)"
                 >
                     <ChevronRight class="size-4" />
+                </button>
+                <button
+                    type="button"
+                    class="board-zoom"
+                    :class="{ 'is-on': notesShown }"
+                    :title="
+                        notesShown
+                            ? 'Hide the speaker notes (N)'
+                            : 'Show the speaker notes under the slide (N)'
+                    "
+                    data-test="present-notes-toggle"
+                    @click="notesShown = !notesShown"
+                >
+                    <NotebookText class="size-4" />
+                </button>
+                <button
+                    v-if="presenter && !compact"
+                    type="button"
+                    class="board-zoom"
+                    title="Open the notes, the next slide and a clock in a window of their own, for your screen"
+                    data-test="present-presenter"
+                    @click="openPresenter"
+                >
+                    <MonitorUp class="size-4" />
+                </button>
+                <button
+                    v-if="!fullScreen"
+                    type="button"
+                    class="board-zoom"
+                    title="Full screen"
+                    data-test="present-full-screen"
+                    @click="enterFullScreen"
+                >
+                    <Maximize class="size-4" />
                 </button>
                 <button
                     type="button"

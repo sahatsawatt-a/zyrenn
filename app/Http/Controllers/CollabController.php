@@ -66,6 +66,7 @@ class CollabController extends Controller
                 'is_wide' => ['required', 'boolean'],
             ] : [
                 'items' => ['present', 'array'],
+                'deck' => ['sometimes', 'nullable', 'array'],
             ]),
         ]);
 
@@ -78,7 +79,10 @@ class CollabController extends Controller
         }
 
         if ($thing instanceof Board) {
-            $thing->content = ['items' => $validated['items']];
+            $thing->content = array_filter([
+                'items' => $validated['items'],
+                'deck' => array_key_exists('deck', $validated) ? $validated['deck'] : ($thing->content['deck'] ?? null),
+            ], fn ($value) => $value !== null);
         }
 
         if ($thing->isDirty(['title', 'content', 'is_wide']) && $validated['updated_by'] !== null) {

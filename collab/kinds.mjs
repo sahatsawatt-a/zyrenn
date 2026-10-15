@@ -74,9 +74,13 @@ const boards = {
     },
 
     read(document) {
+        const meta = document.getMap('meta');
+
         return {
             items: orderedItems(document),
-            title: document.getMap('meta').get('title') ?? '',
+            title: meta.get('title') ?? '',
+            // The deck its frames make: a look and what every slide says
+            deck: meta.get('deck') ?? null,
         };
     },
 
@@ -104,14 +108,19 @@ const boards = {
         if ('title' in changed) {
             document.getMap('meta').set('title', changed.title ?? '');
         }
+
+        if ('deck' in changed) {
+            document.getMap('meta').set('deck', changed.deck ?? null);
+        }
     },
 
     /**
      * Changes by item (BoardItems::change): {do: 'set', items} puts each item
      * under its id -- a new one on top -- and {do: 'delete', ids} takes them
      * off. {do: 'order', ids} draws the board in that order; anything drawn
-     * meanwhile that it doesn't name stays on top. Nothing else on the board
-     * is touched. Answers the ids not found.
+     * meanwhile that it doesn't name stays on top. {do: 'deck', deck} sets
+     * the deck the frames make. Nothing else on the board is touched.
+     * Answers the ids not found.
      */
     edit(document, edits) {
         const items = document.getMap('items');
@@ -128,6 +137,10 @@ const boards = {
                         order.push([item.id]);
                     }
                 }
+            }
+
+            if (edit.do === 'deck') {
+                document.getMap('meta').set('deck', edit.deck ?? null);
             }
 
             if (edit.do === 'order') {

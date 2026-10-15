@@ -8,6 +8,7 @@ use App\Models\Owner;
 use App\Support\Board\BoardItems;
 use App\Support\Board\BoardRows;
 use App\Support\Board\Shapes;
+use App\Support\Board\Styles;
 use App\Support\Board\Symbols;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Model;
@@ -125,7 +126,50 @@ abstract class BoardTool extends FiledTool
             "{$key}.*.to.pin" => ['nullable', 'string', 'max:120'],
             "{$key}.*.from.along" => ['nullable', 'numeric', 'between:0,1'],
             "{$key}.*.to.along" => ['nullable', 'numeric', 'between:0,1'],
-            "{$key}.*.variant" => ['nullable', 'string', 'in:top,left'],
+            "{$key}.*.variant" => ['nullable', 'string', 'max:32'],
+            "{$key}.*.style" => ['nullable', 'string', 'max:40', function (string $attribute, mixed $value, \Closure $fail) {
+                if (is_string($value) && Styles::parse($value) === null) {
+                    $fail('"'.$value.'" is not a style. Write it as style:colour -- styles '.implode(', ', Styles::styleIds()).'; colours '.implode(', ', Styles::colourNames()).'.');
+                }
+            }],
+            "{$key}.*.color" => ['nullable', 'string', 'max:32'],
+            "{$key}.*.shadow" => ['nullable', 'boolean'],
+            "{$key}.*.d" => ['nullable', 'string', 'max:20000'],
+            "{$key}.*.radius" => ['nullable', 'numeric', 'between:0,2000'],
+            "{$key}.*.opacity" => ['nullable', 'numeric', 'between:0,1'],
+            "{$key}.*.gradient" => ['nullable', 'string', 'max:32'],
+            "{$key}.*.gradientAngle" => ['nullable', 'numeric', 'between:0,360'],
+            "{$key}.*.focusX" => ['nullable', 'numeric', 'between:0,1'],
+            "{$key}.*.focusY" => ['nullable', 'numeric', 'between:0,1'],
+            "{$key}.*.hug" => ['nullable', 'boolean'],
+            "{$key}.*.caps" => ['nullable', 'boolean'],
+            "{$key}.*.gradientType" => ['nullable', 'string', 'in:linear,radial'],
+            "{$key}.*.gradientStops" => ['nullable', 'array', 'max:12'],
+            "{$key}.*.gradientStops.*.at" => ['required', 'numeric', 'between:0,1'],
+            "{$key}.*.gradientStops.*.color" => ['required', 'string', 'max:32'],
+            "{$key}.*.strokeStops" => ['nullable', 'array', 'max:12'],
+            "{$key}.*.strokeStops.*.at" => ['required', 'numeric', 'between:0,1'],
+            "{$key}.*.strokeStops.*.color" => ['required', 'string', 'max:32'],
+            "{$key}.*.strokeGradient" => ['nullable', 'string', 'max:32'],
+            "{$key}.*.strokeAngle" => ['nullable', 'numeric', 'between:0,360'],
+            "{$key}.*.fillOpacity" => ['nullable', 'numeric', 'between:0,1'],
+            "{$key}.*.strokeOpacity" => ['nullable', 'numeric', 'between:0,1'],
+            "{$key}.*.shadowColor" => ['nullable', 'string', 'max:32'],
+            "{$key}.*.shadowBlur" => ['nullable', 'numeric', 'between:0,200'],
+            "{$key}.*.shadowX" => ['nullable', 'numeric', 'between:-500,500'],
+            "{$key}.*.shadowY" => ['nullable', 'numeric', 'between:-500,500'],
+            "{$key}.*.shadowOpacity" => ['nullable', 'numeric', 'between:0,1'],
+            "{$key}.*.glow" => ['nullable', 'string', 'max:32'],
+            "{$key}.*.glowSize" => ['nullable', 'numeric', 'between:0,200'],
+            "{$key}.*.blur" => ['nullable', 'numeric', 'between:0,100'],
+            "{$key}.*.blend" => ['nullable', 'string', 'in:'.implode(',', BoardItems::BLENDS)],
+            "{$key}.*.letterSpacing" => ['nullable', 'numeric', 'between:-20,100'],
+            "{$key}.*.colorTo" => ['nullable', 'string', 'max:32'],
+            "{$key}.*.poster" => ['nullable', 'string', 'max:200', 'regex:#^(https?://|/drive/files/)#'],
+            "{$key}.*.posterAt" => ['nullable', 'numeric', 'between:0,86400'],
+            "{$key}.*.notes" => ['nullable', 'string', 'max:10000'],
+            "{$key}.*.section" => ['nullable', 'string', 'max:120'],
+            "{$key}.*.bare" => ['nullable', 'boolean'],
             "{$key}.*.rows" => ['nullable', 'array', 'max:'.BoardRows::MAX],
             "{$key}.*.rows.*" => ['array'],
             "{$key}.*.rows.*.id" => ['nullable', 'string', 'max:64', 'regex:/^[A-Za-z0-9_-]+$/'],
@@ -224,7 +268,7 @@ abstract class BoardTool extends FiledTool
         // The library's shapes, a group to a sentence: "UML: class, actor, ..."
         $library = collect(Shapes::byGroup())->map(fn (string $kinds, string $group) => "{$group}: {$kinds}")->implode('. ');
 
-        $kind = $schema->string()->enum(BoardItems::kinds())->description('What to draw. Shapes: rect, pill, ellipse, triangle, diamond, hexagon, star. Flowchart: cylinder (a database), parallelogram (data), document, process (a predefined process: a box with a rail down each side -- an ordinary step is a rect), cloud. More, from the shape library -- '.$library.'. A table (of a schema) and a class hold "rows" under their name in "text"; a lane is a titled column or swimlane to put steps in; a figure such as actor, user or server is named under it; a lifeline is a participant in a sequence, with messages drawn between two of them at the same "along". Also sticky, text (grows to fit its words unless given a height), frame (a 16:9 slide for present mode), image, video (plays on the board), math (a formula, with LaTeX in "text"), symbol (a part of a circuit: say which in "symbol"), arrow (a connector, or between symbols\' pins a wire) and draw (freehand ink).');
+        $kind = $schema->string()->enum(BoardItems::kinds())->description('What to draw. Shapes: rect, pill, ellipse, triangle, diamond, hexagon, star. Flowchart: cylinder (a database), parallelogram (data), document, process (a predefined process: a box with a rail down each side -- an ordinary step is a rect), cloud. More, from the shape library -- '.$library.'. A table (of a schema) and a class hold "rows" under their name in "text"; a lane is a titled column or swimlane to put steps in; a figure such as actor, user or server is named under it; a lifeline is a participant in a sequence, with messages drawn between two of them at the same "along". Also path (a vector line or shape from SVG path data in "d": curves, waves, blobs, icons -- with a fill, gradients and effects it draws illustration), sticky, text (grows to fit its words unless given a height), frame (a 16:9 slide for present mode), image, video (plays on the board), math (a formula, with LaTeX in "text"), symbol (a part of a circuit: say which in "symbol"), arrow (a connector, or between symbols\' pins a wire) and draw (freehand ink).');
 
         return $schema->object([
             'id' => $schema->string()->max(64)->description('Your name for this item, so a connector can point at it (letters, digits, "-" and "_"). Made up for you if you leave it out.'),
@@ -244,7 +288,7 @@ abstract class BoardTool extends FiledTool
             'align' => $schema->string()->enum(BoardItems::ALIGNS)->description('Where the label sits across the item: left, center or right. Shapes centre it, a text item starts at the left.'),
             'verticalAlign' => $schema->string()->enum(BoardItems::VERTICAL_ALIGNS)->description('Where the label sits down the item: top, middle or bottom.'),
             'rotation' => $schema->number()->description('Degrees clockwise.'),
-            'src' => $schema->string()->max(200)->description('For kind "image": the URL of the picture; for kind "video", of the video (MP4 or WebM). Upload it first -- request-upload for a file on your disk, or upload-file -- and pass the "url" from the response.'),
+            'src' => $schema->string()->max(200)->description('For kind "image": the URL of the picture; for kind "video", of the video (MP4 or WebM); for kind "frame", a picture filling the slide behind everything on it. Upload it first -- request-upload for a file on your disk, or upload-file -- and pass the "url" from the response.'),
             'fit' => $schema->string()->enum(BoardItems::FITS)->description('For kind "image": "fill" stretches the picture to the box (the default), "contain" fits it whole inside, "cover" fills the box and cuts off what spills over. Its "stroke" and "lineWidth" draw a border round it.'),
             'on' => $schema->boolean()->description('For a symbol "input" (a logic input): whether it is set to 1. The board works out what its gates (and, or, not, nand, nor, xor, xnor, buffer, dff) put out from there, and lights each "output" that is fed a 1.'),
             'rows' => $schema->array()->items($schema->object([
@@ -256,7 +300,48 @@ abstract class BoardTool extends FiledTool
                 'visibility' => $schema->string()->enum(BoardRows::VISIBILITIES)->description('On a class: + public (the default), - private, # protected, ~ package.'),
                 'method' => $schema->boolean()->description('On a class: true for a method, listed under the fields. A name with brackets is taken for one.'),
             ]))->description('For kind "table" or "class": what is inside it, a row to each column or member, with the table\'s or class\'s name in "text". The item is made as tall as its rows need. Sent again, the list replaces the one there; a row keeps its id by its name, so connectors on it stay. A foreign key is drawn as an arrow from {"item": "orders", "pin": "customer_id"} to {"item": "customers", "pin": "id"}, with "endHead" and "startHead" saying how many (one_only, zero_many, ...).'),
-            'variant' => $schema->string()->enum(['top', 'left'])->description('For kind "lane": where its title runs -- "top" for a column, "left" for a swimlane lying on its side.'),
+            'variant' => $schema->string()->max(32)->description('For kind "lane": where its title runs -- "top" for a column, "left" for a swimlane lying on its side. For a database (cylinder), a server, a user and the other architecture shapes: which of their designs -- "classic" (the default), "card" (a rounded card with the thing\'s icon over its label), "badge" (the icon on a disc, named under it) or "icon" (the icon alone); a database also "stacked" or "shaded", a server "shaded".'),
+            'style' => $schema->string()->max(40)->description('A ready-made look, as "style:colour": style one of '.implode(', ', Styles::styleIds()).' -- soft (a pale fill, a coloured line, dark words), solid (a strong fill, white words), outline, bold (a dark fill), light -- and colour one of '.implode(', ', Styles::colourNames()).'. It sets fill, stroke, the words\' "color" and the line width the way the board\'s Style picker does; any of those sent as well wins. Keep to a few colours across a board and one style for things of a kind: "solid:indigo" for services, "soft:emerald" for stores, "soft:slate" for the rest.'),
+            'color' => $schema->string()->max(32)->description('The colour the label is written in, as hex. Left out, it is whatever reads best on the fill.'),
+            'shadow' => $schema->boolean()->description('true: a soft shadow under it, lifting it off the board.'),
+            'd' => $schema->string()->max(20000)->description('For kind "path": SVG path data -- M, L, H, V, C, S, Q, T, A and Z, upper case absolute or lower case relative, e.g. "M100 300 C200 100 400 100 500 300". Open, it is a line; closed with Z and given a fill, a shape. In board units: with no x and y the path sits where its points say, with them its points are measured from that corner. Its box is worked out from the curve; a width or height scales it.'),
+            'radius' => $schema->number()->description('How round its corners are, in board units: a rect, sticky, frame, image or video. Left out, its kind\'s own (8 on a rect, 0 on a frame).'),
+            'opacity' => $schema->number()->description('How solid it is, 0 (unseen) to 1 (the default).'),
+            'gradient' => $schema->string()->max(32)->description('A second colour, as hex, its fill fades to -- on shapes, stickies and frames. "" for a plain fill again.'),
+            'gradientAngle' => $schema->number()->description('Which way the gradient runs, in degrees as CSS writes it: 180 (the default) top to bottom, 90 left to right, 135 corner to corner.'),
+            'focusX' => $schema->number()->description('For a picture filling its box ("cover", and a frame\'s background): the point kept in view, 0 (left) to 1 (right); 0.5 by default.'),
+            'focusY' => $schema->number()->description('As focusX, down: 0 keeps the top -- an app screenshot\'s header -- and 1 the bottom.'),
+            'gradientType' => $schema->string()->enum(['linear', 'radial'])->description('How a fill fades: "linear" (the default) across it at gradientAngle, or "radial" out from its middle to its edge -- a glowing node, a vignette.'),
+            'gradientStops' => $schema->array()->items($schema->object([
+                'at' => $schema->number()->description('Where the colour falls, 0 (start, or the middle of a radial fade) to 1 (end, or the edge).')->required(),
+                'color' => $schema->string()->max(32)->description('Hex, e.g. "#6366f1", or "#6366f100" for see-through.')->required(),
+            ]))->description('A fill fading through more colours than two, in place of fill and gradient: [{"at": 0, "color": "#4f46e5"}, {"at": 0.5, "color": "#06b6d4"}, {"at": 1, "color": "#22c55e"}].'),
+            'strokeGradient' => $schema->string()->max(32)->description('A second colour its line fades to: across a shape or path at strokeAngle, or along a connector from its start to its end.'),
+            'strokeStops' => $schema->array()->items($schema->object([
+                'at' => $schema->number()->required(),
+                'color' => $schema->string()->max(32)->required(),
+            ]))->description('A line fading through more colours than two, as gradientStops -- an indigo, cyan, green link.'),
+            'strokeAngle' => $schema->number()->description('Which way a line\'s fade runs across a shape or path, in degrees as CSS writes it: 90 (the default) left to right.'),
+            'fillOpacity' => $schema->number()->description('How solid the inside is, 0 to 1, leaving the line as it is.'),
+            'strokeOpacity' => $schema->number()->description('How solid the line is, 0 to 1, leaving the inside as it is.'),
+            'shadowColor' => $schema->string()->max(32)->description('A shadow of its own, in this colour (with shadowBlur, shadowX, shadowY, shadowOpacity) in place of the soft one "shadow" puts under it.'),
+            'shadowBlur' => $schema->number()->description('How soft that shadow is: 16 by default.'),
+            'shadowX' => $schema->number()->description('How far right the shadow falls: 0 by default.'),
+            'shadowY' => $schema->number()->description('How far down the shadow falls: 6 by default.'),
+            'shadowOpacity' => $schema->number()->description('How dark the shadow is, 0 to 1: 0.2 by default.'),
+            'glow' => $schema->string()->max(32)->description('A light round it in this colour -- a glowing node or line. Takes the place of a shadow.'),
+            'glowSize' => $schema->number()->description('How far the glow spreads: 24 by default.'),
+            'blur' => $schema->number()->description('Softens the whole item by so many units: a haze, a light behind something.'),
+            'blend' => $schema->string()->enum(BoardItems::BLENDS)->description('How it mixes with what is under it: multiply darkens, screen lightens, overlay adds contrast. source-over (the default) simply covers.'),
+            'letterSpacing' => $schema->number()->description('Room added after each letter of its words, in board units: 2 to 4 for a small "kicker" label above a title.'),
+            'caps' => $schema->boolean()->description('true: its words are shown in capitals, whatever they were typed in.'),
+            'colorTo' => $schema->string()->max(32)->description('A second colour its words fade to, left to right, from "color".'),
+            'hug' => $schema->boolean()->description('true: a rect, sticky, pill or process is exactly as tall as its words and padding, growing and shrinking with them. Its height is then worked out, not given.'),
+            'poster' => $schema->string()->max(200)->description('For kind "video": a picture shown in its place until it plays -- and in pictures and PDFs of the board. Left out, its first frame (or the one at posterAt).'),
+            'posterAt' => $schema->number()->description('For kind "video": the moment, in seconds, shown while it isn\'t playing.'),
+            'notes' => $schema->string()->max(10000)->description('For kind "frame": speaker notes, shown to the presenter alone in present mode.'),
+            'section' => $schema->string()->max(120)->description('For kind "frame": the part of the deck this slide begins -- what a footer\'s {section} says on it and the slides after it.'),
+            'bare' => $schema->boolean()->description('For kind "frame": true leaves the deck\'s header, footer and slide number off this slide -- a title slide. It is still counted.'),
             'hidden' => $schema->boolean()->description('Keep it off the board without deleting it.'),
             'locked' => $schema->boolean()->description('Stop it being picked up on the canvas.'),
             'pdfHidden' => $schema->boolean()->description('For kind "frame": keep it on the board but leave it out of the PDF export, which otherwise has a page for every frame.'),

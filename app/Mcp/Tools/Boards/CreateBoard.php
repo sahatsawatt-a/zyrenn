@@ -7,6 +7,7 @@ use App\Models\Board\Board;
 use App\Support\Board\BoardItemProblem;
 use App\Support\Board\BoardItems;
 use App\Support\Board\CircuitLayout;
+use App\Support\Board\Deck;
 use App\Support\Board\Templates;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Validation\Rule;
@@ -46,9 +47,17 @@ put on, each part under its own name ("r1") for changing later.
 
 To start from a ready-made diagram instead of drawing one, name it in "template": the answer lists
 its items, each under an id to change with update-board.
+
+A deck of slides: "deck" for its look and what every slide says (a header, a footer, numbers), and
+"slides", each laid out from a layout, one after another:
+"deck": {"theme": "ivory", "footer": "{title} · {section}", "numbers": true},
+"slides": [{"layout": "title", "title": "Q3 in review", "subtitle": "What changed, and why"},
+ {"layout": "title-body", "title": "Sign-ups doubled after the redesign", "body": "- 1,204 to 2,431\n- Most from search", "notes": "Pause on the chart"}]
 TEXT)]
 class CreateBoard extends BoardTool
 {
+    use MakesDecks;
+
     protected function arguments(JsonSchema $schema): array
     {
         return [
@@ -57,6 +66,8 @@ class CreateBoard extends BoardTool
             'circuit' => $this->circuitArgument($schema, 'A circuit as text, laid out for you and put on the board (under "items", when both are sent).'),
             'template' => $schema->string()->enum(Templates::ids())->description('A diagram to start the board from, with sample words to change: '.Templates::described().'. Sent with "items", those are drawn over it.'),
             'folder' => $this->folderArgument($schema, 'Folder to create the board in; folders that don\'t exist yet are created.'),
+            'deck' => $this->deckArgument($schema),
+            'slides' => $this->slidesArgument($schema, 'Slides laid out for you, one after another to the right of anything else, in the deck\'s look.'),
         ];
     }
 
@@ -71,7 +82,10 @@ class CreateBoard extends BoardTool
             'circuit' => ['nullable', 'string', 'max:'.self::MAX_CIRCUIT],
             'template' => ['nullable', 'string', Rule::in(Templates::ids())],
             ...$this->itemRules(),
+            ...$this->deckRules(),
         ]);
+
+        $deck = is_array($validated['deck'] ?? null) ? Deck::merged(null, $validated['deck']) : null;
 
         // A template is the first thing drawn; what else was sent goes over it
         $specs = [...Templates::specs($validated['template'] ?? ''), ...$this->specs($validated)];
@@ -85,6 +99,11 @@ class CreateBoard extends BoardTool
             return Response::error($problem->getMessage());
         }
 
+        // Slides after whatever else was drawn, in the deck's look
+        if (isset($validated['slides'])) {
+            $specs = [...$specs, ...Deck::slideSpecs($this->slides($validated, 'slides'), $specs, $deck)];
+        }
+
         $problem = $this->itemProblem($specs);
 
         if ($problem !== null) {
@@ -93,11 +112,14 @@ class CreateBoard extends BoardTool
 
         $board = (new Board([
             'title' => $validated['title'],
-            'content' => $specs === [] ? null : ['items' => BoardItems::fromSpec($specs)],
+            'content' => $specs === [] && $deck === null ? null : Deck::content($specs === [] ? [] : BoardItems::fromSpec($specs), $deck),
         ]))->ownedBy($owner, $user);
         $board->folder_id = $this->ensureFolderAt($owner, $validated['folder'] ?? '', $user)?->id;
         $board->save();
 
-        return Response::structured($this->answer($board->refresh(), $this->overflow($board->content['items'] ?? [])));
+        return Response::structured($this->answer($board->refresh(), [
+            ...($deck !== null ? ['deck' => $deck] : []),
+            ...$this->overflow($board->content['items'] ?? []),
+        ]));
     }
 }

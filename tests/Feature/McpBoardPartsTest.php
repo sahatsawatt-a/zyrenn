@@ -163,6 +163,139 @@ class McpBoardPartsTest extends TestCase
         $this->assertSame($before, $board->fresh()->content);
     }
 
+    public function test_an_id_made_up_is_never_one_taken_off_in_the_same_change()
+    {
+        $board = $this->board();
+        $added = UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'add_items' => [['kind' => 'sticky'], ['kind' => 'sticky']]]);
+        $ids = array_column($board->fresh()->content['items'], 'id');
+        $highest = end($ids);
+
+        // The newest taken off, and something new without an id put on at once
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'delete_items' => [$highest], 'add_items' => [['kind' => 'sticky', 'text' => 'New']]])
+            ->assertOk();
+
+        $items = collect($board->fresh()->content['items'])->keyBy('id');
+        $this->assertFalse($items->has($highest));
+        $this->assertSame('New', $items->firstWhere('text', 'New')['text']);
+        $this->assertNotSame($highest, $items->firstWhere('text', 'New')['id']);
+    }
+
+    public function test_items_take_corners_opacity_gradients_a_focus_and_hug_their_words()
+    {
+        $board = $this->board();
+
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'add_items' => [
+                ['id' => 'card', 'kind' => 'rect', 'text' => 'One line', 'x' => 0, 'y' => 0, 'width' => 300, 'height' => 400, 'radius' => 20, 'opacity' => 0.5, 'fill' => '#4f46e5', 'gradient' => '#7c3aed', 'gradientAngle' => 135, 'hug' => true],
+                ['id' => 'shot', 'kind' => 'image', 'src' => '/drive/files/abc', 'fit' => 'cover', 'focusY' => 0, 'x' => 0, 'y' => 500, 'width' => 300, 'height' => 100],
+                ['id' => 'slide', 'kind' => 'frame', 'text' => 'Intro', 'src' => '/drive/files/bg', 'notes' => 'Say hello.', 'section' => 'Part one', 'x' => 1000, 'y' => 0, 'width' => 1600, 'height' => 900],
+                ['id' => 'clip', 'kind' => 'video', 'src' => '/drive/files/film', 'poster' => '/drive/files/still', 'posterAt' => 3.5, 'x' => 0, 'y' => 700, 'width' => 320, 'height' => 180],
+            ]])
+            ->assertOk();
+
+        $items = array_column($board->fresh()->content['items'], null, 'id');
+        $this->assertEquals([20, 0.5, '#7c3aed', 135, true], [$items['card']['radius'], $items['card']['opacity'], $items['card']['gradient'], $items['card']['gradientAngle'], $items['card']['hug']]);
+        // As tall as one line and its padding, not the 400 asked for
+        $this->assertEquals(ceil(16 * 1.3 + 24), $items['card']['height']);
+        $this->assertEquals(0.0, $items['shot']['focusY']);
+        $this->assertSame(['Say hello.', 'Part one', '/drive/files/bg'], [$items['slide']['notes'], $items['slide']['section'], $items['slide']['src']]);
+        $this->assertEquals(['/drive/files/still', 3.5], [$items['clip']['poster'], $items['clip']['posterAt']]);
+
+        // More words: it grows with them
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'update_items' => [['id' => 'card', 'text' => "One line\nTwo lines\nThree"]]])
+            ->assertOk();
+        $this->assertEquals(ceil(3 * 16 * 1.3 + 24), array_column($board->fresh()->content['items'], null, 'id')['card']['height']);
+        // A fraction stays one, through a change to something else
+        $this->assertEquals([0.5, 0.0], [array_column($board->fresh()->content['items'], null, 'id')['card']['opacity'], array_column($board->fresh()->content['items'], null, 'id')['shot']['focusY']]);
+
+        // Read back as they were said
+        UserServer::actingAs($this->user)
+            ->tool(GetBoard::class, ['ref_id' => $board->ref_id, 'outline' => false])
+            ->assertStructuredContent(fn (AssertableJson $json) => $json
+                ->where('items', fn ($items) => collect($items)->firstWhere('id', 'card')['radius'] == 20
+                    && collect($items)->firstWhere('id', 'card')['hug'] === true
+                    && collect($items)->firstWhere('id', 'slide')['notes'] === 'Say hello.')
+                ->etc());
+
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'add_items' => [['kind' => 'rect', 'opacity' => 2]]])
+            ->assertHasErrors();
+    }
+
+    public function test_a_connector_pinned_to_nothing_belongs_to_the_frame_its_ends_are_in()
+    {
+        $board = $this->board();
+
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'add_items' => [
+                ['id' => 'inside', 'kind' => 'arrow', 'from' => ['x' => 100, 'y' => 100], 'to' => ['x' => 300, 'y' => 200]],
+                ['id' => 'outside', 'kind' => 'arrow', 'from' => ['x' => 5000, 'y' => 5000], 'to' => ['x' => 5200, 'y' => 5000]],
+            ]])
+            ->assertOk();
+
+        UserServer::actingAs($this->user)
+            ->tool(GetBoard::class, ['ref_id' => $board->ref_id, 'frame' => 'plan', 'outline' => true])
+            ->assertStructuredContent(fn (AssertableJson $json) => $json
+                ->where('items', fn ($items) => collect($items)->pluck('id')->contains('inside') && ! collect($items)->pluck('id')->contains('outside'))
+                ->etc());
+    }
+
+    public function test_a_path_is_drawn_from_svg_path_data_with_fades_glows_and_effects()
+    {
+        $board = $this->board();
+
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'add_items' => [
+                // Where its points say: a wave from 100,300 to 500,300 bulging up to 150
+                ['id' => 'wave', 'kind' => 'path', 'd' => 'M100 300 C200 100 400 100 500 300', 'lineWidth' => 6, 'strokeStops' => [['at' => 0, 'color' => '#4f46e5'], ['at' => 0.5, 'color' => '#06b6d4'], ['at' => 1, 'color' => '#22c55e']], 'glow' => '#06b6d4', 'glowSize' => 30],
+                // Its points measured from the corner given, relative ones too
+                ['id' => 'blob', 'kind' => 'path', 'd' => 'm0 50 a50 50 0 1 1 100 0 a50 50 0 1 1 -100 0 z', 'x' => 1000, 'y' => 1000, 'fill' => '#6366f1', 'gradientType' => 'radial', 'gradientStops' => [['at' => 0, 'color' => '#a5b4fc'], ['at' => 1, 'color' => '#312e81']], 'blur' => 4, 'blend' => 'screen'],
+                ['id' => 'kicker', 'kind' => 'text', 'text' => 'network intelligence', 'caps' => true, 'letterSpacing' => 3, 'color' => '#6366f1', 'colorTo' => '#06b6d4', 'fontSize' => 14],
+            ]])
+            ->assertOk();
+
+        $items = array_column($board->fresh()->content['items'], null, 'id');
+        $wave = $items['wave'];
+        $this->assertSame('M0 150 C100 -50 300 -50 400 150', $wave['d']);
+        $this->assertEquals([100, 150, 400, 150], [$wave['x'], $wave['y'], $wave['width'], $wave['height']]);
+        $this->assertSame(['#4f46e5', '#06b6d4', '#22c55e'], array_column($wave['strokeStops'], 'color'));
+        $this->assertSame('#06b6d4', $wave['glow']);
+        // A circle of 100 drawn from 1000,1000 down 0..100
+        $blob = $items['blob'];
+        $this->assertEquals([1000, 1000, 100, 100], [round($blob['x']), round($blob['y']), round($blob['width']), round($blob['height'])]);
+        $this->assertSame(['radial', 'screen', 4.0], [$blob['gradientType'], $blob['blend'], (float) $blob['blur']]);
+        $this->assertSame([true, 3.0, '#06b6d4'], [$items['kicker']['caps'], (float) $items['kicker']['letterSpacing'], $items['kicker']['colorTo']]);
+
+        // Scaled by a size of its own; its points stay as they were
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'update_items' => [['id' => 'wave', 'width' => 800]]])
+            ->assertOk();
+        $wave = array_column($board->fresh()->content['items'], null, 'id')['wave'];
+        $this->assertEquals([800, 400, 'M0 150 C100 -50 300 -50 400 150'], [$wave['width'], $wave['viewWidth'], $wave['d']]);
+
+        // New points are where they say, the size they say -- not squeezed
+        // into the old box at its old corner
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'update_items' => [['id' => 'wave', 'd' => 'M2000 900 L2600 900 L2600 1300']]])
+            ->assertOk();
+        $wave = array_column($board->fresh()->content['items'], null, 'id')['wave'];
+        $this->assertEquals([2000, 900, 600, 400, 'M0 0 L600 0 L600 400'], [$wave['x'], $wave['y'], $wave['width'], $wave['height'], $wave['d']]);
+
+        // Unless a place or a size is sent with them
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'update_items' => [['id' => 'wave', 'd' => 'M0 0 L100 0', 'x' => 50, 'y' => 60, 'width' => 300]]])
+            ->assertOk();
+        $wave = array_column($board->fresh()->content['items'], null, 'id')['wave'];
+        $this->assertEquals([50, 60, 300, 100], [$wave['x'], $wave['y'], $wave['width'], $wave['viewWidth']]);
+
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'add_items' => [['kind' => 'path', 'd' => 'M0 0 L1 1', 'blend' => 'dissolve']]])
+            ->assertHasErrors();
+    }
+
     public function test_a_board_open_somewhere_is_changed_item_by_item_in_the_live_copy()
     {
         config(['services.collab.url' => 'http://collab.test', 'services.collab.secret' => 'secret']);
@@ -301,6 +434,8 @@ class McpBoardPartsTest extends TestCase
             ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'add_items' => [
                 ['id' => 'under', 'kind' => 'image', 'src' => '/drive/files/abc', 'x' => 420, 'y' => 120, 'width' => 100, 'height' => 100],
                 ['id' => 'long', 'kind' => 'rect', 'text' => str_repeat('word ', 40), 'x' => 600, 'y' => 300, 'width' => 120, 'height' => 50],
+                // A slide's backdrop, locked under everything: not an overlap
+                ['id' => 'backdrop', 'kind' => 'rect', 'locked' => true, 'fill' => '#f8fafc', 'x' => 0, 'y' => 0, 'width' => 800, 'height' => 450],
             ]])
             ->assertOk();
 

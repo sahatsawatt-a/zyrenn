@@ -44,11 +44,40 @@ final class BoardParts
             if (($item['kind'] ?? '') === BoardItems::CONNECTOR) {
                 $homes[(string) $item['id']] = $homes[(string) ($item['from']['item'] ?? '')]
                     ?? $homes[(string) ($item['to']['item'] ?? '')]
-                    ?? self::LOOSE;
+                    ?? self::looseHome($item, $frames);
             }
         }
 
         return $homes;
+    }
+
+    /**
+     * Where a connector pinned to nothing belongs: the smallest frame holding
+     * the middle of its loose ends, as on the canvas (layers.ts, groupKeys).
+     *
+     * @param  array<string, mixed>  $connector
+     * @param  list<array<string, mixed>>  $frames
+     */
+    private static function looseHome(array $connector, array $frames): string
+    {
+        $ends = array_values(array_filter(
+            [$connector['from'] ?? null, $connector['to'] ?? null],
+            fn ($end) => is_array($end) && ! isset($end['item']) && is_numeric($end['x'] ?? null) && is_numeric($end['y'] ?? null),
+        ));
+
+        if ($ends === []) {
+            return self::LOOSE;
+        }
+
+        $middle = [
+            'x' => array_sum(array_map(fn (array $end) => (float) $end['x'], $ends)) / count($ends),
+            'y' => array_sum(array_map(fn (array $end) => (float) $end['y'], $ends)) / count($ends),
+            'width' => 0, 'height' => 0, 'kind' => 'point',
+        ];
+        $holding = array_filter($frames, fn (array $frame) => self::sitsIn($middle, $frame));
+        usort($holding, fn (array $a, array $b) => ($a['width'] * $a['height']) <=> ($b['width'] * $b['height']));
+
+        return isset($holding[0]) ? (string) $holding[0]['id'] : self::LOOSE;
     }
 
     /**
@@ -168,9 +197,10 @@ final class BoardParts
     /**
      * Things in the same frame that lie over one another -- a label hidden
      * under a picture, two cards dealt onto one spot. Frames, connectors and
-     * ink are left out, as are hidden items. Some overlaps are meant (a box
-     * drawn round a picture), so this says where to look rather than what
-     * is wrong.
+     * ink are left out, as are hidden items and a slide's backdrop -- a
+     * locked item covering its whole frame, which lies under everything on
+     * it by design. Some overlaps are meant (a box drawn round a picture),
+     * so this says where to look rather than what is wrong.
      *
      * @param  list<array<string, mixed>>  $items  as the canvas keeps them
      * @return list<array{frame: string, items: array{string, string}, overlap: float}>
@@ -178,10 +208,18 @@ final class BoardParts
     public static function overlapping(array $items, int $most = 50): array
     {
         $homes = self::homes($items);
+        $frames = array_column(array_filter($items, fn (array $item) => ($item['kind'] ?? '') === 'frame'), null, 'id');
+        $backdrop = function (array $item) use ($homes, $frames): bool {
+            $frame = $frames[$homes[(string) $item['id']] ?? self::LOOSE] ?? null;
+
+            return ($item['locked'] ?? false) === true && $frame !== null
+                && 0.9 * $frame['width'] * $frame['height'] <= $item['width'] * $item['height'];
+        };
         $boxes = array_values(array_filter(
             $items,
             fn (array $item) => ! in_array($item['kind'] ?? '', ['frame', BoardItems::CONNECTOR, 'draw'], true)
-                && ($item['hidden'] ?? false) !== true,
+                && ($item['hidden'] ?? false) !== true
+                && ! $backdrop($item),
         ));
         $found = [];
 

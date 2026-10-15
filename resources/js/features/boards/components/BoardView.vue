@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { useElementSize } from '@vueuse/core';
 import type Konva from 'konva';
-import { computed, ref, useTemplateRef, watch } from 'vue';
+import { computed, nextTick, ref, useTemplateRef, watch } from 'vue';
 import { Group, Layer, Stage } from 'vue-konva';
 import {
     attachmentsOf,
     connectorHops,
     connectorPoints,
 } from '@/features/boards/composables/connectors';
+import { blending, cacheBlur } from '@/features/boards/composables/blur';
+import type { Deck, SlideDecor } from '@/features/boards/composables/deck';
+import { provideDeck } from '@/features/boards/composables/deck';
 import { boundsOf, boundsOfAll } from '@/features/boards/composables/geometry';
 import type { Item } from '@/features/boards/composables/items';
 import { hydrate, isConnector } from '@/features/boards/composables/items';
@@ -35,11 +38,30 @@ const props = withDefaults(
         bare?: boolean;
         /** Light whatever the page is: a picture or a PDF is on paper. */
         plain?: boolean;
+        /** Its deck, for what is written on every slide, and its title. */
+        deck?: Deck | null;
+        title?: string;
+        /** What each slide says, worked out already: a slide on its own. */
+        decor?: Record<string, SlideDecor> | null;
     }>(),
-    { frame: null, padding: 16, bare: false, plain: false },
+    {
+        frame: null,
+        padding: 16,
+        bare: false,
+        plain: false,
+        deck: null,
+        title: '',
+        decor: null,
+    },
 );
 
 provideBoardTheme(() => drawn.value, { plain: props.plain });
+provideDeck(
+    () => drawn.value,
+    () => props.deck,
+    () => props.title,
+    () => props.decor,
+);
 
 const wrapper = useTemplateRef<HTMLDivElement>('wrapper');
 const { width, height } = useElementSize(wrapper);
@@ -116,7 +138,7 @@ const view = computed(() => {
     };
 });
 
-const { imageFor } = useImageCache();
+const { imageFor, decoded: imagesSeen } = useImageCache();
 
 // The view as a camera, for the formulae laid over it
 const camera = {
@@ -125,6 +147,21 @@ const camera = {
 };
 
 const layer = useTemplateRef<{ getNode: () => Konva.Layer }>('layer');
+
+// Softened items drawn again whenever what is shown changes, as on the canvas
+watch(
+    () => [shown.value, imagesSeen.value],
+    async () => {
+        await nextTick();
+
+        for (const item of shown.value) {
+            if (item.blur) {
+                cacheBlur(layer.value?.getNode().findOne(`#${item.id}`), item);
+            }
+        }
+    },
+    { deep: true, immediate: true },
+);
 const hovering = ref(false);
 const videos = useVideos(shown, () => layer.value?.getNode());
 
@@ -181,12 +218,16 @@ const hops = computed(() => connectorHops(shown.value, path));
                         x: item.x,
                         y: item.y,
                         rotation: item.rotation,
+                        opacity: item.opacity ?? 1,
+                        ...blending(item),
                         width: item.width,
                         height: item.height,
                         listening: item.kind === 'video',
                     }"
                 >
+                    <!-- Afresh in another design, as on the canvas (BoardNode) -->
                     <BoardItem
+                        :key="item.variant ?? ''"
                         :item="item"
                         :selected="false"
                         :editing="false"

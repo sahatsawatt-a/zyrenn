@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import type Konva from 'konva';
+import { computed, nextTick, ref, watch } from 'vue';
 import { Group } from 'vue-konva';
+import { blending, cacheBlur } from '@/features/boards/composables/blur';
 import type { Item } from '@/features/boards/composables/items';
 import { isConnector } from '@/features/boards/composables/items';
 import type { Hops } from '@/lib/lineHops';
@@ -43,6 +45,8 @@ const config = computed(() => ({
     x: props.item.x,
     y: props.item.y,
     rotation: props.item.rotation,
+    opacity: props.item.opacity ?? 1,
+    ...blending(props.item),
     width: props.item.width,
     height: props.item.height,
     // Locked: still drawn, but the pointer goes straight through it
@@ -52,11 +56,27 @@ const config = computed(() => ({
     draggable: props.canDrag && !isConnector(props.item),
     dragBoundFunc: dragBound.value,
 }));
+
+// A softened item is drawn again whenever anything about it changes
+const group = ref<{ getNode: () => Konva.Node } | null>(null);
+
+watch(
+    () => [props.item, props.selected, props.image, props.video, props.playing],
+    async () => {
+        await nextTick();
+        cacheBlur(group.value?.getNode(), props.item);
+    },
+    { deep: true, immediate: true },
+);
 </script>
 
 <template>
-    <Group :config="config">
+    <Group ref="group" :config="config">
+        <!-- Drawn afresh in another design: the canvas puts a part that
+             comes and goes on top of the rest, wherever it is written here,
+             so a badge's disc would cover its icon -->
         <BoardItem
+            :key="item.variant ?? ''"
             :item="item"
             :selected="selected"
             :editing="editing"

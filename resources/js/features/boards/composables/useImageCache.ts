@@ -15,29 +15,33 @@ export function useImageCache() {
     const loading = new Set<string>();
 
     const imageFor = (item: Item): HTMLImageElement | undefined => {
-        if (!item.src) {
+        // A video's picture is its poster, not the video itself
+        const src = item.kind === 'video' ? item.poster : item.src;
+
+        if (!src) {
             return undefined;
         }
 
-        const ready = decoded.value.get(item.src);
+        const ready = decoded.value.get(src);
 
-        if (ready || loading.has(item.src)) {
+        if (ready || loading.has(src)) {
             return ready;
         }
 
-        loading.add(item.src);
+        loading.add(src);
 
         const image = new window.Image();
 
         image.onload = () => {
-            decoded.value = new Map(decoded.value).set(item.src, image);
-            loading.delete(item.src);
+            decoded.value = new Map(decoded.value).set(src, image);
+            loading.delete(src);
         };
-        image.onerror = () => loading.delete(item.src);
-        image.src = item.src;
+        image.onerror = () => loading.delete(src);
+        image.src = src;
 
         return undefined;
     };
 
-    return { imageFor };
+    // The pictures decoded so far: changes as each one arrives
+    return { imageFor, decoded };
 }

@@ -2,6 +2,7 @@
 import { Head } from '@inertiajs/vue3';
 import { onMounted } from 'vue';
 import BoardView from '@/features/boards/components/BoardView.vue';
+import type { Deck } from '@/features/boards/composables/deck';
 import type { Item } from '@/features/boards/composables/items';
 import { markEditorReady } from '@/lib/printReady';
 
@@ -13,6 +14,8 @@ const props = defineProps<{
     mode: 'picture' | 'pages';
     frame: string | null;
     frames: string[];
+    deck: Deck | null;
+    title: string;
 }>();
 
 // A board with no frames prints as one page of everything
@@ -31,6 +34,8 @@ onMounted(() => markEditorReady());
             :frame="frame"
             :bare="!!frame"
             :padding="frame ? 0 : 24"
+            :deck="deck"
+            :title="title"
             plain
         />
     </div>
@@ -46,6 +51,8 @@ onMounted(() => markEditorReady());
                 :frame="page"
                 :bare="!!page"
                 :padding="page ? 0 : 24"
+                :deck="deck"
+                :title="title"
                 plain
             />
         </div>
