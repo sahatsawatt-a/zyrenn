@@ -1,11 +1,21 @@
 <script setup lang="ts">
-import { Form, Head, usePage } from '@inertiajs/vue3';
-import { Check, Copy, KeyRound } from '@lucide/vue';
+import { Form, Head, router, usePage } from '@inertiajs/vue3';
+import { Check, Copy, KeyRound, SlidersHorizontal } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import McpController from '@/actions/App/Http/Controllers/Settings/McpController';
 import Heading from '@/components/common/Heading.vue';
 import InputError from '@/components/common/InputError.vue';
+import KeyAccess from '@/components/settings/KeyAccess.vue';
+import type { KeyTool, Level } from '@/components/settings/KeyAccess.vue';
 import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { copyToClipboard } from '@/lib/utils';
@@ -16,12 +26,70 @@ type McpToken = {
     name: string;
     created_at_diff: string | null;
     last_used_at_diff: string | null;
+    parts: Record<string, Level>;
 };
 
 const props = defineProps<{
     endpoint: string;
     tokens: McpToken[];
+    parts: Record<string, string>;
+    tools: Record<string, KeyTool[]>;
 }>();
+
+// ------------------------------------------------------------ What a key may do
+const everything = (level: Level = 'change') =>
+    Object.fromEntries(
+        Object.keys(props.parts).map((part) => [part, level]),
+    ) as Record<string, Level>;
+
+// A new key may do everything, unless chosen otherwise
+const choosing = ref(false);
+const access = ref(everything());
+
+/** What a key may do, in a few words. */
+function said(levels: Record<string, Level>) {
+    const named = (level: Level) =>
+        Object.keys(props.parts)
+            .filter((part) => levels[part] === level)
+            .map((part) => props.parts[part]);
+    const change = named('change');
+    const read = named('read');
+    const all = Object.keys(props.parts).length;
+
+    if (change.length === all) return 'Everything';
+    if (read.length === all) return 'Read only, everything';
+    if (!change.length && !read.length) return 'Nothing';
+
+    return [
+        change.length ? `Change: ${change.join(', ')}` : null,
+        read.length ? `Read: ${read.join(', ')}` : null,
+    ]
+        .filter(Boolean)
+        .join(' · ');
+}
+
+// An existing key's, changed in a dialog
+const editing = ref<McpToken | null>(null);
+const editLevels = ref<Record<string, Level>>({});
+const saving = ref(false);
+
+function editAccess(token: McpToken) {
+    editing.value = token;
+    editLevels.value = { ...token.parts };
+}
+
+function saveAccess() {
+    if (!editing.value) return;
+
+    saving.value = true;
+    router.visit(McpController.update.url(editing.value.id), {
+        method: 'patch',
+        data: { parts: editLevels.value },
+        preserveScroll: true,
+        onSuccess: () => (editing.value = null),
+        onFinish: () => (saving.value = false),
+    });
+}
 
 defineOptions({
     layout: {
@@ -344,7 +412,11 @@ async function copy(key: string, text: string): Promise<void> {
             <Form
                 v-bind="McpController.store.form()"
                 reset-on-success
-                class="flex flex-col gap-2 sm:flex-row sm:items-end"
+                @success="
+                    choosing = false;
+                    access = everything();
+                "
+                class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end"
                 v-slot="{ errors, processing }"
             >
                 <div class="grid flex-1 gap-2">
@@ -358,10 +430,34 @@ async function copy(key: string, text: string): Promise<void> {
                     />
                     <InputError :message="errors.name" />
                 </div>
+                <input
+                    v-for="(level, part) in access"
+                    :key="part"
+                    type="hidden"
+                    :name="`parts[${part}]`"
+                    :value="level"
+                />
+                <Button
+                    type="button"
+                    variant="outline"
+                    :aria-expanded="choosing"
+                    data-test="key-choose"
+                    @click="choosing = !choosing"
+                >
+                    <SlidersHorizontal />
+                    {{ said(access) }}
+                </Button>
                 <Button type="submit" :disabled="processing">
                     <KeyRound />
                     Create token
                 </Button>
+                <div v-if="choosing" class="basis-full space-y-1 sm:pt-1">
+                    <p class="text-muted-foreground text-xs">
+                        What a client using this token may do. It sees only the
+                        tools you allow.
+                    </p>
+                    <KeyAccess v-model="access" :parts="parts" :tools="tools" />
+                </div>
             </Form>
 
             <div
@@ -511,6 +607,12 @@ async function copy(key: string, text: string): Promise<void> {
                         <p class="truncate text-sm font-medium">
                             {{ token.name }}
                         </p>
+                        <p
+                            class="text-muted-foreground truncate text-xs"
+                            data-test="key-said"
+                        >
+                            {{ said(token.parts) }}
+                        </p>
                         <p class="text-muted-foreground text-xs">
                             Created {{ token.created_at_diff }} ·
                             {{
@@ -520,23 +622,60 @@ async function copy(key: string, text: string): Promise<void> {
                             }}
                         </p>
                     </div>
-                    <Form
-                        v-bind="McpController.destroy.form(token.id)"
-                        :options="{ preserveScroll: true }"
-                        v-slot="{ processing }"
-                    >
+                    <div class="flex shrink-0 items-center gap-1">
                         <Button
-                            type="submit"
                             variant="ghost"
                             size="sm"
-                            class="text-destructive"
-                            :disabled="processing"
+                            :data-test="`key-edit-${token.id}`"
+                            @click="editAccess(token)"
                         >
-                            Revoke
+                            Access
                         </Button>
-                    </Form>
+                        <Form
+                            v-bind="McpController.destroy.form(token.id)"
+                            :options="{ preserveScroll: true }"
+                            v-slot="{ processing }"
+                        >
+                            <Button
+                                type="submit"
+                                variant="ghost"
+                                size="sm"
+                                class="text-destructive"
+                                :disabled="processing"
+                            >
+                                Revoke
+                            </Button>
+                        </Form>
+                    </div>
                 </li>
             </ul>
         </div>
+
+        <Dialog
+            :open="editing !== null"
+            @update:open="!$event && (editing = null)"
+        >
+            <DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+                <DialogHeader>
+                    <DialogTitle>What “{{ editing?.name }}” may do</DialogTitle>
+                    <DialogDescription>
+                        A client using it sees only these tools, from its next
+                        call.
+                    </DialogDescription>
+                </DialogHeader>
+                <KeyAccess v-model="editLevels" :parts="parts" :tools="tools" />
+                <DialogFooter>
+                    <Button variant="outline" @click="editing = null"
+                        >Cancel</Button
+                    >
+                    <Button
+                        :disabled="saving"
+                        data-test="key-save"
+                        @click="saveAccess"
+                        >Save</Button
+                    >
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     </div>
 </template>

@@ -73,7 +73,8 @@ class UpdateTrip extends TripTool
                 'position' => $schema->integer()->min(1)->description('Where it goes: 1 is first. At the end unless said.'),
                 'mode' => $schema->string()->enum(TripDocument::TRAVEL_MODES),
                 'start' => $schema->string()->description('HH:MM.'),
-                'stops' => $schema->array()->max(TripDocument::MAX_STOPS)->items($this->placeArgument($schema)),
+                // A place's fields are written out once, in add_stops: each copy is read for nothing
+                'stops' => $schema->array()->max(TripDocument::MAX_STOPS)->items($schema->object())->description('Its stops, each as in add_stops (without "day").'),
             ])),
             'update_days' => $schema->array()->max(TripDocument::MAX_DAYS)->items($schema->object([
                 'day' => $day()->required(),
@@ -82,10 +83,12 @@ class UpdateTrip extends TripTool
             ])),
             'delete_days' => $schema->array()->max(TripDocument::MAX_DAYS)->items($day())->description('Days to take off, with their stops.'),
             'add_stops' => $schema->array()->max(TripDocument::MAX_STOPS)->items($this->placeArgument($schema, ['day' => $day()->required(), 'position' => $position()])),
-            'update_stops' => $schema->array()->max(TripDocument::MAX_STOPS)->items($this->placeArgument($schema, ['id' => $id(), 'day' => $day(), 'position' => $position()])),
+            'update_stops' => $schema->array()->max(TripDocument::MAX_STOPS)->items($schema->object(['id' => $id(), 'day' => $day(), 'position' => $position()]))
+                ->description('Stops to change or move: each with its "id" and just the fields to change, named as in add_stops.'),
             'delete_stops' => $schema->array()->max(TripDocument::MAX_STOPS)->items($schema->string()->max(32)),
             'add_stays' => $schema->array()->max(TripDocument::MAX_STAYS)->items($this->placeArgument($schema, $stay())),
-            'update_stays' => $schema->array()->max(TripDocument::MAX_STAYS)->items($this->placeArgument($schema, ['id' => $id(), ...$stay()])),
+            'update_stays' => $schema->array()->max(TripDocument::MAX_STAYS)->items($schema->object(['id' => $id()]))
+                ->description('Stays to change: each with its "id" and just the fields to change, named as in add_stays.'),
             'delete_stays' => $schema->array()->max(TripDocument::MAX_STAYS)->items($schema->string()->max(32)),
             'set_rides' => $schema->array()->max(TripDocument::MAX_LEGS)->items($ride(true)),
             'clear_rides' => $schema->array()->max(TripDocument::MAX_LEGS)->items($ride(false)),

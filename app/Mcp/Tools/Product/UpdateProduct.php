@@ -7,6 +7,7 @@ use App\Models\Product\ProductElement;
 use App\Models\Product\ProductLink;
 use App\Models\Project;
 use App\Models\User;
+use App\Support\Live\Listed;
 use App\Support\Product\Keeper;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\DB;
@@ -181,6 +182,7 @@ class UpdateProduct extends ProductTool
             $part = $find($one['code'], "tickets.{$at}.code");
 
             ($one['linked'] ?? true) ? $part->tickets()->syncWithoutDetaching([$ticket->id]) : $part->tickets()->detach($ticket->id);
+            Listed::changed($part);
         }
 
         foreach ($validated['remove'] ?? [] as $at => $code) {

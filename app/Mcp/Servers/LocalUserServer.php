@@ -44,6 +44,7 @@ class LocalUserServer extends UserServer
 
         $token->forceFill(['last_used_at' => now()])->save();
 
-        return $user;
+        // So what the key allows holds here too, as over HTTP
+        return $user->withAccessToken($token);
     }
 }

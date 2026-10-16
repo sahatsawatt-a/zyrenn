@@ -7,6 +7,9 @@ use App\Mcp\Tools\Boards\DeleteBoard;
 use App\Mcp\Tools\Boards\GetBoard;
 use App\Mcp\Tools\Boards\ListBoardFolders;
 use App\Mcp\Tools\Boards\ListBoards;
+use App\Mcp\Tools\Boards\ListMyShapes;
+use App\Mcp\Tools\Boards\PlaceMyShape;
+use App\Mcp\Tools\Boards\SaveMyShape;
 use App\Mcp\Tools\Boards\UpdateBoard;
 use App\Mcp\Tools\BrowserChecks\CloseBrowserPage;
 use App\Mcp\Tools\BrowserChecks\DoBrowserStep;
@@ -118,6 +121,9 @@ final class Toolset
         GetBoard::class,
         CreateBoard::class,
         UpdateBoard::class,
+        ListMyShapes::class,
+        PlaceMyShape::class,
+        SaveMyShape::class,
         DeleteBoard::class,
         ListTables::class,
         ListTableFolders::class,

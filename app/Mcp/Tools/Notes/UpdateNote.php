@@ -13,7 +13,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tools\Annotations\IsIdempotent;
 
 #[IsIdempotent]
-#[Description('Update or move a note. Only the fields you pass change. "markdown" replaces the whole body -- to change part of a note, use edit-note, which sends only what changes and leaves alone anyone typing in it live. To add a picture, upload it with upload-file and paste the "markdown" line it returns into the body.')]
+#[Description('Update or move a note. Only the fields you pass change. "markdown" replaces the whole body, written as create-note says -- to change part of a note, use edit-note, which sends only what changes and leaves alone anyone typing in it live. To add a picture, upload it with upload-file and paste the "markdown" line it returns into the body.')]
 class UpdateNote extends NoteTool
 {
     protected function arguments(JsonSchema $schema): array

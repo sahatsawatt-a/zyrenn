@@ -2,11 +2,13 @@
 
 namespace App\Mcp\Tools;
 
+use App\Mcp\Scopes;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Laravel\Mcp\Request;
@@ -39,6 +41,18 @@ abstract class UserTool extends Tool
             : [];
 
         return [...$user, ...$this->arguments($schema)];
+    }
+
+    /**
+     * Offered only when the key in use allows it (Scopes): one whose parts
+     * were chosen sees, and may call, just those tools. The admin server's
+     * tools are for whoever may use that server at all.
+     */
+    public function shouldRegister(): bool
+    {
+        $user = Auth::user();
+
+        return $this->global || ! $user instanceof User || Scopes::allows($user->currentAccessToken(), $this);
     }
 
     /**

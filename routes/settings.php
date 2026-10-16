@@ -30,6 +30,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('settings/mcp', [McpController::class, 'edit'])->name('mcp.edit');
     Route::post('settings/mcp/tokens', [McpController::class, 'store'])->name('mcp.tokens.store');
+    Route::patch('settings/mcp/tokens/{token}', [McpController::class, 'update'])->name('mcp.tokens.update');
     Route::delete('settings/mcp/tokens/{token}', [McpController::class, 'destroy'])->name('mcp.tokens.destroy');
 
     // Where chats and workflows reach outside -- hosts, bots, keys: one's own
