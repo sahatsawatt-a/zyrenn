@@ -3,6 +3,7 @@ import {
     CircleCheck,
     CircleDashed,
     CircleDot,
+    CirclePause,
     CircleSlash,
     Sparkles,
 } from '@lucide/vue';
@@ -10,7 +11,12 @@ import type { Component } from 'vue';
 
 export type TicketType = 'bug' | 'feature';
 
-export type TicketStatus = 'open' | 'in_progress' | 'done' | 'dropped';
+export type TicketStatus =
+    | 'open'
+    | 'in_progress'
+    | 'on_hold'
+    | 'done'
+    | 'dropped';
 
 export type TicketPriority = 'low' | 'normal' | 'high';
 
@@ -24,6 +30,8 @@ export type Ticket = {
     number: number;
     type: TicketType;
     status: TicketStatus;
+    // What it waits on, or why it won't be done
+    reason: string | null;
     priority: TicketPriority;
     title: string;
     unit: string;
@@ -48,6 +56,7 @@ export type TicketDraft = {
     body: string;
     priority: TicketPriority;
     status: TicketStatus;
+    reason: string;
     assigned_to: number | null;
     pictures: TicketPicture[];
 };
@@ -91,6 +100,13 @@ export const STATUSES: {
         icon: CircleDot,
         tone: 'text-amber-600 dark:text-amber-400',
     },
+    // To be done, but waiting on something first
+    {
+        value: 'on_hold',
+        label: 'On hold',
+        icon: CirclePause,
+        tone: 'text-sky-600 dark:text-sky-400',
+    },
     {
         value: 'done',
         label: 'Done',
@@ -104,6 +120,20 @@ export const STATUSES: {
         tone: 'text-muted-foreground',
     },
 ];
+
+// The statuses a ticket is only put in with a word on why (Ticket::NEEDS_REASON)
+export const REASONS: Partial<
+    Record<TicketStatus, { asks: string; hint: string }>
+> = {
+    on_hold: {
+        asks: 'What it waits on',
+        hint: 'e.g. Enough runs to go by, or #12 first',
+    },
+    dropped: {
+        asks: 'Why it won’t be done',
+        hint: 'e.g. Covered by #8, or not worth what it costs',
+    },
+};
 
 export const statusOf = (value: TicketStatus) =>
     STATUSES.find((status) => status.value === value) ?? STATUSES[0];
@@ -132,6 +162,7 @@ export const blankDraft = (type: TicketType = 'bug'): TicketDraft => ({
     body: '',
     priority: 'normal',
     status: 'open',
+    reason: '',
     assigned_to: null,
     pictures: [],
 });
@@ -143,6 +174,7 @@ export const draftOf = (ticket: Ticket): TicketDraft => ({
     body: ticket.body,
     priority: ticket.priority,
     status: ticket.status,
+    reason: ticket.reason ?? '',
     assigned_to: ticket.assigned_to?.id ?? null,
     pictures: ticket.pictures.map((picture) => ({ ...picture })),
 });

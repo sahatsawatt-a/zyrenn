@@ -8,6 +8,7 @@ use App\Models\Product\ProductRequest;
 use App\Models\Product\Requirement;
 use App\Models\Project;
 use App\Models\User;
+use App\Support\Live\Listed;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -194,6 +195,11 @@ final class Keeper
 
         if (array_key_exists('tickets', $changes)) {
             $requirement->tickets()->sync($changes['tickets']);
+        }
+
+        // What it is checked against or done by is not a save of its own
+        if (array_key_exists('elements', $changes) || array_key_exists('tickets', $changes)) {
+            Listed::changed($requirement);
         }
 
         return $requirement;

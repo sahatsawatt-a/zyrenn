@@ -12,6 +12,7 @@ use App\Models\Product\Requirement;
 use App\Models\Project;
 use App\Models\Ticket\Ticket;
 use App\Support\Ai\AiFailed;
+use App\Support\Live\Listed;
 use App\Support\Product\Analyst;
 use App\Support\Product\Keeper;
 use App\Support\Product\Tracker;
@@ -151,6 +152,7 @@ class ProductController extends Controller
         $ticket = $project->tickets()->where('number', $validated['number'])->firstOrFail();
 
         $validated['linked'] ? $element->tickets()->syncWithoutDetaching([$ticket->id]) : $element->tickets()->detach($ticket->id);
+        Listed::changed($element);
 
         return back();
     }

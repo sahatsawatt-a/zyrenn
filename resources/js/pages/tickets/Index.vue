@@ -16,11 +16,13 @@ import SegmentTabs from '@/components/common/SegmentTabs.vue';
 import MediaViewer from '@/components/media/MediaViewer.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useSpaceChanges } from '@/composables/useSpaceChanges';
 import TicketBoard from '@/features/tickets/components/TicketBoard.vue';
 import TicketDialog from '@/features/tickets/components/TicketDialog.vue';
 import TicketList from '@/features/tickets/components/TicketList.vue';
 import TicketPick from '@/features/tickets/components/TicketPick.vue';
-import { TYPES, UNITS } from '@/features/tickets/tickets';
+import TicketReasonDialog from '@/features/tickets/components/TicketReasonDialog.vue';
+import { REASONS, TYPES, UNITS } from '@/features/tickets/tickets';
 import type {
     Ticket,
     TicketDraft,
@@ -40,6 +42,9 @@ const props = defineProps<{
 
 const page = usePage();
 const project = computed(() => page.props.project!);
+
+// Others, MCP and browser checks file and move tickets too: the list follows
+useSpaceChanges(['tickets'], ['tickets']);
 
 // Its name in the bar at the top, as every page has
 watchEffect(() =>
@@ -223,12 +228,36 @@ const save = (draft: TicketDraft) => {
     });
 };
 
-const setStatus = (ticket: Ticket, status: TicketStatus) =>
+// On hold or won't do is asked why first; the rest move as they are dropped
+const moving = ref<{ ticket: Ticket; status: TicketStatus } | null>(null);
+const asking = ref(false);
+const reasonError = ref('');
+
+const move = (ticket: Ticket, status: TicketStatus, reason?: string) =>
     router.patch(
         update([project.value.ref_id, ticket.ref_id]).url,
-        { status },
-        { preserveScroll: true },
+        reason === undefined ? { status } : { status, reason },
+        {
+            preserveScroll: true,
+            onStart: () => (busy.value = true),
+            onFinish: () => (busy.value = false),
+            onSuccess: () => (asking.value = false),
+            onError: (problems) =>
+                (reasonError.value = problems.reason ?? problems.status ?? ''),
+        },
     );
+
+const setStatus = (ticket: Ticket, status: TicketStatus) => {
+    if (!REASONS[status]) {
+        move(ticket, status);
+
+        return;
+    }
+
+    moving.value = { ticket, status };
+    reasonError.value = '';
+    asking.value = true;
+};
 
 const discuss = () => {
     const ticket = openTicket.value;
@@ -343,6 +372,15 @@ const remove = () => {
             @save="save"
             @remove="deleting = true"
             @discuss="discuss"
+        />
+
+        <TicketReasonDialog
+            v-model:open="asking"
+            :ticket="moving?.ticket ?? null"
+            :status="moving?.status ?? 'on_hold'"
+            :error="reasonError"
+            :busy="busy"
+            @confirm="moving && move(moving.ticket, moving.status, $event)"
         />
 
         <DeleteDialog

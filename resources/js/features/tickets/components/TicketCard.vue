@@ -34,6 +34,14 @@ const kind = computed(() => TYPES[props.ticket.type]);
                 >
                 {{ ticket.title }}
             </p>
+            <!-- Why it waits, or why not: what anyone looking asks first -->
+            <p
+                v-if="ticket.reason"
+                class="text-muted-foreground mt-0.5 line-clamp-2 text-xs break-words"
+                data-test="ticket-reason-line"
+            >
+                {{ ticket.reason }}
+            </p>
             <div
                 v-if="
                     ticket.unit ||

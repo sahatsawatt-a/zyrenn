@@ -24,7 +24,7 @@ class ListTickets extends TicketTool
     {
         return [
             'status' => $schema->string()->enum([self::LEFT, self::ALL, ...Ticket::STATUSES])
-                ->description('"left" (the default) for what is open or in progress, "all", or one status: "open", "in_progress", "done", "dropped" (looked at and turned down).'),
+                ->description('"left" (the default) for what is still to be done -- open, in progress or on hold -- "all", or one status: "open", "in_progress", "on_hold" (waiting on something first: leave it until that is so), "done", "dropped" (looked at and turned down).'),
             'type' => $schema->string()->enum(Ticket::TYPES)->description('Only bugs, or only features.'),
             'unit' => $schema->string()->max(64)->description('Only those about this part of the product.'),
             'search' => $schema->string()->max(255)->description('Only those with this text in the title or the body.'),
@@ -47,7 +47,7 @@ class ListTickets extends TicketTool
 
         $tickets = $project->tickets()
             ->with('assignee:id,email')
-            ->when($status === self::LEFT, fn (Builder $query) => $query->whereIn('status', [Ticket::OPEN, Ticket::IN_PROGRESS]))
+            ->when($status === self::LEFT, fn (Builder $query) => $query->whereIn('status', Ticket::UNSETTLED))
             ->when(in_array($status, Ticket::STATUSES, true), fn (Builder $query) => $query->where('status', $status))
             ->when(isset($validated['type']), fn (Builder $query) => $query->where('type', $validated['type']))
             ->when(isset($validated['unit']), fn (Builder $query) => $query->whereRaw('lower(unit) = ?', [mb_strtolower(trim($validated['unit']))]))

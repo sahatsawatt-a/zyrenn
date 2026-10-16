@@ -3,6 +3,7 @@
 namespace App\Models\Product;
 
 use App\Models\Concerns\HasRefId;
+use App\Models\Concerns\TellsLists;
 use App\Models\Project;
 use App\Models\Ticket\Ticket;
 use App\Models\User;
@@ -36,7 +37,7 @@ use Illuminate\Support\Carbon;
 #[Fillable(['name', 'summary', 'status', 'shared', 'parent_id', 'position'])]
 class ProductElement extends Model
 {
-    use HasRefId;
+    use HasRefId, TellsLists;
 
     public const COMPONENT = 'component';
 

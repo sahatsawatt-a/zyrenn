@@ -117,6 +117,53 @@ class McpTicketsTest extends TestCase
             );
     }
 
+    public function test_a_ticket_waiting_on_something_is_on_hold_and_still_left_to_do()
+    {
+        $later = Ticket::file($this->project, $this->owner, ['type' => 'feature', 'title' => 'Suggest time limits', 'unit' => 'Browser checks']);
+        Ticket::file($this->project, $this->owner, ['type' => 'bug', 'title' => 'Fixed bug', 'unit' => 'Boards', 'status' => Ticket::DONE]);
+
+        // Not without saying what it waits on
+        UserServer::actingAs($this->owner)
+            ->tool(UpdateTicket::class, ['project' => 'Lakeshore', 'number' => $later->number, 'status' => 'on_hold'])
+            ->assertHasErrors(['what it is waiting on']);
+        $this->assertSame(Ticket::OPEN, $later->fresh()->status);
+
+        UserServer::actingAs($this->owner)
+            ->tool(UpdateTicket::class, ['project' => 'Lakeshore', 'number' => $later->number, 'status' => 'on_hold', 'reason' => ' Enough runs to go by '])
+            ->assertOk()
+            ->assertStructuredContent(fn (AssertableJson $json) => $json->where('reason', 'Enough runs to go by')->etc());
+        $this->assertSame(Ticket::ON_HOLD, $later->fresh()->status);
+
+        // Changing something else of it leaves the reason be
+        UserServer::actingAs($this->owner)
+            ->tool(UpdateTicket::class, ['project' => 'Lakeshore', 'number' => $later->number, 'priority' => 'high'])
+            ->assertOk();
+        $this->assertSame('Enough runs to go by', $later->fresh()->reason);
+
+        // Still to be done: in what is left, and on its own
+        UserServer::actingAs($this->owner)
+            ->tool(ListTickets::class, ['project' => 'Lakeshore'])
+            ->assertStructuredContent(fn (AssertableJson $json) => $json->has('tickets', 1)->where('tickets.0.status', 'on_hold')->etc());
+        UserServer::actingAs($this->owner)
+            ->tool(ListTickets::class, ['project' => 'Lakeshore', 'status' => 'on_hold'])
+            ->assertStructuredContent(fn (AssertableJson $json) => $json->has('tickets', 1)->etc());
+
+        // And from the page too
+        $this->actingAs($this->owner)
+            ->patch(route('projects.tickets.update', [$this->project, $later]), ['status' => 'in_progress'])
+            ->assertSessionHasNoErrors();
+        // Moved on, what it waited on is past
+        $this->assertSame(Ticket::IN_PROGRESS, $later->fresh()->status);
+        $this->assertNull($later->fresh()->reason);
+
+        $this->patch(route('projects.tickets.update', [$this->project, $later]), ['status' => 'dropped', 'reason' => ''])
+            ->assertSessionHasErrors(['reason' => 'Say why it will not be done.']);
+        $this->assertSame(Ticket::IN_PROGRESS, $later->fresh()->status);
+        $this->patch(route('projects.tickets.update', [$this->project, $later]), ['status' => 'dropped', 'reason' => 'Covered by #2'])
+            ->assertSessionHasNoErrors();
+        $this->assertSame('Covered by #2', $later->fresh()->reason);
+    }
+
     public function test_a_viewer_reads_tickets_and_nobody_outside_reaches_them()
     {
         $viewer = User::factory()->create();

@@ -4,6 +4,7 @@ namespace App\Models\Product;
 
 use App\Models\Chat\ChatMessage;
 use App\Models\Concerns\HasRefId;
+use App\Models\Concerns\TellsLists;
 use App\Models\Project;
 use App\Models\Ticket\Ticket;
 use Illuminate\Database\Eloquent\Model;
@@ -32,7 +33,7 @@ use Illuminate\Support\Carbon;
  */
 class ProductRequest extends Model
 {
-    use HasRefId;
+    use HasRefId, TellsLists;
 
     public const STATUSES = ['new', 'analysing', 'clarifying', 'split', 'rejected', 'done'];
 

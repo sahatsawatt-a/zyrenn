@@ -107,6 +107,8 @@ class TicketController extends Controller
             'unit' => ['sometimes', 'nullable', 'string', 'max:64'],
             'body' => ['sometimes', 'nullable', 'string', 'max:20000'],
             'status' => ['sometimes', Rule::in(Ticket::STATUSES)],
+            // What it waits on, or why it will not be done
+            'reason' => ['sometimes', 'nullable', 'string', 'max:500'],
             'priority' => ['sometimes', Rule::in(Ticket::PRIORITIES)],
             // Only someone in the project can be given it
             'assigned_to' => ['sometimes', 'nullable', 'integer', Rule::in($project->members()->pluck('users.id'))],

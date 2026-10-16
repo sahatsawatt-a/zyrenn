@@ -3,6 +3,7 @@
 namespace App\Models\Product;
 
 use App\Models\Concerns\HasRefId;
+use App\Models\Concerns\TellsLists;
 use App\Models\Project;
 use App\Models\Ticket\Ticket;
 use App\Models\User;
@@ -41,7 +42,7 @@ use Illuminate\Support\Carbon;
  */
 class Requirement extends Model
 {
-    use HasRefId;
+    use HasRefId, TellsLists;
 
     public const KINDS = ['new', 'additional', 'change', 'constraint', 'quality'];
 

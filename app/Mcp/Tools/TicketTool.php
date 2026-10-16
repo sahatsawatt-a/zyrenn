@@ -89,6 +89,7 @@ abstract class TicketTool extends UserTool
             'unit' => ['sometimes', 'nullable', 'string', 'max:64'],
             'priority' => ['sometimes', 'in:'.implode(',', Ticket::PRIORITIES)],
             'status' => ['sometimes', 'in:'.implode(',', Ticket::STATUSES)],
+            'reason' => ['sometimes', 'nullable', 'string', 'max:500'],
             'assignee' => ['sometimes', 'nullable', 'string', 'max:255'],
             'pictures' => ['sometimes', 'array', 'max:12'],
             'pictures.*' => ['string', 'max:2048', 'regex:#^(/drive/files/[A-Za-z0-9]+|https?://\S+)$#'],
@@ -96,7 +97,7 @@ abstract class TicketTool extends UserTool
             'pictures.*.regex' => 'A picture is a file in the Drive, as "/drive/files/<ref_id>", or an http(s) link.',
         ]);
 
-        $details = array_intersect_key($validated, array_flip(['type', 'title', 'body', 'priority', 'status']));
+        $details = array_intersect_key($validated, array_flip(['type', 'title', 'body', 'priority', 'status', 'reason']));
 
         if (array_key_exists('unit', $validated)) {
             $details['unit'] = trim((string) $validated['unit']);
@@ -147,6 +148,7 @@ abstract class TicketTool extends UserTool
             'number' => $ticket->number,
             'type' => $ticket->type,
             'status' => $ticket->status,
+            'reason' => $ticket->reason,
             'priority' => $ticket->priority,
             'title' => $ticket->title,
             'unit' => $ticket->unit,

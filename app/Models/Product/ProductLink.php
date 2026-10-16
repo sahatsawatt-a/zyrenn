@@ -2,6 +2,7 @@
 
 namespace App\Models\Product;
 
+use App\Models\Concerns\TellsLists;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -16,6 +17,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class ProductLink extends Model
 {
+    use TellsLists;
+
     protected $guarded = [];
 
     /**

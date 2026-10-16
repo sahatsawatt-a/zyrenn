@@ -30,6 +30,7 @@ import {
     SheetTitle,
 } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
+import { useSpaceChanges } from '@/composables/useSpaceChanges';
 import ElementSheet from '@/features/product/ElementSheet.vue';
 import ProductTree from '@/features/product/ProductTree.vue';
 import RequirementSheet from '@/features/product/RequirementSheet.vue';
@@ -84,6 +85,9 @@ watchEffect(() =>
 );
 
 const RELOADED = ['elements', 'links', 'requests', 'requirements', 'coverage'];
+
+// MCP and the inbox change the product too, and its tickets are shown here: it follows them
+useSpaceChanges(['product', 'tickets'], [...RELOADED, 'tickets']);
 
 // ------------------------------------------------------------ Which part
 const tab = useLocalStorage<'tree' | 'requests' | 'requirements' | 'coverage'>(

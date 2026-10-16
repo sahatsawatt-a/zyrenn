@@ -161,6 +161,32 @@ await runBoard(
         await soon('a card dragged to a column takes its status', async () =>
             /#3/.test(await column('in_progress').innerText()),
         );
+
+        // On hold only with a word on what it waits on
+        const holdThree = () =>
+            column('in_progress')
+                .locator('[data-test="ticket-card"]', { hasText: '#3' })
+                .dragTo(column('on_hold'));
+        await holdThree();
+        await test('ticket-reason-dialog').waitFor();
+        await page.getByRole('button', { name: 'Cancel' }).click();
+        await test('ticket-reason-dialog').waitFor({ state: 'detached' });
+        check(
+            'put off without a reason, it stays where it was',
+            /#3/.test(await column('in_progress').innerText()),
+        );
+        await holdThree();
+        await test('ticket-move-reason').fill('Waits on the paste fix in #1');
+        await test('ticket-move-confirm').click();
+        await soon('with one, it is on hold and the card says why', async () =>
+            /#3[\s\S]*Waits on the paste fix in #1/.test(
+                await column('on_hold').innerText(),
+            ),
+        );
+        await soon(
+            'and the question goes away',
+            async () => (await test('ticket-reason-dialog').count()) === 0,
+        );
         await page.screenshot({ path: `${SHOTS}/tickets-board.png` });
 
         // The view is remembered, and so is the ticket an address names
@@ -172,7 +198,12 @@ await runBoard(
                 'Resizing a shape shakes' &&
                 (await test('ticket-board').count()) === 1,
         );
+        await pick(test('ticket-status'), 'dropped');
+        await test('ticket-reason').waitFor();
         await page.screenshot({ path: `${SHOTS}/tickets-form.png` });
+        await pick(test('ticket-status'), 'in_progress');
+        await test('ticket-reason').waitFor({ state: 'detached' });
+        check('the form asks why only for on hold or won’t do', true);
 
         // ------------------------------------------------------ Talking it over
         await test('ticket-discuss').click();

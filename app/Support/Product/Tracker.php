@@ -31,7 +31,7 @@ final class Tracker
             ->withCount([
                 'requirements as requirements' => fn ($query) => $query->where('status', '!=', 'dropped'),
                 'tickets as work',
-                'tickets as open_bugs' => fn ($query) => $query->where('type', Ticket::BUG)->whereIn('status', [Ticket::OPEN, Ticket::IN_PROGRESS]),
+                'tickets as open_bugs' => fn ($query) => $query->where('type', Ticket::BUG)->whereIn('status', Ticket::UNSETTLED),
             ])
             ->orderBy('position')
             ->orderBy('id')
@@ -97,7 +97,7 @@ final class Tracker
                 ->orderBy('id')->get(['ref_id', 'code', 'title', 'status'])->map->only(['ref_id', 'code', 'title', 'status'])->all()),
             'open_tickets' => array_values(Ticket::query()
                 ->whereHas('elements', fn ($query) => $query->whereIn('product_elements.id', $reached))
-                ->whereIn('status', [Ticket::OPEN, Ticket::IN_PROGRESS])
+                ->whereIn('status', Ticket::UNSETTLED)
                 ->orderBy('number')->get(['number', 'type', 'title', 'status'])->map->only(['number', 'type', 'title', 'status'])->all()),
         ];
     }

@@ -19,6 +19,7 @@ import { Label } from '@/components/ui/label';
 import { useMediaViewer } from '@/composables/useMediaViewer';
 import {
     PRIORITIES,
+    REASONS,
     STATUSES,
     TYPES,
     blankDraft,
@@ -71,6 +72,9 @@ watch(open, (now) => {
 });
 
 const kind = computed(() => TYPES[draft.value.type]);
+
+// On hold or turned down, it says why
+const reason = computed(() => REASONS[draft.value.status]);
 
 // Reka's Select can't hold an empty value, so nobody has a name of its own
 const NOBODY = 'nobody';
@@ -276,7 +280,23 @@ const show = (index: number) =>
                                     draft.status = $event as TicketStatus
                                 "
                             />
+                            <InputError :message="errors.status" />
                         </div>
+                    </div>
+
+                    <div v-if="ticket && reason" class="grid gap-2">
+                        <Label for="ticket-reason">{{ reason.asks }}</Label>
+                        <textarea
+                            id="ticket-reason"
+                            v-model="draft.reason"
+                            rows="2"
+                            required
+                            maxlength="500"
+                            class="bg-background dark:bg-input/30 border-input w-full rounded-md border px-3 py-2.5 text-sm leading-relaxed"
+                            :placeholder="reason.hint"
+                            data-test="ticket-reason"
+                        />
+                        <InputError :message="errors.reason" />
                     </div>
 
                     <div class="grid gap-2">

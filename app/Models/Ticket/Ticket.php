@@ -4,6 +4,7 @@ namespace App\Models\Ticket;
 
 use App\Models\Chat\ChatRoom;
 use App\Models\Concerns\HasRefId;
+use App\Models\Concerns\TellsLists;
 use App\Models\Product\ProductElement;
 use App\Models\Product\Requirement;
 use App\Models\Project;
@@ -16,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Something a project has been asked for: a bug to fix, or a feature to add.
@@ -28,6 +30,7 @@ use Illuminate\Support\Facades\DB;
  * @property int $number
  * @property string $type
  * @property string $status
+ * @property string|null $reason
  * @property string $priority
  * @property string $title
  * @property string $unit
@@ -47,11 +50,11 @@ use Illuminate\Support\Facades\DB;
  * @property-read ChatRoom|null $room
  * @property-read ChatRoom|null $askedIn
  */
-#[Fillable(['type', 'status', 'priority', 'title', 'unit', 'body', 'pictures', 'assigned_to'])]
+#[Fillable(['type', 'status', 'reason', 'priority', 'title', 'unit', 'body', 'pictures', 'assigned_to'])]
 class Ticket extends Model
 {
     /** @use HasFactory<TicketFactory> */
-    use HasFactory, HasRefId;
+    use HasFactory, HasRefId, TellsLists;
 
     public const BUG = 'bug';
 
@@ -63,12 +66,21 @@ class Ticket extends Model
 
     public const IN_PROGRESS = 'in_progress';
 
+    /** To be done, but waiting on something first -- enough data, another ticket, a decision. */
+    public const ON_HOLD = 'on_hold';
+
     public const DONE = 'done';
 
     /** Looked at, and not going to be done. */
     public const DROPPED = 'dropped';
 
-    public const STATUSES = [self::OPEN, self::IN_PROGRESS, self::DONE, self::DROPPED];
+    public const STATUSES = [self::OPEN, self::IN_PROGRESS, self::ON_HOLD, self::DONE, self::DROPPED];
+
+    /** Not yet settled: still to be done, whether started, waiting or not. */
+    public const UNSETTLED = [self::OPEN, self::IN_PROGRESS, self::ON_HOLD];
+
+    /** Put there only with a word on why: what it waits on, or why not. */
+    public const NEEDS_REASON = [self::ON_HOLD, self::DROPPED];
 
     public const PRIORITIES = ['low', 'normal', 'high'];
 
@@ -98,6 +110,19 @@ class Ticket extends Model
         static::saving(function (Ticket $ticket) {
             if ($ticket->isDirty('status') || ! $ticket->exists) {
                 $ticket->closed_at = $ticket->isClosed() ? ($ticket->closed_at ?? Carbon::now()) : null;
+            }
+
+            // Put on hold or turned down says why; anywhere else the why is past
+            if (! in_array($ticket->status, self::NEEDS_REASON, true)) {
+                $ticket->reason = null;
+            } elseif (trim((string) $ticket->reason) === '' && ($ticket->isDirty(['status', 'reason']) || ! $ticket->exists)) {
+                throw ValidationException::withMessages([
+                    'reason' => $ticket->status === self::ON_HOLD
+                        ? 'Say what it is waiting on.'
+                        : 'Say why it will not be done.',
+                ]);
+            } elseif ($ticket->reason !== null) {
+                $ticket->reason = trim($ticket->reason);
             }
         });
     }
@@ -224,7 +249,7 @@ class Ticket extends Model
     public function summary(): array
     {
         return [
-            ...$this->only(['ref_id', 'number', 'type', 'status', 'priority', 'title', 'unit']),
+            ...$this->only(['ref_id', 'number', 'type', 'status', 'reason', 'priority', 'title', 'unit']),
             'body' => $this->body ?? '',
             'pictures' => $this->pictures ?? [],
             'created_by' => $this->creator?->only(['id', 'name']),
