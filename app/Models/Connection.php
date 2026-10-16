@@ -26,6 +26,9 @@ use Illuminate\Support\Carbon;
  * @property string $service
  * @property array<string, string>|null $settings
  * @property array<string, string>|null $secrets
+ * @property Carbon|null $checked_at
+ * @property bool|null $check_ok
+ * @property string|null $check_message
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -44,7 +47,32 @@ class Connection extends Model
         return [
             'settings' => 'array',
             'secrets' => 'encrypted:array',
+            'checked_at' => 'datetime',
+            'check_ok' => 'boolean',
         ];
+    }
+
+    /**
+     * Keep how a test of it went, for its row on the Connections page. Not an
+     * edit: the time it was last changed stays as it was.
+     *
+     * @param  array{ok: bool, message?: string}  $result
+     */
+    public function rememberCheck(array $result): void
+    {
+        // "Nothing to try yet/ahead" (ConnectionCheck): nothing was asked, so it is not a test
+        if (str_starts_with((string) ($result['message'] ?? ''), 'Nothing to try')) {
+            return;
+        }
+
+        $values = [
+            'checked_at' => now(),
+            'check_ok' => (bool) $result['ok'],
+            'check_message' => mb_substr((string) ($result['message'] ?? ''), 0, 300),
+        ];
+
+        $this->newQueryWithoutScopes()->toBase()->where('id', $this->id)->update($values);
+        $this->forceFill($values)->syncOriginal();
     }
 
     /**

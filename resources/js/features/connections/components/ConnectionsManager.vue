@@ -2,15 +2,13 @@
 import { router } from '@inertiajs/vue3';
 import {
     Check,
-    CircleCheck,
-    CircleX,
     Copy,
-    Loader2,
     LogIn,
     MoreHorizontal,
     Pencil,
     Plug,
     Plus,
+    Search,
     Trash2,
     Zap,
 } from '@lucide/vue';
@@ -24,6 +22,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
 import {
     Sheet,
     SheetContent,
@@ -33,12 +32,19 @@ import {
 } from '@/components/ui/sheet';
 import ActivityList from '@/features/audit/ActivityList.vue';
 import type { Activity } from '@/features/audit/ActivityList.vue';
+import { ago } from '@/features/browser/time';
 import ConnectionForm from '@/features/connections/components/ConnectionForm.vue';
-import { detailOf, GROUPS, lookOf } from '@/features/connections/services';
+import {
+    detailOf,
+    GROUPS,
+    lookOf,
+    statusOf,
+} from '@/features/connections/services';
 import type {
     CheckResult,
     SavedConnection,
     Service,
+    Status,
 } from '@/features/connections/services';
 import { destroy, test } from '@/routes/connections';
 
@@ -53,10 +59,32 @@ const props = defineProps<{
     activity?: Activity[];
 }>();
 
+// --- finding one, once there are enough to need it ---
+const query = ref('');
+const searchable = computed(() => props.connections.length > 6);
+
+const shown = computed(() => {
+    const words = query.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+
+    return words.length
+        ? props.connections.filter((c) => {
+              const said = [
+                  c.name,
+                  c.service,
+                  props.services[c.service]?.label ?? '',
+              ]
+                  .join(' ')
+                  .toLowerCase();
+
+              return words.every((word) => said.includes(word));
+          })
+        : props.connections;
+});
+
 const groups = computed(() =>
     GROUPS.map((group) => ({
         ...group,
-        connections: props.connections.filter(
+        connections: shown.value.filter(
             (c) => props.services[c.service]?.group === group.key,
         ),
     })).filter((group) => group.connections.length),
@@ -103,23 +131,36 @@ const starters = [
 ];
 
 // --- whether each still works ---
+// A test made on this page; the server keeps it too, and says it on the next visit
 const checks = ref<Record<string, CheckResult | 'checking'>>({});
 
-// An address of a connection's copied -- its webhook's, or the one it comes
-// back to from signing in -- to paste where the service asks for it
-const copied = ref<string | null>(null);
+const statusFor = (connection: SavedConnection): Status | null =>
+    props.services[connection.service]?.testable
+        ? statusOf(
+              checks.value[connection.ref_id],
+              connection.check ?? null,
+              ago,
+          )
+        : null;
 
-async function copyAddress(connection: SavedConnection) {
-    const address = connection.hook?.url ?? connection.sign_in?.callback;
+const failing = computed(
+    () =>
+        props.connections.filter((c) => statusFor(c)?.kind === 'failing')
+            .length,
+);
 
-    if (!address) {
-        return;
-    }
-
-    await navigator.clipboard.writeText(address);
-    copied.value = connection.ref_id;
-    setTimeout(() => (copied.value = null), 1500);
-}
+const TONE: Record<Status['kind'], string> = {
+    ok: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+    failing: 'bg-destructive/10 text-destructive',
+    untested: 'bg-muted text-muted-foreground',
+    checking: 'bg-muted text-muted-foreground',
+};
+const DOT: Record<Status['kind'], string> = {
+    ok: 'bg-emerald-500',
+    failing: 'bg-destructive',
+    untested: 'bg-muted-foreground/50',
+    checking: 'bg-muted-foreground/50 animate-pulse',
+};
 
 async function check(connection: SavedConnection) {
     checks.value[connection.ref_id] = 'checking';
@@ -131,13 +172,23 @@ async function check(connection: SavedConnection) {
 
         checks.value[connection.ref_id] = response.ok
             ? ((await response.json()) as CheckResult)
-            : { ok: false, message: 'Could not check it just now.' };
+            : { ok: false, message: 'Could not test it just now.' };
     } catch {
         checks.value[connection.ref_id] = {
             ok: false,
-            message: 'Could not check it just now.',
+            message: 'Could not test it just now.',
         };
     }
+}
+
+// An address of a connection's copied -- its webhook's, or the one it comes
+// back to from signing in -- to paste where the service asks for it
+const copied = ref<string | null>(null);
+
+async function copyAddress(connection: SavedConnection, address: string) {
+    await navigator.clipboard.writeText(address);
+    copied.value = connection.ref_id;
+    setTimeout(() => (copied.value = null), 1500);
 }
 
 // --- removing ---
@@ -167,11 +218,48 @@ function remove() {
 </script>
 
 <template>
-    <div class="space-y-8">
-        <div v-if="connections.length && can.manage" class="flex justify-end">
-            <Button data-connection-add @click="add()">
-                <Plus /> Add connection
-            </Button>
+    <div class="space-y-6">
+        <!-- How many, how many need a look, finding one, adding one -->
+        <div
+            v-if="connections.length"
+            class="flex flex-wrap items-center gap-x-3 gap-y-2"
+        >
+            <p class="text-muted-foreground text-sm">
+                {{ connections.length }}
+                {{ connections.length === 1 ? 'connection' : 'connections' }}
+                <template v-if="failing">
+                    ·
+                    <span class="text-destructive font-medium"
+                        >{{ failing }} failing</span
+                    >
+                </template>
+            </p>
+            <div
+                class="ml-auto flex w-full items-center gap-2 sm:w-auto"
+                :class="searchable ? '' : 'justify-end'"
+            >
+                <div v-if="searchable" class="relative min-w-0 flex-1 sm:w-56">
+                    <Search
+                        class="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
+                    />
+                    <Input
+                        v-model="query"
+                        type="search"
+                        class="h-9 pl-8"
+                        placeholder="Find a connection"
+                        aria-label="Find a connection"
+                        data-connections-find
+                    />
+                </div>
+                <Button
+                    v-if="can.manage"
+                    class="shrink-0"
+                    data-connection-add
+                    @click="add()"
+                >
+                    <Plus /> Add connection
+                </Button>
+            </div>
         </div>
 
         <!-- Nothing yet: ways to begin -->
@@ -225,16 +313,28 @@ function remove() {
             </template>
         </div>
 
+        <p
+            v-if="connections.length && !groups.length"
+            class="text-muted-foreground py-6 text-center text-sm"
+        >
+            No connection is called “{{ query }}”.
+        </p>
+
         <section
             v-for="group in groups"
             :key="group.key"
-            class="space-y-3"
+            class="space-y-2"
             :data-group="group.key"
         >
-            <div>
+            <div class="flex items-baseline gap-2">
                 <h3 class="text-sm font-medium">{{ group.title }}</h3>
-                <p class="text-muted-foreground text-xs">
-                    {{ group.description }}
+                <span class="text-muted-foreground text-xs tabular-nums">{{
+                    group.connections.length
+                }}</span>
+                <p
+                    class="text-muted-foreground hidden truncate text-xs sm:block"
+                >
+                    · {{ group.description }}
                 </p>
             </div>
 
@@ -242,74 +342,209 @@ function remove() {
                 <li
                     v-for="connection in group.connections"
                     :key="connection.ref_id"
-                    class="flex items-center gap-3 p-3"
+                    class="p-3"
                     data-connection
                 >
-                    <span
-                        class="flex size-9 shrink-0 items-center justify-center rounded-lg"
-                        :class="lookOf(connection.service, group.key).tone"
-                    >
-                        <component
-                            :is="lookOf(connection.service, group.key).icon"
-                            class="size-4.5"
-                        />
-                    </span>
-
-                    <div class="min-w-0 flex-1">
-                        <p class="flex items-center gap-2 truncate text-sm">
-                            <span class="truncate font-medium">{{
-                                connection.name
-                            }}</span>
-                            <span
-                                class="text-muted-foreground shrink-0 text-xs"
-                            >
-                                {{ services[connection.service]?.label }}
-                            </span>
-                        </p>
-                        <p class="text-muted-foreground truncate text-xs">
-                            {{
-                                detailOf(
-                                    connection,
-                                    services[connection.service],
-                                )
-                            }}
-                            <template v-if="shared && connection.added_by">
-                                · added by {{ connection.added_by }}</template
-                            >
-                        </p>
-                        <div
-                            v-if="connection.hook"
-                            class="mt-1.5 grid grid-cols-1 gap-1"
-                            data-connection-hook
+                    <div class="flex items-start gap-3">
+                        <span
+                            class="flex size-9 shrink-0 items-center justify-center rounded-lg"
+                            :class="lookOf(connection.service, group.key).tone"
                         >
+                            <component
+                                :is="lookOf(connection.service, group.key).icon"
+                                class="size-4.5"
+                            />
+                        </span>
+
+                        <div class="min-w-0 flex-1">
                             <div
-                                v-if="connection.hook.url"
-                                class="flex items-center gap-1.5"
+                                class="flex flex-wrap items-center gap-x-2 gap-y-1"
                             >
-                                <code
-                                    class="bg-muted/50 min-w-0 flex-1 truncate rounded border px-1.5 py-0.5 text-[11px]"
-                                    :title="connection.hook.url"
-                                    >{{ connection.hook.url }}</code
+                                <span
+                                    class="max-w-full truncate text-sm font-medium"
+                                    >{{ connection.name }}</span
                                 >
-                                <Button
-                                    size="icon-sm"
-                                    variant="ghost"
-                                    :aria-label="`Copy ${connection.name}'s webhook address`"
-                                    @click="copyAddress(connection)"
+                                <span class="text-muted-foreground text-xs">
+                                    {{ services[connection.service]?.label }}
+                                </span>
+                                <span
+                                    v-if="statusFor(connection)"
+                                    class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                                    :class="TONE[statusFor(connection)!.kind]"
+                                    :title="
+                                        statusFor(connection)!.message ??
+                                        undefined
+                                    "
+                                    data-connection-status
+                                    :data-status="statusFor(connection)!.kind"
                                 >
-                                    <Check
-                                        v-if="copied === connection.ref_id"
+                                    <span
+                                        class="size-1.5 rounded-full"
+                                        :class="
+                                            DOT[statusFor(connection)!.kind]
+                                        "
                                     />
-                                    <Copy v-else />
-                                </Button>
+                                    {{ statusFor(connection)!.text }}
+                                </span>
                             </div>
-                            <p class="text-muted-foreground text-xs">
-                                <template v-if="!connection.hook.url">
-                                    Its webhook address shows here once
-                                    WORKFLOWS_PUBLIC_URL says where the app is
-                                    reached from outside.
-                                </template>
-                                <template v-else-if="connection.hook.hint">
+                            <p class="text-muted-foreground truncate text-xs">
+                                {{
+                                    detailOf(
+                                        connection,
+                                        services[connection.service],
+                                    )
+                                }}
+                                <template v-if="shared && connection.added_by">
+                                    · added by
+                                    {{ connection.added_by }}</template
+                                >
+                            </p>
+                            <!-- What a failing test said, or what one made just now said -->
+                            <p
+                                v-if="
+                                    statusFor(connection)?.message &&
+                                    (checks[connection.ref_id] ||
+                                        statusFor(connection)!.kind ===
+                                            'failing')
+                                "
+                                class="mt-1 text-xs"
+                                :class="
+                                    statusFor(connection)!.kind === 'failing'
+                                        ? 'text-destructive'
+                                        : 'text-emerald-700 dark:text-emerald-400'
+                                "
+                                data-connection-check
+                            >
+                                {{ statusFor(connection)!.message }}
+                            </p>
+                        </div>
+
+                        <div
+                            v-if="can.manage"
+                            class="flex shrink-0 items-center"
+                        >
+                            <Button
+                                v-if="services[connection.service]?.testable"
+                                size="sm"
+                                variant="ghost"
+                                class="hidden sm:inline-flex"
+                                :disabled="
+                                    checks[connection.ref_id] === 'checking'
+                                "
+                                @click="check(connection)"
+                            >
+                                <Zap /> Test
+                            </Button>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger as-child>
+                                    <Button
+                                        size="icon-sm"
+                                        variant="ghost"
+                                        :aria-label="`More for ${connection.name}`"
+                                    >
+                                        <MoreHorizontal />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuItem
+                                        @select="edit(connection)"
+                                    >
+                                        <Pencil /> Edit
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        v-if="connection.sign_in"
+                                        as-child
+                                    >
+                                        <a :href="connection.sign_in.url">
+                                            <LogIn />
+                                            {{
+                                                connection.sign_in.state ===
+                                                'no'
+                                                    ? 'Sign in'
+                                                    : 'Sign in again'
+                                            }}
+                                        </a>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        v-if="
+                                            services[connection.service]
+                                                ?.testable
+                                        "
+                                        class="sm:hidden"
+                                        @select="check(connection)"
+                                    >
+                                        <Zap /> Test
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                        variant="destructive"
+                                        @select="askRemove(connection)"
+                                    >
+                                        <Trash2 /> Remove
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
+                    </div>
+
+                    <!-- Its webhook: the address, and where it goes -->
+                    <ol
+                        v-if="connection.hook"
+                        class="bg-muted/30 mt-3 space-y-2 rounded-lg border p-3 text-xs sm:ml-12"
+                        data-connection-hook
+                    >
+                        <li class="flex gap-2">
+                            <span
+                                class="bg-background text-muted-foreground flex size-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-medium"
+                                >1</span
+                            >
+                            <div class="min-w-0 flex-1 space-y-1">
+                                <p class="font-medium">
+                                    {{
+                                        connection.hook.url
+                                            ? 'Its webhook address'
+                                            : 'Its webhook address is not ready yet'
+                                    }}
+                                </p>
+                                <div
+                                    v-if="connection.hook.url"
+                                    class="flex items-center gap-1"
+                                >
+                                    <code
+                                        class="bg-background min-w-0 flex-1 truncate rounded border px-1.5 py-1 text-[11px]"
+                                        :title="connection.hook.url"
+                                        >{{ connection.hook.url }}</code
+                                    >
+                                    <Button
+                                        size="icon-sm"
+                                        variant="ghost"
+                                        :aria-label="`Copy ${connection.name}'s webhook address`"
+                                        @click="
+                                            copyAddress(
+                                                connection,
+                                                connection.hook.url,
+                                            )
+                                        "
+                                    >
+                                        <Check
+                                            v-if="copied === connection.ref_id"
+                                        />
+                                        <Copy v-else />
+                                    </Button>
+                                </div>
+                                <p v-else class="text-muted-foreground">
+                                    It shows here once WORKFLOWS_PUBLIC_URL says
+                                    where the app is reached from outside.
+                                </p>
+                            </div>
+                        </li>
+                        <li v-if="connection.hook.url" class="flex gap-2">
+                            <span
+                                class="bg-background text-muted-foreground flex size-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-medium"
+                                >2</span
+                            >
+                            <p class="text-muted-foreground min-w-0 flex-1">
+                                <template v-if="connection.hook.hint">
                                     {{ connection.hook.hint }}
                                 </template>
                                 <template
@@ -322,149 +557,70 @@ function remove() {
                                     webhook” on.
                                 </template>
                                 <template v-else>
-                                    Set for you when a workflow using this bot
-                                    is switched on.
+                                    Nothing to do: it is set for you when a
+                                    workflow using this bot is switched on.
                                 </template>
                             </p>
-                        </div>
-                        <!-- Not signed in, or no longer: what the service has to be told first, and the way there -->
-                        <div
-                            v-if="
-                                connection.sign_in &&
-                                can.manage &&
-                                connection.sign_in.state !== 'yes'
-                            "
-                            class="mt-1.5 grid grid-cols-1 gap-1.5"
-                            data-connection-sign-in
-                        >
-                            <div class="flex items-center gap-1.5">
-                                <code
-                                    class="bg-muted/50 min-w-0 flex-1 truncate rounded border px-1.5 py-0.5 text-[11px]"
-                                    :title="connection.sign_in.callback"
-                                    >{{ connection.sign_in.callback }}</code
-                                >
-                                <Button
-                                    size="icon-sm"
-                                    variant="ghost"
-                                    :aria-label="`Copy the address ${connection.name} comes back to`"
-                                    @click="copyAddress(connection)"
-                                >
-                                    <Check
-                                        v-if="copied === connection.ref_id"
-                                    />
-                                    <Copy v-else />
-                                </Button>
-                            </div>
-                            <p class="text-muted-foreground text-xs">
-                                {{ connection.sign_in.hint }}
-                            </p>
-                            <Button
-                                size="sm"
-                                class="justify-self-start"
-                                as-child
+                        </li>
+                    </ol>
+
+                    <!-- Not signed in, or no longer: what the service has to be told, then the way there -->
+                    <ol
+                        v-if="
+                            connection.sign_in &&
+                            can.manage &&
+                            connection.sign_in.state !== 'yes'
+                        "
+                        class="bg-muted/30 mt-3 space-y-2 rounded-lg border p-3 text-xs sm:ml-12"
+                        data-connection-sign-in
+                    >
+                        <li class="flex gap-2">
+                            <span
+                                class="bg-background text-muted-foreground flex size-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-medium"
+                                >1</span
                             >
+                            <div class="min-w-0 flex-1 space-y-1">
+                                <p class="text-muted-foreground">
+                                    {{ connection.sign_in.hint }}
+                                </p>
+                                <div class="flex items-center gap-1">
+                                    <code
+                                        class="bg-background min-w-0 flex-1 truncate rounded border px-1.5 py-1 text-[11px]"
+                                        :title="connection.sign_in.callback"
+                                        >{{ connection.sign_in.callback }}</code
+                                    >
+                                    <Button
+                                        size="icon-sm"
+                                        variant="ghost"
+                                        :aria-label="`Copy the address ${connection.name} comes back to`"
+                                        @click="
+                                            copyAddress(
+                                                connection,
+                                                connection.sign_in.callback,
+                                            )
+                                        "
+                                    >
+                                        <Check
+                                            v-if="copied === connection.ref_id"
+                                        />
+                                        <Copy v-else />
+                                    </Button>
+                                </div>
+                            </div>
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span
+                                class="bg-background text-muted-foreground flex size-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-medium"
+                                >2</span
+                            >
+                            <Button size="sm" as-child>
                                 <a :href="connection.sign_in.url">
                                     <LogIn /> Sign in with
                                     {{ connection.sign_in.service }}
                                 </a>
                             </Button>
-                        </div>
-                        <p
-                            v-if="checks[connection.ref_id]"
-                            class="mt-1 flex items-center gap-1 text-xs"
-                            :class="
-                                checks[connection.ref_id] === 'checking'
-                                    ? 'text-muted-foreground'
-                                    : (checks[connection.ref_id] as CheckResult)
-                                            .ok
-                                      ? 'text-emerald-600 dark:text-emerald-400'
-                                      : 'text-destructive'
-                            "
-                            data-connection-check
-                        >
-                            <template
-                                v-if="checks[connection.ref_id] === 'checking'"
-                            >
-                                <Loader2 class="size-3.5 animate-spin" />
-                                Checking…
-                            </template>
-                            <template v-else>
-                                <CircleCheck
-                                    v-if="
-                                        (
-                                            checks[
-                                                connection.ref_id
-                                            ] as CheckResult
-                                        ).ok
-                                    "
-                                    class="size-3.5"
-                                />
-                                <CircleX v-else class="size-3.5" />
-                                {{
-                                    (checks[connection.ref_id] as CheckResult)
-                                        .message
-                                }}
-                            </template>
-                        </p>
-                    </div>
-
-                    <template v-if="can.manage">
-                        <Button
-                            v-if="services[connection.service]?.testable"
-                            size="sm"
-                            variant="ghost"
-                            class="hidden sm:inline-flex"
-                            :disabled="checks[connection.ref_id] === 'checking'"
-                            @click="check(connection)"
-                        >
-                            <Zap /> Test
-                        </Button>
-                        <DropdownMenu>
-                            <DropdownMenuTrigger as-child>
-                                <Button
-                                    size="icon-sm"
-                                    variant="ghost"
-                                    :aria-label="`More for ${connection.name}`"
-                                >
-                                    <MoreHorizontal />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                                <DropdownMenuItem @select="edit(connection)">
-                                    <Pencil /> Edit
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                    v-if="connection.sign_in"
-                                    as-child
-                                >
-                                    <a :href="connection.sign_in.url">
-                                        <LogIn />
-                                        {{
-                                            connection.sign_in.state === 'no'
-                                                ? 'Sign in'
-                                                : 'Sign in again'
-                                        }}
-                                    </a>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                    v-if="
-                                        services[connection.service]?.testable
-                                    "
-                                    class="sm:hidden"
-                                    @select="check(connection)"
-                                >
-                                    <Zap /> Test
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                    variant="destructive"
-                                    @select="askRemove(connection)"
-                                >
-                                    <Trash2 /> Remove
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                    </template>
+                        </li>
+                    </ol>
                 </li>
             </ul>
         </section>

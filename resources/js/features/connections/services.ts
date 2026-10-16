@@ -1,11 +1,16 @@
 import {
+    CreditCard,
     AtSign,
     Briefcase,
     Camera,
     Cpu,
     Flag,
+    GitBranch,
+    Hash,
     KeyRound,
+    Mail,
     MessageCircle,
+    MessageSquare,
     Phone,
     Plug,
     Radar,
@@ -76,7 +81,11 @@ export type SavedConnection = {
         state: 'yes' | 'no' | 'over';
         detail: string;
     } | null;
+    // How its last test went; null before it was ever tested
+    check?: LastCheck | null;
 };
+
+export type LastCheck = { ok: boolean; message: string | null; at: string };
 
 export type CheckResult = {
     ok: boolean;
@@ -158,10 +167,20 @@ export function lookOf(service: string, group?: ServiceGroup): Look {
             return { icon: AtSign, tone: TONES.slate };
         case 'whatsapp':
             return { icon: Phone, tone: TONES.green };
+        case 'slack':
+            return { icon: Hash, tone: TONES.violet };
+        case 'discord':
+            return { icon: MessageSquare, tone: TONES.blue };
+        case 'smtp':
+            return { icon: Mail, tone: TONES.rose };
         case 'serpapi':
             return { icon: Search, tone: TONES.cyan };
         case 'tavily':
             return { icon: Radar, tone: TONES.rose };
+        case 'github':
+            return { icon: GitBranch, tone: TONES.slate };
+        case 'stripe':
+            return { icon: CreditCard, tone: TONES.violet };
         case 'promptx':
             return { icon: Workflow, tone: TONES.violet };
         case 'http_header':
@@ -174,6 +193,181 @@ export function lookOf(service: string, group?: ServiceGroup): Look {
                 tone: TONES.violet,
             };
     }
+}
+
+// What each service is, in a few words, for choosing it, and where its key or
+// app is got. Kept clear of the groups' own titles, which head the choice.
+type Guide = { summary: string; docs?: { label: string; url: string } };
+
+const META_APPS = {
+    label: 'Meta for Developers',
+    url: 'https://developers.facebook.com/apps/',
+};
+
+const GUIDES: Record<string, Guide> = {
+    ollama: {
+        summary: 'Models on your own machine, no key',
+        docs: { label: 'Get Ollama', url: 'https://ollama.com/download' },
+    },
+    lmstudio: {
+        summary: 'LM Studio’s local server, no key',
+        docs: { label: 'Get LM Studio', url: 'https://lmstudio.ai' },
+    },
+    openrouter: {
+        summary: 'Hundreds of hosted models behind one key',
+        docs: { label: 'OpenRouter keys', url: 'https://openrouter.ai/keys' },
+    },
+    openai: {
+        summary: 'OpenAI’s own models, with your key',
+        docs: {
+            label: 'OpenAI API keys',
+            url: 'https://platform.openai.com/api-keys',
+        },
+    },
+    groq: {
+        summary: 'Fast open models, with your key',
+        docs: { label: 'Groq keys', url: 'https://console.groq.com/keys' },
+    },
+    gemini: {
+        summary: 'Google’s Gemini, with your key',
+        docs: {
+            label: 'Google AI Studio keys',
+            url: 'https://aistudio.google.com/apikey',
+        },
+    },
+    custom: { summary: 'Any host that speaks the OpenAI chat API' },
+    mcp: {
+        summary: 'Tools from an MCP server, for agents',
+        docs: { label: 'What MCP is', url: 'https://modelcontextprotocol.io' },
+    },
+    telegram: {
+        summary: 'A bot made with @BotFather',
+        docs: { label: 'Open @BotFather', url: 'https://t.me/BotFather' },
+    },
+    line: {
+        summary: 'An official account’s channel',
+        docs: {
+            label: 'LINE Developers console',
+            url: 'https://developers.line.biz/console/',
+        },
+    },
+    whatsapp: { summary: 'A business number, by Meta', docs: META_APPS },
+    channel: { summary: 'Any chat platform with an API of its own' },
+    slack: {
+        summary: 'Posts to one channel',
+        docs: { label: 'Slack apps', url: 'https://api.slack.com/apps' },
+    },
+    discord: {
+        summary: 'Posts to one channel',
+        docs: {
+            label: 'Discord webhooks',
+            url: 'https://support.discord.com/hc/en-us/articles/228383668',
+        },
+    },
+    smtp: { summary: 'Sends email through your mail server' },
+    linkedin: {
+        summary: 'Posts as a LinkedIn member',
+        docs: {
+            label: 'LinkedIn developer apps',
+            url: 'https://www.linkedin.com/developers/apps',
+        },
+    },
+    facebook: { summary: 'Posts as a Facebook Page', docs: META_APPS },
+    instagram: { summary: 'Posts as a professional account', docs: META_APPS },
+    threads: { summary: 'Posts as a Threads profile', docs: META_APPS },
+    serpapi: {
+        summary: 'Google and other engines, as data',
+        docs: {
+            label: 'SerpApi key',
+            url: 'https://serpapi.com/manage-api-key',
+        },
+    },
+    tavily: {
+        summary: 'Web search made for models to read',
+        docs: { label: 'Tavily key', url: 'https://app.tavily.com' },
+    },
+    github: {
+        summary: 'Issues, pull requests, files and Actions',
+        docs: {
+            label: 'GitHub tokens',
+            url: 'https://github.com/settings/personal-access-tokens',
+        },
+    },
+    stripe: {
+        summary: 'Payment links, checkout, invoices and refunds',
+        docs: {
+            label: 'Stripe API keys',
+            url: 'https://dashboard.stripe.com/apikeys',
+        },
+    },
+    promptx: { summary: 'Makes and runs PromptX flows' },
+    http_header: { summary: 'A key or token for one API' },
+    webhook_secret: { summary: 'Proves a webhook is genuine' },
+};
+
+export function guideOf(name: string, service?: Service): Guide {
+    return GUIDES[name] ?? { summary: service?.hint.split('. ')[0] ?? '' };
+}
+
+// The fields a form keeps folded under "More options": optional ones a
+// person seldom changes. A usual model, a choice, and a local host's address
+// stay in view, and so do a mail server's sign-in.
+export function folded(field: Field, service: Service): boolean {
+    return (
+        !field.required &&
+        field.type !== 'model' &&
+        field.type !== 'choice' &&
+        !(
+            field.type === 'url' && service.url?.startsWith('http://localhost')
+        ) &&
+        !['username', 'password'].includes(field.name)
+    );
+}
+
+export type Status = {
+    kind: 'ok' | 'failing' | 'untested' | 'checking';
+    text: string;
+    message: string | null;
+};
+
+// How a connection stands, for its row: a test just made on the page, else
+// the last one the server kept
+export function statusOf(
+    check: CheckResult | 'checking' | undefined,
+    last: LastCheck | null,
+    when: (at: string) => string,
+): Status {
+    if (check === 'checking') {
+        return { kind: 'checking', text: 'Testing…', message: null };
+    }
+
+    // "Nothing to try yet": a sign-in still to make, or a service checked only
+    // when it is used -- nothing was asked, so it is no test
+    if (check && check.message.startsWith('Nothing to try')) {
+        return {
+            kind: 'untested',
+            text: 'Not tested yet',
+            message: check.message,
+        };
+    }
+
+    if (check) {
+        return {
+            kind: check.ok ? 'ok' : 'failing',
+            text: check.ok ? 'Works · just now' : 'Failing · just now',
+            message: check.message,
+        };
+    }
+
+    if (last) {
+        return {
+            kind: last.ok ? 'ok' : 'failing',
+            text: `${last.ok ? 'Works' : 'Failing'} · ${when(last.at)}`,
+            message: last.message,
+        };
+    }
+
+    return { kind: 'untested', text: 'Not tested yet', message: null };
 }
 
 const host = (url: string | undefined) =>
@@ -206,6 +400,18 @@ export function detailOf(
                 return `Business number ${s.phone_number_id ?? ''}`;
             }
 
+            if (connection.service === 'slack') {
+                return 'Posts to a Slack channel by its webhook';
+            }
+
+            if (connection.service === 'discord') {
+                return 'Posts to a Discord channel by its webhook';
+            }
+
+            if (connection.service === 'smtp') {
+                return `From ${s.from ?? ''} through ${s.host ?? ''}`;
+            }
+
             if (connection.service === 'channel') {
                 return s.send_url
                     ? `${s.platform} · answers go to ${host(s.send_url)}`
@@ -220,6 +426,16 @@ export function detailOf(
                 ? 'Searches the web and reads pages, by its key'
                 : 'Searches Google and other engines, by its key';
         default:
+            if (connection.service === 'github') {
+                return s.repo
+                    ? `Works on ${s.repo} and others its token may`
+                    : 'Works on the repositories its token may';
+            }
+
+            if (connection.service === 'stripe') {
+                return 'Takes payments, by its key';
+            }
+
             if (connection.service === 'promptx') {
                 return `Signed in as ${s.login ?? ''}`;
             }

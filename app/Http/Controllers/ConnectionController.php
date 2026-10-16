@@ -83,6 +83,7 @@ class ConnectionController extends Controller
         $connection->secrets = Services::secrets($validated['service'], $validated['secrets'] ?? []) ?: null;
         PromptxSignIn::spend($connection);
         $connection->ownedBy($owner, $request->user())->save();
+        self::rememberTry($request, $connection);
         Audit::record($connection, 'connection.added', $request->user(), ['service' => $connection->service]);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Connection added.')]);
@@ -124,6 +125,7 @@ class ConnectionController extends Controller
         $connection->secrets = Services::secrets($validated['service'], $validated['secrets'] ?? [], $saved) ?: null;
         PromptxSignIn::spend($connection);
         $connection->save();
+        self::rememberTry($request, $connection);
 
         // Which fields changed, never what they hold
         $changed = [
@@ -164,7 +166,33 @@ class ConnectionController extends Controller
     {
         Gate::authorize('update', $connection);
 
-        return response()->json($check->run($connection));
+        $result = $check->run($connection);
+        $connection->rememberCheck($result);
+
+        return response()->json($result);
+    }
+
+    /**
+     * The form tries what was typed before saving it: that try, for exactly
+     * the values saved, is the connection's first test. Only what it showed
+     * the person is kept -- whether it worked and what was said.
+     */
+    private static function rememberTry(Request $request, Connection $connection): void
+    {
+        $tried = Validator::make($request->only('tried'), [
+            'tried' => ['nullable', 'array'],
+            'tried.ok' => ['required_with:tried', 'boolean'],
+            'tried.message' => ['nullable', 'string', 'max:300'],
+        ]);
+
+        if ($tried->fails() || ! is_array($request->input('tried'))) {
+            return;
+        }
+
+        $connection->rememberCheck([
+            'ok' => (bool) $request->boolean('tried.ok'),
+            'message' => (string) $request->input('tried.message', ''),
+        ]);
     }
 
     /**
@@ -256,6 +284,12 @@ class ConnectionController extends Controller
             'created_at' => $connection->created_at,
             'hook' => self::hookOf($connection),
             'sign_in' => SignIns::describe($connection),
+            // How its last test went; null before it was ever tested
+            'check' => $connection->checked_at === null ? null : [
+                'ok' => (bool) $connection->check_ok,
+                'message' => $connection->check_message,
+                'at' => $connection->checked_at->toIso8601String(),
+            ],
         ];
     }
 
@@ -290,6 +324,16 @@ class ConnectionController extends Controller
                 'url' => Hooks::url("channel/{$connection->ref_id}"),
                 'set' => 'by_hand',
                 'hint' => 'The platform posts each message here as JSON, signed with the shared secret: {"id": its own id, "chat": {"id", "title"}, "sender": {"id", "name", "picture"}, "text", "files": [addresses], "location": {"lat", "lng", "title", "address"}} -- or several as {"messages": […]}. Only chat.id is needed, and one of text, files or location.',
+            ],
+            $connection->service === Services::STRIPE => [
+                'url' => Hooks::url("stripe/{$connection->ref_id}"),
+                'set' => 'by_hand',
+                'hint' => 'For a workflow to start on what happens in Stripe: in the Dashboard, under Developers → Webhooks → Add endpoint, paste it as the Endpoint URL and pick the events to send (checkout.session.completed, payment_intent.succeeded…), then copy the endpoint\'s Signing secret (whsec_…) into this connection.',
+            ],
+            $connection->service === Services::GITHUB => [
+                'url' => Hooks::url("github/{$connection->ref_id}"),
+                'set' => 'by_hand',
+                'hint' => 'For a workflow to start on what happens in a repository: in its Settings → Webhooks → Add webhook (or an organisation\'s, for all of its repositories), paste it as the Payload URL, choose application/json, give the connection\'s webhook secret as the Secret, and pick the events to send.',
             ],
             $connection->service === 'line' => ['url' => Hooks::url("line/{$connection->ref_id}"), 'set' => 'by_hand'],
             $connection->service === 'telegram' && $connection->setting('receive') !== 'poll' => ['url' => Hooks::url("telegram/{$connection->ref_id}"), 'set' => 'by_app'],
