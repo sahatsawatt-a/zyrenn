@@ -13,6 +13,7 @@ const props = withDefaults(
 const TONE: Record<RunState, string> = {
     passed: 'bg-emerald-500',
     failed: 'bg-red-500',
+    stopped: 'bg-muted-foreground/40',
     running: 'bg-sky-500 animate-pulse',
     waiting: 'bg-sky-500/50 animate-pulse',
 };

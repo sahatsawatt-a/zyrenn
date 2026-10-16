@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { CalendarClock, KeyRound, Plus, Ticket, Trash2 } from '@lucide/vue';
+import {
+    CalendarClock,
+    KeyRound,
+    LogIn,
+    Plus,
+    Ticket,
+    Trash2,
+} from '@lucide/vue';
 import { useDebounceFn } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
@@ -14,7 +21,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { ask } from './http';
-import type { Every, Suite } from './steps';
+import type { Every, SignIn, Suite } from './steps';
 
 // How a suite goes on by itself: when it runs without being asked, whether a
 // failure files a ticket in its project, and the hidden values its steps
@@ -107,6 +114,44 @@ const saveValues = useDebounceFn(async () => {
         toast.error((problem as Error).message);
     }
 }, 700);
+
+// Signing in once a run: each a name and the check that signs in. Sent
+// whole as it changes; one without a check yet is kept here until it has one
+const signIns = ref<SignIn[]>([]);
+watch(
+    () => props.suite,
+    (now) => {
+        signIns.value = (now?.sign_ins ?? []).map((one) => ({ ...one }));
+    },
+    { immediate: true },
+);
+
+const saveSignIns = useDebounceFn(async () => {
+    const whole = signIns.value
+        .map((one) => ({ name: one.name.trim(), check: one.check }))
+        .filter((one) => /^[A-Za-z][\w-]{0,39}$/.test(one.name) && one.check);
+
+    try {
+        await ask(
+            { url: props.suite.urls.update, method: 'patch' },
+            { sign_ins: whole },
+        );
+        props.suite.sign_ins = whole;
+    } catch (problem) {
+        toast.error((problem as Error).message);
+    }
+}, 700);
+
+function addSignIn() {
+    const taken = new Set(signIns.value.map((one) => one.name));
+
+    signIns.value.push({
+        name: taken.has('member')
+            ? `person${signIns.value.length + 1}`
+            : 'member',
+        check: '',
+    });
+}
 
 // How a step names a hidden value, shown as it is written
 const PASSWORD = '{{password}}';
@@ -245,6 +290,92 @@ function addValue() {
                     "
                 />
             </label>
+        </section>
+
+        <!-- Signing in once a run, so the checks start signed in -->
+        <section class="rounded-xl border" data-test="sign-ins">
+            <header class="flex items-start gap-3 border-b px-4 py-3">
+                <LogIn class="text-muted-foreground mt-0.5 size-4 shrink-0" />
+                <div>
+                    <h3 class="text-sm font-medium">Sign in once</h3>
+                    <p class="text-muted-foreground text-xs">
+                        A run signs in with this check first, once, and every
+                        other check starts already signed in -- so they need no
+                        sign-in steps. A check can start as someone else, or
+                        signed out, under its own settings.
+                    </p>
+                </div>
+            </header>
+            <div class="space-y-2 px-4 py-3">
+                <div
+                    v-for="(one, at) in signIns"
+                    :key="at"
+                    class="flex items-center gap-2"
+                    data-test="sign-in-row"
+                >
+                    <Input
+                        v-model="one.name"
+                        :readonly="!canChange"
+                        class="h-8 w-28 text-xs sm:w-36"
+                        aria-label="Who it signs in as"
+                        data-test="sign-in-name"
+                        @update:model-value="saveSignIns"
+                    />
+                    <Select
+                        :model-value="one.check"
+                        :disabled="!canChange"
+                        @update:model-value="
+                            one.check = String($event);
+                            saveSignIns();
+                        "
+                    >
+                        <SelectTrigger
+                            class="h-8 min-w-0 flex-1"
+                            size="sm"
+                            aria-label="The check that signs in"
+                            data-test="sign-in-check"
+                        >
+                            <SelectValue
+                                placeholder="The check that signs in"
+                            />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem
+                                v-for="check in suite.checks"
+                                :key="check.id"
+                                :value="check.id"
+                                >{{ check.title || 'Untitled' }}</SelectItem
+                            >
+                        </SelectContent>
+                    </Select>
+                    <Button
+                        v-if="canChange"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Stop signing in as this"
+                        @click="
+                            signIns.splice(at, 1);
+                            saveSignIns();
+                        "
+                    >
+                        <Trash2 />
+                    </Button>
+                </div>
+                <Button
+                    v-if="canChange && signIns.length < 5"
+                    variant="outline"
+                    size="sm"
+                    data-test="sign-in-add"
+                    @click="addSignIn"
+                >
+                    <Plus />
+                    {{
+                        signIns.length
+                            ? 'Sign in as someone else too'
+                            : 'Sign in once'
+                    }}
+                </Button>
+            </div>
         </section>
 
         <!-- Hidden values -->

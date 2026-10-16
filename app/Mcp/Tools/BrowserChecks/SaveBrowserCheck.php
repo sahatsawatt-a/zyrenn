@@ -26,6 +26,8 @@ class SaveBrowserCheck extends BrowserCheckTool
             'check' => $schema->string()->max(200)->description('What it checks, e.g. "Logging in": the check of that name is made or replaced.')->required(),
             'size' => $schema->string()->enum(BrowserCheck::SIZES)->description('The screen it is done on: "desktop" (the default), "tablet" or "phone".'),
             'steps' => $schema->array()->items($this->stepSchema($schema))->description('Every step, in order.')->required(),
+            'as' => $schema->string()->max(40)->description('In a suite that signs in (save-browser-suite "sign_ins"): which sign-in it starts as, when not the first. "" for the first again.'),
+            'fresh' => $schema->boolean()->description('true: it starts signed out, in a suite that signs in -- a check of the sign-in page itself.'),
         ];
     }
 
@@ -39,11 +41,18 @@ class SaveBrowserCheck extends BrowserCheckTool
         }
 
         $before = collect($suite->checks)->firstWhere('title', $title);
+        $as = $request->get('as') ?? $before['as'] ?? null;
         $check = [
             'title' => $title,
             'size' => $request->get('size') ?? $before['size'] ?? 'desktop',
             'steps' => $request->get('steps') ?? [],
+            ...(is_string($as) && $as !== '' ? ['as' => $as] : []),
+            ...(($request->get('fresh') ?? $before['fresh'] ?? false) === true ? ['fresh' => true] : []),
         ];
+
+        if (isset($check['as']) && ! in_array($check['as'], array_column($suite->signIns(), 'name'), true)) {
+            return Response::error('This suite has no sign-in called "'.$check['as'].'". Its sign-ins: '.(implode(', ', array_column($suite->signIns(), 'name')) ?: 'none -- add them with save-browser-suite "sign_ins"').'.');
+        }
         $checks = $before === null
             ? [...$suite->checks, $check]
             : array_map(fn (array $one) => $one['title'] === $title ? $check + ['id' => $one['id']] : $one, $suite->checks);

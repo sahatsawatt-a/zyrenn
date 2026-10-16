@@ -23,6 +23,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('checks/live/{live}/close', [BrowserCheckController::class, 'closeLive'])->name('checks.live.close');
     Route::post('checks/suites/{suite}/runs', [BrowserCheckController::class, 'startRun'])->middleware('throttle:20,1')->name('checks.runs.store');
     Route::get('checks/runs/{browserRun}', [BrowserCheckController::class, 'showRun'])->name('checks.runs.show');
+    Route::post('checks/runs/{browserRun}/stop', [BrowserCheckController::class, 'stopRun'])->name('checks.runs.stop');
 
     // The app's own browser suites, run and followed -- about the app itself,
     // so for its admins, and kept apart from anyone's browser checks

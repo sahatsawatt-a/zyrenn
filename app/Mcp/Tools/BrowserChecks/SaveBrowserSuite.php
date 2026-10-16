@@ -36,6 +36,12 @@ captions only the steps with a note. "wait" (seconds, 0 to 30) is how long a dem
 in place of its note's time, or its pause. Use look-at-page to see the names on a page before writing steps
 for it. "checks" replaces them all, in order. Only public sites can be reached. A password goes in "hidden_values" and is
 written {{password}} where a step types it: it is never shown again, in a run or a caption.
+A site that needs signing in: give the suite "sign_ins" -- each a name and the check that signs in,
+[{"name": "member", "check": "Sign in"}] -- and write that check once. A run signs in once, with
+it, and every other check starts already signed in (cookies and the site's local storage), so the
+checks need no sign-in steps of their own. A check starts as the first sign-in unless
+save-browser-check says "as" another or "fresh" (signed out). The signed-in state lasts the run
+alone and is never shown. A sign-in that fails is said once, and the checks needing it are not run.
 TEXT)]
 class SaveBrowserSuite extends BrowserCheckTool
 {
@@ -71,8 +77,12 @@ class SaveBrowserSuite extends BrowserCheckTool
             'files_tickets' => $schema->boolean()->description('In a project: file a bug ticket when a check fails (once while it is open).'),
             'hidden_values' => $schema->array()->items($schema->object([
                 'name' => $schema->string()->max(40)->required(),
-                'value' => $schema->string()->max(500)->description('Left out, it keeps the value it had.'),
-            ]))->description('Values a step types without showing them, as {{name}}: replaces the ones it had.'),
+                'value' => $schema->string()->max(500)->description('Left out or empty, it keeps the value it had.'),
+            ]))->description('Values a step types without showing them, as {{name}}: replaces the list it had -- a name left out is gone, with its value.'),
+            'sign_ins' => $schema->array()->items($schema->object([
+                'name' => $schema->string()->max(40)->description('Who it signs in as, a short word: "member", "admin".')->required(),
+                'check' => $schema->string()->max(200)->description('The check of this suite that signs in, by its name.')->required(),
+            ]))->description('Sign in once a run, as each of these, and start every other check signed in -- as the first unless a check says otherwise. Replaces the list it had; [] for none.'),
         ];
     }
 
@@ -101,7 +111,17 @@ class SaveBrowserSuite extends BrowserCheckTool
                 ]
                 : null,
             'values' => $request->get('hidden_values'),
+            'sign_ins' => $request->get('sign_ins'),
         ], fn ($value) => $value !== null);
+
+        // A sign-in names a check this suite has, written now or before
+        foreach ($given['sign_ins'] ?? [] as $signIn) {
+            $titles = array_column($given['checks'] ?? $suite->checks, 'title');
+
+            if (is_array($signIn) && ! in_array($signIn['check'] ?? null, $titles, true)) {
+                return Response::error('The sign-in "'.($signIn['name'] ?? '').'" names the check "'.($signIn['check'] ?? '').'", which this suite does not have. Its checks: '.(implode(', ', $titles) ?: 'none').'.');
+            }
+        }
 
         validator($given, BrowserSuite::rules(checkIds: false))->validate();
         $suite->take($given)->save();

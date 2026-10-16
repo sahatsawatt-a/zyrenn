@@ -15,6 +15,7 @@
  * resources/js/features/browser/cursor.js, is mounted beside it as
  * cursor.mjs): the browser is handed in by server.mjs.
  */
+import { execFile } from 'node:child_process';
 import dns from 'node:dns';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import http from 'node:http';
@@ -22,6 +23,8 @@ import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
+import ffmpeg from 'ffmpeg-static';
 import { drawCursor } from './cursor.mjs';
 import {
     caption,
@@ -78,6 +81,52 @@ const STEP_MAX = 10_000;
 const CHECK_MAX = 90_000;
 // A film bigger than this is left out of the answer rather than sent
 const MOST_VIDEO = 80 * 1024 * 1024;
+
+const run = promisify(execFile);
+
+/**
+ * A film as MP4 (H.264), which plays everywhere it is taken -- a phone, a
+ * Mac, a deck, a chat app -- where the WebM the browser records does not.
+ * Should the converting fail, the WebM it was.
+ */
+async function asMp4(webm) {
+    const mp4 = webm.replace(/\.webm$/, '') + '.mp4';
+
+    try {
+        await run(
+            ffmpeg,
+            [
+                '-y',
+                '-loglevel',
+                'error',
+                '-i',
+                webm,
+                // H.264 wants even sides
+                '-vf',
+                'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+                '-c:v',
+                'libx264',
+                '-preset',
+                'veryfast',
+                '-crf',
+                '23',
+                '-pix_fmt',
+                'yuv420p',
+                '-movflags',
+                '+faststart',
+                '-an',
+                mp4,
+            ],
+            { timeout: 120_000 },
+        );
+
+        return { bytes: await readFile(mp4), type: 'video/mp4' };
+    } catch (e) {
+        console.error('[film] kept as webm:', e && e.message ? e.message : e);
+
+        return { bytes: await readFile(webm), type: 'video/webm' };
+    }
+}
 const AT_ONCE = 2;
 
 let running = 0;
@@ -1332,7 +1381,7 @@ const COUNTING =
  */
 async function openPage(
     browser,
-    { size = 'desktop', glide = 0, films = null } = {},
+    { size = 'desktop', glide = 0, films = null, state = null } = {},
 ) {
     const refused = new Set();
     const proxy = await publicProxy(refused);
@@ -1348,6 +1397,8 @@ async function openPage(
             // Even this machine's own names go through it
             proxy: { server: proxy.address, bypass: '<-loopback>' },
             ...(films ? { recordVideo: { dir: films, size: viewport } } : {}),
+            // Signed in already: the cookies and storage a sign-in left
+            ...(state ? { storageState: state } : {}),
         });
     } catch (error) {
         await proxy.close();
@@ -1694,9 +1745,44 @@ function stepsOf(body) {
     return steps;
 }
 
+// Runs asked to stop, by the token each was started with, and when: each
+// stops before its next step. Kept a while, so a stop asked for just before a
+// check starts still reaches it.
+const stops = new Map();
+const STOP_KEPT = 3 * 60 * 60 * 1000;
+
+// The tokens of the checks running just now
+const inHand = new Set();
+
+/**
+ * Asks the check (or film) started with `token` to stop after the step it is
+ * doing: it closes its browser and answers with what was done, `halted`.
+ * Answers whether such a check is running now.
+ */
+export function stopCheck(token) {
+    const now = Date.now();
+
+    for (const [old, at] of stops) {
+        if (now - at > STOP_KEPT) {
+            stops.delete(old);
+        }
+    }
+
+    stops.set(token, now);
+
+    return inHand.has(token);
+}
+
+/** The token a check names itself by, for stopCheck(), when it has one. */
+export const tokenOf = (body) =>
+    typeof body?.token === 'string' && /^[\w-]{1,64}$/.test(body.token)
+        ? body.token
+        : null;
+
 /**
  * Runs `steps` in a page of its own and answers with what each one did.
- * Stops at the first that fails; the ones after it are left unrun.
+ * Stops at the first that fails; the ones after it are left unrun -- and
+ * at the next step, once it is asked to (stopCheck), answering `halted`.
  *
  * `size` is the screen it is drawn on (desktop, tablet, phone); `pace` sets
  * how fast it goes; `captions` writes each step's `note` across the foot of
@@ -1706,15 +1792,82 @@ function stepsOf(body) {
  * steps lead to instead (lookAt). The pointer is drawn whenever the check is
  * slowed or filmed.
  */
+/**
+ * A browser's saved state as a sign-in left it (Playwright's storageState:
+ * its cookies, and each site's localStorage), or null for none or for one
+ * not of that shape.
+ */
+const stateOf = (given) =>
+    given &&
+    typeof given === 'object' &&
+    Array.isArray(given.cookies) &&
+    Array.isArray(given.origins)
+        ? { cookies: given.cookies, origins: given.origins }
+        : null;
+
+/**
+ * Moves the page's browser from one saved state to another -- signed in as
+ * someone else, or signed out -- between the checks of one film: its
+ * cookies swapped, and each site's localStorage either one knew emptied and
+ * filled as the other has it.
+ */
+async function switchState(opened, from, to) {
+    await opened.context.clearCookies();
+
+    if (to?.cookies.length) {
+        await opened.context.addCookies(to.cookies);
+    }
+
+    const sites = new Map();
+
+    for (const site of [...(from?.origins ?? []), ...(to?.origins ?? [])]) {
+        sites.set(site.origin, []);
+    }
+
+    for (const site of to?.origins ?? []) {
+        sites.set(site.origin, site.localStorage ?? []);
+    }
+
+    for (const [origin, items] of sites) {
+        try {
+            await opened.page.goto(origin, {
+                waitUntil: 'domcontentloaded',
+                timeout: 15_000,
+            });
+            await opened.page.evaluate((items) => {
+                localStorage.clear();
+
+                for (const { name, value } of items) {
+                    localStorage.setItem(name, value);
+                }
+            }, items);
+        } catch {
+            // A site that cannot be reached keeps what it had; the steps say so
+        }
+    }
+}
+
 export async function runCheck(browser, body) {
     // Several checks one after another in the one page, filmed as one: what
-    // one leaves -- signed in, a file added -- the next finds
+    // one leaves -- signed in, a file added -- the next finds. Each may name
+    // whom it starts signed in as (`as`, one of `states`), switched to as it
+    // begins
+    // Each named once, so two checks as the same person need no switch
+    const states = Object.fromEntries(
+        Object.entries(
+            body?.states && typeof body.states === 'object' ? body.states : {},
+        ).map(([name, state]) => [name, stateOf(state)]),
+    );
     const chapters = Array.isArray(body?.chapters)
         ? body.chapters.slice(0, MOST_CHAPTERS).map((chapter) => ({
               title: String(chapter?.title ?? ''),
               steps: stepsOf(chapter),
+              state:
+                  typeof chapter?.as === 'string'
+                      ? (states[chapter.as] ?? null)
+                      : null,
           }))
-        : [{ title: '', steps: stepsOf(body) }];
+        : [{ title: '', steps: stepsOf(body), state: stateOf(body?.state) }];
     const steps = chapters.flatMap((chapter) => chapter.steps);
 
     if (!steps.length) {
@@ -1731,6 +1884,12 @@ export async function runCheck(browser, body) {
     }
 
     running++;
+    const token = tokenOf(body);
+
+    if (token) {
+        inHand.add(token);
+    }
+
     const look = Boolean(body?.look);
     const pace = paceOf(look ? null : body?.pace);
     const captions = !look && Boolean(body?.captions);
@@ -1743,7 +1902,10 @@ export async function runCheck(browser, body) {
             size: body?.size,
             glide: pace.glide,
             films,
+            state: chapters[0].state,
         });
+        // Whom the browser is signed in as just now, to switch as needed
+        let current = chapters[0].state;
         // A slowed check is given the time its slowing takes, on top
         const typed = steps.reduce(
             (sum, step) => sum + String(step.text ?? '').length,
@@ -1767,10 +1929,23 @@ export async function runCheck(browser, body) {
         const deadline = Date.now() + allowed;
         const done = chapters.map(() => []);
         let stopped = false;
+        // Asked to stop by whoever started it: the film so far is kept
+        let halted = false;
 
         for (const [at, chapter] of chapters.entries()) {
             if (stopped) {
                 break;
+            }
+
+            if (token && stops.has(token)) {
+                halted = true;
+                break;
+            }
+
+            // Signed in as someone else, or signed out, for this check
+            if (chapter.state !== current) {
+                await switchState(opened, current, chapter.state);
+                current = chapter.state;
             }
 
             // Each check's name, across the page, as it starts
@@ -1785,6 +1960,12 @@ export async function runCheck(browser, body) {
             }
 
             for (const step of chapter.steps) {
+                if (token && stops.has(token)) {
+                    halted = true;
+                    stopped = true;
+                    break;
+                }
+
                 if (Date.now() > deadline) {
                     done[at].push({
                         ok: false,
@@ -1826,22 +2007,32 @@ export async function runCheck(browser, body) {
             url: opened.page.url(),
             title: await opened.page.title().catch(() => ''),
             refused: [...opened.refused],
+            ...(halted ? { halted: true } : {}),
+            // A sign-in that went through: the state it leaves, for the
+            // checks that start from it. Never kept here
+            ...(body?.keepState &&
+            !halted &&
+            done.flat().length === steps.length &&
+            done.flat().every((step) => step.ok)
+                ? { state: await opened.context.storageState() }
+                : {}),
         };
         let video = null;
 
         if (record) {
             await opened.context.close();
             const path = await opened.page.video()?.path();
-            const bytes = path ? await readFile(path) : null;
+            const film = path ? await asMp4(path) : null;
             video =
-                bytes && bytes.length <= MOST_VIDEO
-                    ? `data:video/webm;base64,${bytes.toString('base64')}`
+                film && film.bytes.length <= MOST_VIDEO
+                    ? `data:${film.type};base64,${film.bytes.toString('base64')}`
                     : null;
         }
 
         return { ...answer, video };
     } finally {
         running--;
+        inHand.delete(token);
         await opened?.close();
 
         if (films) {

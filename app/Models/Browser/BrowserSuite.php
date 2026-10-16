@@ -28,8 +28,8 @@ use Illuminate\Validation\Rule;
  * @property int|null $project_id
  * @property int|null $created_by
  * @property string $title
- * @property list<array{id: string, title: string, size?: string, steps: list<array<string, string>>}> $checks
- * @property array{every?: string, at?: string, zone?: string, tickets?: bool}|null $settings
+ * @property list<array{id: string, title: string, size?: string, as?: string, fresh?: bool, steps: list<array<string, string>>}> $checks
+ * @property array{every?: string, at?: string, zone?: string, tickets?: bool, sign_ins?: list<array{name: string, check: string}>}|null $settings
  * @property list<array{name: string, value: string}>|null $secret_values
  * @property CarbonInterface|null $next_run_at
  * @property Carbon|null $created_at
@@ -74,6 +74,9 @@ class BrowserSuite extends Model
             'checks.*.title' => ['present', 'nullable', 'string', 'max:200'],
             // The screen it is done on: a desktop's, unless said
             'checks.*.size' => ['nullable', Rule::in(BrowserCheck::SIZES)],
+            // Whom it starts signed in as (one of sign_ins), or signed out
+            'checks.*.as' => ['nullable', 'string', 'regex:'.self::IDENTITY],
+            'checks.*.fresh' => ['nullable', 'boolean'],
             ...BrowserCheck::stepRules('checks.*.steps', complete: false),
             'settings' => ['sometimes', 'array'],
             'settings.every' => ['required_with:settings', Rule::in(self::EVERY)],
@@ -84,7 +87,46 @@ class BrowserSuite extends Model
             'values' => ['sometimes', 'array', 'max:20'],
             'values.*.name' => ['required', 'string', 'regex:/^[A-Za-z][\w-]{0,39}$/', 'distinct'],
             'values.*.value' => ['nullable', 'string', 'max:500'],
+            // Signing in once a run: each by a name, done by one of its checks
+            'sign_ins' => ['sometimes', 'array', 'max:'.self::MOST_SIGN_INS],
+            'sign_ins.*.name' => ['required', 'string', 'regex:'.self::IDENTITY, 'distinct'],
+            'sign_ins.*.check' => ['required', 'string', 'max:200'],
         ];
+    }
+
+    /** What a sign-in may be called: a short word, "member", "admin". */
+    public const IDENTITY = '/^[A-Za-z][\w-]{0,39}$/';
+
+    /** No suite signs in as more people than this. */
+    public const MOST_SIGN_INS = 5;
+
+    /**
+     * Who a run signs in as, once, before the checks that start signed in:
+     * each a name and the check (by its id) that does the signing in.
+     *
+     * @return list<array{name: string, check: string}>
+     */
+    public function signIns(): array
+    {
+        return array_values(array_filter($this->settings['sign_ins'] ?? [], 'is_array'));
+    }
+
+    /**
+     * Whom `$check` starts signed in as: the sign-in it names ("as"), else
+     * the suite's first -- or nobody, for a check marked "fresh", for a
+     * sign-in itself, and in a suite that signs in as nobody.
+     *
+     * @param  array<string, mixed>  $check
+     */
+    public function identityFor(array $check): ?string
+    {
+        $signIns = $this->signIns();
+
+        if ($signIns === [] || ($check['fresh'] ?? false) === true || in_array($check['id'] ?? null, array_column($signIns, 'check'), true)) {
+            return null;
+        }
+
+        return is_string($check['as'] ?? null) && $check['as'] !== '' ? $check['as'] : $signIns[0]['name'];
     }
 
     /**
@@ -107,6 +149,9 @@ class BrowserSuite extends Model
                 'size' => $check['size'] ?? 'desktop',
                 // Only what each step's kind uses
                 'steps' => array_values(array_map(BrowserCheck::only(...), $check['steps'])),
+                // Whom it starts signed in as, when not the suite's first; or signed out
+                ...(is_string($check['as'] ?? null) && $check['as'] !== '' ? ['as' => $check['as']] : []),
+                ...(($check['fresh'] ?? false) === true ? ['fresh' => true] : []),
             ], $given['checks']));
         }
 
@@ -117,15 +162,30 @@ class BrowserSuite extends Model
                 'zone' => $given['settings']['zone'] ?? config('app.timezone'),
                 // Only a project has tickets to file
                 'tickets' => $this->project_id !== null && (bool) ($given['settings']['tickets'] ?? false),
+                ...($this->signIns() !== [] ? ['sign_ins' => $this->signIns()] : []),
             ];
             $this->next_run_at = $this->nextRunAfter(CarbonImmutable::now());
+        }
+
+        // A value sent empty keeps the one it had, as one left out does: a
+        // client re-sending the names it read (never their values) must not
+        // blank them. A value is cleared by leaving its name out.
+        // Each sign-in kept by its check's id, named by its id or its title
+        if (isset($given['sign_ins'])) {
+            $ids = array_column($this->checks ?? [], 'id', 'title');
+            $known = array_column($this->checks ?? [], 'id');
+
+            $this->settings = [...($this->settings ?? []), 'sign_ins' => array_values(array_filter(array_map(fn (array $signIn) => [
+                'name' => (string) $signIn['name'],
+                'check' => in_array($signIn['check'], $known, true) ? (string) $signIn['check'] : ($ids[$signIn['check']] ?? ''),
+            ], $given['sign_ins']), fn (array $signIn) => $signIn['check'] !== ''))];
         }
 
         if (isset($given['values'])) {
             $before = $this->values();
             $this->secret_values = array_values(array_map(fn (array $value) => [
                 'name' => (string) $value['name'],
-                'value' => isset($value['value']) ? (string) $value['value'] : ($before[$value['name']] ?? ''),
+                'value' => isset($value['value']) && $value['value'] !== '' ? (string) $value['value'] : ($before[$value['name']] ?? ''),
             ], $given['values']));
         }
 

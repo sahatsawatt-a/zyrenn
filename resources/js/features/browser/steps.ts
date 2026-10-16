@@ -149,7 +149,19 @@ export const SIZES: Record<Size, string> = {
 };
 
 /** A check: a few steps, with a name to know it by, done on one screen. */
-export type Check = { id: string; title: string; size?: Size; steps: Step[] };
+export type Check = {
+    id: string;
+    title: string;
+    size?: Size;
+    steps: Step[];
+    // Whom it starts signed in as, when not the suite's first sign-in
+    as?: string;
+    // Starts signed out, in a suite that signs in
+    fresh?: boolean;
+};
+
+/** Who a run signs in as, once, by which of the suite's checks (its id). */
+export type SignIn = { name: string; check: string };
 
 export type Pace = { glide: number; typing: number; pause: number };
 
@@ -210,11 +222,17 @@ export type CheckResult = {
     planned: number;
     steps: StepResult[];
     refused: string[];
-    video: Kept | null;
+    video: (Kept & { partial?: boolean }) | null;
     problem?: string;
+    // Cut short by someone stopping the run
+    stopped?: boolean;
+    // A sign-in, done once before the checks, as this person
+    sign_in?: string;
+    // Not run: the sign-in it starts from failed
+    not_run?: boolean;
 };
 
-export type RunState = 'waiting' | 'running' | 'passed' | 'failed';
+export type RunState = 'waiting' | 'running' | 'passed' | 'failed' | 'stopped';
 export type StartedBy = 'person' | 'timetable' | 'workflow';
 
 /** One run of a suite. */
@@ -238,6 +256,13 @@ export type CheckRun = {
     tickets: { number: number; title: string; new: boolean; url: string }[];
     folder: string | null;
     url: string;
+    // Why it has not started, while it waits
+    waiting_for: string | null;
+    // Asked to stop, and still finishing the step in hand
+    stop_asked: boolean;
+    // Once stopped: by whom and where, in a sentence
+    stopped: string | null;
+    stop: string;
 };
 
 /** A suite as the page lists it. */
@@ -272,6 +297,8 @@ export type Suite = {
     ref_id: string;
     title: string;
     checks: Check[];
+    // Who a run signs in as, once, before the checks that start signed in
+    sign_ins: SignIn[];
     runs: RunSummary[];
     // How each check did the last time it ran, by its id
     latest: Record<string, { ok: boolean; took: number; at: string }>;

@@ -4,6 +4,7 @@ import {
     ChevronDown,
     CircleCheck,
     CircleDashed,
+    CircleStop,
     CircleX,
     Clapperboard,
     Copy,
@@ -362,6 +363,31 @@ const stepPage = (id: string, step: Step) =>
     ask<LiveStep>(stepLive(id), { step });
 const closePage = (id: string) => ask(closeLive(id));
 
+// --------------------------------------------------------- Signing in
+// In a suite that signs in once a run, each check starts as its first
+// sign-in, as another, or signed out; a sign-in's own check starts out
+const SIGNED_OUT = '-';
+
+/** Whom this check signs in as, when it is one of the suite's sign-ins. */
+const signsInAs = (check: Check) =>
+    (suite.value?.sign_ins ?? [])
+        .filter((one) => one.check === check.id)
+        .map((one) => one.name)
+        .join(', ');
+
+const startsAs = (check: Check) =>
+    check.fresh
+        ? SIGNED_OUT
+        : (check.as ?? suite.value?.sign_ins[0]?.name ?? SIGNED_OUT);
+
+function startAs(check: Check, whom: string) {
+    const first = suite.value?.sign_ins[0]?.name;
+
+    check.fresh = whom === SIGNED_OUT ? true : undefined;
+    check.as = whom === SIGNED_OUT || whom === first ? undefined : whom;
+    changed();
+}
+
 // ------------------------------------------------------------ Runs
 const run = ref<CheckRun | null>(null);
 const starting = ref<'test' | 'demo' | 'custom' | null>(null);
@@ -370,8 +396,34 @@ const going = computed(
 );
 const optionsOpen = ref(false);
 
+// Only the run asked for last is shown: a suite's last run, still on its way
+// when one is started, would otherwise land over the new one
+let showing = 0;
+
 async function showRun(url: string) {
-    run.value = await ask<CheckRun>({ url, method: 'get' });
+    const mine = ++showing;
+    const got = await ask<CheckRun>({ url, method: 'get' });
+
+    if (mine === showing) {
+        run.value = got;
+    }
+}
+
+// Stopped part way: one waiting never starts, one going ends after the step
+// in hand -- and is followed on until it has
+async function stopRun() {
+    if (!run.value) {
+        return;
+    }
+
+    try {
+        run.value = await ask<CheckRun>({
+            url: run.value.stop,
+            method: 'post',
+        });
+    } catch (problem) {
+        toast.error((problem as Error).message);
+    }
 }
 
 // Most runs are one of two: a quick test, or a film to show someone --
@@ -398,6 +450,7 @@ async function start(kind: 'test' | 'demo' | 'custom', choice: RunChoice) {
     }
 
     starting.value = kind;
+    showing++;
     await saveNow();
 
     try {
@@ -595,6 +648,10 @@ if (summaries.value[0]) {
                             <CircleX
                                 v-else-if="one.last === 'failed'"
                                 class="size-4 shrink-0 text-red-600"
+                            />
+                            <CircleStop
+                                v-else-if="one.last === 'stopped'"
+                                class="text-muted-foreground size-4 shrink-0"
                             />
                             <Loader2
                                 v-else-if="one.last"
@@ -1068,6 +1125,44 @@ if (summaries.value[0]) {
                                                 >
                                             </SelectContent>
                                         </Select>
+                                        <!-- Whom it starts signed in as, in a suite that signs in -->
+                                        <p
+                                            v-if="signsInAs(check)"
+                                            class="text-muted-foreground flex h-8 items-center text-xs"
+                                            data-test="check-signs-in"
+                                        >
+                                            Signs in as
+                                            {{ signsInAs(check) }}
+                                        </p>
+                                        <Select
+                                            v-else-if="suite.sign_ins.length"
+                                            :model-value="startsAs(check)"
+                                            :disabled="!canChange"
+                                            @update:model-value="
+                                                startAs(check, String($event))
+                                            "
+                                        >
+                                            <SelectTrigger
+                                                class="w-44 shrink-0"
+                                                size="sm"
+                                                aria-label="Whom it starts signed in as"
+                                                data-test="check-starts-as"
+                                            >
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem
+                                                    v-for="one in suite.sign_ins"
+                                                    :key="one.name"
+                                                    :value="one.name"
+                                                    >Signed in as
+                                                    {{ one.name }}</SelectItem
+                                                >
+                                                <SelectItem :value="SIGNED_OUT"
+                                                    >Signed out</SelectItem
+                                                >
+                                            </SelectContent>
+                                        </Select>
                                     </div>
                                     <StepsEditor
                                         :steps="check.steps"
@@ -1141,6 +1236,10 @@ if (summaries.value[0]) {
                                         v-else-if="past.state === 'failed'"
                                         class="size-4 shrink-0 text-red-600"
                                     />
+                                    <CircleStop
+                                        v-else-if="past.state === 'stopped'"
+                                        class="text-muted-foreground size-4 shrink-0"
+                                    />
                                     <Loader2
                                         v-else
                                         class="size-4 shrink-0 animate-spin text-sky-600"
@@ -1182,6 +1281,7 @@ if (summaries.value[0]) {
                             :run="run"
                             :total="runTotal"
                             class="min-w-0"
+                            @stop="stopRun"
                         />
                     </template>
                 </div>

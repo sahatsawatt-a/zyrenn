@@ -223,6 +223,21 @@ class BrowserCheckController extends Controller
     }
 
     /**
+     * Stops a run part way: one still waiting never starts, one running ends
+     * after the step in hand. Whoever may start a run may stop one.
+     */
+    public function stopRun(Request $request, BrowserRun $browserRun): JsonResponse
+    {
+        Gate::authorize('update', $browserRun->suite);
+
+        if ($browserRun->ended()) {
+            throw ValidationException::withMessages(['run' => 'This run has already ended.']);
+        }
+
+        return response()->json($this->runFull(SuiteRun::stop($browserRun, $request->user())));
+    }
+
+    /**
      * Where suites can be kept: one's own space, and each project one is in.
      *
      * @return list<array{label: string, url: string, current: bool}>
@@ -278,6 +293,8 @@ class BrowserCheckController extends Controller
             ],
             'project' => $suite->project_id !== null,
             'next_run_at' => $suite->next_run_at,
+            // Who a run signs in as, once, and by which check (by its id)
+            'sign_ins' => $suite->signIns(),
             // Only their names: a hidden value is never sent back
             'values' => array_map(fn (array $value) => ['name' => $value['name'], 'set' => $value['value'] !== ''], $suite->secret_values ?? []),
             'runs' => $runs->map(fn (BrowserRun $run) => [
@@ -295,7 +312,10 @@ class BrowserCheckController extends Controller
             // How each check did the last time it ran
             'latest' => $runs->reduce(function (array $seen, BrowserRun $run) {
                 foreach ($run->results ?? [] as $check) {
-                    $seen[$check['id']] ??= ['ok' => (bool) $check['ok'], 'took' => (int) ($check['took'] ?? 0), 'at' => $run->created_at];
+                    // Not run, for a sign-in that failed: it says nothing of the check
+                    if (! ($check['not_run'] ?? false)) {
+                        $seen[$check['id']] ??= ['ok' => (bool) $check['ok'], 'took' => (int) ($check['took'] ?? 0), 'at' => $run->created_at];
+                    }
                 }
 
                 return $seen;
@@ -322,6 +342,11 @@ class BrowserCheckController extends Controller
             'ended_at' => $run->ended_at,
             'by' => $run->creator?->name,
             'started_by' => $run->started_by,
+            // Why it has not started yet, while it waits
+            'waiting_for' => SuiteRun::waitingFor($run),
+            // Asked to stop, and by whom; once stopped, where
+            'stop_asked' => $run->stopAsked() && ! $run->ended(),
+            'stopped' => $run->state === BrowserRun::STOPPED ? SuiteRun::stoppedAt($run) : null,
             // Filed in the suite's project, where its tickets are
             'tickets' => $run->suite->project !== null ? array_map(fn (array $ticket) => $ticket + [
                 'url' => route('projects.tickets.index', $run->suite->project),
@@ -330,6 +355,7 @@ class BrowserCheckController extends Controller
                 ? self::ownerRoute($run->suite->owner(), 'drive.index', ['folder' => $run->driveFolder?->ref_id])
                 : null,
             'url' => route('checks.runs.show', $run),
+            'stop' => route('checks.runs.stop', $run),
         ];
     }
 }

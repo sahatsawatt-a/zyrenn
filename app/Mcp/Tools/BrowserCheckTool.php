@@ -53,7 +53,7 @@ abstract class BrowserCheckTool extends ScopedTool
     /**
      * One of a suite's checks, by its name.
      *
-     * @return array{id: string, title: string, size?: string, steps: list<array<string, string>>}
+     * @return array{id: string, title: string, size?: string, as?: string, fresh?: bool, steps: list<array<string, string>>}
      */
     protected function checkCalled(BrowserSuite $suite, string $title): array
     {
@@ -69,7 +69,7 @@ abstract class BrowserCheckTool extends ScopedTool
     /**
      * A check as the tools give it back: each step in words beside what it is.
      *
-     * @param  array{id: string, title: string, size?: string, steps: list<array<string, string>>}  $check
+     * @param  array{id: string, title: string, size?: string, as?: string, fresh?: bool, steps: list<array<string, string>>}  $check
      * @return array<string, mixed>
      */
     protected function checkDescribed(array $check): array
@@ -77,6 +77,9 @@ abstract class BrowserCheckTool extends ScopedTool
         return [
             'title' => $check['title'],
             'size' => $check['size'] ?? 'desktop',
+            // Whom it starts signed in as, when it says; or signed out
+            ...(isset($check['as']) ? ['as' => $check['as']] : []),
+            ...(($check['fresh'] ?? false) ? ['fresh' => true] : []),
             'steps' => array_map(fn (array $step, int $at) => ['step' => $at + 1, ...$step, 'says' => BrowserCheck::say($step)], $check['steps'], array_keys($check['steps'])),
         ];
     }
@@ -150,8 +153,15 @@ abstract class BrowserCheckTool extends ScopedTool
             'title' => $suite->title,
             'checks' => array_map(fn (array $check) => [
                 'title' => $check['title'],
+                // Whom it starts signed in as (null: signed out)
+                ...($suite->signIns() !== [] ? ['starts_as' => $suite->identityFor($check)] : []),
                 'steps' => array_map(fn (array $step) => $step + ['says' => BrowserCheck::say($step)], $check['steps']),
             ], $suite->checks),
+            // Signed in once a run, each by one of its checks: never the state it leaves
+            'sign_ins' => array_map(fn (array $signIn) => [
+                'name' => $signIn['name'],
+                'check' => collect($suite->checks)->firstWhere('id', $signIn['check'])['title'] ?? null,
+            ], $suite->signIns()),
             'runs_by_itself' => [
                 'every' => $suite->settings['every'] ?? 'off',
                 'at' => $suite->settings['at'] ?? '09:00',
@@ -178,15 +188,23 @@ abstract class BrowserCheckTool extends ScopedTool
         return [
             'ref_id' => $run->ref_id,
             'state' => $run->state,
-            'summary' => $run->ended() ? SuiteRun::summary($run) : 'Still running: '.count($run->results ?? []).' checks done so far.',
+            'summary' => match (true) {
+                $run->ended() => SuiteRun::summary($run),
+                $run->state === BrowserRun::WAITING => 'Not started yet. '.SuiteRun::waitingFor($run),
+                $run->stopAsked() => 'Stopping after the step in hand: '.count($run->results ?? []).' checks done so far.',
+                default => 'Still running: '.count($run->results ?? []).' checks done so far.',
+            },
             'speed' => $run->settings['speed'],
             'filmed' => (bool) $run->settings['record'],
             'started_by' => $run->started_by,
             'checks' => array_map(fn (array $check) => [
                 'title' => $check['title'],
                 'passed' => $check['ok'],
+                ...(isset($check['sign_in']) ? ['sign_in' => $check['sign_in']] : []),
                 'says' => SuiteRun::verdict($check),
                 'film' => $check['video']['url'] ?? null,
+                // Cut short by a stop: what was filmed before it
+                ...(($check['video']['partial'] ?? false) ? ['film_partial' => true] : []),
                 'pictures' => array_values(array_filter(array_map(
                     fn (array $step) => is_array($step['shot'] ?? null) ? $step['shot']['url'] : null,
                     $check['steps'],

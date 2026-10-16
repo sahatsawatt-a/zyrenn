@@ -6,7 +6,7 @@ use App\Models\Drive\DriveFile;
 use App\Models\Drive\DriveFolder;
 use App\Models\Owner;
 use App\Models\User;
-use Illuminate\Support\Facades\Http;
+use App\Support\Chrome\Chrome;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use RuntimeException;
@@ -170,25 +170,35 @@ class BrowserCheck
      * @param  list<array<string, mixed>>  $steps
      * @param  array{glide: int, typing: int, pause: int}  $pace
      * @param  array<string, string>  $values  what each {{ name }} in a step stands for
-     * @return array{steps: list<array<string, mixed>>, url: string, title: string, refused: list<string>, video: string|null}
+     * @param  string|null  $token  what the browser knows it by, to stop it part way (stop())
+     * @param  array{state?: array<string, mixed>|null, keep?: bool}  $signIn  signed in already: the
+     *                                                                         browser state a sign-in left (`state`), and/or keep the
+     *                                                                         state this one leaves (`keep`), answered as `state` when every
+     *                                                                         step went through -- never kept anywhere but the run in hand
+     * @return array{steps: list<array<string, mixed>>, url: string, title: string, refused: list<string>, video: string|null, halted: bool, state: array<string, mixed>|null}
      */
-    public static function run(array $steps, array $pace = self::SPEEDS['quick'], bool $captions = false, bool $record = false, array $values = [], string $size = 'desktop'): array
+    public static function run(array $steps, array $pace = self::SPEEDS['quick'], bool $captions = false, bool $record = false, array $values = [], string $size = 'desktop', ?string $token = null, array $signIn = []): array
     {
         $steps = array_map(fn (array $step) => self::filled(self::tidy($step), $values), $steps);
 
-        $response = Http::timeout(self::allowance($steps, $pace, $captions))->connectTimeout(10)->post(
-            rtrim((string) config('services.chrome.url'), '/').'/check',
-            ['steps' => $steps, 'pace' => $pace, 'captions' => $captions, 'record' => $record, 'size' => $size],
-        );
+        $response = Chrome::post('/check', ['steps' => $steps, 'pace' => $pace, 'captions' => $captions, 'record' => $record, 'size' => $size, 'token' => $token,
+            'state' => $signIn['state'] ?? null, 'keepState' => $signIn['keep'] ?? false],
+            self::allowance($steps, $pace, $captions) + ($record ? self::CONVERTING : 0));
 
-        if (! $response->successful()) {
-            throw new RuntimeException((string) ($response->json('error') ?? 'The browser answered '.$response->status()));
-        }
-
-        /** @var array{steps: list<array<string, mixed>>, url: string, title: string, refused: list<string>, video?: string|null} $answer */
+        /** @var array{steps: list<array<string, mixed>>, url: string, title: string, refused: list<string>, video?: string|null, halted?: bool, state?: array<string, mixed>|null} $answer */
         $answer = $response->json();
 
-        return $answer + ['video' => null];
+        return $answer + ['video' => null, 'halted' => false, 'state' => null];
+    }
+
+    /**
+     * Asks the browser to stop the check or film it knows by `$token` after
+     * the step it is doing: it closes the page and answers with what was
+     * done so far, `halted`. Answers whether it was running.
+     */
+    public static function stop(string $token): bool
+    {
+        return (bool) Chrome::post('/check/stop', ['token' => $token], 10)->json('running');
     }
 
     /**
@@ -197,35 +207,35 @@ class BrowserCheck
      * page as it starts (with captions). Stops at the first step that fails.
      * Answers with what each check's steps did, in `chapters`.
      *
-     * @param  list<array{title: string, steps: list<array<string, mixed>>}>  $checks
+     * @param  list<array{title: string, steps: list<array<string, mixed>>, as?: string|null}>  $checks  each signed in `as` one of `$states`, or signed out
      * @param  array{glide: int, typing: int, pause: int}  $pace
      * @param  array<string, string>  $values
-     * @return array{steps: list<array<string, mixed>>, chapters: list<list<array<string, mixed>>>, url: string, title: string, refused: list<string>, video: string|null}
+     * @param  string|null  $token  what the browser knows it by, to stop it part way (stop())
+     * @param  array<string, array<string, mixed>>  $states  the browser state each sign-in left, by its name
+     * @return array{steps: list<array<string, mixed>>, chapters: list<list<array<string, mixed>>>, url: string, title: string, refused: list<string>, video: string|null, halted: bool}
      */
-    public static function film(array $checks, array $pace, bool $captions, array $values = [], string $size = 'desktop'): array
+    public static function film(array $checks, array $pace, bool $captions, array $values = [], string $size = 'desktop', ?string $token = null, array $states = []): array
     {
         $chapters = array_map(fn (array $check) => [
             'title' => $check['title'],
             'steps' => array_map(fn (array $step) => self::filled(self::tidy($step), $values), $check['steps']),
+            'as' => $check['as'] ?? null,
         ], $checks);
         $all = array_merge(...array_column($chapters, 'steps'));
         // Each check's name is shown for a few seconds before it
         $titles = $captions && count($chapters) > 1 ? count($chapters) * 3 : 0;
 
-        $response = Http::timeout(self::allowance($all, $pace, $captions) + $titles)->connectTimeout(10)->post(
-            rtrim((string) config('services.chrome.url'), '/').'/check',
-            ['chapters' => $chapters, 'pace' => $pace, 'captions' => $captions, 'record' => true, 'size' => $size],
-        );
+        $response = Chrome::post('/check', ['chapters' => $chapters, 'pace' => $pace, 'captions' => $captions, 'record' => true, 'size' => $size, 'token' => $token, 'states' => (object) $states],
+            self::allowance($all, $pace, $captions) + $titles + self::CONVERTING);
 
-        if (! $response->successful()) {
-            throw new RuntimeException((string) ($response->json('error') ?? 'The browser answered '.$response->status()));
-        }
-
-        /** @var array{steps: list<array<string, mixed>>, chapters: list<list<array<string, mixed>>>, url: string, title: string, refused: list<string>, video?: string|null} $answer */
+        /** @var array{steps: list<array<string, mixed>>, chapters: list<list<array<string, mixed>>>, url: string, title: string, refused: list<string>, video?: string|null, halted?: bool} $answer */
         $answer = $response->json();
 
-        return $answer + ['video' => null];
+        return $answer + ['video' => null, 'halted' => false];
     }
+
+    /** Seconds more for a filmed run: its film is made into MP4 after it ends. */
+    private const CONVERTING = 90;
 
     /**
      * As long as the browser may take over `steps`, in seconds: its own
@@ -265,16 +275,7 @@ class BrowserCheck
             fn (array $step) => $step['do'] !== 'shot',
         ));
 
-        $response = Http::timeout(120)->connectTimeout(10)->post(
-            rtrim((string) config('services.chrome.url'), '/').'/look',
-            ['steps' => $steps, 'size' => $size],
-        );
-
-        if (! $response->successful()) {
-            throw new RuntimeException((string) ($response->json('error') ?? 'The browser answered '.$response->status()));
-        }
-
-        return $response->json();
+        return Chrome::post('/look', ['steps' => $steps, 'size' => $size])->json();
     }
 
     /**
@@ -318,13 +319,7 @@ class BrowserCheck
      */
     private static function live(string $path, array $body): array
     {
-        $response = Http::timeout(120)->connectTimeout(10)->post(rtrim((string) config('services.chrome.url'), '/').$path, $body);
-
-        if (! $response->successful()) {
-            throw new RuntimeException((string) ($response->json('error') ?? 'The browser answered '.$response->status()));
-        }
-
-        return $response->json();
+        return Chrome::post($path, $body)->json();
     }
 
     /**
@@ -336,6 +331,15 @@ class BrowserCheck
     public static function keep(string $dataUrl, string $name, Owner $owner, ?DriveFolder $folder, ?User $by): array
     {
         $bytes = base64_decode(Str::after($dataUrl, ','), true);
+
+        // Named for what it is: a film comes back as MP4, or as the WebM it
+        // was recorded as when that could not be made (docker/chrome, asMp4)
+        $type = Str::between($dataUrl, 'data:', ';');
+        $extension = ['video/mp4' => 'mp4', 'video/webm' => 'webm'][$type] ?? null;
+
+        if ($extension !== null) {
+            $name = preg_replace('/\.(mp4|webm)$/i', '', $name).'.'.$extension;
+        }
 
         if ($bytes === false) {
             throw new RuntimeException("{$name} came back unreadable");

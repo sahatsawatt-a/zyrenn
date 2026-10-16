@@ -19,6 +19,7 @@ use App\Mcp\Tools\BrowserChecks\OpenBrowserPage;
 use App\Mcp\Tools\BrowserChecks\RunBrowserSuite;
 use App\Mcp\Tools\BrowserChecks\SaveBrowserCheck;
 use App\Mcp\Tools\BrowserChecks\SaveBrowserSuite;
+use App\Mcp\Tools\BrowserChecks\StopBrowserRun;
 use App\Mcp\Tools\Chats\GetChat;
 use App\Mcp\Tools\Chats\ListChats;
 use App\Mcp\Tools\Chats\SayInChat;
@@ -136,6 +137,7 @@ final class Toolset
         LookAtPage::class,
         RunBrowserSuite::class,
         GetBrowserRun::class,
+        StopBrowserRun::class,
         SaveBrowserCheck::class,
         EditBrowserCheck::class,
         OpenBrowserPage::class,

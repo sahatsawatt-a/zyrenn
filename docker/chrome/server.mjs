@@ -30,7 +30,14 @@
  */
 import http from 'node:http';
 import { chromium } from 'playwright';
-import { closeLive, openLive, runCheck, stepLive } from './check.mjs';
+import {
+    closeLive,
+    openLive,
+    runCheck,
+    stepLive,
+    stopCheck,
+    tokenOf,
+} from './check.mjs';
 
 const PORT = Number(process.env.PDF_PORT || 3000);
 const MAX_BODY = 1024 * 1024; // a URL and a cookie; anything bigger is a mistake
@@ -353,7 +360,14 @@ const server = http.createServer(async (req, res) => {
     if (
         req.method !== 'POST' ||
         (!living &&
-            !['/pdf', '/png', '/shots', '/check', '/look'].includes(path))
+            ![
+                '/pdf',
+                '/png',
+                '/shots',
+                '/check',
+                '/check/stop',
+                '/look',
+            ].includes(path))
     ) {
         return fail(res, 404, `no route for ${req.method} ${path}`);
     }
@@ -377,6 +391,23 @@ const server = http.createServer(async (req, res) => {
                       ? await stepLive(id, body)
                       : (await closeLive(id), { ok: true }),
             );
+            res.writeHead(200, {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(out),
+            });
+
+            return res.end(out);
+        }
+
+        // A check (or film) asked to stop after the step it is doing
+        if (path === '/check/stop') {
+            const token = tokenOf(body);
+
+            if (!token) {
+                return fail(res, 400, 'token is required');
+            }
+
+            const out = JSON.stringify({ ok: true, running: stopCheck(token) });
             res.writeHead(200, {
                 'Content-Type': 'application/json',
                 'Content-Length': Buffer.byteLength(out),

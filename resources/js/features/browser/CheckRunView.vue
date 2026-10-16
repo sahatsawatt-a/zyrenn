@@ -3,21 +3,29 @@ import {
     ChevronDown,
     CircleCheck,
     CircleDashed,
+    CircleStop,
     CircleX,
     FolderOpen,
     Loader2,
 } from '@lucide/vue';
 import { Link } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
+import { Button } from '@/components/ui/button';
 import PictureDialog from '@/features/chat/components/PictureDialog.vue';
 import { SPEEDS, seconds, shotUrl } from './steps';
 import type { CheckResult, CheckRun } from './steps';
 
 // One run of a suite, said plainly: how it went in a sentence, then each check
 // -- passed or where it stopped and why -- with its film and its pictures. A
-// check that failed is open; one that passed opens on a click.
+// check that failed is open; one that passed opens on a click. A run still
+// waiting or going can be stopped.
 
 const props = defineProps<{ run: CheckRun; total: number }>();
+const emit = defineEmits<{ stop: [] }>();
+
+const going = computed(
+    () => props.run.state === 'waiting' || props.run.state === 'running',
+);
 
 const time = new Intl.DateTimeFormat(undefined, {
     month: 'short',
@@ -34,7 +42,11 @@ const headline = computed(() => {
         case 'waiting':
             return 'Waiting for the browser…';
         case 'running':
-            return `Running: ${done} of ${props.total} checks done`;
+            return props.run.stop_asked
+                ? `Stopping after the step in hand: ${done} of ${props.total} checks done`
+                : `Running: ${done} of ${props.total} checks done`;
+        case 'stopped':
+            return props.run.stopped ?? 'Stopped';
         case 'passed':
             return done === 1
                 ? 'Passed: the check did what it should'
@@ -64,6 +76,10 @@ function verdict(check: CheckResult) {
 
     if (check.ok) {
         return `Passed: ${check.planned} steps in ${seconds(check.took)}`;
+    }
+
+    if (check.stopped) {
+        return `Stopped after step ${check.steps.length} of ${check.planned}`;
     }
 
     const at = check.steps.findIndex((step) => !step.ok);
@@ -124,18 +140,42 @@ const show = (check: string, at: number) =>
         <div class="flex flex-wrap items-center gap-2">
             <div class="flex min-w-0 items-start gap-2">
                 <Loader2
-                    v-if="run.state === 'waiting' || run.state === 'running'"
+                    v-if="going"
                     class="size-5 shrink-0 animate-spin text-sky-600"
                 />
                 <CircleCheck
                     v-else-if="run.state === 'passed'"
                     class="size-5 shrink-0 text-emerald-600"
                 />
+                <CircleStop
+                    v-else-if="run.state === 'stopped'"
+                    class="text-muted-foreground size-5 shrink-0"
+                />
                 <CircleX v-else class="text-destructive size-5 shrink-0" />
-                <p class="font-medium" data-test="check-run-headline">
-                    {{ headline }}
-                </p>
+                <div class="min-w-0">
+                    <p class="font-medium" data-test="check-run-headline">
+                        {{ headline }}
+                    </p>
+                    <!-- Why it has not started: what it is waiting behind -->
+                    <p
+                        v-if="run.state === 'waiting' && run.waiting_for"
+                        class="text-muted-foreground text-xs"
+                        data-test="check-run-waiting"
+                    >
+                        {{ run.waiting_for }}
+                    </p>
+                </div>
             </div>
+            <Button
+                v-if="going && !run.stop_asked"
+                variant="outline"
+                size="sm"
+                title="Stop it: one waiting never starts, one running stops after the step it is on, keeping what it has done"
+                data-test="check-run-stop"
+                @click="emit('stop')"
+            >
+                <CircleStop /> Stop run
+            </Button>
             <Link
                 v-if="run.folder"
                 :href="run.folder"
@@ -190,6 +230,10 @@ const show = (check: string, at: number) =>
                         v-if="check.ok"
                         class="mt-0.5 size-4 shrink-0 text-emerald-600"
                     />
+                    <CircleStop
+                        v-else-if="check.stopped"
+                        class="text-muted-foreground mt-0.5 size-4 shrink-0"
+                    />
                     <CircleX
                         v-else
                         class="text-destructive mt-0.5 size-4 shrink-0"
@@ -201,7 +245,7 @@ const show = (check: string, at: number) =>
                         <span
                             class="block text-xs"
                             :class="
-                                check.ok
+                                check.ok || check.stopped
                                     ? 'text-muted-foreground'
                                     : 'text-destructive'
                             "
@@ -224,6 +268,13 @@ const show = (check: string, at: number) =>
                         class="w-full rounded-md border bg-black"
                         data-test="check-video"
                     />
+                    <p
+                        v-if="check.video?.partial"
+                        class="text-muted-foreground text-xs"
+                        data-test="check-video-partial"
+                    >
+                        Partial: the run was stopped before the film was done.
+                    </p>
                     <ol class="space-y-1">
                         <li
                             v-for="(step, at) in check.steps"

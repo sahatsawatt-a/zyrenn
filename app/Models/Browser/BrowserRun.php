@@ -26,6 +26,8 @@ use Illuminate\Support\Carbon;
  * @property list<array{number: int, title: string, new: bool}>|null $tickets
  * @property Carbon|null $started_at
  * @property Carbon|null $ended_at
+ * @property Carbon|null $stop_asked_at when someone asked for it to stop
+ * @property int|null $stopped_by who did
  * @property Carbon|null $created_at
  */
 class BrowserRun extends Model
@@ -40,6 +42,9 @@ class BrowserRun extends Model
 
     public const FAILED = 'failed';
 
+    /** Stopped part way by someone: neither passed nor failed. */
+    public const STOPPED = 'stopped';
+
     protected $guarded = [];
 
     /**
@@ -53,6 +58,7 @@ class BrowserRun extends Model
             'tickets' => 'array',
             'started_at' => 'datetime',
             'ended_at' => 'datetime',
+            'stop_asked_at' => 'datetime',
         ];
     }
 
@@ -73,6 +79,14 @@ class BrowserRun extends Model
     }
 
     /**
+     * @return BelongsTo<User, $this>
+     */
+    public function stopper(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'stopped_by');
+    }
+
+    /**
      * @return BelongsTo<DriveFolder, $this>
      */
     public function driveFolder(): BelongsTo
@@ -82,6 +96,12 @@ class BrowserRun extends Model
 
     public function ended(): bool
     {
-        return in_array($this->state, [self::PASSED, self::FAILED], true);
+        return in_array($this->state, [self::PASSED, self::FAILED, self::STOPPED], true);
+    }
+
+    /** Whether someone has asked for it to stop: it does after the step in hand. */
+    public function stopAsked(): bool
+    {
+        return $this->stop_asked_at !== null;
     }
 }

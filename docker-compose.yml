@@ -119,6 +119,22 @@ services:
         command: php artisan queue:work --sleep=1 --tries=1 --max-time=3600
         stop_grace_period: 60s
 
+    # Browser checks, on a queue of their own (App\Jobs\RunBrowserChecks):
+    # a filmed demo can take ten minutes, and the workflow steps the worker
+    # above runs -- a customer waiting for an answer -- must not wait behind it.
+    checks-worker:
+        image: zyrenn-app:local
+        pull_policy: never
+        restart: unless-stopped
+        working_dir: /var/www/html
+        volumes:
+            - .:/var/www/html
+        depends_on:
+            app:
+                condition: service_healthy
+        command: php artisan queue:work --queue=checks --sleep=1 --tries=1 --max-time=3600 --timeout=1800
+        stop_grace_period: 60s
+
     # Runs the app's timetable (routes/console.php) every minute: scheduled
     # workflows, and looking for runs that are stuck.
     scheduler:
@@ -261,7 +277,8 @@ services:
             - ./resources/js/features/browser/cursor.js:/shared/cursor.js:ro
         command: >
             bash -lc "mkdir -p /work && cd /work &&
-                      { [ -d node_modules/playwright ] || npm i playwright@1.61.0 >/tmp/npm.log 2>&1 ||
+                      { { [ -d node_modules/playwright ] && [ -d node_modules/ffmpeg-static ]; } ||
+                        npm i playwright@1.61.0 ffmpeg-static@5.2.0 >/tmp/npm.log 2>&1 ||
                         { echo 'npm install failed:'; tail -20 /tmp/npm.log; exit 1; }; } &&
                       cp /srv/*.mjs /work/ && cp /shared/cursor.js /work/cursor.mjs &&
                       exec node /work/server.mjs"

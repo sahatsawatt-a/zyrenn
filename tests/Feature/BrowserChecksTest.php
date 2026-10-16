@@ -478,6 +478,26 @@ class BrowserChecksTest extends TestCase
             ->assertJsonPath('folder', route('projects.drive.index', ['project' => $project, 'folder' => $run->driveFolder->ref_id]));
     }
 
+    public function test_a_film_the_browser_made_into_mp4_is_kept_as_mp4()
+    {
+        Storage::fake(DriveFile::DISK);
+        // What docker/chrome hands back once it has made the WebM into MP4
+        $this->browserAnswers('data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDE=');
+        $owner = User::factory()->create();
+        $project = Project::start($owner, 'Customer');
+        $suite = $this->suiteOf($project, $owner);
+        $run = $suite->runs()->create(['created_by' => $owner->id, 'settings' => [
+            'speed' => 'watch', 'pace' => ['glide' => 350, 'typing' => 45, 'pause' => 800],
+            'captions' => true, 'record' => true, 'keep' => true, 'checks' => [],
+        ]]);
+
+        (new RunBrowserChecks($run->id))->handle();
+
+        $film = $project->driveFiles()->where('kind', 'video')->sole();
+        $this->assertSame('Home.mp4', $film->name);
+        $this->assertSame('Home.mp4', $run->refresh()->results[0]['video']['name']);
+    }
+
     public function test_every_check_is_filmed_one_after_another_as_one_film()
     {
         Storage::fake(DriveFile::DISK);
