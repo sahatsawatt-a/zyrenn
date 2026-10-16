@@ -23,6 +23,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useMediaViewer } from '@/composables/useMediaViewer';
+import VideoPlayer from '@/components/media/VideoPlayer.vue';
 
 const { items, index, isOpen, current, close, step } = useMediaViewer();
 
@@ -177,14 +178,6 @@ const saveAs = async (to: 'download' | 'drive') => {
 // A video is played rather than looked over: no zoom, no panning, and the
 // keys and clicks on it are its own player's
 const playing = computed(() => current.value?.type === 'video');
-
-const onVideoReady = (event: Event) => {
-    const item = current.value;
-
-    if (item?.type === 'video' && item.start) {
-        (event.target as HTMLVideoElement).currentTime = item.start;
-    }
-};
 
 // Zoom keeping the point under (clientX, clientY) fixed; the stage centre by default
 const zoomTo = (scale: number, clientX?: number, clientY?: number) => {
@@ -478,17 +471,15 @@ useEventListener(
                         transform: `translate(${view.x}px, ${view.y}px)`,
                     }"
                 >
-                    <video
+                    <VideoPlayer
                         v-if="current.type === 'video'"
                         :key="current.src"
                         :src="current.src"
                         :title="current.title"
-                        class="block max-h-[calc(100vh-7rem)] max-w-[92vw] bg-black shadow-2xl"
-                        data-test="viewer-video"
-                        controls
+                        :start-at="current.start"
                         autoplay
-                        playsinline
-                        @loadedmetadata="onVideoReady"
+                        class="block max-h-[calc(100vh-7rem)] w-fit max-w-[92vw] shadow-2xl"
+                        data-test="viewer-video"
                     />
                     <img
                         v-else-if="current.type === 'image'"

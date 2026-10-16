@@ -35,6 +35,12 @@ const props = withDefaults(
         // Draw nothing until a style is picked: for files that are slow or
         // many to make, where a guess at the wrong one is wasted
         waitForChoice?: boolean;
+        // Handed over as one zip with more beside it (a board's videos):
+        // what it holds, said, and the zip made of what was drawn
+        bundle?: {
+            note: string;
+            make: (files: File[]) => Promise<File>;
+        } | null;
     }>(),
     {
         styles: undefined,
@@ -42,6 +48,7 @@ const props = withDefaults(
         stylesLabel: 'PDF style',
         working: 'Printing…',
         waitForChoice: false,
+        bundle: null,
     },
 );
 
@@ -165,7 +172,10 @@ async function hand(
     delivering.value = true;
 
     try {
-        if (files.length === 1) {
+        // The whole set, with what goes beside it, as one zip
+        if (props.bundle && files.length === shown.value.length) {
+            await deliver(await props.bundle.make(files), to);
+        } else if (files.length === 1) {
             await deliver(files[0], to);
         } else if (to === 'download') {
             // One after another: a browser lets a page start several
@@ -200,6 +210,9 @@ async function hand(
                     <DialogTitle>{{ title }}</DialogTitle>
                     <DialogDescription class="text-xs">
                         Check it, then download it or save it to your Drive.
+                        <span v-if="bundle" data-test="pdf-preview-bundle">{{
+                            bundle.note
+                        }}</span>
                     </DialogDescription>
                 </div>
 
@@ -249,7 +262,13 @@ async function hand(
                         @click="hand('drive')"
                     >
                         <HardDrive />
-                        {{ many ? 'Save all to Drive' : 'Save to Drive' }}
+                        {{
+                            bundle
+                                ? 'Save zip to Drive'
+                                : many
+                                  ? 'Save all to Drive'
+                                  : 'Save to Drive'
+                        }}
                     </Button>
                     <Button
                         size="sm"
@@ -258,7 +277,13 @@ async function hand(
                         @click="hand('download')"
                     >
                         <Download />
-                        {{ many ? `Download all ${shown.length}` : 'Download' }}
+                        {{
+                            bundle
+                                ? 'Download zip'
+                                : many
+                                  ? `Download all ${shown.length}`
+                                  : 'Download'
+                        }}
                     </Button>
                 </div>
             </div>

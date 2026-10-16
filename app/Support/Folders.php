@@ -4,7 +4,9 @@ namespace App\Support;
 
 use App\Models\Folder;
 use App\Models\Owner;
+use App\Models\Project;
 use App\Models\User;
+use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
@@ -192,5 +194,47 @@ final class Folders
             fn (Folder $crumb) => ['ref_id' => $crumb->ref_id, 'name' => $crumb->name],
             $folder?->ancestry() ?? [],
         );
+    }
+
+    /**
+     * An export of one of the owner's folders -- everything in it, its
+     * folders too -- or of all they keep (`$everything` names that): what the
+     * zip is called, the folder at its top, and each folder's path inside it
+     * from there, null for one outside what is exported. A project's name
+     * comes first, so what is unpacked says whose it is: "Team/Trip/Day 1",
+     * in "Team - Trip.zip".
+     *
+     * @param  class-string<Folder>  $model
+     * @param  callable(string): string  $fileName  a name as a disk takes it
+     * @return array{name: string, top: string, pathOf: Closure(?int): ?string}
+     */
+    public static function exported(string $model, Owner $owner, ?string $refId, string $everything, callable $fileName): array
+    {
+        $folders = self::all($model, $owner)->keyBy('id');
+        $open = filled($refId) ? $folders->firstWhere('ref_id', $refId) : null;
+        $own = $open instanceof Folder ? $fileName($open->name) : null;
+        $project = $owner instanceof Project ? $fileName($owner->name) : null;
+        $top = implode('/', array_filter([$project, $own ?? ($project === null ? $everything : null)]));
+
+        $pathOf = function (?int $id) use ($folders, $open, $top, $fileName): ?string {
+            $names = [];
+
+            for ($folder = $folders->get($id); $folder instanceof Folder; $folder = $folders->get($folder->parent_id)) {
+                if ($open instanceof Folder && $folder->id === $open->id) {
+                    return implode('/', [$top, ...$names]);
+                }
+
+                array_unshift($names, $fileName($folder->name));
+            }
+
+            // Outside the folder exported, or at the top when all are
+            return $open instanceof Folder ? null : implode('/', [$top, ...$names]);
+        };
+
+        return [
+            'name' => $project !== null ? $project.' - '.($own ?? $everything) : ($own ?? $everything),
+            'top' => $top,
+            'pathOf' => $pathOf,
+        ];
     }
 }

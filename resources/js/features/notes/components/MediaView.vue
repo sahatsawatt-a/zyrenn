@@ -6,14 +6,13 @@
     >
         <div class="image-frame">
             <!-- Played right here; the toolbar's expand opens it full size -->
-            <video
+            <VideoPlayer
                 v-if="isVideo && !failed"
                 ref="player"
                 :src="node.attrs.src"
                 :title="node.attrs.title ?? undefined"
-                controls
-                preload="metadata"
-                playsinline
+                class="note-player"
+                contenteditable="false"
                 data-test="note-video"
                 @error="failed = true"
                 @loadedmetadata="failed = false"
@@ -87,6 +86,7 @@ import { computed, ref, watch } from 'vue';
 import { NodeViewWrapper, nodeViewProps } from '@tiptap/vue-3';
 import { Maximize2, SlidersHorizontal } from '@lucide/vue';
 import PhotoEditor from '@/components/photo/PhotoEditor.vue';
+import VideoPlayer from '@/components/media/VideoPlayer.vue';
 import { useMediaViewer } from '@/composables/useMediaViewer';
 import type { ViewerItem } from '@/composables/useMediaViewer';
 import type { ImageSize } from '@/features/notes/nodes/ImageNode';
@@ -95,7 +95,7 @@ const props = defineProps(nodeViewProps);
 
 // The one view for both picture and video blocks: same widths, same viewer
 const isVideo = computed(() => props.node.type.name === 'video');
-const player = ref<HTMLVideoElement | null>(null);
+const player = ref<InstanceType<typeof VideoPlayer> | null>(null);
 
 const failed = ref(false);
 const editing = ref(false);
@@ -135,7 +135,7 @@ const expand = () => {
                 type: 'video',
                 src: node.attrs.src,
                 title: node.attrs.title ?? undefined,
-                start: mine ? player.value?.currentTime : undefined,
+                start: mine ? player.value?.currentTime() : undefined,
             });
         }
     });
@@ -169,7 +169,7 @@ const expand = () => {
 }
 
 .image-frame img,
-.image-frame video {
+.image-frame .note-player {
     display: block;
     width: 100%;
     height: auto;
@@ -178,17 +178,12 @@ const expand = () => {
 .image-frame img {
     cursor: zoom-in;
 }
-.image-frame video {
-    background: #000;
-    /* 16:9 until it knows its own shape */
-    aspect-ratio: auto 16 / 9;
-}
 
 .video-print {
     display: none;
 }
 @media print {
-    .image-frame video {
+    .image-frame .note-player {
         display: none;
     }
     .video-print {

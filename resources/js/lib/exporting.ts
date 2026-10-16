@@ -1,9 +1,19 @@
 import { toast } from 'vue-sonner';
 import { uploadToDrive } from './drive';
 
+/** A file's name as the server sends it, from its Content-Disposition. */
+export const nameFrom = (response: Response) => {
+    const header = response.headers.get('Content-Disposition') ?? '';
+    const utf8 = header.match(/filename\*=utf-8''([^;]+)/i);
+    const plain = header.match(/filename="?([^";]+)"?/i);
+
+    return utf8 ? decodeURIComponent(utf8[1]) : (plain?.[1] ?? null);
+};
+
 /**
  * A file the server makes when asked -- a note's or a board's PDF, a picture
- * of a board -- fetched and named for keeping. A warning the server sends
+ * of a board -- fetched and named for keeping: `name`, or with `theirs` the
+ * name the server gives it, when it gives one. A warning the server sends
  * along (a picture that didn't load, say) is shown, not thrown.
  */
 export async function fetchExport(
@@ -11,6 +21,7 @@ export async function fetchExport(
     name: string,
     type: string,
     failure: string,
+    theirs = false,
 ): Promise<File> {
     const response = await fetch(url, {
         headers: {
@@ -43,7 +54,9 @@ export async function fetchExport(
     }
 
     // A slash would make the Drive keep only what follows it as the file's name
-    return new File([await response.blob()], name.replace(/[/\\]/g, '-'), {
+    const named = (theirs && nameFrom(response)) || name;
+
+    return new File([await response.blob()], named.replace(/[/\\]/g, '-'), {
         type,
     });
 }

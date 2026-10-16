@@ -2,11 +2,14 @@
 
 namespace App\Models\Drive;
 
+use App\Jobs\MakeVideoMp4;
 use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
 use App\Models\Concerns\RecordsEditor;
+use App\Models\Concerns\TellsLists;
 use App\Models\Owner;
 use App\Models\User;
+use App\Support\Drive\VideoMp4;
 use Database\Factories\Drive\DriveFileFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -42,7 +45,7 @@ use Illuminate\Support\Str;
 class DriveFile extends Model
 {
     /** @use HasFactory<DriveFileFactory> */
-    use BelongsToOwner, HasFactory, HasRefId, RecordsEditor;
+    use BelongsToOwner, HasFactory, HasRefId, RecordsEditor, TellsLists;
 
     public const DISK = 'local';
 
@@ -63,6 +66,13 @@ class DriveFile extends Model
 
     protected static function booted(): void
     {
+        // A WebM video is made MP4 once it is in, however it came
+        static::created(function (DriveFile $file) {
+            if (VideoMp4::wanted($file)) {
+                MakeVideoMp4::dispatch($file->id)->afterCommit();
+            }
+        });
+
         static::deleted(function (DriveFile $file) {
             Storage::disk(self::DISK)->delete($file->path);
         });

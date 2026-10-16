@@ -6,7 +6,8 @@ use App\Models\Drive\DriveFile;
 use App\Models\Note\Note;
 use App\Models\User;
 use App\Support\Chrome\Chrome;
-use App\Support\Markdown\TiptapMarkdown;
+use App\Support\Formula\NoteValues;
+use App\Support\Markdown\TiptapToMarkdown;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
@@ -21,6 +22,12 @@ use ZipArchive;
  * draws (a circuit, a graph, a timing diagram, a board, a trip, a map), so
  * the files read the same anywhere. A Mermaid diagram stays as its code,
  * which Markdown viewers draw themselves.
+ *
+ * A link to another note in the zip goes to its file, from where the
+ * linking one is; a link to anything else in the app goes to it there, in
+ * full. What only the app reads is written as what any viewer does: a
+ * callout as a quote, a reveal as <details>, a live value as what it comes
+ * to now (TiptapToMarkdown's portable form).
  */
 class NoteExport
 {
@@ -51,6 +58,23 @@ class NoteExport
      */
     private array $packed = [];
 
+    /**
+     * The file each exported note went into, by ref_id, from the top of the zip.
+     *
+     * @var array<string, string>
+     */
+    private array $files = [];
+
+    /** The file being written now, from the top of the zip. */
+    private string $here = '';
+
+    /**
+     * What each live value in the note being written comes to now, by its formula.
+     *
+     * @var array<string, array{value?: mixed, text?: string, error?: string}>
+     */
+    private array $values = [];
+
     /** How many diagrams could not be pictured, and stayed as their code. */
     public int $unpictured = 0;
 
@@ -79,8 +103,20 @@ class NoteExport
             throw new RuntimeException('The zip could not be opened');
         }
 
+        // Every note's file named before any is written, so each can link to the others
+        $named = [];
+
         foreach ($notes as ['note' => $note, 'folder' => $folder]) {
-            $export->add($note, trim($folder, '/'));
+            $folder = trim($folder, '/');
+            $prefix = $folder === '' ? '' : $folder.'/';
+            $file = $prefix.$export->unique($prefix, self::fileName($note->title), '.md').'.md';
+
+            $export->files[$note->ref_id] = $file;
+            $named[] = [$note, $prefix, $file];
+        }
+
+        foreach ($named as [$note, $prefix, $file]) {
+            $export->add($note, $prefix, $file);
         }
 
         // An empty folder is still a zip, not an error
@@ -93,11 +129,12 @@ class NoteExport
         return ['path' => $path, 'unpictured' => $export->unpictured];
     }
 
-    private function add(Note $note, string $folder): void
+    private function add(Note $note, string $prefix, string $path): void
     {
         $doc = NoteBlocks::withIds($note->content) ?? ['type' => 'doc', 'content' => []];
-        $prefix = $folder === '' ? '' : $folder.'/';
-        $name = $this->unique($prefix, self::fileName($note->title), '.md');
+        $this->here = $path;
+        $expressions = NoteValues::expressions($doc);
+        $this->values = $expressions === [] ? [] : NoteValues::of($note, $expressions);
 
         $wanted = [];
         $this->diagrams($doc, $wanted);
@@ -105,7 +142,7 @@ class NoteExport
 
         $doc = $this->rewrite($doc, $note, $prefix, $shots);
 
-        $this->zip->addFromString($prefix.$name.'.md', TiptapMarkdown::toMarkdown($doc));
+        $this->zip->addFromString($path, (new TiptapToMarkdown(portable: true))->convert($doc));
     }
 
     /**
@@ -169,9 +206,10 @@ class NoteExport
 
     /**
      * The note with what it shows pointed into its `assets` folder: a diagram
-     * as its picture, a Drive picture as its file, a link to a Drive file to
-     * that file; a Drive address left in it (a video, say) made whole, so it
-     * still opens from elsewhere.
+     * as its picture, a Drive picture or video as its file, a link to a Drive
+     * file to that file -- so the export plays and shows for whoever gets it,
+     * signed in to Zyrenn or not. A Drive address left in it (a file the
+     * caller may not see) is made whole.
      *
      * @param  array<string, mixed>  $node
      * @param  array<string, string>  $shots
@@ -196,13 +234,27 @@ class NoteExport
             return ['type' => 'image', 'attrs' => ['src' => $path, 'alt' => $this->caption((string) $attrs['language'])]];
         }
 
+        if ($type === PageLinks::NODE) {
+            return $this->pageLink($attrs, $note);
+        }
+
+        // As the chip shows it now; a formula that fails stays as written
+        if ($type === 'formula') {
+            $expression = (string) ($attrs['expression'] ?? '');
+            $answer = $this->values[$expression] ?? ['error' => ''];
+
+            return isset($answer['error'])
+                ? ['type' => 'text', 'text' => '{{ '.$expression.' }}', 'marks' => [['type' => 'code']]]
+                : ['type' => 'text', 'text' => (string) ($answer['text'] ?? '')];
+        }
+
         if (in_array($type, ['image', 'video'], true) && is_string($attrs['src'] ?? null)) {
-            $node['attrs']['src'] = $this->drive($attrs['src'], $prefix, $type === 'image');
+            $node['attrs']['src'] = $this->drive($attrs['src'], $prefix, true);
         }
 
         foreach ($node['marks'] ?? [] as $at => $mark) {
             if (($mark['type'] ?? '') === 'link' && is_string($mark['attrs']['href'] ?? null)) {
-                $node['marks'][$at]['attrs']['href'] = $this->drive($mark['attrs']['href'], $prefix, true);
+                $node['marks'][$at]['attrs']['href'] = $this->address($this->drive($mark['attrs']['href'], $prefix, true));
             }
         }
 
@@ -229,7 +281,7 @@ class NoteExport
         $file = DriveFile::query()->where('ref_id', $match[1])->first();
         $whole = str_starts_with($src, '/') ? url($src) : $src;
 
-        if (! $pack || ! $file || ! Gate::forUser($this->user)->allows('view', $file) || $file->kind === 'video') {
+        if (! $pack || ! $file || ! Gate::forUser($this->user)->allows('view', $file)) {
             return $whole;
         }
 
@@ -252,6 +304,63 @@ class NoteExport
         }
 
         return self::link($this->packed[$key]);
+    }
+
+    /**
+     * A link to a page by its name, as an ordinary link: to the note's file
+     * when it is in the zip, to the page in the app when the caller may see
+     * it, and only its words when there is no such page for them.
+     *
+     * @param  array<string, mixed>  $attrs
+     * @return array<string, mixed>
+     */
+    private function pageLink(array $attrs, Note $note): array
+    {
+        $words = fn (mixed $text) => trim(str_replace(['[', ']', "\n"], ' ', (string) $text));
+        [$page] = PageLinks::describe([$attrs], $note, $this->user);
+        $text = $words($attrs['text'] ?? '') ?: $words($page['title']) ?: $words($attrs['title'] ?? '') ?: 'Untitled';
+
+        $href = match (true) {
+            $page['kind'] === 'note' && isset($this->files[$page['ref']]) => $this->from($this->files[$page['ref']]),
+            $page['url'] !== null => url($page['url']),
+            default => null,
+        };
+
+        return $href === null
+            ? ['type' => 'text', 'text' => $text]
+            : ['type' => 'text', 'text' => $text, 'marks' => [['type' => 'link', 'attrs' => ['href' => $href]]]];
+    }
+
+    /**
+     * Where an ordinary link goes from the exported file: a note of the zip
+     * to its file, any other address in the app in full, so it opens from
+     * elsewhere. Links out of the app, and those into the zip, stay.
+     */
+    private function address(string $href): string
+    {
+        $app = preg_quote((string) parse_url(url('/'), PHP_URL_HOST), '#');
+
+        if (preg_match('#^(?:https?://'.$app.'(?::\d+)?)?/notes/([A-Za-z0-9]+)(?:[/?\#].*)?$#', $href, $match) && isset($this->files[$match[1]])) {
+            return $this->from($this->files[$match[1]]);
+        }
+
+        return str_starts_with($href, '/') && ! str_starts_with($href, '//') ? url($href) : $href;
+    }
+
+    /** A file of the zip as a link from the file being written: "../Deep/Q3-Q4.md". */
+    private function from(string $path): string
+    {
+        $here = explode('/', $this->here);
+        $there = explode('/', $path);
+        array_pop($here);
+
+        // Down from the folder both are in
+        while ($here !== [] && count($there) > 1 && $here[0] === $there[0]) {
+            array_shift($here);
+            array_shift($there);
+        }
+
+        return self::link(str_repeat('../', count($here)).implode('/', $there));
     }
 
     /** Put bytes into the zip under a name not taken, and answer with its link. */

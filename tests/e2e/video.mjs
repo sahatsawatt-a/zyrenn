@@ -306,20 +306,36 @@ await runBoard(
                     ]),
             ),
         );
+        // From the start: one sought near its end by now would end, and stop,
+        // a moment after the click
+        await page.evaluate(() =>
+            window.Konva.stages[0]
+                .find('Image')
+                .filter((node) => node.image() instanceof HTMLVideoElement)
+                .forEach((node) => (node.image().currentTime = 0)),
+        );
         await page.mouse.click(centre.x, centre.y);
         // (whichever of them is under the click)
         await until(() =>
             page.evaluate(() =>
                 window.Konva.stages[0]
                     .find('Image')
-                    .some((node) => node.image().paused === false),
+                    .some(
+                        (node) =>
+                            node.image() instanceof HTMLVideoElement &&
+                            node.image().paused === false,
+                    ),
             ),
         );
         const element = await page.evaluateHandle(() =>
+            // (only videos: a picture still coming in has no image yet)
             window.Konva.stages[0]
                 .find('Image')
                 .map((node) => node.image())
-                .find((image) => !image.paused),
+                .find(
+                    (image) =>
+                        image instanceof HTMLVideoElement && !image.paused,
+                ),
         );
         await page.keyboard.press('Delete');
         await soon('deleting a playing video stops it', () =>
@@ -375,7 +391,7 @@ await runBoard(
             inNote.evaluate((video) => video.currentTime > 0.5),
         );
 
-        await inNote.hover();
+        await page.locator('.tiptap [data-video-player]').hover();
         await page.locator('.image-toolbar [title="View full size"]').click();
         await big.waitFor();
         await soon(
@@ -411,13 +427,16 @@ await runBoard(
                     ),
                 );
         const blocksBefore = await layout();
-        const frame = await inNote.boundingBox();
-        const lineY = frame.y + frame.height - 22;
-        await inNote.hover();
-        await page.waitForTimeout(400);
-        await page.mouse.move(frame.x + frame.width * 0.15, lineY);
+        // The player's own timeline, under the picture: shown while paused
+        const timeline = page.locator(
+            '.tiptap [data-video-player] [data-test="vp-bar"]',
+        );
+        await page.locator('.tiptap [data-video-player]').hover();
+        const line = await timeline.boundingBox();
+        const lineY = line.y + line.height / 2;
+        await page.mouse.move(line.x + line.width * 0.15, lineY);
         await page.mouse.down();
-        await page.mouse.move(frame.x + frame.width * 0.75, lineY, {
+        await page.mouse.move(line.x + line.width * 0.75, lineY, {
             steps: 8,
         });
         await page.mouse.up();

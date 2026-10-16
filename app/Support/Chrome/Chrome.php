@@ -45,6 +45,23 @@ final class Chrome
         return $response;
     }
 
+    /**
+     * A video made into H.264 MP4 by the container's ffmpeg: the one at
+     * `$url` (a signed link to it in the Drive, given absolute: false).
+     *
+     * @throws RuntimeException when it could not be
+     */
+    public static function mp4(string $url): string
+    {
+        $bytes = self::post('/mp4', ['url' => self::at($url)], 900)->body();
+
+        if (substr($bytes, 4, 4) !== 'ftyp') {
+            throw new RuntimeException('What came back is not an MP4');
+        }
+
+        return $bytes;
+    }
+
     /** An address in the app, as the browser reaches it: a path, given absolute: false. */
     public static function at(string $path): string
     {

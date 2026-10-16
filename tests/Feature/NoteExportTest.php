@@ -2,10 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Models\Board\Board;
 use App\Models\Drive\DriveFile;
 use App\Models\Note\Note;
 use App\Models\Note\NoteFolder;
+use App\Models\Project;
 use App\Models\User;
+use App\Support\Markdown\TiptapMarkdown;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -54,6 +57,23 @@ class NoteExportTest extends TestCase
     private function code(string $id, string $language, string $code): array
     {
         return ['type' => 'codeBlock', 'attrs' => ['id' => $id, 'language' => $language], 'content' => [['type' => 'text', 'text' => $code]]];
+    }
+
+    /** A paragraph of the inline nodes given. */
+    private function line(string $id, array ...$inline): array
+    {
+        return ['type' => 'paragraph', 'attrs' => ['id' => $id], 'content' => $inline];
+    }
+
+    /** A link to a page by its name, as the editor keeps it. */
+    private function to(string $kind, string $ref, string $title, string $text = ''): array
+    {
+        return ['type' => 'pageLink', 'attrs' => ['kind' => $kind, 'ref' => $ref, 'title' => $title, 'text' => $text]];
+    }
+
+    private function words(string $text): array
+    {
+        return ['type' => 'text', 'text' => $text];
     }
 
     public function test_a_folder_goes_out_as_markdown_with_its_pictures_and_its_folders()
@@ -107,6 +127,23 @@ class NoteExportTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_a_projects_notes_go_out_with_its_name()
+    {
+        $user = User::factory()->create();
+        $project = Project::start($user, 'Lakeshore');
+        $kt = NoteFolder::factory()->create(['user_id' => null, 'project_id' => $project->id, 'name' => 'KT']);
+        Note::factory()->create(['user_id' => null, 'project_id' => $project->id, 'title' => 'Plan', 'folder_id' => $kt->id, 'content' => $this->doc()]);
+        Note::factory()->create(['user_id' => null, 'project_id' => $project->id, 'title' => 'Top', 'content' => $this->doc()]);
+
+        $folder = $this->actingAs($user)->get(route('projects.notes.export', ['project' => $project, 'folder' => $kt->ref_id]))->assertOk();
+        $this->assertStringContainsString('filename="Lakeshore - KT.zip"', $folder->headers->get('Content-Disposition'));
+        $this->assertSame(['Lakeshore/KT/Plan.md'], array_keys($this->unzip($folder)));
+
+        $all = $this->get(route('projects.notes.export', ['project' => $project]))->assertOk();
+        $this->assertStringContainsString('filename="Lakeshore - Notes.zip"', $all->headers->get('Content-Disposition'));
+        $this->assertSame(['Lakeshore/KT/Plan.md', 'Lakeshore/Top.md'], array_keys($this->unzip($all)));
+    }
+
     public function test_a_diagram_the_browser_could_not_picture_stays_as_its_code()
     {
         Storage::fake('local');
@@ -118,6 +155,25 @@ class NoteExportTest extends TestCase
 
         $response->assertOk()->assertHeader('X-Export-Warning', 'One diagram could not be pictured and is left as its code.');
         $this->assertStringContainsString("```plot\ny = x^2\n```", $this->unzip($response)['Notes/Plan.md']);
+    }
+
+    public function test_a_video_goes_with_the_notes_and_plays_or_opens_from_its_file()
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $film = DriveFile::factory()->for($user)->create(['name' => 'Network home.webm', 'mime' => 'video/webm', 'ext' => 'webm', 'kind' => 'video']);
+        Storage::disk('local')->put($film->path, 'film bytes');
+        Note::factory()->for($user)->create(['title' => 'Tour', 'content' => $this->doc(
+            ['type' => 'video', 'attrs' => ['id' => 'vid00001', 'src' => '/drive/files/'.$film->ref_id, 'title' => 'Network home at a glance']],
+        )]);
+
+        $files = $this->unzip($this->actingAs($user)->get(route('notes.export'))->assertOk());
+
+        $this->assertSame('film bytes', $files['Notes/assets/network-home.webm']);
+        // A player where HTML video is drawn, and a link to the file where it is not
+        $this->assertStringContainsString('<video src="assets/network-home.webm" controls title="Network home at a glance"></video>', $files['Notes/Tour.md']);
+        $this->assertStringContainsString('[▶ Network home at a glance](assets/network-home.webm)', $files['Notes/Tour.md']);
+        $this->assertStringNotContainsString('/drive/files/', $files['Notes/Tour.md']);
     }
 
     public function test_someone_elses_drive_file_is_linked_not_packed()
@@ -135,6 +191,89 @@ class NoteExportTest extends TestCase
         $this->assertSame(['Notes/Mine.md'], array_keys($files));
         $this->assertStringContainsString(url('/drive/files/'.$theirs->ref_id), $files['Notes/Mine.md']);
         Http::assertNothingSent();
+    }
+
+    public function test_links_to_notes_in_the_zip_go_to_their_files_and_others_to_the_app()
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $kt = NoteFolder::factory()->for($user)->create(['name' => 'KT']);
+        $deep = NoteFolder::factory()->for($user)->create(['name' => 'Deep', 'parent_id' => $kt->id]);
+        $elsewhere = NoteFolder::factory()->for($user)->create(['name' => 'Elsewhere']);
+        $board = Board::factory()->for($user)->create(['title' => 'Wiring']);
+        $outside = Note::factory()->for($user)->create(['title' => 'Outside', 'folder_id' => $elsewhere->id]);
+        $theirs = Note::factory()->create(['title' => 'Private']);
+
+        $setup = Note::factory()->for($user)->create(['title' => 'Setup', 'folder_id' => $kt->id]);
+        $again = Note::factory()->for($user)->create(['title' => 'Setup', 'folder_id' => $kt->id]);
+        $deeper = Note::factory()->for($user)->create(['title' => 'Q3/Q4', 'folder_id' => $deep->id]);
+
+        $setup->update(['content' => ['type' => 'doc', 'content' => [
+            $this->line('p0000001', $this->words('See '), $this->to('note', $deeper->ref_id, 'Q3/Q4', 'the plan'), $this->words('.')),
+            $this->line('p0000002', $this->to('note', $again->ref_id, 'Setup')),
+            $this->line('p0000003', $this->to('board', $board->ref_id, 'Wiring')),
+            $this->line('p0000004', $this->to('note', $outside->ref_id, 'Outside')),
+            $this->line('p0000005', $this->to('note', $theirs->ref_id, 'Private')),
+            $this->line('p0000006', $this->to('note', '', 'Gone')),
+            $this->line('p0000007', ['type' => 'text', 'text' => 'by address', 'marks' => [['type' => 'link', 'attrs' => ['href' => '/notes/'.$deeper->ref_id]]]]),
+        ]]]);
+        $deeper->update(['content' => ['type' => 'doc', 'content' => [
+            $this->line('p0000008', $this->words('Back to '), $this->to('note', $setup->ref_id, 'Setup')),
+        ]]]);
+
+        $files = $this->unzip($this->actingAs($user)->get(route('notes.export', ['folder' => $kt->ref_id]))->assertOk());
+        $first = $files['KT/Setup.md'];
+
+        // To the other note's file, from where this one is, in its words
+        $this->assertStringContainsString('See [the plan](Deep/Q3-Q4.md).', $first);
+        // An ordinary link to the note's address, too
+        $this->assertStringContainsString('[by address](Deep/Q3-Q4.md)', $first);
+        // The second of two names is numbered, and its link says so
+        $this->assertArrayHasKey('KT/Setup (2).md', $files);
+        $this->assertStringContainsString('[Setup](Setup%20%282%29.md)', $first);
+        // And back up from the folder below
+        $this->assertStringContainsString('Back to [Setup](../Setup.md)', $files['KT/Deep/Q3-Q4.md']);
+        // Anything not in the zip opens in the app
+        $this->assertStringContainsString('[Wiring]('.url(route('boards.show', $board, false)).')', $first);
+        $this->assertStringContainsString('[Outside]('.url(route('notes.show', $outside, false)).')', $first);
+        // What the reader can't open, or what isn't there, is only its words
+        $this->assertStringNotContainsString($theirs->ref_id, $first);
+        $this->assertStringContainsString("\n\nPrivate\n\nGone\n\n", $first);
+        $this->assertStringNotContainsString('[[', $first);
+    }
+
+    public function test_blocks_only_the_app_reads_go_out_as_any_markdown_viewer_reads_them()
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $doc = $this->doc(
+            ['type' => 'callout', 'attrs' => ['id' => 'call0001', 'icon' => '⚠️'], 'content' => [
+                $this->line('p0000002', $this->words('Careful')),
+                $this->line('p0000003', $this->words('Second line')),
+            ]],
+            ['type' => 'pageBreak', 'attrs' => ['id' => 'brk00001']],
+            ['type' => 'reveal', 'attrs' => ['id' => 'rev00001', 'title' => 'Why <this>?'], 'content' => [
+                $this->line('p0000004', $this->words('Because')),
+            ]],
+            $this->line('p0000005', $this->words('Total: '), ['type' => 'formula', 'attrs' => ['expression' => '1 + 2']], $this->words(', broken: '), ['type' => 'formula', 'attrs' => ['expression' => '1 +']]),
+            ['type' => 'blockMath', 'attrs' => ['id' => 'math0001', 'latex' => 'E = mc^2']],
+        );
+        Note::factory()->for($user)->create(['title' => 'Plain', 'content' => $doc]);
+
+        $plain = $this->unzip($this->actingAs($user)->get(route('notes.export'))->assertOk())['Notes/Plain.md'];
+
+        $this->assertSame(
+            "Hello\n\n> ⚠️ Careful\n>\n> Second line\n\n<details><summary>Why &lt;this&gt;?</summary>\n\nBecause\n\n</details>\n\n"
+            ."Total: 3, broken: `{{ 1 + }}`\n\n$$\nE = mc^2\n$$\n",
+            $plain,
+        );
+
+        // Read through MCP, a note keeps the syntax that comes back as the same blocks
+        $kept = TiptapMarkdown::toMarkdown($doc);
+        $this->assertStringContainsString(":::callout ⚠️\nCareful", $kept);
+        $this->assertStringContainsString(':::reveal Why <this>?', $kept);
+        $this->assertStringContainsString('<!--', $kept);
+        $this->assertStringContainsString('{{ 1 + 2 }}', $kept);
     }
 
     public function test_only_a_folder_of_the_owner_can_be_exported()

@@ -1,9 +1,11 @@
 <?php
 
 use App\Jobs\ReadKnowledge;
+use App\Models\Drive\DriveFile;
 use App\Models\Knowledge\KnowledgeBase;
 use App\Models\User;
 use App\Support\Browser\SuiteRun;
+use App\Support\Drive\VideoMp4;
 use App\Support\Workflow\Engine;
 use App\Support\Workflow\Health;
 use App\Support\Workflow\Inbound\Schedules;
@@ -62,6 +64,13 @@ Artisan::command('workflows:prune', function () {
 
 Schedule::command('workflows:prune')->dailyAt('03:30')->withoutOverlapping();
 
+// A browser check that was only a try is kept an hour after it ends, for whoever is looking at it
+Artisan::command('checks:forget-tries', function () {
+    $this->info(SuiteRun::forgetTries().' tries taken away');
+})->purpose('Delete browser check runs that were only a try, once they have been over a while');
+
+Schedule::command('checks:forget-tries')->everyFifteenMinutes()->withoutOverlapping();
+
 // What knowledge bases read is read again, keeping the passages that have not changed
 Artisan::command('knowledge:read', function () {
     $bases = KnowledgeBase::query()->where('state', '!=', KnowledgeBase::READING)->pluck('id');
@@ -114,3 +123,39 @@ Artisan::command('workflows:telegram-poll {--seconds=55}', function () {
 })->purpose('Ask Telegram for the messages of bots that are polled, for workflows');
 
 Schedule::command('workflows:telegram-poll')->everyMinute()->withoutOverlapping()->runInBackground();
+
+// The Drive's WebM videos made MP4, each in place (VideoMp4) -- those put in
+// before it was done as they come in, or whose making failed then.
+Artisan::command('drive:videos-to-mp4 {--limit=0 : At most this many} {--dry : Only say what would be}', function () {
+    $files = DriveFile::query()->where('kind', 'video')->where('mime', 'video/webm')->orderBy('id');
+    $limit = (int) $this->option('limit');
+
+    if ($limit > 0) {
+        $files->limit($limit);
+    }
+
+    $done = 0;
+    $failed = 0;
+
+    foreach ($files->get() as $file) {
+        $this->line("{$file->ref_id}  {$file->name}  ".round($file->size / 1024).' KB');
+
+        if ($this->option('dry')) {
+            continue;
+        }
+
+        try {
+            $size = VideoMp4::make($file);
+        } catch (Throwable $e) {
+            $failed++;
+            $this->error("  not made MP4: {$e->getMessage()}");
+
+            continue;
+        }
+
+        $done++;
+        $this->info('  now MP4, '.round($size / 1024).' KB');
+    }
+
+    $this->info("{$done} made MP4".($failed ? ", {$failed} not" : '').'.');
+})->purpose('Make the Drive\'s WebM videos MP4, in place');

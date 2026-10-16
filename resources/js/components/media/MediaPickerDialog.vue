@@ -22,6 +22,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import VideoPlayer from '@/components/media/VideoPlayer.vue';
 import {
     IMAGE_MIMES,
     VIDEO_MIMES,
@@ -504,12 +505,10 @@ watch(tab, (current) => {
                     class="bg-muted flex h-52 items-center justify-center overflow-hidden rounded-lg"
                 >
                     <template v-if="linkIsValid && !linkBroken">
-                        <video
+                        <VideoPlayer
                             v-if="video"
                             :src="linkUrl.trim()"
-                            preload="metadata"
-                            controls
-                            class="max-h-full max-w-full"
+                            class="max-h-full w-fit max-w-full"
                             @error="linkBroken = true"
                         />
                         <img

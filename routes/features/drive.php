@@ -4,6 +4,7 @@ use App\Http\Controllers\Drive\DriveController;
 use App\Http\Controllers\Drive\DriveFileController;
 use App\Http\Controllers\Drive\DriveFolderController;
 use App\Http\Controllers\Drive\DriveUploadLinkController;
+use App\Http\Controllers\Drive\DriveZipController;
 use App\Http\Controllers\Drive\PhotoEditController;
 use Illuminate\Support\Facades\Route;
 
@@ -14,6 +15,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::prefix('drive')->name('drive.')->group(function () {
             Route::get('/', [DriveController::class, 'index'])->name('index');
             Route::get('pick', [DriveController::class, 'pick'])->name('pick');
+            // A folder, or the whole Drive, as one zip
+            Route::get('zip', [DriveZipController::class, 'show'])
+                ->middleware('throttle:10,1')
+                ->name('zip');
 
             Route::resource('files', DriveFileController::class)->only(['store']);
             Route::resource('folders', DriveFolderController::class)->only(['store']);

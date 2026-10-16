@@ -2,6 +2,7 @@
 import { Paperclip } from '@lucide/vue';
 import { onBeforeUnmount, ref } from 'vue';
 import PictureDialog from '@/features/chat/components/PictureDialog.vue';
+import VideoPlayer from '@/components/media/VideoPlayer.vue';
 
 // A file under a chat message, from the Drive: a picture shown small and
 // opened larger over the chat; a sticker small and bare, as a sticker is --
@@ -110,12 +111,10 @@ onBeforeUnmount(() => {
         </button>
         <PictureDialog v-model:open="open" :file="file" />
     </template>
-    <video
+    <VideoPlayer
         v-else-if="file.is_video"
         :src="file.url"
-        controls
-        preload="metadata"
-        class="mt-1 max-h-72 max-w-full rounded-2xl border sm:max-w-xs"
+        class="mt-1 max-h-72 w-fit max-w-full rounded-2xl border sm:max-w-xs"
         data-chat-file
     />
     <a

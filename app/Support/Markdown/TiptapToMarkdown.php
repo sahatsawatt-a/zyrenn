@@ -9,6 +9,13 @@ namespace App\Support\Markdown;
 final class TiptapToMarkdown
 {
     /**
+     * Portable, it writes only what any Markdown viewer reads -- for files
+     * that leave the app: a callout as a quote, a reveal as <details>, no
+     * page breaks. Otherwise it writes what MarkdownToTiptap reads back.
+     */
+    public function __construct(private bool $portable = false) {}
+
+    /**
      * @param  array<string, mixed>|null  $doc
      */
     public function convert(?array $doc): string
@@ -41,6 +48,11 @@ final class TiptapToMarkdown
         $parts = [];
 
         foreach ($blocks as $block) {
+            // Nothing a viewer would show, and nothing left in its place
+            if ($this->portable && ($block['type'] ?? '') === 'pageBreak') {
+                continue;
+            }
+
             $parts[] = $this->blockToMarkdown($block);
         }
 
@@ -62,16 +74,22 @@ final class TiptapToMarkdown
             'taskList' => $this->listToMarkdown($content, fn (int $i, array $item) => '- ['.(($item['attrs']['checked'] ?? false) ? 'x' : ' ').'] '),
             'blockquote' => $this->prefixLines($this->blocksToMarkdown($content), '> '),
             'codeBlock' => $this->codeBlockToMarkdown($block),
-            'callout' => ':::callout '.($attrs['icon'] ?? '💡')."\n".$this->blocksToMarkdown($content)."\n:::",
+            'callout' => $this->portable
+                ? $this->portableCallout((string) ($attrs['icon'] ?? '💡'), $content)
+                : ':::callout '.($attrs['icon'] ?? '💡')."\n".$this->blocksToMarkdown($content)."\n:::",
             // Kept out of sight until asked for; its line is what follows "reveal"
-            'reveal' => ':::reveal '.trim(str_replace("\n", ' ', (string) ($attrs['title'] ?? 'Answer')))."\n".$this->blocksToMarkdown($content)."\n:::",
+            'reveal' => $this->portable
+                ? $this->portableReveal(trim(str_replace("\n", ' ', (string) ($attrs['title'] ?? 'Answer'))), $content)
+                : ':::reveal '.trim(str_replace("\n", ' ', (string) ($attrs['title'] ?? 'Answer')))."\n".$this->blocksToMarkdown($content)."\n:::",
             'table' => $this->tableToMarkdown($content),
             'horizontalRule' => '---',
             // Invisible in any other Markdown viewer, and not mistaken for words
             'pageBreak' => MarkdownToTiptap::PAGE_BREAK,
             'blockMath' => "$$\n".($attrs['latex'] ?? '')."\n$$",
             'image' => '!['.($attrs['alt'] ?? '').']('.($attrs['src'] ?? '').')',
-            'video' => self::video((string) ($attrs['src'] ?? ''), $attrs['title'] ?? null),
+            'video' => $this->portable
+                ? self::portableVideo((string) ($attrs['src'] ?? ''), $attrs['title'] ?? null)
+                : self::video((string) ($attrs['src'] ?? ''), $attrs['title'] ?? null),
             default => $this->inlineToMarkdown($content),
         };
     }
@@ -223,6 +241,54 @@ final class TiptapToMarkdown
         }
 
         return '[['.$kind.$target.($text !== '' ? '|'.$text : '').']]';
+    }
+
+    /**
+     * A callout as a quote whose first line starts with its icon: "> 💡 …".
+     *
+     * @param  array<int, array<string, mixed>>  $content
+     */
+    private function portableCallout(string $icon, array $content): string
+    {
+        $body = $this->blocksToMarkdown($content);
+        $icon = trim($icon);
+
+        // Beside the first words when it opens with some, else on a line of its own
+        $text = match (true) {
+            $icon === '' => $body,
+            ($content[0]['type'] ?? '') === 'paragraph' && $body !== '' => $icon.' '.$body,
+            default => $icon."\n\n".$body,
+        };
+
+        return $this->prefixLines(rtrim($text), '> ');
+    }
+
+    /**
+     * A reveal as HTML's own fold, which GitHub, VS Code and Obsidian open
+     * and close: its line the summary, a blank line, then what it hides.
+     *
+     * @param  array<int, array<string, mixed>>  $content
+     */
+    private function portableReveal(string $title, array $content): string
+    {
+        $summary = htmlspecialchars($title === '' ? 'Answer' : $title, ENT_QUOTES | ENT_HTML5);
+
+        return '<details><summary>'.$summary."</summary>\n\n".$this->blocksToMarkdown($content)."\n\n</details>";
+    }
+
+    /**
+     * A video as a viewer outside Zyrenn shows it: a player where HTML video
+     * is drawn (VS Code, Obsidian, a browser), and under it a plain link to
+     * the file, for one that leaves the player out (GitHub).
+     */
+    private static function portableVideo(string $src, ?string $title): string
+    {
+        $name = $title !== null && $title !== '' ? $title : 'Video';
+        $label = str_replace(['[', ']'], ['\\[', '\\]'], $name);
+
+        return '<video src="'.htmlspecialchars($src, ENT_QUOTES | ENT_HTML5).'" controls'
+            .' title="'.htmlspecialchars($name, ENT_QUOTES | ENT_HTML5).'"></video>'
+            ."\n\n[▶ {$label}]({$src})";
     }
 
     private function prefixLines(string $text, string $prefix): string
