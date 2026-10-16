@@ -6,9 +6,9 @@ use App\Http\Controllers\Concerns\ActsForOwner;
 use App\Http\Controllers\Controller;
 use App\Models\Folder;
 use App\Models\Note\NoteFolder;
+use App\Support\Chrome\Chrome;
 use App\Support\Folders;
 use App\Support\Note\NoteExport;
-use App\Support\Note\NotePdf;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
@@ -62,7 +62,7 @@ class NoteExportController extends Controller
             }
         }
 
-        $zip = NoteExport::zip($notes, $request->user(), NotePdf::rawSessionCookie($request));
+        $zip = NoteExport::zip($notes, $request->user(), Chrome::sessionCookie($request));
 
         return response()->download($zip['path'], $top.'.zip', array_filter([
             'Content-Type' => 'application/zip',

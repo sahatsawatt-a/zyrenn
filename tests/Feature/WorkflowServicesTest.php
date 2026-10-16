@@ -149,16 +149,13 @@ class WorkflowServicesTest extends TestCase
 
     public function test_every_kind_of_step_has_something_to_run_it_and_belongs_to_a_group()
     {
-        $steps = (new \ReflectionClassConstant(Engine::class, 'STEPS'))->getValue();
-
         foreach (NodeTypes::all() as $type => $kind) {
-            $this->assertArrayHasKey($type, $steps, "Nothing runs {$type}.");
+            // What runs it is beside it (NodeTypesTest checks it is a step)
+            $this->assertTrue(class_exists($kind['runs']), "Nothing runs {$type}.");
             $this->assertArrayHasKey($kind['group'], NodeTypes::groups(), "{$type} is in no group.");
             // A step that sends is never simply made again, so it says what happens instead
             $this->assertTrue(($kind['repeatable'] ?? true) || in_array('unsure', array_column($kind['config'], 'name'), true), $type);
         }
-
-        $this->assertSame([], array_values(array_diff(array_keys($steps), array_keys(NodeTypes::all()))));
     }
 
     // --- Telegram ---

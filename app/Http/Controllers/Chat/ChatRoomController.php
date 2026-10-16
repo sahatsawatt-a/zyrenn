@@ -14,7 +14,7 @@ use App\Models\Project;
 use App\Models\Ticket\Ticket;
 use App\Models\User;
 use App\Support\Agents\AgentRunner;
-use App\Support\Chat\AiFailed;
+use App\Support\Ai\AiFailed;
 use App\Support\Connections\Services;
 use App\Support\Live\Live;
 use Illuminate\Database\Eloquent\Builder;

@@ -4,8 +4,8 @@ namespace App\Support\Workflow\Inbound;
 
 use App\Http\Controllers\Workflow\HookController;
 use App\Models\Connection;
+use App\Support\Connections\Telegram;
 use App\Support\Workflow\Listeners;
-use Illuminate\Support\Facades\Http;
 use Throwable;
 
 /**
@@ -44,11 +44,11 @@ final class TelegramPoll
     private static function ask(Connection $bot): int
     {
         $offset = (int) ($bot->setting('offset') ?? 0);
-        $response = Http::timeout(15)->get('https://api.telegram.org/bot'.$bot->secret('bot_token').'/getUpdates', [
+        $response = Telegram::get($bot, 'getUpdates', [
             'offset' => $offset ?: null,
             'timeout' => 0,
             'allowed_updates' => json_encode(Envelope::TELEGRAM_UPDATES),
-        ]);
+        ], timeout: 15);
 
         $updates = $response->json('result');
 

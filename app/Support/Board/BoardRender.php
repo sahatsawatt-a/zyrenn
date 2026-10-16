@@ -3,8 +3,7 @@
 namespace App\Support\Board;
 
 use App\Models\Board\Board;
-use Illuminate\Http\Client\Response;
-use Illuminate\Support\Facades\Http;
+use App\Support\Chrome\Chrome;
 use Illuminate\Support\Facades\URL;
 use RuntimeException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -40,7 +39,7 @@ class BoardRender
     {
         [$width, $height] = self::size($board, $frame, self::PICTURE_WIDTH);
 
-        $response = self::chrome('/png', [
+        $response = Chrome::post('/png', [
             'url' => self::url($board, 'picture', $frame),
             'width' => $width,
             'height' => $height,
@@ -77,7 +76,7 @@ class BoardRender
         $frame = $pages ? BoardParts::frame($items, $pages[0]) : null;
         [$width, $height] = self::size($board, $frame, self::PAGE_WIDTH);
 
-        $response = self::chrome('/pdf', [
+        $response = Chrome::post('/pdf', [
             'url' => self::url($board, 'pages', null),
             'width' => $width,
             'height' => $height,
@@ -185,28 +184,11 @@ class BoardRender
      */
     private static function url(Board $board, string $mode, ?array $frame): string
     {
-        $origin = rtrim((string) config('services.chrome.origin'), '/');
-
-        return $origin.URL::temporarySignedRoute(
+        return Chrome::at(URL::temporarySignedRoute(
             'boards.render',
             now()->addMinutes(self::LINK_MINUTES),
             array_filter(['board' => $board, 'mode' => $mode, 'frame' => $frame['id'] ?? null]),
             absolute: false,
-        );
-    }
-
-    /**
-     * @param  array<string, mixed>  $body
-     */
-    private static function chrome(string $path, array $body): Response
-    {
-        $response = Http::timeout(120)->connectTimeout(10)
-            ->post(rtrim((string) config('services.chrome.url'), '/').$path, $body);
-
-        if (! $response->successful()) {
-            throw new RuntimeException('The renderer answered '.$response->status().': '.mb_substr(trim($response->body()), 0, 500));
-        }
-
-        return $response;
+        ));
     }
 }

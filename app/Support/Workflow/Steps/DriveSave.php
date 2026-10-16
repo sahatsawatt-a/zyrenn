@@ -2,7 +2,7 @@
 
 namespace App\Support\Workflow\Steps;
 
-use App\Support\RemoteDownload;
+use App\Support\Outside\RemoteDownload;
 
 /**
  * Save to Drive: a file at an address on the internet, or text written

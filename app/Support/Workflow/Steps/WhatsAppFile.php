@@ -4,7 +4,7 @@ namespace App\Support\Workflow\Steps;
 
 use App\Models\Connection;
 use App\Support\Connections\Meta;
-use App\Support\RemoteDownload;
+use App\Support\Outside\RemoteDownload;
 use Illuminate\Support\Facades\Http;
 
 /**

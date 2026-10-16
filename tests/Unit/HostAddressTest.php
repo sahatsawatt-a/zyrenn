@@ -2,7 +2,7 @@
 
 namespace Tests\Unit;
 
-use App\Support\Chat\HostAddress;
+use App\Support\Outside\HostAddress;
 use Tests\TestCase;
 
 class HostAddressTest extends TestCase

@@ -3,7 +3,7 @@
 namespace App\Support\Workflow\Steps;
 
 use App\Support\Agents\AgentRunner;
-use App\Support\Chat\AiFailed;
+use App\Support\Ai\AiFailed;
 use App\Support\Workflow\References;
 
 /**

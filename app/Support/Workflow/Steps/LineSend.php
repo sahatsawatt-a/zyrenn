@@ -2,6 +2,7 @@
 
 namespace App\Support\Workflow\Steps;
 
+use App\Support\Connections\Line;
 use App\Support\Workflow\NodeTypes;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -190,7 +191,7 @@ final class LineSend implements Step
     private static function send(PendingRequest $http, string $how, array $payload): Response
     {
         try {
-            return $http->post("https://api.line.me/v2/bot/message/{$how}", $payload);
+            return $http->post(Line::api("message/{$how}"), $payload);
         } catch (ConnectionException $e) {
             throw StepFailed::unreached($e, 'LINE');
         }

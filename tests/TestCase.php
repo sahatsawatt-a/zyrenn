@@ -2,7 +2,7 @@
 
 namespace Tests;
 
-use App\Support\RemoteDownload;
+use App\Support\Outside\RemoteDownload;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Fortify\Features;

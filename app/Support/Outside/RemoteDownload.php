@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Support;
+namespace App\Support\Outside;
 
 use GuzzleHttp\Psr7\Uri;
 use GuzzleHttp\Psr7\UriResolver;

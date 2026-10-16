@@ -3,8 +3,8 @@
 namespace App\Support\Workflow\Steps;
 
 use App\Models\Connection;
-use App\Support\RemoteDownload;
-use Illuminate\Support\Facades\Http;
+use App\Support\Connections\Line;
+use App\Support\Outside\RemoteDownload;
 
 /**
  * LINE: get the file -- a picture, a video, a recording or a file sent to a
@@ -34,10 +34,9 @@ final class LineFile implements Step
         }
 
         return DriveSteps::fetched(function () use ($channel, $id) {
-            $url = 'https://api-data.line.me/v2/bot/message/'.rawurlencode($id).'/content';
-            $response = Http::withToken((string) $channel->secret('channel_access_token'))
+            $url = Line::data('message/'.rawurlencode($id).'/content');
+            $response = Line::http($channel, DriveSteps::TIMEOUT)
                 ->withOptions(['stream' => true])
-                ->timeout(DriveSteps::TIMEOUT)
                 ->get($url);
 
             DriveSteps::busy($response, 'LINE', 30);

@@ -4,8 +4,8 @@ namespace App\Support\Workflow\Steps;
 
 use App\Models\Chat\ChatMessage;
 use App\Support\Connections\Services;
-use App\Support\RemoteDownload;
-use App\Support\RemoteDownloadFailed;
+use App\Support\Outside\RemoteDownload;
+use App\Support\Outside\RemoteDownloadFailed;
 use App\Support\Workflow\References;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;

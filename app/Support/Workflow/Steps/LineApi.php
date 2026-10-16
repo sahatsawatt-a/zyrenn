@@ -4,11 +4,11 @@ namespace App\Support\Workflow\Steps;
 
 use App\Models\Connection;
 use App\Models\Drive\DriveFile;
+use App\Support\Connections\Line;
 use App\Support\Workflow\References;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
-use Illuminate\Support\Facades\Http;
 
 /**
  * What every LINE step shares: the channel, a call to the Messaging API
@@ -18,13 +18,8 @@ use Illuminate\Support\Facades\Http;
  */
 final class LineApi
 {
-    private const API = 'https://api.line.me/v2/bot/';
-
     /** How what a button does starts, when it is an address to open. */
     public const ADDRESS = '^(https?://|tel:|line://)';
-
-    /** Where LINE takes and gives the bytes of a file. */
-    private const DATA = 'https://api-data.line.me/v2/bot/';
 
     private const MAX_PICTURE_BYTES = 10 * 1024 * 1024;
 
@@ -73,7 +68,7 @@ final class LineApi
      */
     public static function call(Connection $channel, string $method, string $path, array $body = []): array
     {
-        $response = self::answer($channel, fn (PendingRequest $request) => $request->send($method, self::API.$path, $method === 'GET' || $body === [] ? [] : ['json' => $body]));
+        $response = self::answer($channel, fn (PendingRequest $request) => $request->send($method, Line::api($path), $method === 'GET' || $body === [] ? [] : ['json' => $body]));
 
         return is_array($response->json()) ? $response->json() : [];
     }
@@ -89,7 +84,7 @@ final class LineApi
      */
     public static function find(Connection $channel, string $path, array $none = [404]): ?array
     {
-        $response = self::answer($channel, fn (PendingRequest $request) => $request->get(self::API.$path), $none);
+        $response = self::answer($channel, fn (PendingRequest $request) => $request->get(Line::api($path)), $none);
 
         return ! $response->successful() ? null : (is_array($response->json()) ? $response->json() : []);
     }
@@ -102,7 +97,7 @@ final class LineApi
      */
     public static function upload(Connection $channel, string $path, string $bytes, string $mime): void
     {
-        self::answer($channel, fn (PendingRequest $request) => $request->timeout(60)->withBody($bytes, $mime)->post(self::DATA.$path));
+        self::answer($channel, fn (PendingRequest $request) => $request->timeout(60)->withBody($bytes, $mime)->post(Line::data($path)));
     }
 
     /**
@@ -118,7 +113,7 @@ final class LineApi
     private static function answer(Connection $channel, callable $ask, array $allowed = []): Response
     {
         try {
-            $response = $ask(Http::timeout(15)->withToken((string) $channel->secret('channel_access_token')));
+            $response = $ask(Line::http($channel));
         } catch (ConnectionException) {
             throw new StepFailed('Could not reach LINE.', retryable: true);
         }

@@ -155,7 +155,7 @@ export type Publishing = {
     unpublished_changes: boolean;
 };
 
-export type SaveStatus = 'saved' | 'saving' | 'unsaved' | 'error' | 'conflict';
+export type { SaveStatus } from '@/composables/useRevisionedSave';
 
 export type RunStatus =
     | 'queued'

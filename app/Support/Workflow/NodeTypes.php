@@ -56,7 +56,7 @@ use App\Models\Chat\ChatRoom;
  * group; most of them are listed in ServiceKinds.
  *
  * @phpstan-type Setting array{name: string, label: string, type: string, required: bool, default?: mixed, help?: string, placeholder?: string, options?: array<string, string>, services?: list<string>, names?: string, when?: array<string, string|bool|list<string>>, linked?: bool, ways?: bool, anywhere?: bool, labels?: bool, drive?: string, does?: list<array<string, string>>, places?: array{by: string, picture: string, layouts: array<string, list<array{int, int, int, int}>>}}
- * @phpstan-type NodeType array{type: string, version: int, label: string, group: string, icon: string, description: string, trigger: bool, inputs: list<string>, outputs: list<string>, config: list<Setting>, repeatable?: bool, oldest?: int, empty?: array<string, null>}
+ * @phpstan-type NodeType array{type: string, version: int, label: string, group: string, icon: string, description: string, trigger: bool, inputs: list<string>, outputs: list<string>, config: list<Setting>, repeatable?: bool, oldest?: int, empty?: array<string, null>, runs: class-string<Steps\Step>, kept?: array<int, class-string<Steps\Step>>}
  */
 final class NodeTypes
 {
@@ -96,9 +96,34 @@ final class NodeTypes
      */
     public static function all(): array
     {
+        return self::$all ??= self::build();
+    }
+
+    /**
+     * Every kind of step, as the browser and MCP are shown them: without the
+     * class that runs it.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function shown(): array
+    {
+        return array_values(array_map(fn (array $type) => array_diff_key($type, ['runs' => true, 'kept' => true]), self::all()));
+    }
+
+    /**
+     * @var array<string, NodeType>|null
+     */
+    private static ?array $all = null;
+
+    /**
+     * @return array<string, NodeType>
+     */
+    private static function build(): array
+    {
         $types = [
             [
                 'type' => 'trigger.manual',
+                'runs' => Steps\ManualTrigger::class,
                 'version' => 1,
                 'label' => 'Run by hand',
                 'group' => 'flow',
@@ -120,6 +145,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'trigger.call',
+                'runs' => Steps\GivenTrigger::class,
                 'version' => 1,
                 'label' => 'When run by another workflow',
                 'group' => 'flow',
@@ -132,6 +158,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'data.set',
+                'runs' => Steps\SetData::class,
                 'version' => 1,
                 'label' => 'Set data',
                 'group' => 'data',
@@ -153,6 +180,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'data.code',
+                'runs' => Steps\RunCode::class,
                 'version' => 1,
                 'label' => 'Run code',
                 'group' => 'data',
@@ -175,6 +203,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'logic.if',
+                'runs' => Steps\IfCondition::class,
                 'version' => 1,
                 'label' => 'If',
                 'group' => 'flow',
@@ -196,6 +225,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'logic.switch',
+                'runs' => Steps\SwitchStep::class,
                 'version' => 1,
                 'label' => 'Switch',
                 'group' => 'flow',
@@ -218,6 +248,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'logic.merge',
+                'runs' => Steps\MergeStep::class,
                 'version' => 1,
                 'label' => 'Merge',
                 'group' => 'flow',
@@ -242,6 +273,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'logic.each',
+                'runs' => Steps\ForEachStep::class,
                 'version' => 1,
                 'label' => 'For each',
                 'group' => 'flow',
@@ -277,6 +309,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'logic.delay',
+                'runs' => Steps\Delay::class,
                 'version' => 1,
                 'label' => 'Delay',
                 'group' => 'flow',
@@ -306,6 +339,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'logic.approval',
+                'runs' => Steps\Approval::class,
                 'version' => 1,
                 'label' => 'Ask for approval',
                 'group' => 'flow',
@@ -335,6 +369,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'output.log',
+                'runs' => Steps\Log::class,
                 'version' => 1,
                 'label' => 'Log',
                 'group' => 'data',
@@ -365,6 +400,7 @@ final class NodeTypes
             // --- Starting by themselves (published and switched on) ---
             [
                 'type' => 'trigger.chat',
+                'runs' => Steps\GivenTrigger::class,
                 'version' => 1,
                 'label' => 'Chat message',
                 'group' => 'chat',
@@ -404,6 +440,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'trigger.schedule',
+                'runs' => Steps\GivenTrigger::class,
                 'version' => 1,
                 'label' => 'On a schedule',
                 'group' => 'flow',
@@ -419,6 +456,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'trigger.webhook',
+                'runs' => Steps\GivenTrigger::class,
                 'version' => 1,
                 'label' => 'Webhook',
                 'group' => 'web',
@@ -472,6 +510,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'trigger.telegram',
+                'runs' => Steps\GivenTrigger::class,
                 'version' => 1,
                 'label' => 'Telegram message',
                 'group' => 'telegram',
@@ -515,6 +554,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'trigger.line',
+                'runs' => Steps\GivenTrigger::class,
                 'version' => 1,
                 'label' => 'LINE message',
                 'group' => 'line',
@@ -558,6 +598,7 @@ final class NodeTypes
 
             [
                 'type' => 'trigger.whatsapp',
+                'runs' => Steps\GivenTrigger::class,
                 'version' => 1,
                 'label' => 'WhatsApp message',
                 'group' => 'whatsapp',
@@ -588,6 +629,7 @@ final class NodeTypes
 
             [
                 'type' => 'trigger.instagram',
+                'runs' => Steps\GivenTrigger::class,
                 'version' => 1,
                 'label' => 'Instagram comment',
                 'group' => 'instagram',
@@ -616,6 +658,7 @@ final class NodeTypes
 
             [
                 'type' => 'trigger.instagram_message',
+                'runs' => Steps\GivenTrigger::class,
                 'version' => 1,
                 'label' => 'Instagram message',
                 'group' => 'instagram',
@@ -647,6 +690,7 @@ final class NodeTypes
 
             [
                 'type' => 'trigger.threads',
+                'runs' => Steps\GivenTrigger::class,
                 'version' => 1,
                 'label' => 'Threads reply',
                 'group' => 'threads',
@@ -676,6 +720,7 @@ final class NodeTypes
 
             [
                 'type' => 'trigger.channel',
+                'runs' => Steps\GivenTrigger::class,
                 'version' => 1,
                 'label' => 'Custom channel message',
                 'group' => 'channel',
@@ -693,6 +738,7 @@ final class NodeTypes
             // --- Chat ---
             [
                 'type' => 'chat.room',
+                'runs' => Steps\ChatRoomStep::class,
                 'version' => 1,
                 'label' => 'Find or make a room',
                 'group' => 'chat',
@@ -713,6 +759,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'chat.send',
+                'runs' => Steps\ChatSend::class,
                 'version' => 1,
                 'label' => 'Write in a room',
                 'group' => 'chat',
@@ -751,6 +798,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'chat.fetch',
+                'runs' => Steps\ChatFetch::class,
                 'version' => 1,
                 'label' => 'Read a room',
                 'group' => 'chat',
@@ -767,6 +815,7 @@ final class NodeTypes
 
             [
                 'type' => 'chat.update',
+                'runs' => Steps\ChatUpdate::class,
                 'version' => 1,
                 'label' => 'Change a customer\'s chat',
                 'group' => 'chat',
@@ -802,6 +851,7 @@ final class NodeTypes
             // --- Tables ---
             [
                 'type' => 'table.find',
+                'runs' => Steps\TableFind::class,
                 'version' => 1,
                 'label' => 'Find rows',
                 'group' => 'table',
@@ -819,6 +869,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'table.add',
+                'runs' => Steps\TableAdd::class,
                 'version' => 1,
                 'label' => 'Add a row',
                 'group' => 'table',
@@ -834,6 +885,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'table.update',
+                'runs' => Steps\TableUpdate::class,
                 'version' => 1,
                 'label' => 'Change a row',
                 'group' => 'table',
@@ -852,6 +904,7 @@ final class NodeTypes
             // --- Drive ---
             [
                 'type' => 'drive.save',
+                'runs' => Steps\DriveSave::class,
                 'version' => 1,
                 'empty' => ['ref_id' => null, 'name' => null, 'url' => null, 'kind' => null, 'mime' => null, 'size' => null],
                 'label' => 'Save to Drive',
@@ -888,6 +941,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'drive.find',
+                'runs' => Steps\DriveFind::class,
                 'version' => 1,
                 'label' => 'Find files',
                 'group' => 'drive',
@@ -912,6 +966,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'browser.run',
+                'runs' => Steps\BrowserChecks::class,
                 'version' => 1,
                 'label' => 'Run browser checks',
                 'group' => 'browser',
@@ -935,6 +990,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'drive.read',
+                'runs' => Steps\DriveRead::class,
                 'version' => 1,
                 'label' => 'Read a file',
                 'group' => 'drive',
@@ -949,6 +1005,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'drive.link',
+                'runs' => Steps\DriveLink::class,
                 'version' => 1,
                 'label' => 'Make a link to a file',
                 'group' => 'drive',
@@ -966,6 +1023,7 @@ final class NodeTypes
             // --- AI ---
             [
                 'type' => 'ai.chat',
+                'runs' => Steps\AskAi::class,
                 'version' => 1,
                 'label' => 'Ask AI',
                 'group' => 'ai',
@@ -992,6 +1050,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'ai.agent',
+                'runs' => Steps\AskAgent::class,
                 'version' => 1,
                 'label' => 'Ask an agent',
                 'group' => 'ai',
@@ -1017,6 +1076,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'knowledge.search',
+                'runs' => Steps\KnowledgeSearch::class,
                 'version' => 1,
                 'label' => 'Search knowledge',
                 'group' => 'ai',
@@ -1035,6 +1095,7 @@ final class NodeTypes
             // --- Outside ---
             [
                 'type' => 'http.respond',
+                'runs' => Steps\WebhookAnswer::class,
                 'version' => 1,
                 'label' => 'Answer the webhook',
                 'group' => 'web',
@@ -1050,6 +1111,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'http.request',
+                'runs' => Steps\HttpRequest::class,
                 'version' => 1,
                 'label' => 'HTTP request',
                 'group' => 'web',
@@ -1101,6 +1163,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'telegram.file',
+                'runs' => Steps\TelegramFile::class,
                 'version' => 1,
                 'label' => 'Telegram: get the file',
                 'group' => 'telegram',
@@ -1121,6 +1184,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'whatsapp.file',
+                'runs' => Steps\WhatsAppFile::class,
                 'version' => 1,
                 'label' => 'WhatsApp: get the file',
                 'group' => 'whatsapp',
@@ -1140,6 +1204,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'telegram.send',
+                'runs' => Steps\TelegramSend::class,
                 'version' => 1,
                 'label' => 'Send on Telegram',
                 'group' => 'telegram',
@@ -1175,6 +1240,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'telegram.send_file',
+                'runs' => Steps\TelegramSendFile::class,
                 'version' => 1,
                 'label' => 'Send a file on Telegram',
                 'group' => 'telegram',
@@ -1211,6 +1277,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'linkedin.post',
+                'runs' => Steps\LinkedInPost::class,
                 'version' => 1,
                 'label' => 'Post on LinkedIn',
                 'group' => 'linkedin',
@@ -1262,6 +1329,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'line.profile',
+                'runs' => Steps\LineProfile::class,
                 'version' => 1,
                 'label' => 'LINE: who wrote',
                 'group' => 'line',
@@ -1293,6 +1361,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'line.file',
+                'runs' => Steps\LineFile::class,
                 'version' => 1,
                 'label' => 'LINE: get the file',
                 'group' => 'line',
@@ -1310,6 +1379,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'line.reply',
+                'runs' => Steps\LineReply::class,
                 'version' => 1,
                 'label' => 'Reply on LINE',
                 'group' => 'line',
@@ -1337,6 +1407,7 @@ final class NodeTypes
             ],
             [
                 'type' => 'line.send',
+                'runs' => Steps\LineSend::class,
                 'version' => 1,
                 'label' => 'Push on LINE',
                 'group' => 'line',

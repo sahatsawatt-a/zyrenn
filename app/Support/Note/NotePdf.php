@@ -3,8 +3,7 @@
 namespace App\Support\Note;
 
 use App\Models\Note\Note;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
+use App\Support\Chrome\Chrome;
 use RuntimeException;
 
 /**
@@ -31,7 +30,7 @@ class NotePdf
      * Print the note to PDF bytes.
      *
      * $sessionCookie must be the cookie exactly as the browser sent it -- see
-     * rawSessionCookie(). $warning comes back set when the PDF came out
+     * Chrome::sessionCookie(). $warning comes back set when the PDF came out
      * incomplete (a picture that did not load, a page still drawing), which is
      * worth telling the user but not worth refusing the export over.
      *
@@ -43,36 +42,14 @@ class NotePdf
             throw new RuntimeException("There is no PDF style called '{$style}'");
         }
 
-        $origin = rtrim((string) config('services.chrome.origin'), '/');
+        $response = Chrome::post('/pdf', [
+            'url' => Chrome::at(route('notes.show', ['note' => $note, 'print' => $style], absolute: false)),
+            'cookies' => Chrome::signedInAs($sessionCookie),
+            'format' => 'A4',
+            'margin' => self::MARGIN,
+        ]);
 
-        $cookies = [];
-        if (is_string($sessionCookie) && $sessionCookie !== '') {
-            $cookies[] = [
-                'name' => (string) config('session.cookie'),
-                'value' => $sessionCookie,
-                // Set on the host Chrome actually visits, not APP_URL's
-                'domain' => (string) parse_url($origin, PHP_URL_HOST),
-                'path' => '/',
-            ];
-        }
-
-        $response = Http::timeout(120)->connectTimeout(10)->post(
-            rtrim((string) config('services.chrome.url'), '/').'/pdf',
-            [
-                'url' => $origin.route('notes.show', ['note' => $note, 'print' => $style], absolute: false),
-                'cookies' => $cookies,
-                'format' => 'A4',
-                'margin' => self::MARGIN,
-            ],
-        );
-
-        if (! $response->successful()) {
-            throw new RuntimeException('The PDF printer answered '.$response->status().': '.mb_substr(trim($response->body()), 0, 500));
-        }
-
-        // A cookie that did not sign in is answered with the login page, which
-        // prints as a perfectly good PDF of the wrong thing
-        if (preg_match('#/login(\?|$|/)#', (string) $response->header('X-Pdf-Final-Url'))) {
+        if (Chrome::signedOut($response->header('X-Pdf-Final-Url'))) {
             throw new RuntimeException('The PDF printer was sent to the sign-in page: the session did not carry over');
         }
 
@@ -92,28 +69,5 @@ class NotePdf
         };
 
         return $body;
-    }
-
-    /**
-     * The session cookie exactly as the browser sent it.
-     *
-     * $request->cookie() is no use: EncryptCookies has already swapped in the
-     * decrypted session id, and the app only accepts the encrypted form back.
-     * Nor is $_COOKIE, which PHP url-decodes -- turning the base64 `+` into a
-     * space. So read the raw Cookie header and pass the value on untouched.
-     */
-    public static function rawSessionCookie(Request $request): ?string
-    {
-        $name = (string) config('session.cookie');
-
-        foreach (explode(';', (string) $request->headers->get('cookie')) as $pair) {
-            [$key, $value] = array_pad(explode('=', trim($pair), 2), 2, null);
-
-            if ($key === $name && is_string($value) && $value !== '') {
-                return $value;
-            }
-        }
-
-        return null;
     }
 }

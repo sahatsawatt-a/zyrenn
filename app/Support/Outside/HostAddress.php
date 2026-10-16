@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Support\Chat;
+namespace App\Support\Outside;
 
 /**
  * Where "localhost" is, for a connection the user typed.

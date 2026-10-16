@@ -3,7 +3,8 @@
 namespace App\Support\Workflow\Steps;
 
 use App\Models\Connection;
-use App\Support\RemoteDownload;
+use App\Support\Connections\Telegram;
+use App\Support\Outside\RemoteDownload;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 
@@ -15,8 +16,6 @@ use Illuminate\Support\Facades\Http;
  */
 final class TelegramFile implements Step
 {
-    private const API = 'https://api.telegram.org';
-
     public function run(StepContext $step): StepResult
     {
         return MessageFile::get($step, 'telegram', 'bot', self::fetch(...));
@@ -27,10 +26,8 @@ final class TelegramFile implements Step
      */
     private static function fetch(Connection $bot, string $id): array
     {
-        $token = $bot->secret('bot_token');
-
         try {
-            $where = Http::timeout(15)->get(self::API."/bot{$token}/getFile", ['file_id' => $id]);
+            $where = Telegram::get($bot, 'getFile', ['file_id' => $id], timeout: 15);
         } catch (ConnectionException) {
             throw new StepFailed('Could not reach Telegram.', retryable: true);
         }
@@ -45,8 +42,8 @@ final class TelegramFile implements Step
                 : "Telegram said: {$why}");
         }
 
-        return DriveSteps::fetched(function () use ($token, $path) {
-            $response = Http::withOptions(['stream' => true])->timeout(DriveSteps::TIMEOUT)->get(self::API."/file/bot{$token}/{$path}");
+        return DriveSteps::fetched(function () use ($bot, $path) {
+            $response = Http::withOptions(['stream' => true])->timeout(DriveSteps::TIMEOUT)->get(Telegram::file($bot, $path));
             DriveSteps::busy($response, 'Telegram', 5);
 
             if (! $response->successful()) {
@@ -54,7 +51,7 @@ final class TelegramFile implements Step
             }
 
             // Named by the path alone: the address itself holds the bot's key
-            return RemoteDownload::keep($response, self::API."/{$path}", DriveSteps::MAX_BYTES);
+            return RemoteDownload::keep($response, $path, DriveSteps::MAX_BYTES);
         }, 'Telegram');
     }
 }

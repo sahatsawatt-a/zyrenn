@@ -3,6 +3,7 @@
 namespace App\Support\Workflow\Steps;
 
 use App\Models\Connection;
+use App\Support\Connections\Telegram;
 use App\Support\Workflow\References;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
@@ -177,7 +178,7 @@ final class TelegramApi
 
     private static function url(Connection $bot, string $method): string
     {
-        return 'https://api.telegram.org/bot'.$bot->secret('bot_token')."/{$method}";
+        return Telegram::method($bot, $method);
     }
 
     /**

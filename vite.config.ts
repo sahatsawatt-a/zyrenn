@@ -7,6 +7,7 @@ import { bunny } from 'laravel-vite-plugin/fonts';
 import { readFileSync, watch, writeFileSync } from 'node:fs';
 import type { Plugin } from 'vite';
 import { defineConfig, lazyPlugins } from 'vite-plus';
+import { configDefaults } from 'vitest/config';
 
 // Where the *browser* loads dev assets from.
 //
@@ -181,5 +182,10 @@ export default defineConfig({
             functions: ['clsx', 'cn', 'cva'],
             entryPoint: 'resources/css/app.css',
         },
+    },
+    test: {
+        // The collaboration server's tests are Node's own (npm run
+        // test:collab), not vitest's
+        exclude: [...configDefaults.exclude, 'collab/**'],
     },
 });

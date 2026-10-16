@@ -5,6 +5,7 @@ namespace App\Models\Workflow;
 use App\Events\WorkflowChanged;
 use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
+use App\Models\Concerns\KeepsRevisions;
 use App\Models\Concerns\RecordsEditor;
 use App\Models\User;
 use App\Support\Live\Live;
@@ -42,7 +43,7 @@ use Illuminate\Support\Facades\DB;
 class Workflow extends Model
 {
     /** @use HasFactory<WorkflowFactory> */
-    use BelongsToOwner, HasFactory, HasRefId, RecordsEditor;
+    use BelongsToOwner, HasFactory, HasRefId, KeepsRevisions, RecordsEditor;
 
     /**
      * Mirror the column defaults so new instances match what the database stores.
@@ -78,19 +79,17 @@ class Workflow extends Model
                     : Definition::normalize($workflow->definition);
             }
 
-            if ($workflow->exists && $workflow->isDirty(['title', 'definition', 'folder_id'])) {
-                $workflow->revision++;
-            }
         });
+    }
 
-        // Whoever else has it open hears of it: an editor with nothing
-        // unsaved loads the new copy; one with changes of its own asks which to keep
-        static::saved(function (Workflow $workflow) {
-            if ($workflow->wasChanged('revision')) {
-                Live::tell(new WorkflowChanged($workflow, 'saved'));
-            }
-        });
-        static::deleted(fn (Workflow $workflow) => Live::tell(new WorkflowChanged($workflow, 'deleted')));
+    protected function revisedBy(): array
+    {
+        return ['title', 'definition', 'folder_id'];
+    }
+
+    protected function changed(string $what): WorkflowChanged
+    {
+        return new WorkflowChanged($this, $what);
     }
 
     /**

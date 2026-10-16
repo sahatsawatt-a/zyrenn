@@ -4,8 +4,8 @@ namespace App\Support\Knowledge;
 
 use App\Models\Knowledge\KnowledgeBase;
 use App\Models\Knowledge\KnowledgeChunk;
-use App\Support\Chat\AiClient;
-use App\Support\Chat\AiFailed;
+use App\Support\Ai\AiClient;
+use App\Support\Ai\AiFailed;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 

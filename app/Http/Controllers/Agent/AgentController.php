@@ -13,7 +13,7 @@ use App\Models\Project;
 use App\Support\Agents\AgentRunner;
 use App\Support\Agents\Presets;
 use App\Support\Agents\Toolbox;
-use App\Support\Chat\AiFailed;
+use App\Support\Ai\AiFailed;
 use App\Support\OwnerUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;

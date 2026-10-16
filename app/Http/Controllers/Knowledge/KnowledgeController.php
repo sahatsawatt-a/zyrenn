@@ -12,7 +12,7 @@ use App\Models\Note\NoteFolder;
 use App\Models\Owner;
 use App\Models\Project;
 use App\Models\Table\Table;
-use App\Support\Chat\AiFailed;
+use App\Support\Ai\AiFailed;
 use App\Support\Knowledge\Knowledge;
 use App\Support\OwnerUrl;
 use Illuminate\Http\JsonResponse;

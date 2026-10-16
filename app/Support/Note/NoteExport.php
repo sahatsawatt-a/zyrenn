@@ -5,10 +5,10 @@ namespace App\Support\Note;
 use App\Models\Drive\DriveFile;
 use App\Models\Note\Note;
 use App\Models\User;
+use App\Support\Chrome\Chrome;
 use App\Support\Markdown\TiptapMarkdown;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -141,34 +141,22 @@ class NoteExport
      */
     private function shots(Note $note, array $ids): array
     {
-        $origin = rtrim((string) config('services.chrome.origin'), '/');
-        $cookies = $this->sessionCookie === null ? [] : [[
-            'name' => (string) config('session.cookie'),
-            'value' => $this->sessionCookie,
-            'domain' => (string) parse_url($origin, PHP_URL_HOST),
-            'path' => '/',
-        ]];
-
         try {
-            $response = Http::timeout(120)->connectTimeout(10)->post(
-                rtrim((string) config('services.chrome.url'), '/').'/shots',
-                [
-                    'url' => $origin.route('notes.show', ['note' => $note, 'print' => 'simple'], absolute: false),
-                    'cookies' => $cookies,
-                    'ids' => $ids,
-                    'width' => self::WIDTH,
-                    'scale' => self::SCALE,
-                ],
-            );
-        } catch (ConnectionException $e) {
+            $response = Chrome::post('/shots', [
+                'url' => Chrome::at(route('notes.show', ['note' => $note, 'print' => 'simple'], absolute: false)),
+                'cookies' => Chrome::signedInAs($this->sessionCookie),
+                'ids' => $ids,
+                'width' => self::WIDTH,
+                'scale' => self::SCALE,
+            ]);
+        } catch (ConnectionException|RuntimeException $e) {
             report($e);
 
             return [];
         }
 
-        // A session that did not carry over lands on the sign-in page
-        if (! $response->successful() || preg_match('#/login(\?|$|/)#', (string) $response->json('finalUrl'))) {
-            report(new RuntimeException('Pictures of a note\'s diagrams failed: '.$response->status()));
+        if (Chrome::signedOut($response->json('finalUrl'))) {
+            report(new RuntimeException('Pictures of a note\'s diagrams were sent to the sign-in page'));
 
             return [];
         }

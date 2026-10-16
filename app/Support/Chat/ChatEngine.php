@@ -4,6 +4,8 @@ namespace App\Support\Chat;
 
 use App\Models\Chat\ChatMessage;
 use App\Models\Chat\ChatRoom;
+use App\Support\Ai\AiClient;
+use App\Support\Ai\AiFailed;
 use Closure;
 
 /**

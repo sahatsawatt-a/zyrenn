@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Map;
 
 use App\Http\Controllers\Concerns\BrowsesFolders;
+use App\Http\Controllers\Concerns\SavesRevisions;
 use App\Http\Controllers\Controller;
 use App\Models\Map\Trip;
 use App\Models\Map\TripFolder;
@@ -17,7 +18,7 @@ use Inertia\Response;
 
 class TripController extends Controller
 {
-    use BrowsesFolders;
+    use BrowsesFolders, SavesRevisions;
 
     /**
      * Browse a folder of the user's or the project's trips (the top level when
@@ -140,16 +141,8 @@ class TripController extends Controller
             'revision' => ['sometimes', 'integer', 'min:0'],
         ]);
 
-        if (array_key_exists('revision', $validated) && $validated['revision'] !== $trip->revision) {
-            $trip->loadMissing('editor:id,name');
-
-            return response()->json([
-                'message' => __('Someone else changed this trip since you opened it.'),
-                'trip' => [
-                    ...$trip->only(['title', 'content', 'revision', 'updated_at']),
-                    'edited_by' => $trip->editor?->name,
-                ],
-            ], 409);
+        if ($stale = $this->staleSave($trip, $validated['revision'] ?? null, 'trip', ['title', 'content'], __('Someone else changed this trip since you opened it.'))) {
+            return $stale;
         }
 
         if (array_key_exists('title', $validated)) {

@@ -2,7 +2,7 @@
 
 namespace App\Support\Workflow\Steps;
 
-use App\Support\Chat\AiFailed;
+use App\Support\Ai\AiFailed;
 use App\Support\Knowledge\Knowledge;
 use App\Support\Workflow\References;
 

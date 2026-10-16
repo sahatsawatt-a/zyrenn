@@ -11,7 +11,7 @@ use App\Models\Product\ProductRequest;
 use App\Models\Product\Requirement;
 use App\Models\Project;
 use App\Models\Ticket\Ticket;
-use App\Support\Chat\AiFailed;
+use App\Support\Ai\AiFailed;
 use App\Support\Product\Analyst;
 use App\Support\Product\Keeper;
 use App\Support\Product\Tracker;

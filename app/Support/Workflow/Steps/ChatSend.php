@@ -6,7 +6,7 @@ use App\Events\ChatMessagePosted;
 use App\Models\Chat\ChatMessage;
 use App\Models\Chat\ChatRoom;
 use App\Support\Agents\Sourced;
-use App\Support\Chat\AiFailed;
+use App\Support\Ai\AiFailed;
 use App\Support\Chat\ChatEngine;
 use App\Support\Live\Live;
 use App\Support\Workflow\Inbound\Envelope;

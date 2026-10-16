@@ -8,7 +8,7 @@ use App\Models\Product\ProductRequest;
 use App\Models\Product\Requirement;
 use App\Models\User;
 use App\Support\Agents\AgentRunner;
-use App\Support\Chat\AiFailed;
+use App\Support\Ai\AiFailed;
 
 /**
  * A request of the product, worked out by an agent into requirements -- a

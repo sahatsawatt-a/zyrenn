@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Chat\ChatMessage;
 use App\Models\Chat\ChatRoom;
 use App\Models\Drive\DriveFile;
-use App\Support\Chat\AiFailed;
+use App\Support\Ai\AiFailed;
 use App\Support\Chat\ChatEngine;
 use App\Support\Folders;
 use Illuminate\Http\Request;

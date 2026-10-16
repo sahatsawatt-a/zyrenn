@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Workflow;
 
 use App\Http\Controllers\Concerns\BrowsesFolders;
+use App\Http\Controllers\Concerns\SavesRevisions;
 use App\Http\Controllers\Controller;
 use App\Models\Connection;
 use App\Models\Project;
@@ -30,7 +31,7 @@ use Inertia\Response;
 
 class WorkflowController extends Controller
 {
-    use BrowsesFolders;
+    use BrowsesFolders, SavesRevisions;
 
     /**
      * Browse a folder of the user's or the project's workflows (the top level
@@ -123,7 +124,7 @@ class WorkflowController extends Controller
                 'problems' => References::allProblems($workflow),
                 'can' => ['update' => Gate::allows('update', $workflow)],
             ],
-            'nodeTypes' => array_values(NodeTypes::all()),
+            'nodeTypes' => NodeTypes::shown(),
             'options' => $this->options($workflow),
             'listening' => $this->listening($workflow),
             // Who published it, switched it on, ran it by hand
@@ -153,8 +154,8 @@ class WorkflowController extends Controller
             'revision' => ['sometimes', 'integer', 'min:0'],
         ]);
 
-        if (array_key_exists('revision', $validated) && $validated['revision'] !== $workflow->revision) {
-            return $this->stale($workflow);
+        if ($stale = $this->stale($workflow, $validated['revision'] ?? null)) {
+            return $stale;
         }
 
         if (array_key_exists('title', $validated)) {
@@ -198,8 +199,8 @@ class WorkflowController extends Controller
 
         $validated = $request->validate(['revision' => ['required', 'integer', 'min:0']]);
 
-        if ($validated['revision'] !== $workflow->revision) {
-            return $this->stale($workflow);
+        if ($stale = $this->stale($workflow, $validated['revision'])) {
+            return $stale;
         }
 
         $problems = References::allProblems($workflow);
@@ -314,16 +315,8 @@ class WorkflowController extends Controller
         ];
     }
 
-    private function stale(Workflow $workflow): JsonResponse
+    private function stale(Workflow $workflow, ?int $seen): ?JsonResponse
     {
-        $workflow->loadMissing('editor:id,name');
-
-        return response()->json([
-            'message' => __('Someone else changed this workflow since you opened it.'),
-            'workflow' => [
-                ...$workflow->only(['title', 'definition', 'revision', 'updated_at']),
-                'edited_by' => $workflow->editor?->name,
-            ],
-        ], 409);
+        return $this->staleSave($workflow, $seen, 'workflow', ['title', 'definition'], __('Someone else changed this workflow since you opened it.'));
     }
 }

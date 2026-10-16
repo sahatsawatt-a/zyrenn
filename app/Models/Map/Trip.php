@@ -5,8 +5,8 @@ namespace App\Models\Map;
 use App\Events\TripChanged;
 use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
+use App\Models\Concerns\KeepsRevisions;
 use App\Models\Concerns\RecordsEditor;
-use App\Support\Live\Live;
 use App\Support\Maps\TripDocument;
 use Database\Factories\Map\TripFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -34,7 +34,7 @@ use Illuminate\Support\Carbon;
 class Trip extends Model
 {
     /** @use HasFactory<TripFactory> */
-    use BelongsToOwner, HasFactory, HasRefId, RecordsEditor;
+    use BelongsToOwner, HasFactory, HasRefId, KeepsRevisions, RecordsEditor;
 
     /**
      * Mirror the column defaults so new instances match what the database stores.
@@ -57,19 +57,17 @@ class Trip extends Model
                 $trip->plain_text = TripDocument::writtenText($trip->content) ?: null;
             }
 
-            if ($trip->exists && $trip->isDirty(['title', 'content', 'folder_id'])) {
-                $trip->revision++;
-            }
         });
+    }
 
-        // Whoever else has it open hears of it: the page loads the new copy,
-        // or, holding changes of its own, asks which to keep
-        static::saved(function (Trip $trip) {
-            if ($trip->wasChanged('revision')) {
-                Live::tell(new TripChanged($trip, 'saved'));
-            }
-        });
-        static::deleted(fn (Trip $trip) => Live::tell(new TripChanged($trip, 'deleted')));
+    protected function revisedBy(): array
+    {
+        return ['title', 'content', 'folder_id'];
+    }
+
+    protected function changed(string $what): TripChanged
+    {
+        return new TripChanged($this, $what);
     }
 
     /**

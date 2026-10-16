@@ -8,8 +8,8 @@ use App\Models\Chat\ChatMessage;
 use App\Models\Chat\ChatRoom;
 use App\Models\Connection;
 use App\Models\User;
-use App\Support\Chat\AiClient;
-use App\Support\Chat\AiFailed;
+use App\Support\Ai\AiClient;
+use App\Support\Ai\AiFailed;
 use App\Support\Knowledge\Knowledge;
 use Closure;
 

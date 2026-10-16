@@ -6,7 +6,9 @@ use App\Models\Connection;
 use App\Models\Workflow\Workflow;
 use App\Models\Workflow\WorkflowListener;
 use App\Support\Connections\InstagramSignIn;
+use App\Support\Connections\Line;
 use App\Support\Connections\Meta;
+use App\Support\Connections\Telegram;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -78,7 +80,7 @@ final class Hooks
 
         if ($connection->setting('receive') !== 'webhook' || $url === null) {
             // Asked for its messages instead; Telegram allows one or the other
-            Http::timeout(10)->post("https://api.telegram.org/bot{$token}/deleteWebhook");
+            Telegram::post($token, 'deleteWebhook', timeout: 10);
 
             return;
         }
@@ -91,11 +93,11 @@ final class Hooks
             $connection->save();
         }
 
-        Http::timeout(10)->post("https://api.telegram.org/bot{$token}/setWebhook", [
+        Telegram::post($token, 'setWebhook', [
             'url' => $url,
             'secret_token' => $secret,
             'allowed_updates' => Envelope::TELEGRAM_UPDATES,
-        ])->throw();
+        ], timeout: 10)->throw();
     }
 
     /**
@@ -111,8 +113,8 @@ final class Hooks
             return;
         }
 
-        Http::timeout(10)->withToken($token)
-            ->put('https://api.line.me/v2/bot/channel/webhook/endpoint', ['endpoint' => $url])
+        Line::http($connection, 10)
+            ->put(Line::api('channel/webhook/endpoint'), ['endpoint' => $url])
             ->throw();
     }
 
@@ -162,7 +164,7 @@ final class Hooks
     public static function telegramInfo(Connection $connection): ?array
     {
         try {
-            $info = Http::timeout(10)->get('https://api.telegram.org/bot'.$connection->secret('bot_token').'/getWebhookInfo')->json('result');
+            $info = Telegram::get($connection, 'getWebhookInfo', timeout: 10)->json('result');
         } catch (ConnectionException) {
             return null;
         }

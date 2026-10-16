@@ -6,7 +6,7 @@ use App\Mcp\Tools\DriveTool;
 use App\Models\Drive\DriveFile;
 use App\Models\Drive\DriveFolder;
 use App\Support\Folders;
-use App\Support\RemoteDownloadFailed;
+use App\Support\Outside\RemoteDownloadFailed;
 use App\Support\Workflow\Inbound\Hooks;
 use App\Support\Workflow\Template;
 use Illuminate\Http\Client\ConnectionException;

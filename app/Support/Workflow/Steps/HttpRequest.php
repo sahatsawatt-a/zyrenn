@@ -2,8 +2,8 @@
 
 namespace App\Support\Workflow\Steps;
 
-use App\Support\RemoteDownload;
-use App\Support\RemoteDownloadFailed;
+use App\Support\Outside\RemoteDownload;
+use App\Support\Outside\RemoteDownloadFailed;
 use App\Support\Workflow\References;
 use App\Support\Workflow\Template;
 use Illuminate\Http\Client\ConnectionException;

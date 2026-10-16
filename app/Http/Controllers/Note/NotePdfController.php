@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Note;
 
 use App\Http\Controllers\Controller;
 use App\Models\Note\Note;
+use App\Support\Chrome\Chrome;
 use App\Support\Note\NotePdf;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
@@ -31,7 +32,7 @@ class NotePdfController extends Controller
         ])['style'] ?? 'simple';
 
         try {
-            $bytes = NotePdf::bytes($note, $style, NotePdf::rawSessionCookie($request), $warning);
+            $bytes = NotePdf::bytes($note, $style, Chrome::sessionCookie($request), $warning);
         } catch (ConnectionException|RuntimeException $e) {
             report($e);
 

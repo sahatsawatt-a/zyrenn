@@ -4,8 +4,8 @@ namespace App\Support\Connections;
 
 use App\Models\Connection;
 use App\Support\Agents\Toolbox;
-use App\Support\Chat\AiClient;
-use App\Support\Chat\AiFailed;
+use App\Support\Ai\AiClient;
+use App\Support\Ai\AiFailed;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -76,11 +76,8 @@ class ConnectionCheck
      */
     private function telegram(Connection $connection): array
     {
-        $token = $connection->secret('bot_token') ?? '';
-
         try {
-            $response = Http::withoutRedirecting()->timeout(10)->acceptJson()
-                ->get("https://api.telegram.org/bot{$token}/getMe");
+            $response = Telegram::http(10)->withoutRedirecting()->acceptJson()->get(Telegram::method($connection, 'getMe'));
         } catch (ConnectionException) {
             return ['ok' => false, 'message' => 'Could not reach Telegram.'];
         }
@@ -102,9 +99,7 @@ class ConnectionCheck
     private function line(Connection $connection): array
     {
         try {
-            $response = Http::withoutRedirecting()->timeout(10)->acceptJson()
-                ->withToken($connection->secret('channel_access_token') ?? '')
-                ->get('https://api.line.me/v2/bot/info');
+            $response = Line::http($connection, 10)->withoutRedirecting()->acceptJson()->get(Line::api('info'));
         } catch (ConnectionException) {
             return ['ok' => false, 'message' => 'Could not reach LINE.'];
         }

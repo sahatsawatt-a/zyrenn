@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Support\Chat;
+namespace App\Support\Ai;
 
 use RuntimeException;
 

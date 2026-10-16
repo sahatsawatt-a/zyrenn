@@ -3,10 +3,10 @@
 namespace App\Support\Workflow\Steps;
 
 use App\Models\Connection;
+use App\Support\Connections\Line;
 use App\Support\Workflow\References;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 
 /**
  * LINE: who wrote -- a LINE event carries only ids, where Telegram's carries
@@ -61,9 +61,7 @@ final class LineProfile implements Step
         }
 
         try {
-            $response = Http::timeout(10)
-                ->withToken((string) $channel->secret('channel_access_token'))
-                ->get("https://api.line.me/v2/bot/{$path}");
+            $response = Line::http($channel, 10)->get(Line::api($path));
         } catch (ConnectionException $e) {
             throw StepFailed::unreached($e, 'LINE');
         }

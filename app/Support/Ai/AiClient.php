@@ -1,9 +1,10 @@
 <?php
 
-namespace App\Support\Chat;
+namespace App\Support\Ai;
 
 use App\Models\Connection;
 use App\Support\Connections\Services;
+use App\Support\Outside\HostAddress;
 use Generator;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;

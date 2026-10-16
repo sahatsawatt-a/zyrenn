@@ -2,8 +2,8 @@
 
 namespace App\Support\Links;
 
-use App\Support\RemoteDownload;
-use App\Support\RemoteDownloadFailed;
+use App\Support\Outside\RemoteDownload;
+use App\Support\Outside\RemoteDownloadFailed;
 use GuzzleHttp\Psr7\Uri;
 use GuzzleHttp\Psr7\UriResolver;
 use Illuminate\Support\Facades\Cache;

@@ -12,66 +12,10 @@ use App\Models\Workflow\WorkflowRun;
 use App\Models\Workflow\WorkflowVersion;
 use App\Support\Live\Live;
 use App\Support\Workflow\Steps\Approval;
-use App\Support\Workflow\Steps\AskAgent;
-use App\Support\Workflow\Steps\AskAi;
-use App\Support\Workflow\Steps\BrowserChecks;
-use App\Support\Workflow\Steps\ChannelSend;
-use App\Support\Workflow\Steps\ChatFetch;
-use App\Support\Workflow\Steps\ChatRoomStep;
-use App\Support\Workflow\Steps\ChatSend;
-use App\Support\Workflow\Steps\ChatUpdate;
-use App\Support\Workflow\Steps\Delay;
-use App\Support\Workflow\Steps\DriveFind;
-use App\Support\Workflow\Steps\DriveLink;
-use App\Support\Workflow\Steps\DriveRead;
-use App\Support\Workflow\Steps\DriveSave;
-use App\Support\Workflow\Steps\FacebookCall;
-use App\Support\Workflow\Steps\FacebookPost;
-use App\Support\Workflow\Steps\ForEachStep;
-use App\Support\Workflow\Steps\GivenTrigger;
-use App\Support\Workflow\Steps\HttpRequest;
-use App\Support\Workflow\Steps\IfCondition;
-use App\Support\Workflow\Steps\InstagramCall;
-use App\Support\Workflow\Steps\InstagramChat;
-use App\Support\Workflow\Steps\InstagramPost;
-use App\Support\Workflow\Steps\KnowledgeSearch;
-use App\Support\Workflow\Steps\LineCall;
-use App\Support\Workflow\Steps\LineFile;
-use App\Support\Workflow\Steps\LineProfile;
-use App\Support\Workflow\Steps\LineReply;
-use App\Support\Workflow\Steps\LineRichMenu;
-use App\Support\Workflow\Steps\LineSend;
-use App\Support\Workflow\Steps\LinkedInCall;
-use App\Support\Workflow\Steps\LinkedInPost;
-use App\Support\Workflow\Steps\Log;
-use App\Support\Workflow\Steps\ManualTrigger;
-use App\Support\Workflow\Steps\MergeStep;
-use App\Support\Workflow\Steps\PromptxCall;
-use App\Support\Workflow\Steps\PromptxEdit;
-use App\Support\Workflow\Steps\PromptxProject;
-use App\Support\Workflow\Steps\PromptxRun;
-use App\Support\Workflow\Steps\RunCode;
-use App\Support\Workflow\Steps\SerpApiCall;
-use App\Support\Workflow\Steps\SetData;
 use App\Support\Workflow\Steps\Step;
 use App\Support\Workflow\Steps\StepContext;
 use App\Support\Workflow\Steps\StepFailed;
 use App\Support\Workflow\Steps\StepResult;
-use App\Support\Workflow\Steps\SwitchStep;
-use App\Support\Workflow\Steps\TableAdd;
-use App\Support\Workflow\Steps\TableFind;
-use App\Support\Workflow\Steps\TableUpdate;
-use App\Support\Workflow\Steps\TavilyCall;
-use App\Support\Workflow\Steps\TelegramCall;
-use App\Support\Workflow\Steps\TelegramFile;
-use App\Support\Workflow\Steps\TelegramSend;
-use App\Support\Workflow\Steps\TelegramSendFile;
-use App\Support\Workflow\Steps\ThreadsCall;
-use App\Support\Workflow\Steps\ThreadsPost;
-use App\Support\Workflow\Steps\WebhookAnswer;
-use App\Support\Workflow\Steps\WhatsAppCall;
-use App\Support\Workflow\Steps\WhatsAppFile;
-use App\Support\Workflow\Steps\WhatsAppSend;
 use DomainException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -117,195 +61,6 @@ final class Engine
 
     /** @var array<int, true> runs changed in the transaction under way, to be told of once it commits */
     private static array $changed = [];
-
-    /**
-     * What runs each kind of step. A run keeps the version of each step it
-     * was published with, so a step changed in a way old runs must not see
-     * keeps its old code under "type@version" -- e.g. 'ai.chat@1' -- for as
-     * long as runs of it may still be waiting; NodeTypes' "oldest" says which
-     * versions are still run at all.
-     *
-     * @var array<string, class-string<Step>>
-     */
-    private const STEPS = [
-        'trigger.manual' => ManualTrigger::class,
-        'trigger.call' => GivenTrigger::class,
-        'trigger.chat' => GivenTrigger::class,
-        'trigger.schedule' => GivenTrigger::class,
-        'trigger.webhook' => GivenTrigger::class,
-        'trigger.telegram' => GivenTrigger::class,
-        'trigger.line' => GivenTrigger::class,
-        'trigger.whatsapp' => GivenTrigger::class,
-        'trigger.instagram' => GivenTrigger::class,
-        'trigger.instagram_message' => GivenTrigger::class,
-        'trigger.threads' => GivenTrigger::class,
-        'line.profile' => LineProfile::class,
-        'line.file' => LineFile::class,
-        'telegram.file' => TelegramFile::class,
-        'chat.room' => ChatRoomStep::class,
-        'chat.send' => ChatSend::class,
-        'chat.fetch' => ChatFetch::class,
-        'knowledge.search' => KnowledgeSearch::class,
-        'ai.agent' => AskAgent::class,
-        'chat.update' => ChatUpdate::class,
-        'table.find' => TableFind::class,
-        'table.add' => TableAdd::class,
-        'table.update' => TableUpdate::class,
-        'drive.save' => DriveSave::class,
-        'drive.find' => DriveFind::class,
-        'drive.read' => DriveRead::class,
-        'drive.link' => DriveLink::class,
-        'browser.run' => BrowserChecks::class,
-        'ai.chat' => AskAi::class,
-        'data.code' => RunCode::class,
-        'http.request' => HttpRequest::class,
-        'http.respond' => WebhookAnswer::class,
-        'serpapi.google' => SerpApiCall::class,
-        'serpapi.news' => SerpApiCall::class,
-        'serpapi.images' => SerpApiCall::class,
-        'serpapi.maps' => SerpApiCall::class,
-        'serpapi.youtube' => SerpApiCall::class,
-        'serpapi.search' => SerpApiCall::class,
-        'serpapi.locations' => SerpApiCall::class,
-        'serpapi.account' => SerpApiCall::class,
-        'tavily.search' => TavilyCall::class,
-        'tavily.extract' => TavilyCall::class,
-        'tavily.crawl' => TavilyCall::class,
-        'tavily.map' => TavilyCall::class,
-        'tavily.usage' => TavilyCall::class,
-        'promptx.flow_create' => PromptxCall::class,
-        'promptx.flow' => PromptxCall::class,
-        'promptx.flow_import' => PromptxCall::class,
-        'promptx.flow_publish' => PromptxCall::class,
-        'promptx.runs' => PromptxCall::class,
-        'promptx.run' => PromptxCall::class,
-        'promptx.flows' => PromptxCall::class,
-        'promptx.flow_status' => PromptxCall::class,
-        'promptx.flow_delete' => PromptxCall::class,
-        'promptx.flow_versions' => PromptxCall::class,
-        'promptx.flow_restore' => PromptxCall::class,
-        'promptx.step_update' => PromptxEdit::class,
-        'promptx.step_add' => PromptxEdit::class,
-        'promptx.step_delete' => PromptxEdit::class,
-        'promptx.step_move' => PromptxEdit::class,
-        'promptx.trigger_update' => PromptxEdit::class,
-        'promptx.flow_run' => PromptxRun::class,
-        'promptx.flow_test' => PromptxRun::class,
-        'promptx.run_retry' => PromptxRun::class,
-        'promptx.runs_cancel' => PromptxRun::class,
-        'promptx.run_resume' => PromptxRun::class,
-        'promptx.projects' => PromptxProject::class,
-        'promptx.connections' => PromptxProject::class,
-        'promptx.folders' => PromptxProject::class,
-        'promptx.folder_create' => PromptxProject::class,
-        'promptx.tables' => PromptxProject::class,
-        'promptx.table_records' => PromptxProject::class,
-        'promptx.table_add' => PromptxProject::class,
-        'telegram.send' => TelegramSend::class,
-        'telegram.send_file' => TelegramSendFile::class,
-        'line.send' => LineSend::class,
-        'line.reply' => LineReply::class,
-        'whatsapp.file' => WhatsAppFile::class,
-        'whatsapp.send' => WhatsAppSend::class,
-        'trigger.channel' => GivenTrigger::class,
-        'channel.send' => ChannelSend::class,
-        'whatsapp.send_file' => WhatsAppCall::class,
-        'whatsapp.template' => WhatsAppCall::class,
-        'whatsapp.location' => WhatsAppCall::class,
-        'whatsapp.react' => WhatsAppCall::class,
-        'whatsapp.read' => WhatsAppCall::class,
-        'facebook.post' => FacebookPost::class,
-        'facebook.comment' => FacebookCall::class,
-        'facebook.like' => FacebookCall::class,
-        'facebook.unlike' => FacebookCall::class,
-        'facebook.delete' => FacebookCall::class,
-        'facebook.posts' => FacebookCall::class,
-        'facebook.comments' => FacebookCall::class,
-        'facebook.me' => FacebookCall::class,
-        'instagram.post' => InstagramPost::class,
-        'instagram.comment' => InstagramCall::class,
-        'instagram.reply' => InstagramCall::class,
-        'instagram.comment_delete' => InstagramCall::class,
-        'instagram.delete' => InstagramCall::class,
-        'instagram.posts' => InstagramCall::class,
-        'instagram.comments' => InstagramCall::class,
-        'instagram.me' => InstagramCall::class,
-        'instagram.send' => InstagramChat::class,
-        'instagram.send_file' => InstagramChat::class,
-        'instagram.message_commenter' => InstagramChat::class,
-        'instagram.react' => InstagramChat::class,
-        'instagram.profile' => InstagramChat::class,
-        'threads.post' => ThreadsPost::class,
-        'threads.repost' => ThreadsCall::class,
-        'threads.delete' => ThreadsCall::class,
-        'threads.posts' => ThreadsCall::class,
-        'threads.replies' => ThreadsCall::class,
-        'threads.me' => ThreadsCall::class,
-        'linkedin.post' => LinkedInPost::class,
-        'linkedin.repost' => LinkedInCall::class,
-        'linkedin.delete' => LinkedInCall::class,
-        'linkedin.comment' => LinkedInCall::class,
-        'linkedin.comment_delete' => LinkedInCall::class,
-        'linkedin.like' => LinkedInCall::class,
-        'linkedin.unlike' => LinkedInCall::class,
-        'linkedin.me' => LinkedInCall::class,
-        // One call to a service each (ServiceKinds)
-        'telegram.album' => TelegramCall::class,
-        'telegram.sticker' => TelegramCall::class,
-        'telegram.location' => TelegramCall::class,
-        'telegram.contact' => TelegramCall::class,
-        'telegram.poll' => TelegramCall::class,
-        'telegram.forward' => TelegramCall::class,
-        'telegram.copy' => TelegramCall::class,
-        'telegram.invoice' => TelegramCall::class,
-        'telegram.topic' => TelegramCall::class,
-        'telegram.action' => TelegramCall::class,
-        'telegram.edit' => TelegramCall::class,
-        'telegram.edit_buttons' => TelegramCall::class,
-        'telegram.delete' => TelegramCall::class,
-        'telegram.pin' => TelegramCall::class,
-        'telegram.unpin' => TelegramCall::class,
-        'telegram.react' => TelegramCall::class,
-        'telegram.answer_button' => TelegramCall::class,
-        'telegram.commands' => TelegramCall::class,
-        'telegram.ban' => TelegramCall::class,
-        'telegram.unban' => TelegramCall::class,
-        'telegram.restrict' => TelegramCall::class,
-        'telegram.answer_inline' => TelegramCall::class,
-        'telegram.answer_checkout' => TelegramCall::class,
-        'telegram.chat' => TelegramCall::class,
-        'telegram.member' => TelegramCall::class,
-        'telegram.member_count' => TelegramCall::class,
-        'line.multicast' => LineCall::class,
-        'line.broadcast' => LineCall::class,
-        'line.loading' => LineCall::class,
-        'line.read' => LineCall::class,
-        'line.leave' => LineCall::class,
-        'line.richmenu_make' => LineRichMenu::class,
-        'line.richmenu_delete' => LineRichMenu::class,
-        'line.richmenu_default' => LineRichMenu::class,
-        'line.richmenu_default_off' => LineRichMenu::class,
-        'line.richmenu' => LineRichMenu::class,
-        'line.richmenu_off' => LineRichMenu::class,
-        'line.richmenu_many' => LineRichMenu::class,
-        'line.richmenu_many_off' => LineRichMenu::class,
-        'line.richmenu_of' => LineRichMenu::class,
-        'line.richmenu_alias' => LineRichMenu::class,
-        'line.richmenu_alias_off' => LineRichMenu::class,
-        'line.richmenus' => LineRichMenu::class,
-        'line.quota' => LineCall::class,
-        'line.consumption' => LineCall::class,
-        'line.group' => LineCall::class,
-        'line.group_count' => LineCall::class,
-        'data.set' => SetData::class,
-        'logic.if' => IfCondition::class,
-        'logic.switch' => SwitchStep::class,
-        'logic.merge' => MergeStep::class,
-        'logic.each' => ForEachStep::class,
-        'logic.delay' => Delay::class,
-        'logic.approval' => Approval::class,
-        'output.log' => Log::class,
-    ];
 
     /**
      * Start a run of a frozen version, from one of its triggers.
@@ -1170,10 +925,13 @@ final class Engine
      */
     private static function stepFor(array $node): Step
     {
+        // A run keeps the version of each step it was published with, so a
+        // step changed in a way old runs must not see keeps its old code in
+        // its kind's "kept" for as long as runs of it may still be waiting
         $type = NodeTypes::get($node['type']);
         $version = $node['nodeVersion'];
-        $kept = self::STEPS["{$node['type']}@{$version}"] ?? null;
-        $class = $kept ?? self::STEPS[$node['type']] ?? null;
+        $kept = $type['kept'][$version] ?? null;
+        $class = $kept ?? $type['runs'] ?? null;
 
         if ($class === null || $type === null) {
             throw new StepFailed("This app can't run a step of the kind {$node['type']}.");

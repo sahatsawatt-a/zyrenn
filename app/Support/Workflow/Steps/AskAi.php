@@ -3,8 +3,8 @@
 namespace App\Support\Workflow\Steps;
 
 use App\Models\Drive\DriveFile;
-use App\Support\Chat\AiClient;
-use App\Support\Chat\AiFailed;
+use App\Support\Ai\AiClient;
+use App\Support\Ai\AiFailed;
 use App\Support\Workflow\References;
 
 /**
