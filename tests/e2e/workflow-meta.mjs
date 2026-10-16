@@ -1,7 +1,7 @@
 // WhatsApp, Facebook, Instagram and Threads in the editor: each a group of
 // its own, its steps set up from dropdowns that show only what a choice
 // needs. Nothing is run: every one of them would reach a real service.
-import { SHOTS, runBoard, tinker } from './harness.mjs';
+import { paletteGroup, runBoard, SHOTS, tinker } from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);
 const TITLE = `e2e meta ${RUN}`;
@@ -65,14 +65,8 @@ await runBoard(
             await settings.waitFor();
         };
 
-        const kinds = (group) =>
-            page
-                .locator('[data-step-palette] section')
-                .filter({
-                    has: page.locator('h3', {
-                        hasText: new RegExp(`^${group}$`),
-                    }),
-                })
+        const kinds = async (group) =>
+            (await paletteGroup(page, group))
                 .locator('[data-palette-step]')
                 .count();
         const counted = [

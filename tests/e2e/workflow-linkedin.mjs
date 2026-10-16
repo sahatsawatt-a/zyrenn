@@ -5,7 +5,13 @@
 // and the run says to sign in again. Nothing is ever posted.
 //
 // Needs the app to reach the internet.
-import { SHOTS, runBoard, tinker } from './harness.mjs';
+import {
+    paletteGroup,
+    paletteGroups,
+    runBoard,
+    SHOTS,
+    tinker,
+} from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);
 const TITLE = `e2e linkedin ${RUN}`;
@@ -66,9 +72,7 @@ const failed = await runBoard(
             (await settings.locator(`#setting-${name}`).count()) === 1;
 
         // --- in the palette, under its own service ---
-        const group = page.locator('[data-step-palette] section').filter({
-            has: page.locator('h3', { hasText: /^LinkedIn$/ }),
-        });
+        const group = await paletteGroup(page, 'LinkedIn');
         const kinds = await group
             .locator('[data-palette-step]')
             .evaluateAll((steps) =>
@@ -83,19 +87,32 @@ const failed = await runBoard(
             kinds.join(', '),
         );
 
-        const groups = (
-            await page.locator('[data-step-palette] h3').allInnerTexts()
-        ).map((title) => title.toUpperCase());
+        const groups = (await paletteGroups(page)).map((title) =>
+            title.toUpperCase(),
+        );
+        // Each opened, its first post or trigger in it
+        const firsts = [];
+
+        for (const [title, kind] of [
+            ['WhatsApp', 'trigger.whatsapp'],
+            ['Facebook', 'facebook.post'],
+            ['Instagram', 'instagram.post'],
+            ['Threads', 'threads.post'],
+        ]) {
+            firsts.push(
+                await (
+                    await paletteGroup(page, title)
+                )
+                    .locator(`[data-palette-step="${kind}"]`)
+                    .count(),
+            );
+        }
+
         check(
             'Meta’s four have groups of their own too, each with its steps',
             ['WHATSAPP', 'FACEBOOK', 'INSTAGRAM', 'THREADS'].every((group) =>
                 groups.includes(group),
-            ) &&
-                (await page
-                    .locator(
-                        '[data-palette-step="trigger.whatsapp"], [data-palette-step="facebook.post"], [data-palette-step="instagram.post"], [data-palette-step="threads.post"]',
-                    )
-                    .count()) === 4,
+            ) && firsts.every((count) => count === 1),
             groups.join(', '),
         );
 

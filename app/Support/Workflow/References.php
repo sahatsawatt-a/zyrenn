@@ -9,8 +9,10 @@ use App\Models\Knowledge\KnowledgeBase;
 use App\Models\Owner;
 use App\Models\Project;
 use App\Models\Table\Table;
+use App\Models\Workflow\CodeLibrary;
 use App\Models\Workflow\Workflow;
 use App\Support\Connections\Services;
+use App\Support\Workflow\Code\CodeSettings;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -83,6 +85,37 @@ final class References
                     $problems[] = ['message' => "{$setting['label']}: {$message}", 'node' => $node['id']];
                 }
             }
+
+            if ($node['type'] === 'data.code') {
+                array_push($problems, ...array_map(fn (string $message) => ['message' => $message, 'node' => $node['id']], self::codeProblems($node['config'])));
+            }
+        }
+
+        return $problems;
+    }
+
+    /**
+     * What stands in the way of a "Run code" step: a language the app's
+     * admins have not allowed, or libraries they have not added (or have
+     * switched off).
+     *
+     * @param  array<string, mixed>  $config
+     * @return list<string>
+     */
+    private static function codeProblems(array $config): array
+    {
+        $language = (string) ($config['language'] ?? CodeLibrary::JAVASCRIPT);
+        $problems = [];
+
+        if ($language === CodeLibrary::PYTHON && ! CodeSettings::pythonOn()) {
+            $problems[] = 'Language: Python is switched off by the app\'s admins.';
+        }
+
+        $names = array_values(array_filter((array) ($config['libraries'] ?? []), is_string(...)));
+        $missing = array_diff($names, CodeLibrary::query()->usable($language)->whereIn('name', $names)->pluck('name')->all());
+
+        if ($missing !== []) {
+            $problems[] = 'Libraries: '.implode(', ', $missing).(count($missing) === 1 ? ' is' : ' are').' not there for '.($language === CodeLibrary::PYTHON ? 'Python' : 'JavaScript').': the app\'s admins have not added '.(count($missing) === 1 ? 'it' : 'them').', or switched '.(count($missing) === 1 ? 'it' : 'them').' off.';
         }
 
         return $problems;

@@ -2,6 +2,7 @@
 
 namespace App\Support\Connections;
 
+use App\Support\Outside\SmtpTransports;
 use Illuminate\Validation\Rule;
 
 /**
@@ -70,6 +71,12 @@ final class Services
     /** Search made for a model to read, and pages read whole, by a key (tavily.com). */
     public const TAVILY = 'tavily';
 
+    /** Repositories on GitHub: issues, pull requests, files, Actions, by a token; and what happens in them, by a webhook. */
+    public const GITHUB = 'github';
+
+    /** Payments on Stripe: links, checkout, customers, invoices, by a secret key; what happens there, by a webhook. */
+    public const STRIPE = 'stripe';
+
     /** A PromptX account, for workflows to make, change and publish its flows and read their runs (PromptxSignIn). */
     public const PROMPTX = 'promptx';
 
@@ -78,6 +85,21 @@ final class Services
 
     /** The secret another service signs what it sends with. */
     public const WEBHOOK_SECRET = 'webhook_secret';
+
+    /** A Slack channel's incoming webhook: its address is its key. */
+    public const SLACK = 'slack';
+
+    /** A Discord channel's webhook: its address is its key. */
+    public const DISCORD = 'discord';
+
+    /** A mail server of the user's own, sent through by SMTP. */
+    public const SMTP = 'smtp';
+
+    /** What a Slack or Discord webhook's address looks like: nothing else is posted to. */
+    public const WEBHOOKS = [
+        self::SLACK => '#^https://hooks\.slack\.com/(services|workflows|triggers)/[A-Za-z0-9/_-]+$#',
+        self::DISCORD => '#^https://(discord|discordapp|ptb\.discord|canary\.discord)\.com/api/webhooks/\d+/[A-Za-z0-9_-]+$#',
+    ];
 
     /**
      * @var array<string, array{label: string, url: string, key_required: bool, v1: bool, hint: string}>
@@ -339,6 +361,32 @@ final class Services
             ],
         ];
 
+        $services[self::GITHUB] = [
+            'label' => 'GitHub',
+            'group' => self::HTTP,
+            'hint' => 'Repositories on GitHub, for workflows to work their issues, pull requests, files, Actions and releases -- and to start on what happens in them. Make a fine-grained token at github.com/settings/personal-access-tokens, for the repositories it may touch, with the permissions the steps need (Issues, Pull requests, Contents, Actions: read and write). For a workflow to start on what happens, the webhook secret is given to GitHub too: the address to send to is shown once this is saved.',
+            'testable' => true,
+            'settings' => [
+                ['name' => 'repo', 'label' => 'Usual repository', 'type' => 'text', 'required' => false, 'placeholder' => 'owner/name', 'help' => 'Where a step works when it names no repository of its own.'],
+            ],
+            'secrets' => [
+                ['name' => 'token', 'label' => 'Token', 'type' => 'secret', 'required' => true, 'placeholder' => 'github_pat_…'],
+                ['name' => 'webhook_secret', 'label' => 'Webhook secret', 'type' => 'secret', 'required' => false, 'help' => 'Any long, random string, given to GitHub too as the webhook\'s Secret. Needed only for a workflow that starts on what happens.'],
+            ],
+        ];
+
+        $services[self::STRIPE] = [
+            'label' => 'Stripe',
+            'group' => self::HTTP,
+            'hint' => 'A Stripe account, for workflows to take payments -- payment links, checkout pages, invoices, refunds -- and to start on what happens there, like a payment made. Use a restricted key (rk_…) made at dashboard.stripe.com/apikeys with only what the steps need, or a test key (sk_test_…) to try it out. For a workflow to start on what happens, add an endpoint under Developers → Webhooks with the address shown once this is saved, and give its signing secret here.',
+            'testable' => true,
+            'settings' => [],
+            'secrets' => [
+                ['name' => 'secret_key', 'label' => 'Secret or restricted key', 'type' => 'secret', 'required' => true, 'placeholder' => 'rk_live_… or sk_test_…'],
+                ['name' => 'webhook_secret', 'label' => 'Webhook signing secret', 'type' => 'secret', 'required' => false, 'placeholder' => 'whsec_…', 'help' => 'The endpoint\'s signing secret, from Stripe. Needed only for a workflow that starts on what happens.'],
+            ],
+        ];
+
         $services[self::PROMPTX] = [
             'label' => 'PromptX',
             'group' => self::HTTP,
@@ -377,6 +425,46 @@ final class Services
             ],
             'secrets' => [
                 ['name' => 'header_value', 'label' => 'Value', 'type' => 'secret', 'required' => true, 'placeholder' => 'Bearer …'],
+            ],
+        ];
+
+        $services[self::SLACK] = [
+            'label' => 'Slack',
+            'group' => self::MESSAGING,
+            'hint' => 'Posts to one Slack channel, by an incoming webhook: in Slack, make an app, turn on Incoming Webhooks, add one to the channel and copy its address. Anyone with the address can post there, so it is kept secret.',
+            'testable' => false,
+            'settings' => [],
+            'secrets' => [
+                ['name' => 'url', 'label' => 'Webhook address', 'type' => 'secret', 'required' => true, 'placeholder' => 'https://hooks.slack.com/services/…'],
+            ],
+        ];
+
+        $services[self::DISCORD] = [
+            'label' => 'Discord',
+            'group' => self::MESSAGING,
+            'hint' => 'Posts to one Discord channel, by its webhook: in the channel\'s settings, Integrations, Webhooks, New Webhook, Copy Webhook URL. Anyone with the address can post there, so it is kept secret.',
+            'testable' => false,
+            'settings' => [],
+            'secrets' => [
+                ['name' => 'url', 'label' => 'Webhook address', 'type' => 'secret', 'required' => true, 'placeholder' => 'https://discord.com/api/webhooks/…'],
+            ],
+        ];
+
+        $services[self::SMTP] = [
+            'label' => 'Email (SMTP)',
+            'group' => self::MESSAGING,
+            'hint' => 'Sends email through a mail server of your own: your provider\'s SMTP server, or a sending service\'s (Gmail with an app password, Mailgun, SendGrid, Amazon SES). It must be on the public internet.',
+            'testable' => false,
+            'settings' => [
+                ['name' => 'host', 'label' => 'Server', 'type' => 'text', 'required' => true, 'placeholder' => 'smtp.example.com'],
+                ['name' => 'port', 'label' => 'Port', 'type' => 'text', 'required' => false, 'default' => '587', 'placeholder' => '587', 'help' => '587, 465, 25 or 2525.'],
+                ['name' => 'security', 'label' => 'Security', 'type' => 'choice', 'required' => true, 'default' => 'tls', 'options' => ['tls' => 'STARTTLS (port 587)', 'ssl' => 'TLS from the start (port 465)', 'none' => 'None']],
+                ['name' => 'username', 'label' => 'User name', 'type' => 'text', 'required' => false, 'placeholder' => 'you@example.com'],
+                ['name' => 'from', 'label' => 'Sent from', 'type' => 'text', 'required' => true, 'placeholder' => 'you@example.com'],
+                ['name' => 'from_name', 'label' => 'Name it is sent as', 'type' => 'text', 'required' => false, 'placeholder' => 'Your shop'],
+            ],
+            'secrets' => [
+                ['name' => 'password', 'label' => 'Password', 'type' => 'secret', 'required' => false, 'help' => 'For Gmail, an app password.'],
             ],
         ];
 
@@ -466,6 +554,16 @@ final class Services
             $rules['secrets.bot_token'][] = 'regex:/^\d+:[A-Za-z0-9_-]+$/';
         }
 
+        if (isset(self::WEBHOOKS[$name])) {
+            $rules['secrets.url'][] = 'regex:'.self::WEBHOOKS[$name];
+        }
+
+        if ($name === self::SMTP) {
+            $rules['settings.host'][] = 'regex:/^[A-Za-z0-9.-]+$/';
+            $rules['settings.from'][] = 'email';
+            $rules['settings.port'][] = Rule::in(array_map('strval', SmtpTransports::PORTS));
+        }
+
         return $rules;
     }
 
@@ -499,6 +597,8 @@ final class Services
         return [
             'secrets.bot_token.regex' => 'That is not a bot token: it looks like 123456789:AA…, as @BotFather gives it.',
             'settings.header_name.regex' => 'A header name has only letters, digits and dashes, such as X-Api-Key.',
+            'secrets.url.regex' => 'That is not a webhook\'s address: copy it whole, as Slack or Discord gives it.',
+            'settings.host.regex' => 'Give the server\'s name alone, such as smtp.example.com.',
         ];
     }
 

@@ -6,7 +6,7 @@
 // is ever made on PromptX.
 //
 // Needs the app to reach the internet.
-import { SHOTS, runBoard, tinker } from './harness.mjs';
+import { paletteGroup, runBoard, SHOTS, tinker } from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);
 const TITLE = `e2e promptx ${RUN}`;
@@ -113,19 +113,27 @@ const failedEditor = await runBoard(
     async ({ page, check }) => {
         const settings = page.locator('[data-step-settings]');
 
-        const group = page.locator('[data-step-palette] section').filter({
-            has: page.locator('h3', { hasText: /^PromptX$/ }),
-        });
+        const group = await paletteGroup(page, 'PromptX');
         const kinds = await group
             .locator('[data-palette-step]')
             .evaluateAll((steps) =>
                 steps.map((step) => step.getAttribute('data-palette-step')),
             );
+        // Every PromptX kind the app has, and nothing of another group's
+        const all = tinker(
+            `echo collect(App\\Support\\Workflow\\NodeTypes::shown())->where('group', 'promptx')->count();`,
+        );
         check(
             'PromptX has a group of its own, with a step for each of its calls',
-            kinds.join(', ') ===
-                'promptx.flow_create, promptx.flow, promptx.flow_import, promptx.flow_publish, promptx.runs, promptx.run',
-            kinds.join(', '),
+            kinds.length === Number(all) &&
+                kinds.every((kind) => kind.startsWith('promptx.')) &&
+                [
+                    'promptx.flow_create',
+                    'promptx.flow_publish',
+                    'promptx.runs',
+                    'promptx.run',
+                ].every((kind) => kinds.includes(kind)),
+            `${kinds.length} of ${all}: ${kinds.join(', ')}`,
         );
 
         await page.locator('[data-step="runs"]').click();

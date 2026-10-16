@@ -21,7 +21,11 @@ export type SettingType =
     | 'timezone'
     | 'workflow'
     | 'knowledge'
-    | 'agent';
+    | 'agent'
+    // A project whose tickets a step works; left empty, the workflow's own
+    | 'project'
+    // Libraries an admin added, for "Run code": names, by its language
+    | 'libraries';
 
 export type Setting = {
     name: string;
@@ -36,6 +40,8 @@ export type Setting = {
     services?: string[];
     // For named values: what names them ("columns": the step's table's)
     names?: 'columns';
+    // For code: what a new step starts with in each language
+    starts?: Record<string, string>;
     // Shown only while another setting is so: one value, any of a list, or
     // ("true") set to anything but none
     when?: Record<string, string | boolean | string[]>;
@@ -84,6 +90,12 @@ export type Options = {
         ai: boolean;
     }[];
     rooms: { ref_id: string; title: string }[];
+    // Whose tickets a step may work: a project's workflow, its own project
+    projects?: { ref_id: string; name: string }[];
+    // What "Run code" may use, as the app's admins added it, by language
+    libraries?: Record<string, { name: string; version: string | null }[]>;
+    // Whether the admins let Python be written
+    python?: boolean;
     tables: {
         ref_id: string;
         title: string;

@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Workflow\Workflow;
 use App\Models\Workflow\WorkflowFolder;
 use App\Models\Workflow\WorkflowVersion;
+use App\Support\Workflow\NodeTypes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use LogicException;
@@ -82,7 +83,8 @@ class WorkflowTest extends TestCase
                 ->where('workflow.published', null)
                 ->where('workflow.problems', [])
                 ->where('workflow.can.update', true)
-                ->has('nodeTypes', 176)
+                // Every kind the palette offers, however many there come to be
+                ->has('nodeTypes', count(NodeTypes::shown()))
                 ->has('groups'));
     }
 

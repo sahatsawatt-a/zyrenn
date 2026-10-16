@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
+import { Link, usePage } from '@inertiajs/vue3';
 import {
     Braces,
     Check,
@@ -32,6 +32,7 @@ import {
     index as ownConnections,
     models as modelsRoute,
 } from '@/routes/connections';
+import { page as codeAdmin } from '@/routes/admin/code';
 import { index as projectConnections } from '@/routes/projects/connections';
 
 // One step's settings, beside the canvas: its name and whatever its kind is
@@ -86,6 +87,8 @@ function startResize(event: PointerEvent) {
 }
 
 // --- its key, kept only once it is one a formula can name ---
+const page = usePage();
+
 const key = ref(props.step.key);
 watch(
     () => props.step.key,
@@ -117,8 +120,65 @@ function changeKey(value: string) {
 // --- its settings ---
 const value = (setting: Setting) => props.step.config[setting.name];
 
-const set = (setting: Setting, next: unknown) =>
-    emit('update', { config: { ...props.step.config, [setting.name]: next } });
+const set = (setting: Setting, next: unknown) => {
+    const config = { ...props.step.config, [setting.name]: next };
+
+    // Run code in another language: code still as it started starts again in
+    // that one, and libraries of the other are no use to it
+    if (setting.name === 'language' && props.step.type === 'data.code') {
+        const starts =
+            props.type?.config.find((one) => one.name === 'code')?.starts ?? {};
+        const was = String(props.step.config.language ?? 'javascript');
+
+        if (
+            starts[String(next)] &&
+            String(props.step.config.code ?? '').trim() ===
+                String(starts[was] ?? '').trim()
+        ) {
+            config.code = starts[String(next)];
+        }
+
+        config.libraries = [];
+    }
+
+    emit('update', { config });
+};
+
+// Run code's libraries: those added for its language, and any it names that
+// are gone, so they can be taken off
+const libraries = computed(() => {
+    const offered =
+        props.options.libraries?.[
+            String(props.step.config.language ?? 'javascript')
+        ] ?? [];
+    const chosen = Array.isArray(props.step.config.libraries)
+        ? (props.step.config.libraries as string[])
+        : [];
+
+    return [
+        ...offered.map((one) => ({
+            ...one,
+            on: chosen.includes(one.name),
+            gone: false,
+        })),
+        ...chosen
+            .filter((name) => !offered.some((one) => one.name === name))
+            .map((name) => ({ name, version: null, on: true, gone: true })),
+    ];
+});
+
+function toggleLibrary(setting: Setting, name: string) {
+    const chosen = Array.isArray(value(setting))
+        ? (value(setting) as string[])
+        : [];
+
+    set(
+        setting,
+        chosen.includes(name)
+            ? chosen.filter((one) => one !== name)
+            : [...chosen, name],
+    );
+}
 
 // The setting a file is being chosen for in the Drive, while one is
 const choosing = ref<Setting | null>(null);
@@ -193,10 +253,22 @@ const connectionsFor = (setting: Setting) => [
 ];
 
 const choicesOf = (setting: Setting) =>
-    Object.entries(setting.options ?? {}).map(([value, label]) => ({
-        value,
-        label,
-    }));
+    Object.entries(setting.options ?? {})
+        // Python only where the admins allow it, or where a step has it already
+        .filter(
+            ([value]) =>
+                !(
+                    props.step.type === 'data.code' &&
+                    setting.name === 'language' &&
+                    value === 'python' &&
+                    !props.options.python &&
+                    props.step.config.language !== 'python'
+                ),
+        )
+        .map(([value, label]) => ({
+            value,
+            label,
+        }));
 
 // The step's table, for its columns
 const table = computed(() =>
@@ -498,6 +570,7 @@ async function copyHook(token: unknown) {
                             'workflow',
                             'knowledge',
                             'agent',
+                            'project',
                         ].includes(setting.type)
                     "
                     class="grid grid-cols-1 gap-2"
@@ -518,32 +591,41 @@ async function copyHook(token: unknown) {
                                           value: t.ref_id,
                                           label: t.title,
                                       }))
-                                    : setting.type === 'workflow'
-                                      ? (options.workflows ?? []).map((w) => ({
-                                            value: w.ref_id,
-                                            label: w.title,
+                                    : setting.type === 'project'
+                                      ? (options.projects ?? []).map((p) => ({
+                                            value: p.ref_id,
+                                            label: p.name,
                                         }))
-                                      : setting.type === 'agent'
-                                        ? (options.agents ?? []).map((a) => ({
-                                              value: a.ref_id,
-                                              label: a.title,
-                                              hint: `v${a.version}${a.model ? ` · ${a.model}` : ''}`,
-                                          }))
-                                        : setting.type === 'knowledge'
-                                          ? (options.knowledge ?? []).map(
-                                                (k) => ({
-                                                    value: k.ref_id,
-                                                    label: k.title,
-                                                }),
-                                            )
-                                          : columns
+                                      : setting.type === 'workflow'
+                                        ? (options.workflows ?? []).map(
+                                              (w) => ({
+                                                  value: w.ref_id,
+                                                  label: w.title,
+                                              }),
+                                          )
+                                        : setting.type === 'agent'
+                                          ? (options.agents ?? []).map((a) => ({
+                                                value: a.ref_id,
+                                                label: a.title,
+                                                hint: `v${a.version}${a.model ? ` · ${a.model}` : ''}`,
+                                            }))
+                                          : setting.type === 'knowledge'
+                                            ? (options.knowledge ?? []).map(
+                                                  (k) => ({
+                                                      value: k.ref_id,
+                                                      label: k.title,
+                                                  }),
+                                              )
+                                            : columns
                         "
                         :none="
                             setting.required
                                 ? undefined
                                 : setting.type === 'column'
                                   ? 'Any row'
-                                  : 'None'
+                                  : setting.type === 'project'
+                                    ? 'This workflow’s own project'
+                                    : 'None'
                         "
                         :disabled="!editable"
                         @update:model-value="set(setting, $event)"
@@ -755,6 +837,57 @@ async function copyHook(token: unknown) {
                         :disabled="!editable"
                         @update:model-value="set(setting, String($event))"
                     />
+                </div>
+
+                <!-- Libraries for code: those the admins added, each a switch -->
+                <div
+                    v-else-if="setting.type === 'libraries'"
+                    class="grid grid-cols-1 gap-2"
+                    data-setting-libraries
+                >
+                    <Label>{{ setting.label }}</Label>
+                    <div v-if="libraries.length" class="flex flex-wrap gap-1.5">
+                        <button
+                            v-for="library in libraries"
+                            :key="library.name"
+                            type="button"
+                            class="inline-flex h-7 items-center gap-1 rounded-full border px-2.5 font-mono text-xs transition-colors"
+                            :class="
+                                library.gone
+                                    ? 'border-destructive/50 text-destructive line-through'
+                                    : library.on
+                                      ? 'border-primary bg-primary/10 text-primary'
+                                      : 'text-muted-foreground hover:text-foreground'
+                            "
+                            :aria-pressed="library.on"
+                            :title="
+                                library.gone
+                                    ? 'Not there any more: take it off'
+                                    : library.version
+                                      ? `${library.name} ${library.version}`
+                                      : library.name
+                            "
+                            :disabled="!editable"
+                            :data-library="library.name"
+                            @click="toggleLibrary(setting, library.name)"
+                        >
+                            <Check
+                                v-if="library.on && !library.gone"
+                                class="size-3"
+                            />
+                            {{ library.name }}
+                        </button>
+                    </div>
+                    <p v-else class="text-muted-foreground text-xs">
+                        None added for this language yet.
+                        <Link
+                            v-if="page.props.auth.user?.is_admin"
+                            :href="codeAdmin()"
+                            class="text-primary underline-offset-2 hover:underline"
+                            >Add some</Link
+                        >
+                        <template v-else>The app’s admins add them.</template>
+                    </p>
                 </div>
 
                 <!-- Code: as it is written, its lines unbroken -->

@@ -3,7 +3,14 @@
 // source needs, and its folder is chosen from a dropdown of the Drive's own
 // folders -- or written as a path, made when it isn't there. Run, the file is
 // in the Drive and a later step reads it back.
-import { SHOTS, runBoard, tinker, open } from './harness.mjs';
+import {
+    open,
+    paletteGroup,
+    paletteStep,
+    runBoard,
+    SHOTS,
+    tinker,
+} from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);
 const TITLE = `e2e files ${RUN}`;
@@ -43,10 +50,9 @@ await runBoard(
         await page.getByLabel('Workflow title').fill(TITLE);
 
         // --- the palette ---
-        const drive = page
-            .locator('[data-step-palette] section')
-            .filter({ has: page.locator('h3', { hasText: /^Drive$/ }) })
-            .locator('[data-palette-step]');
+        const drive = (await paletteGroup(page, 'Drive')).locator(
+            '[data-palette-step]',
+        );
         const kinds = await drive.evaluateAll((steps) =>
             steps.map((s) => s.getAttribute('data-palette-step')),
         );
@@ -57,17 +63,15 @@ await runBoard(
         );
 
         // Each service's own API is its own step, in its own group
-        const inGroup = (group) =>
-            page
-                .locator('[data-step-palette] section')
-                .filter({ has: page.locator('h3', { hasText: group }) })
+        const inGroup = async (group) =>
+            (await paletteGroup(page, group))
                 .locator('[data-palette-step]')
                 .evaluateAll((steps) =>
                     steps.map((s) => s.getAttribute('data-palette-step')),
                 );
         const [telegram, line] = [
-            await inGroup(/^Telegram$/),
-            await inGroup(/^LINE$/),
+            await inGroup('Telegram'),
+            await inGroup('LINE'),
         ];
         check(
             "each call to a service is a step of that service's own: getting a file, replying, pushing",
@@ -81,7 +85,7 @@ await runBoard(
 
         const shown = async (name) =>
             (await settings.locator(`#setting-${name}`).count()) === 1;
-        await page.locator('[data-palette-step="line.file"]').click();
+        await (await paletteStep(page, 'line.file')).click();
         await step('line_get_the_file').waitFor();
         check(
             'it asks for its channel from a dropdown, and where to keep the file',
@@ -94,7 +98,7 @@ await runBoard(
         await settings.locator('[data-remove-step]').click();
 
         // --- a LINE message: what it is made of follows its kind ---
-        await page.locator('[data-palette-step="line.reply"]').click();
+        await (await paletteStep(page, 'line.reply')).click();
         await step('reply_on_line').waitFor();
         check(
             'a reply is words and a picture until another kind is chosen',
@@ -197,7 +201,7 @@ await runBoard(
                 line.includes('line.richmenus'),
             line.filter((kind) => kind.includes('richmenu')).join(),
         );
-        await page.locator('[data-palette-step="line.richmenu_make"]').click();
+        await (await paletteStep(page, 'line.richmenu_make')).click();
         await step('make_a_rich_menu_on_line').waitFor();
         check(
             'a rich menu asks for its picture and what each button does',
@@ -302,7 +306,7 @@ await runBoard(
         await settings.locator('[data-remove-step]').click();
 
         // --- Save to Drive: only what its source needs ---
-        await page.locator('[data-palette-step="drive.save"]').click();
+        await (await paletteStep(page, 'drive.save')).click();
         await step('save_to_drive').waitFor();
         check(
             'a file at an address asks for the address',
@@ -345,7 +349,7 @@ await runBoard(
         await page.screenshot({ path: `${SHOTS}/workflow-files.png` });
 
         // --- read it back ---
-        await page.locator('[data-palette-step="drive.read"]').click();
+        await (await paletteStep(page, 'drive.read')).click();
         await step('read_a_file').waitFor();
         await settings
             .locator('#setting-file')

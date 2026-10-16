@@ -16,7 +16,7 @@ use App\Support\Workflow\Steps\PromptxRun;
 final class ServiceKinds
 {
     /** What a step that may have sent something does when it can't tell. */
-    private const UNSURE = [
+    public const UNSURE = [
         'name' => 'unsure',
         'label' => 'If it may not have gone out',
         'type' => 'choice',
@@ -30,7 +30,7 @@ final class ServiceKinds
      */
     public static function all(): array
     {
-        return [...self::serpapi(), ...self::tavily(), ...self::promptx(), ...self::promptxProject(), ...self::telegram(), ...self::line(), ...self::whatsapp(), ...self::channel(), ...self::linkedin(), ...self::facebook(), ...self::instagram(), ...self::threads()];
+        return [...self::serpapi(), ...self::tavily(), ...self::github(), ...self::stripe(), ...self::promptx(), ...self::promptxProject(), ...self::telegram(), ...self::line(), ...self::whatsapp(), ...self::channel(), ...self::linkedin(), ...self::facebook(), ...self::instagram(), ...self::threads()];
     }
 
     // --- SerpApi ---
@@ -166,6 +166,245 @@ final class ServiceKinds
                 $more,
             ]),
             self::kind('tavily.usage', Steps\TavilyCall::class, 'Tavily: credits used', 'gauge', 'Asks Tavily what the key has used. Gives out used and limit for the key, left, and the plan with plan_used and plan_limit. Free.', [$key]),
+        ];
+    }
+
+    // --- GitHub ---
+
+    /**
+     * @return list<NodeType>
+     */
+    private static function github(): array
+    {
+        $as = ['name' => 'connection', 'label' => 'GitHub', 'type' => 'connection', 'required' => true, 'services' => ['github']];
+        $repo = ['name' => 'repo', 'label' => 'Repository', 'type' => 'template', 'required' => false, 'placeholder' => 'owner/name', 'help' => 'Empty, the connection\'s usual one.'];
+        $number = ['name' => 'number', 'label' => 'Number', 'type' => 'template', 'required' => true, 'placeholder' => '{{ trigger.issue.number }}'];
+        $title = ['name' => 'title', 'label' => 'Title', 'type' => 'template', 'required' => true];
+        $body = ['name' => 'body', 'label' => 'Words', 'type' => 'template', 'required' => false, 'help' => 'Markdown, as GitHub writes it.'];
+        $labels = ['name' => 'labels', 'label' => 'Labels', 'type' => 'template', 'required' => false, 'placeholder' => 'bug, from-zyrenn', 'help' => 'Split by commas or lines.'];
+        $people = ['name' => 'assignees', 'label' => 'Given to', 'type' => 'template', 'required' => false, 'placeholder' => 'octocat', 'help' => 'GitHub logins, split by commas.'];
+        $state = ['name' => 'state', 'label' => 'Which', 'type' => 'choice', 'required' => true, 'default' => 'open', 'options' => ['open' => 'Open', 'closed' => 'Closed', 'all' => 'Either']];
+        $count = ['name' => 'count', 'label' => 'At most', 'type' => 'number', 'required' => false, 'default' => 30, 'help' => 'At most 100.'];
+        $since = ['name' => 'since', 'label' => 'Changed since', 'type' => 'template', 'required' => false, 'placeholder' => '7 days ago', 'help' => 'A date, or a time like "7 days ago". Empty, any time.'];
+        $yes = fn (string $name, string $label, ?string $help = null) => ['name' => $name, 'label' => $label, 'type' => 'choice', 'required' => true, 'default' => 'no', 'options' => ['no' => 'No', 'yes' => 'Yes'], 'help' => $help];
+        $kind = fn (string $type, string $label, string $icon, string $description, array $settings, bool $sends = false) => self::kind($type, Steps\GithubCall::class, $label, $icon, $description, [$as, ...array_values($settings)], $sends);
+
+        return [
+            // Issues
+            $kind('github.issue_create', 'GitHub: open an issue', 'circle-dot', 'Opens an issue. Gives out its number, url, title and state.', [$repo, $title, $body, $labels, $people], sends: true),
+            $kind('github.issue_update', 'GitHub: change an issue', 'pencil', 'Changes an issue or pull request: only what is given changes. Labels or people named replace the ones it had. Gives out the issue as it is now.', [
+                $repo,
+                $number,
+                [...$title, 'required' => false, 'help' => 'Empty, as it was.'],
+                [...$body, 'help' => 'Empty, as it was.'],
+                ['name' => 'state', 'label' => 'Open or closed', 'type' => 'choice', 'required' => true, 'default' => 'keep', 'options' => ['keep' => 'As it is', 'open' => 'Open', 'closed' => 'Closed']],
+                ['name' => 'reason', 'label' => 'Closed as', 'type' => 'choice', 'required' => true, 'default' => 'completed', 'options' => ['completed' => 'Done', 'not_planned' => 'Not planned'], 'when' => ['state' => 'closed']],
+                [...$labels, 'help' => 'Replace its labels. Empty, as they were.'],
+                [...$people, 'help' => 'Replace who has it. Empty, as it was.'],
+            ]),
+            $kind('github.issue', 'GitHub: read an issue', 'file-text', 'Reads an issue or pull request by its number: its title, words, state, labels, who has it, and pull, true for a pull request.', [$repo, $number]),
+            $kind('github.issues', 'GitHub: find issues', 'list', 'Lists a repository\'s issues, the last changed first. Gives out issues -- each with its number, title, state, labels, who has it and url -- and count.', [
+                $repo,
+                $state,
+                ['name' => 'kind', 'label' => 'Of', 'type' => 'choice', 'required' => true, 'default' => 'issues', 'options' => ['issues' => 'Issues', 'pulls' => 'Pull requests', 'both' => 'Both']],
+                [...$labels, 'help' => 'Only those with all of these.'],
+                ['name' => 'assignee', 'label' => 'Given to', 'type' => 'template', 'required' => false, 'placeholder' => 'octocat', 'help' => 'A login; none for those nobody has.'],
+                $since,
+                $count,
+            ]),
+            $kind('github.comment', 'GitHub: comment', 'message-square', 'Writes a comment on an issue or pull request. Gives out its id and url.', [$repo, $number, [...$body, 'required' => true]], sends: true),
+            $kind('github.comments', 'GitHub: read comments', 'messages-square', 'Reads the comments on an issue or pull request, the first first. Gives out comments -- each with its id, words, author and url -- and count.', [$repo, $number, $count]),
+            $kind('github.labels_add', 'GitHub: add labels', 'tag', 'Puts labels on an issue or pull request, beside the ones it has; a label the repository lacks is made. Gives out all its labels now.', [$repo, $number, [...$labels, 'required' => true, 'help' => 'Split by commas or lines.']]),
+
+            // Pull requests
+            $kind('github.pull_create', 'GitHub: open a pull request', 'git-pull-request', 'Asks to bring a branch into another. Gives out its number, url and state.', [
+                $repo,
+                $title,
+                ['name' => 'head', 'label' => 'Bring in', 'type' => 'template', 'required' => true, 'placeholder' => 'feature/new-step', 'help' => 'The branch with the changes.'],
+                ['name' => 'base', 'label' => 'Into', 'type' => 'template', 'required' => true, 'placeholder' => 'main'],
+                $body,
+                $yes('draft', 'As a draft'),
+            ], sends: true),
+            $kind('github.pull', 'GitHub: read a pull request', 'git-pull-request', 'Reads a pull request by its number: title, words, state, whether it is merged or can be, its branches, and how much it changes.', [$repo, $number]),
+            $kind('github.pulls', 'GitHub: find pull requests', 'list', 'Lists a repository\'s pull requests, the last changed first. Gives out pulls and count.', [
+                $repo,
+                $state,
+                ['name' => 'base', 'label' => 'Into', 'type' => 'template', 'required' => false, 'placeholder' => 'main', 'help' => 'Only those into this branch.'],
+                $count,
+            ]),
+            $kind('github.merge', 'GitHub: merge a pull request', 'git-merge', 'Merges a pull request. Gives out merged and the commit it made.', [
+                $repo,
+                $number,
+                ['name' => 'method', 'label' => 'How', 'type' => 'choice', 'required' => true, 'default' => 'merge', 'options' => ['merge' => 'A merge commit', 'squash' => 'Squashed into one', 'rebase' => 'Rebased']],
+                ['name' => 'title', 'label' => 'Commit title', 'type' => 'template', 'required' => false, 'help' => 'Empty, GitHub\'s own.'],
+            ], sends: true),
+
+            // Code
+            $kind('github.file', 'GitHub: read a file', 'file-code', 'Reads a file of a repository: text (cut at 200 KB, and cut says so), sha, size, url. A folder gives out items instead: what is in it.', [
+                $repo,
+                ['name' => 'path', 'label' => 'Path', 'type' => 'template', 'required' => true, 'placeholder' => 'docs/CHANGELOG.md'],
+                ['name' => 'ref', 'label' => 'On', 'type' => 'template', 'required' => false, 'placeholder' => 'main', 'help' => 'A branch, tag or commit. Empty, the usual branch.'],
+            ]),
+            $kind('github.file_save', 'GitHub: write a file', 'file-pen', 'Writes a file as a commit: made, or changed from what it was. Gives out the commit and its url, and made, true for a new file.', [
+                $repo,
+                ['name' => 'path', 'label' => 'Path', 'type' => 'template', 'required' => true, 'placeholder' => 'data/today.json'],
+                ['name' => 'content', 'label' => 'What it holds', 'type' => 'template', 'required' => true],
+                ['name' => 'message', 'label' => 'Commit message', 'type' => 'template', 'required' => false, 'placeholder' => 'Update today.json'],
+                ['name' => 'branch', 'label' => 'On', 'type' => 'template', 'required' => false, 'placeholder' => 'main', 'help' => 'Empty, the usual branch.'],
+            ], sends: true),
+            $kind('github.commits', 'GitHub: list commits', 'git-commit-horizontal', 'Lists commits, the newest first: each with its sha, message, author, time and url.', [
+                $repo,
+                ['name' => 'branch', 'label' => 'On', 'type' => 'template', 'required' => false, 'placeholder' => 'main'],
+                ['name' => 'path', 'label' => 'Touching', 'type' => 'template', 'required' => false, 'placeholder' => 'src/', 'help' => 'Only those that change this file or folder.'],
+                ['name' => 'author', 'label' => 'By', 'type' => 'template', 'required' => false, 'placeholder' => 'octocat'],
+                [...$since, 'label' => 'Since'],
+                $count,
+            ]),
+            $kind('github.branch_create', 'GitHub: make a branch', 'git-branch', 'Makes a branch where another is now. Gives out its name and the commit it starts at.', [
+                $repo,
+                ['name' => 'name', 'label' => 'Name', 'type' => 'template', 'required' => true, 'placeholder' => 'fix/{{ trigger.issue.number }}'],
+                ['name' => 'from', 'label' => 'From', 'type' => 'template', 'required' => false, 'placeholder' => 'main', 'help' => 'Empty, the usual branch.'],
+            ]),
+
+            // Actions and releases
+            $kind('github.dispatch', 'GitHub: run an Action', 'play', 'Starts an Action that can be run by hand (on: workflow_dispatch). GitHub says only that it was taken: "GitHub: Actions runs" finds how it went.', [
+                $repo,
+                ['name' => 'workflow', 'label' => 'Action', 'type' => 'template', 'required' => true, 'placeholder' => 'deploy.yml', 'help' => 'Its file name in .github/workflows, or its id.'],
+                ['name' => 'ref', 'label' => 'On', 'type' => 'template', 'required' => false, 'placeholder' => 'main', 'help' => 'Empty, the usual branch.'],
+                ['name' => 'inputs', 'label' => 'Inputs', 'type' => 'fields', 'required' => false, 'default' => [], 'help' => 'As the Action names them under workflow_dispatch.inputs.'],
+            ], sends: true),
+            $kind('github.runs', 'GitHub: Actions runs', 'activity', 'Lists Actions runs, the newest first: each with its status, conclusion (success, failure...), branch and url.', [
+                $repo,
+                ['name' => 'workflow', 'label' => 'Of the Action', 'type' => 'template', 'required' => false, 'placeholder' => 'deploy.yml', 'help' => 'Empty, every Action\'s.'],
+                ['name' => 'branch', 'label' => 'On', 'type' => 'template', 'required' => false, 'placeholder' => 'main'],
+                ['name' => 'status', 'label' => 'Only', 'type' => 'choice', 'required' => true, 'default' => 'any', 'options' => ['any' => 'Any', 'in_progress' => 'Running', 'queued' => 'Waiting', 'completed' => 'Finished', 'success' => 'Succeeded', 'failure' => 'Failed', 'cancelled' => 'Cancelled']],
+                [...$count, 'default' => 10],
+            ]),
+            $kind('github.release_create', 'GitHub: publish a release', 'package', 'Publishes a release at a tag, made if it is not there yet. Gives out its url.', [
+                $repo,
+                ['name' => 'tag', 'label' => 'Tag', 'type' => 'template', 'required' => true, 'placeholder' => 'v1.2.0'],
+                ['name' => 'name', 'label' => 'Name', 'type' => 'template', 'required' => false, 'help' => 'Empty, the tag.'],
+                $body,
+                ['name' => 'target', 'label' => 'From', 'type' => 'template', 'required' => false, 'placeholder' => 'main', 'help' => 'Where a new tag is made: a branch or commit. Empty, the usual branch.'],
+                $yes('notes', 'Write its notes', 'GitHub writes what changed since the last release.'),
+                $yes('draft', 'As a draft'),
+                $yes('prerelease', 'As a pre-release'),
+            ], sends: true),
+            $kind('github.release_latest', 'GitHub: latest release', 'package', 'Reads the newest release that is not a draft or pre-release: its tag, name, notes and url.', [$repo]),
+
+            // Anything else
+            $kind('github.request', 'GitHub: any call', 'globe', 'Any call of GitHub\'s REST API, as docs.github.com writes it, with the connection\'s token. Gives out answer: what GitHub answered.', [
+                ['name' => 'method', 'label' => 'Method', 'type' => 'choice', 'required' => true, 'default' => 'GET', 'options' => ['GET' => 'GET', 'POST' => 'POST', 'PATCH' => 'PATCH', 'PUT' => 'PUT', 'DELETE' => 'DELETE']],
+                ['name' => 'path', 'label' => 'Path', 'type' => 'template', 'required' => true, 'placeholder' => '/repos/owner/name/topics'],
+                ['name' => 'query', 'label' => 'Query', 'type' => 'fields', 'required' => false, 'default' => []],
+                ['name' => 'body', 'label' => 'Body', 'type' => 'template', 'required' => false, 'placeholder' => '{"names": ["zyrenn"]}', 'help' => 'JSON. Not for GET.', 'when' => ['method' => ['POST', 'PATCH', 'PUT', 'DELETE']]],
+            ], sends: true),
+            $kind('github.me', 'GitHub: who the token is', 'user', 'Who the connection acts as: login, name, url.', []),
+        ];
+    }
+
+    // --- Stripe ---
+
+    /**
+     * @return list<NodeType>
+     */
+    private static function stripe(): array
+    {
+        $as = ['name' => 'connection', 'label' => 'Stripe', 'type' => 'connection', 'required' => true, 'services' => ['stripe']];
+        $amount = ['name' => 'amount', 'label' => 'Amount', 'type' => 'template', 'required' => true, 'placeholder' => '12.50', 'help' => 'As people write it: 12.50, or 1200 for yen.'];
+        $currency = ['name' => 'currency', 'label' => 'Currency', 'type' => 'template', 'required' => false, 'placeholder' => 'thb', 'help' => 'Three letters: thb, usd, jpy. Empty, thb.'];
+        $name = ['name' => 'name', 'label' => 'What it is for', 'type' => 'template', 'required' => true, 'placeholder' => 'Khao soi for two'];
+        $price = ['name' => 'price', 'label' => 'Or a price in Stripe', 'type' => 'template', 'required' => false, 'placeholder' => 'price_…', 'help' => 'Its id; given, the amount, currency and name are not needed.'];
+        $quantity = ['name' => 'quantity', 'label' => 'How many', 'type' => 'number', 'required' => false, 'default' => 1];
+        $metadata = ['name' => 'metadata', 'label' => 'Metadata', 'type' => 'fields', 'required' => false, 'default' => [], 'help' => 'Your own values kept with it, like order 1234; they come back with what Stripe sends.'];
+        $customer = ['name' => 'customer', 'label' => 'Customer', 'type' => 'template', 'required' => true, 'placeholder' => 'cus_…'];
+        $count = ['name' => 'count', 'label' => 'At most', 'type' => 'number', 'required' => false, 'default' => 20, 'help' => 'At most 100.'];
+        $person = [
+            ['name' => 'email', 'label' => 'Email', 'type' => 'template', 'required' => false],
+            ['name' => 'name', 'label' => 'Name', 'type' => 'template', 'required' => false],
+            ['name' => 'phone', 'label' => 'Phone', 'type' => 'template', 'required' => false],
+            ['name' => 'description', 'label' => 'Note', 'type' => 'template', 'required' => false],
+            $metadata,
+        ];
+        $kind = fn (string $type, string $label, string $icon, string $description, array $settings) => self::kind($type, Steps\StripeCall::class, $label, $icon, $description, [$as, ...array_values($settings)]);
+        $once = ' Made once, however often the step is tried.';
+
+        return [
+            // Payments
+            $kind('stripe.payment_link_create', 'Stripe: make a payment link', 'link', 'Makes a link anyone can pay by -- to send in a chat or an email. Gives out url, and its id.'.$once, [$amount, $currency, $name, $price, $quantity, ['name' => 'after', 'label' => 'Then go to', 'type' => 'template', 'required' => false, 'placeholder' => 'https://example.com/thanks', 'help' => 'A page the payer is sent to once paid. Empty, Stripe\'s own.'], $metadata]),
+            $kind('stripe.checkout_create', 'Stripe: make a checkout page', 'credit-card', 'Makes a checkout page for one payment, or a subscription at a price that recurs, for one payer. Gives out url, id and expires_at.'.$once, [
+                ['name' => 'mode', 'label' => 'For', 'type' => 'choice', 'required' => true, 'default' => 'payment', 'options' => ['payment' => 'One payment', 'subscription' => 'A subscription (a price that recurs)']],
+                [...$amount, 'required' => false, 'help' => 'For one payment: as people write it, 12.50.', 'when' => ['mode' => 'payment']],
+                [...$currency, 'when' => ['mode' => 'payment']],
+                [...$name, 'required' => false, 'when' => ['mode' => 'payment']],
+                $price,
+                $quantity,
+                ['name' => 'success_url', 'label' => 'Once paid, go to', 'type' => 'template', 'required' => true, 'placeholder' => 'https://example.com/thanks'],
+                ['name' => 'cancel_url', 'label' => 'If they go back, go to', 'type' => 'template', 'required' => false],
+                [...$customer, 'required' => false, 'help' => 'One already in Stripe; or their email below.'],
+                ['name' => 'email', 'label' => 'Their email', 'type' => 'template', 'required' => false],
+                ['name' => 'reference', 'label' => 'Your reference', 'type' => 'template', 'required' => false, 'placeholder' => '{{ trigger.chat.id }}', 'help' => 'Comes back as trigger.reference when it is paid.'],
+                $metadata,
+            ]),
+            $kind('stripe.checkout', 'Stripe: read a checkout', 'file-text', 'Reads a checkout page: status, paid, amount, who paid and their email, the payment.', [['name' => 'session', 'label' => 'Checkout', 'type' => 'template', 'required' => true, 'placeholder' => 'cs_…']]),
+            $kind('stripe.payment', 'Stripe: read a payment', 'file-text', 'Reads a payment: status, paid, amount, received, customer, metadata.', [['name' => 'payment', 'label' => 'Payment', 'type' => 'template', 'required' => true, 'placeholder' => 'pi_…']]),
+            $kind('stripe.payments', 'Stripe: list payments', 'list', 'Lists payments, the newest first. Gives out payments and count.', [[...$customer, 'required' => false], ['name' => 'since', 'label' => 'Since', 'type' => 'template', 'required' => false, 'placeholder' => '7 days ago'], $count]),
+            $kind('stripe.refund_create', 'Stripe: refund a payment', 'undo-2', 'Gives money back: all of a payment, or the amount said. Gives out the refund\'s id, status and amount.'.$once, [
+                ['name' => 'payment', 'label' => 'Payment', 'type' => 'template', 'required' => true, 'placeholder' => 'pi_… or ch_…'],
+                [...$amount, 'required' => false, 'help' => 'Empty, all of it.'],
+                ['name' => 'reason', 'label' => 'Why', 'type' => 'choice', 'required' => true, 'default' => 'requested_by_customer', 'options' => ['requested_by_customer' => 'They asked', 'duplicate' => 'Paid twice', 'fraudulent' => 'Fraud', 'none' => 'Not said']],
+                $metadata,
+            ]),
+
+            // Customers
+            $kind('stripe.customer_create', 'Stripe: add a customer', 'user-plus', 'Adds a customer. Gives out its id, to bill or check out.'.$once, $person),
+            $kind('stripe.customer_find', 'Stripe: find a customer', 'user-search', 'Finds customers by email. Gives out found, customer (the first) and customers.', [[...$person[0], 'required' => true], [...$count, 'default' => 10]]),
+            $kind('stripe.customer', 'Stripe: read a customer', 'user', 'Reads a customer: email, name, phone, metadata.', [$customer]),
+            $kind('stripe.customer_update', 'Stripe: change a customer', 'pencil', 'Changes a customer: only what is given changes.', [$customer, ...$person]),
+
+            // Invoices
+            $kind('stripe.invoice_create', 'Stripe: send an invoice', 'receipt', 'Makes an invoice for a customer, a line for each thing and its amount, due in the days said -- emailed by Stripe at once, or kept a draft. Gives out its number, status, amount and url, its page to pay on.'.$once, [
+                $customer,
+                ['name' => 'items', 'label' => 'Lines', 'type' => 'fields', 'required' => true, 'default' => [], 'labels' => true, 'help' => 'Each named for what it is, its value the amount: Design work 4500.'],
+                $currency,
+                ['name' => 'days', 'label' => 'Due in, days', 'type' => 'number', 'required' => false, 'default' => 30],
+                ['name' => 'memo', 'label' => 'Note on it', 'type' => 'template', 'required' => false],
+                ['name' => 'send', 'label' => 'Email it now', 'type' => 'choice', 'required' => true, 'default' => 'yes', 'options' => ['yes' => 'Yes', 'no' => 'No, keep it a draft']],
+                $metadata,
+            ]),
+            $kind('stripe.invoices', 'Stripe: list invoices', 'list', 'Lists invoices, the newest first: each with its number, status, amount and url.', [
+                [...$customer, 'required' => false],
+                ['name' => 'status', 'label' => 'Only', 'type' => 'choice', 'required' => true, 'default' => 'any', 'options' => ['any' => 'Any', 'open' => 'Not paid yet', 'paid' => 'Paid', 'draft' => 'Drafts', 'void' => 'Voided', 'uncollectible' => 'Given up on']],
+                $count,
+            ]),
+
+            // Products and subscriptions
+            $kind('stripe.product_create', 'Stripe: add a product', 'package', 'Adds a product with its price: once, or every day, week, month or year. Gives out the product\'s id and its price\'s.'.$once, [
+                [...$name, 'label' => 'Name'],
+                ['name' => 'description', 'label' => 'Description', 'type' => 'template', 'required' => false],
+                $amount,
+                $currency,
+                ['name' => 'every', 'label' => 'Paid', 'type' => 'choice', 'required' => true, 'default' => 'once', 'options' => ['once' => 'Once', 'day' => 'Every day', 'week' => 'Every week', 'month' => 'Every month', 'year' => 'Every year']],
+                $metadata,
+            ]),
+            $kind('stripe.prices', 'Stripe: list prices', 'tag', 'Lists the prices on sale: each with its id, product, name, amount, and how often it recurs.', [['name' => 'product', 'label' => 'Of the product', 'type' => 'template', 'required' => false, 'placeholder' => 'prod_…'], $count]),
+            $kind('stripe.subscriptions', 'Stripe: list subscriptions', 'repeat', 'Lists subscriptions: each with its status, customer, price and when its period ends.', [
+                [...$customer, 'required' => false],
+                ['name' => 'status', 'label' => 'Only', 'type' => 'choice', 'required' => true, 'default' => 'active', 'options' => ['active' => 'Active', 'trialing' => 'On a trial', 'past_due' => 'Behind on paying', 'unpaid' => 'Unpaid', 'canceled' => 'Ended', 'all' => 'All']],
+                $count,
+            ]),
+            $kind('stripe.subscription_cancel', 'Stripe: end a subscription', 'circle-x', 'Ends a subscription: at the end of what is paid for, or now.', [
+                ['name' => 'subscription', 'label' => 'Subscription', 'type' => 'template', 'required' => true, 'placeholder' => 'sub_…'],
+                ['name' => 'when', 'label' => 'When', 'type' => 'choice', 'required' => true, 'default' => 'period_end', 'options' => ['period_end' => 'When what is paid for ends', 'now' => 'Now']],
+            ]),
+
+            // The account
+            $kind('stripe.balance', 'Stripe: the balance', 'gauge', 'What the account holds: available, and pending, by currency; live, false for a test key.', []),
+            $kind('stripe.request', 'Stripe: any call', 'globe', 'Any call of Stripe\'s API, as docs.stripe.com writes it, with the connection\'s key. Gives out answer: what Stripe answered. What it makes is made once.', [
+                ['name' => 'method', 'label' => 'Method', 'type' => 'choice', 'required' => true, 'default' => 'GET', 'options' => ['GET' => 'GET', 'POST' => 'POST', 'DELETE' => 'DELETE']],
+                ['name' => 'path', 'label' => 'Path', 'type' => 'template', 'required' => true, 'placeholder' => '/coupons'],
+                ['name' => 'params', 'label' => 'Parameters', 'type' => 'fields', 'required' => false, 'default' => [], 'labels' => true, 'help' => 'Named as the docs name them; brackets for what is inside: metadata[order] 1234.'],
+            ]),
         ];
     }
 

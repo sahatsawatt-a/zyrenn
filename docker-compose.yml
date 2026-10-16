@@ -47,6 +47,12 @@ services:
         # Deliberately unpublished: `web` is the single origin. See docker/nginx.
         expose:
             - '8000'
+        # Declared here so a recreate keeps it (it was set by `docker update`)
+        mem_limit: 2048m
+        # `sandbox` reaches the Python runner, which has no other network
+        networks:
+            - default
+            - sandbox
         depends_on:
             init:
                 condition: service_completed_successfully
@@ -118,6 +124,12 @@ services:
                 condition: service_healthy
         command: php artisan queue:work --sleep=1 --tries=1 --max-time=3600
         stop_grace_period: 60s
+        # Declared here so a recreate keeps it (it was set by `docker update`)
+        mem_limit: 768m
+        # A "Run code" step in Python reaches the Python runner on `sandbox`
+        networks:
+            - default
+            - sandbox
 
     # Browser checks, on a queue of their own (App\Jobs\RunBrowserChecks):
     # a filmed demo can take ten minutes, and the workflow steps the worker
@@ -319,7 +331,7 @@ services:
             - ./docker/code:/srv:ro
         command: >
             sh -c "mkdir -p /home/node/work && cd /home/node/work &&
-                   { [ -d node_modules/quickjs-emscripten ] || npm i quickjs-emscripten@0.31.0 >/tmp/npm.log 2>&1 ||
+                   { [ -d node_modules/esbuild ] || npm i quickjs-emscripten@0.31.0 esbuild@0.24.2 >/tmp/npm.log 2>&1 ||
                      { echo 'npm install failed:'; tail -20 /tmp/npm.log; exit 1; }; } &&
                    cp /srv/server.mjs /srv/run.mjs /home/node/work/ && exec node /home/node/work/server.mjs"
         expose:
@@ -340,6 +352,44 @@ services:
             timeout: 5s
             retries: 6
             start_period: 60s
+
+    # The Python runner (docker/python): a workflow's "Run code" step in Python,
+    # run by Pyodide in Node. It is on `sandbox` alone -- a network with no way
+    # out, which only the app and the worker share -- so code run here reaches
+    # nothing; what it may import, the app hands it (PythonRunner::install).
+    python:
+        build: ./docker/python
+        image: zyrenn-python:local
+        pull_policy: never
+        restart: unless-stopped
+        volumes:
+            - ./docker/python:/srv:ro
+            - python-packages:/cache
+        command: >
+            node --permission
+            --allow-fs-read=/srv --allow-fs-read=/opt/runner --allow-fs-read=/cache --allow-fs-read=/proc
+            --allow-fs-write=/cache --allow-child-process --allow-worker
+            /srv/server.mjs
+        networks:
+            - sandbox
+        expose:
+            - '3000'
+        cap_drop:
+            - ALL
+        security_opt:
+            - no-new-privileges:true
+        mem_limit: 1g
+        pids_limit: 64
+        healthcheck:
+            test:
+                [
+                    'CMD-SHELL',
+                    'node -e "fetch(''http://127.0.0.1:3000/healthz'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+                ]
+            interval: 15s
+            timeout: 5s
+            retries: 4
+            start_period: 20s
 
     postgres:
         image: postgres:17-alpine
@@ -406,5 +456,11 @@ services:
             postgres:
                 condition: service_healthy
 
+networks:
+    # Only the app, the worker and the Python runner, with no way out of it
+    sandbox:
+        internal: true
+
 volumes:
     pgdata:
+    python-packages:

@@ -29,6 +29,7 @@ use App\Models\Chat\ChatRoom;
  *   table     one of the owner's tables
  *   folder    a folder of the owner's Drive, by its path; a template too, and made when not there
  *   column    a column of the step's table
+ *   project   a project whose tickets these are: left empty, the workflow's own
  *   model     a model the step's AI connection offers (any other may be typed)
  *   timezone  a time zone, e.g. Asia/Bangkok
  *
@@ -185,20 +186,27 @@ final class NodeTypes
                 'label' => 'Run code',
                 'group' => 'data',
                 'icon' => 'code',
-                'description' => 'Runs JavaScript you write on what came before, and gives out what it returns. It can only work things out: there is no network and no file for it to reach, and it is stopped when its time is up.',
+                'description' => 'Runs code you write -- JavaScript, or Python where the app\'s admins allow it -- on what came before, and gives out what it returns. It can only work things out, with the libraries chosen for it: there is no network and no file for it to reach, and it is stopped when its time is up.',
                 'trigger' => false,
                 'inputs' => [self::IN],
                 'outputs' => [self::OUT],
                 'config' => [
+                    ['name' => 'language', 'label' => 'Language', 'type' => 'choice', 'required' => true, 'default' => 'javascript', 'options' => ['javascript' => 'JavaScript', 'python' => 'Python']],
                     [
                         'name' => 'code',
                         'label' => 'Code',
                         'type' => 'code',
                         'required' => true,
                         'default' => "// trigger, input and node(\"key\") are what formulas read.\n// What is returned is what the step gives out.\nreturn {\n    text: String(trigger.text ?? '').trim(),\n};\n",
-                        'help' => 'JavaScript: the body of a function. A record it returns is given out as it is; anything else as "value". console.log writes in the run\'s log.',
+                        // What a new step starts with in each language, swapped while it is untouched
+                        'starts' => [
+                            'javascript' => "// trigger, input and node(\"key\") are what formulas read.\n// What is returned is what the step gives out.\nreturn {\n    text: String(trigger.text ?? '').trim(),\n};\n",
+                            'python' => "# trigger, input and node(\"key\") are what formulas read.\n# What result holds (or the last line) is what the step gives out.\nresult = {\n    \"text\": str(trigger.get(\"text\", \"\")).strip(),\n}\n",
+                        ],
+                        'help' => 'JavaScript: the body of a function, giving out what it returns. Python: giving out what result holds, or its last line. A record is given out as it is; anything else as "value". console.log, or print, writes in the run\'s log.',
                     ],
-                    ['name' => 'seconds', 'label' => 'Stop it after, in seconds', 'type' => 'number', 'required' => false, 'default' => Steps\RunCode::SECONDS, 'help' => 'At most 30.'],
+                    ['name' => 'libraries', 'label' => 'Libraries', 'type' => 'libraries', 'required' => false, 'default' => [], 'help' => 'What it may use, as the app\'s admins added them: require("lodash") in JavaScript, import numpy in Python.'],
+                    ['name' => 'seconds', 'label' => 'Stop it after, in seconds', 'type' => 'number', 'required' => false, 'default' => Steps\RunCode::SECONDS, 'help' => 'At most what the app\'s admins allow: 30, unless they say more.'],
                 ],
             ],
             [
@@ -735,6 +743,78 @@ final class NodeTypes
                 ],
             ],
 
+            [
+                'type' => 'trigger.stripe',
+                'runs' => Steps\GivenTrigger::class,
+                'version' => 1,
+                'label' => 'Something happens on Stripe',
+                'group' => 'stripe',
+                'icon' => 'credit-card',
+                'description' => 'Starts a run when something happens on a Stripe account: a checkout or payment link paid, a payment made or failed, an invoice paid, a refund, a subscription started or ended. Later steps read trigger.type (the event), trigger.text (a line saying what happened), trigger.amount and trigger.currency, trigger.email, trigger.name, trigger.customer, trigger.reference (a checkout\'s own reference), trigger.metadata, trigger.payment, trigger.live and trigger.url (in the Dashboard). trigger.object is all Stripe sent about it.',
+                'trigger' => true,
+                'inputs' => [],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'connection', 'label' => 'Stripe', 'type' => 'connection', 'required' => true, 'services' => ['stripe'], 'help' => 'One with the webhook signing secret. Its webhook address, shown on the connection, is added in Stripe\'s Dashboard as an endpoint.'],
+                    [
+                        'name' => 'on',
+                        'label' => 'When',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'checkout',
+                        'options' => [
+                            'checkout' => 'A checkout or payment link is paid',
+                            'payment' => 'A payment comes in',
+                            'failed' => 'A payment fails',
+                            'invoice' => 'An invoice is paid',
+                            'refund' => 'A payment is refunded',
+                            'subscription' => 'A subscription starts, changes or ends',
+                            'dispute' => 'A payment is disputed',
+                            'named' => 'The events named here',
+                            'any' => 'Anything Stripe sends',
+                        ],
+                        'help' => 'Stripe sends only the events picked on its endpoint.',
+                    ],
+                    ['name' => 'events', 'label' => 'Events', 'type' => 'text', 'required' => false, 'placeholder' => 'invoice.finalized, customer.*', 'help' => 'As Stripe names them, split by commas; .* for all of a kind.', 'when' => ['on' => 'named']],
+                ],
+            ],
+
+            [
+                'type' => 'trigger.github',
+                'runs' => Steps\GivenTrigger::class,
+                'version' => 1,
+                'label' => 'Something happens on GitHub',
+                'group' => 'github',
+                'icon' => 'github',
+                'description' => 'Starts a run when something happens in a repository: an issue opened, a pull request merged, a push, a comment, a release, an Actions run finished. Later steps read trigger.type (the event), trigger.action, trigger.repo, trigger.sender.login, trigger.text (a line saying what happened), trigger.url -- and, by the event, trigger.issue, trigger.pull, trigger.comment, trigger.push (branch, commits), trigger.release or trigger.run. trigger.body is all GitHub sent.',
+                'trigger' => true,
+                'inputs' => [],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'connection', 'label' => 'GitHub', 'type' => 'connection', 'required' => true, 'services' => ['github'], 'help' => 'One with a webhook secret. Its webhook address, shown on the connection, is set on the repository in GitHub, with the same secret.'],
+                    [
+                        'name' => 'on',
+                        'label' => 'When',
+                        'type' => 'choice',
+                        'required' => true,
+                        'default' => 'issues',
+                        'options' => [
+                            'issues' => 'An issue is opened, changed or closed',
+                            'pull_request' => 'A pull request is opened, changed or merged',
+                            'issue_comment' => 'Someone comments on an issue or pull request',
+                            'push' => 'Commits are pushed',
+                            'release' => 'A release is published',
+                            'workflow_run' => 'An Actions run starts or ends',
+                            'any' => 'Anything GitHub sends',
+                        ],
+                        'help' => 'GitHub sends only the events picked on its webhook.',
+                    ],
+                    ['name' => 'actions', 'label' => 'Only when', 'type' => 'text', 'required' => false, 'placeholder' => 'opened, closed', 'help' => 'The actions to start on, as GitHub names them: opened, closed, reopened, labeled, completed... Empty, any.', 'when' => ['on' => ['issues', 'pull_request', 'issue_comment', 'release', 'workflow_run', 'any']]],
+                    ['name' => 'repo', 'label' => 'Only in', 'type' => 'text', 'required' => false, 'placeholder' => 'owner/name', 'help' => 'For a webhook on a whole organisation: the repositories to start on. Empty, any.'],
+                    ['name' => 'branch', 'label' => 'Only on the branch', 'type' => 'text', 'required' => false, 'placeholder' => 'main', 'help' => 'Pushed to, a pull request into, or a run on. Empty, any.', 'when' => ['on' => ['push', 'pull_request', 'workflow_run']]],
+                ],
+            ],
+
             // --- Chat ---
             [
                 'type' => 'chat.room',
@@ -1017,6 +1097,111 @@ final class NodeTypes
                 'config' => [
                     ['name' => 'file', 'label' => 'File', 'type' => 'template', 'required' => true, 'placeholder' => '{{ item(trigger.files, 1) }}', 'help' => 'A file\'s ref_id.'],
                     ['name' => 'hours', 'label' => 'Good for, in hours', 'type' => 'number', 'required' => true, 'default' => 24, 'help' => 'At most a week. The app has to be reachable from outside.'],
+                ],
+            ],
+
+            // --- Tickets: a project's, worked by the workflow ---
+            [
+                'type' => 'ticket.file',
+                'runs' => Steps\TicketFile::class,
+                'version' => 1,
+                'empty' => Steps\TicketSteps::EMPTY,
+                'label' => 'File a ticket',
+                'group' => 'tickets',
+                'icon' => 'ticket-plus',
+                'description' => 'Files a bug or a feature in the project, open, as whoever the workflow acts as. Gives out the ticket: its number, title, status, priority, unit, assignee and url.',
+                'trigger' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'project', 'label' => 'Project', 'type' => 'project', 'required' => false, 'help' => 'Left empty, this workflow\'s own project.'],
+                    ['name' => 'type', 'label' => 'It is', 'type' => 'choice', 'required' => true, 'default' => 'bug', 'options' => ['bug' => 'A bug: something to fix', 'feature' => 'A feature: something to add']],
+                    ['name' => 'title', 'label' => 'Title', 'type' => 'template', 'required' => true, 'placeholder' => 'Checkout fails: {{ trigger.error }}'],
+                    ['name' => 'body', 'label' => 'What it says', 'type' => 'template', 'required' => false, 'placeholder' => 'What was done, what happened, what was expected.'],
+                    ['name' => 'unit', 'label' => 'About the part', 'type' => 'template', 'required' => false, 'placeholder' => 'Boards'],
+                    ['name' => 'priority', 'label' => 'Priority', 'type' => 'choice', 'required' => true, 'default' => 'normal', 'options' => ['low' => 'Low', 'normal' => 'Normal', 'high' => 'High']],
+                    ['name' => 'assignee', 'label' => 'Given to', 'type' => 'template', 'required' => false, 'placeholder' => 'name@example.com', 'help' => 'A project member\'s email; left empty, nobody.'],
+                ],
+            ],
+            [
+                'type' => 'ticket.update',
+                'runs' => Steps\TicketUpdate::class,
+                'version' => 1,
+                'empty' => Steps\TicketSteps::EMPTY,
+                'label' => 'Change a ticket',
+                'group' => 'tickets',
+                'icon' => 'ticket-check',
+                'description' => 'Changes one of the project\'s tickets, by its number: moves it along, or changes its priority, whom it is given to, its title or what it says. What is left empty stays as it was. Gives out the ticket as it is now.',
+                'trigger' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'project', 'label' => 'Project', 'type' => 'project', 'required' => false, 'help' => 'Left empty, this workflow\'s own project.'],
+                    ['name' => 'number', 'label' => 'Ticket number', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("find").tickets.number }}'],
+                    ['name' => 'status', 'label' => 'Status', 'type' => 'choice', 'required' => true, 'default' => 'keep', 'options' => ['keep' => 'As it is', 'open' => 'Open', 'in_progress' => 'In progress', 'on_hold' => 'On hold', 'done' => 'Done', 'dropped' => 'Dropped']],
+                    ['name' => 'reason', 'label' => 'Why', 'type' => 'template', 'required' => false, 'placeholder' => 'Waiting on the supplier\'s answer', 'help' => 'On hold: what it waits on. Dropped: why it will not be done.', 'when' => ['status' => ['on_hold', 'dropped']]],
+                    ['name' => 'priority', 'label' => 'Priority', 'type' => 'choice', 'required' => true, 'default' => 'keep', 'options' => ['keep' => 'As it is', 'low' => 'Low', 'normal' => 'Normal', 'high' => 'High']],
+                    ['name' => 'assignee', 'label' => 'Given to', 'type' => 'template', 'required' => false, 'placeholder' => 'name@example.com', 'help' => 'A project member\'s email, or "nobody"; left empty, as it is.'],
+                    ['name' => 'title', 'label' => 'Title', 'type' => 'template', 'required' => false, 'help' => 'Left empty, as it is.'],
+                    ['name' => 'body', 'label' => 'What it says', 'type' => 'template', 'required' => false, 'help' => 'Left empty, as it is.'],
+                ],
+            ],
+            [
+                'type' => 'tickets.find',
+                'runs' => Steps\TicketsFind::class,
+                'version' => 1,
+                'label' => 'Find tickets',
+                'group' => 'tickets',
+                'icon' => 'tickets',
+                'description' => 'Gives out the project\'s tickets, newest first, as tickets, and how many as count: those still to be done unless told otherwise, of a type, about a part, with words in their title or what they say.',
+                'trigger' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'project', 'label' => 'Project', 'type' => 'project', 'required' => false, 'help' => 'Left empty, this workflow\'s own project.'],
+                    ['name' => 'status', 'label' => 'Which', 'type' => 'choice', 'required' => true, 'default' => 'left', 'options' => ['left' => 'Still to be done', 'all' => 'All of them', 'open' => 'Open', 'in_progress' => 'In progress', 'on_hold' => 'On hold', 'done' => 'Done', 'dropped' => 'Dropped']],
+                    ['name' => 'type', 'label' => 'Of the type', 'type' => 'choice', 'required' => true, 'default' => 'any', 'options' => ['any' => 'Bugs and features', 'bug' => 'Bugs', 'feature' => 'Features']],
+                    ['name' => 'unit', 'label' => 'About the part', 'type' => 'template', 'required' => false],
+                    ['name' => 'search', 'label' => 'With the words', 'type' => 'template', 'required' => false],
+                    ['name' => 'limit', 'label' => 'At most', 'type' => 'number', 'required' => true, 'default' => 50],
+                ],
+            ],
+
+            // --- Notes: the workflow owner's ---
+            [
+                'type' => 'note.create',
+                'runs' => Steps\NoteCreate::class,
+                'version' => 1,
+                'empty' => Steps\NoteSteps::EMPTY,
+                'label' => 'Write a note',
+                'group' => 'notes',
+                'icon' => 'notebook-pen',
+                'description' => 'Makes a note of Markdown -- headings, lists, tables, [[Page]] links -- in a folder by its path, made when it is not there. Gives out the note: its ref_id, title, folder and url.',
+                'trigger' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'title', 'label' => 'Title', 'type' => 'template', 'required' => true, 'placeholder' => 'Daily report {{ now() }}'],
+                    ['name' => 'markdown', 'label' => 'What it says (Markdown)', 'type' => 'template', 'required' => false, 'placeholder' => "## Done\n{{ node(\"ask\").text }}"],
+                    ['name' => 'folder', 'label' => 'In the folder', 'type' => 'template', 'required' => false, 'placeholder' => 'Reports/2026', 'help' => 'A path; left empty, at the top.'],
+                ],
+            ],
+            [
+                'type' => 'note.append',
+                'runs' => Steps\NoteAppend::class,
+                'version' => 1,
+                'empty' => Steps\NoteSteps::EMPTY,
+                'label' => 'Add to a note',
+                'group' => 'notes',
+                'icon' => 'notebook-text',
+                'description' => 'Adds Markdown at the end of a note, or at its start -- the note found by its ref_id or its title. Someone with it open sees it come in. Gives out the note.',
+                'trigger' => false,
+                'inputs' => [self::IN],
+                'outputs' => [self::OUT],
+                'config' => [
+                    ['name' => 'note', 'label' => 'Note', 'type' => 'template', 'required' => true, 'placeholder' => '{{ node("write").ref_id }}', 'help' => 'Its ref_id, or its title.'],
+                    ['name' => 'markdown', 'label' => 'What it adds (Markdown)', 'type' => 'template', 'required' => true, 'placeholder' => '- {{ trigger.text }}'],
+                    ['name' => 'where', 'label' => 'Where', 'type' => 'choice', 'required' => true, 'default' => 'end', 'options' => ['end' => 'At the end', 'start' => 'At the start']],
                 ],
             ],
 
@@ -1434,7 +1619,7 @@ final class NodeTypes
             ],
         ];
 
-        return array_column([...$types, ...ServiceKinds::all()], null, 'type');
+        return array_column([...$types, ...ServiceKinds::all(), ...CommonKinds::all()], null, 'type');
     }
 
     /**
@@ -1482,20 +1667,51 @@ final class NodeTypes
             'chat' => 'Chat',
             'table' => 'Tables',
             'drive' => 'Drive',
+            'tickets' => 'Tickets',
+            'notes' => 'Notes',
             'browser' => 'Browser checks',
             'ai' => 'AI',
             'web' => 'Web',
             'serpapi' => 'SerpApi',
             'tavily' => 'Tavily',
+            'github' => 'GitHub',
+            'stripe' => 'Stripe',
             'promptx' => 'PromptX',
             'telegram' => 'Telegram',
             'line' => 'LINE',
             'whatsapp' => 'WhatsApp',
             'channel' => 'Custom channel',
+            'slack' => 'Slack',
+            'discord' => 'Discord',
+            'mail' => 'Email',
             'linkedin' => 'LinkedIn',
             'facebook' => 'Facebook',
             'instagram' => 'Instagram',
             'threads' => 'Threads',
+        ];
+    }
+
+    /**
+     * The heading the palette lists each group under: what works on any data
+     * and runs the flow ("general"), what works on the app's own things
+     * ("zyrenn"), in this order. Every other group -- a new service among
+     * them -- is a service.
+     *
+     * @return array<string, 'general'|'zyrenn'>
+     */
+    public static function headings(): array
+    {
+        return [
+            'flow' => 'general',
+            'data' => 'general',
+            'ai' => 'general',
+            'web' => 'general',
+            'chat' => 'zyrenn',
+            'table' => 'zyrenn',
+            'drive' => 'zyrenn',
+            'notes' => 'zyrenn',
+            'tickets' => 'zyrenn',
+            'browser' => 'zyrenn',
         ];
     }
 
@@ -1517,6 +1733,20 @@ final class NodeTypes
                 'Search and read' => ['tavily.search', 'tavily.extract'],
                 'A whole site' => ['tavily.crawl', 'tavily.map'],
                 'Allowance' => ['tavily.usage'],
+            ],
+            'stripe' => [
+                'Payments' => ['trigger.stripe', 'stripe.payment_link_create', 'stripe.checkout_create', 'stripe.checkout', 'stripe.payment', 'stripe.payments', 'stripe.refund_create'],
+                'Customers' => ['stripe.customer_create', 'stripe.customer_find', 'stripe.customer', 'stripe.customer_update'],
+                'Invoices' => ['stripe.invoice_create', 'stripe.invoices'],
+                'Products and subscriptions' => ['stripe.product_create', 'stripe.prices', 'stripe.subscriptions', 'stripe.subscription_cancel'],
+                'The account' => ['stripe.balance', 'stripe.request'],
+            ],
+            'github' => [
+                'Issues' => ['trigger.github', 'github.issue_create', 'github.issue_update', 'github.issue', 'github.issues', 'github.comment', 'github.comments', 'github.labels_add'],
+                'Pull requests' => ['github.pull_create', 'github.pull', 'github.pulls', 'github.merge'],
+                'Code' => ['github.file', 'github.file_save', 'github.commits', 'github.branch_create'],
+                'Actions and releases' => ['github.dispatch', 'github.runs', 'github.release_create', 'github.release_latest'],
+                'Anything else' => ['github.request', 'github.me'],
             ],
             'promptx' => [
                 'Flows' => ['promptx.flows', 'promptx.flow_create', 'promptx.flow', 'promptx.flow_import', 'promptx.flow_publish', 'promptx.flow_status', 'promptx.flow_versions', 'promptx.flow_restore', 'promptx.flow_delete'],

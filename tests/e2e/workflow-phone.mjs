@@ -3,7 +3,7 @@
 // added already joined from another's "+", set up from a run's data by
 // tapping a part, and the run looked at step by step -- none of it by
 // dragging, which a finger does badly.
-import { SHOTS, runBoard, tinker } from './harness.mjs';
+import { paletteStep, runBoard, SHOTS, tinker } from './harness.mjs';
 
 const TITLE = `e2e phone ${Date.now().toString().slice(-6)}`;
 const user = `App\\Models\\User::where('email', '${process.env.E2E_EMAIL ?? 'test@example.com'}')->first()`;
@@ -147,7 +147,7 @@ await runBoard(
                     .count()) === 0,
             await palette.locator('[data-palette-after]').innerText(),
         );
-        await palette.locator('[data-palette-step="output.log"]').click();
+        await (await paletteStep(page, 'output.log')).click();
         await settings.waitFor();
         check(
             'the step chosen is added already joined, and the palette is gone',
@@ -161,7 +161,7 @@ await runBoard(
 
         // --- by "Add step", on its own ---
         await page.locator('[data-add-step]').click();
-        await palette.locator('[data-palette-step="data.set"]').click();
+        await (await paletteStep(page, 'data.set')).click();
         await settings.waitFor();
         check(
             '"Add step" adds one on its own',

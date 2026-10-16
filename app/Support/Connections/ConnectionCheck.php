@@ -6,6 +6,8 @@ use App\Models\Connection;
 use App\Support\Agents\Toolbox;
 use App\Support\Ai\AiClient;
 use App\Support\Ai\AiFailed;
+use App\Support\Workflow\Steps\GithubCall;
+use App\Support\Workflow\Steps\StripeCall;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -45,6 +47,8 @@ class ConnectionCheck
             Services::WHATSAPP => $this->whatsapp($connection),
             Services::SERPAPI => $this->serpapi($connection),
             Services::TAVILY => $this->tavily($connection),
+            Services::GITHUB => $this->github($connection),
+            Services::STRIPE => $this->stripe($connection),
             Services::PROMPTX => $this->promptx($connection),
             Services::MCP => $this->mcp($connection),
             default => ['ok' => true, 'message' => 'Nothing to try ahead: it is checked when it is used.'],
@@ -216,6 +220,55 @@ class ConnectionCheck
         return ['ok' => false, 'message' => in_array($response->status(), [401, 403], true) || $response->json('error.code') === 190
             ? 'WhatsApp refused the access token: the one from API Setup lasts a day.'
             : 'WhatsApp said: '.Meta::said($response)];
+    }
+
+    /**
+     * The balance, which every key may read: whether the key works, and
+     * whether it is live or for trying out.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    private function stripe(Connection $connection): array
+    {
+        try {
+            $response = StripeCall::http($connection)->get(StripeCall::API.'/balance');
+        } catch (ConnectionException) {
+            return ['ok' => false, 'message' => 'Could not reach Stripe.'];
+        }
+
+        if (! $response->successful()) {
+            return ['ok' => false, 'message' => match ($response->status()) {
+                401 => 'Stripe does not know this key.',
+                403 => 'Works, but this restricted key may not read the balance: give it Balance read, or the steps may fail the same way.',
+                default => "Stripe answered with {$response->status()}.",
+            }];
+        }
+
+        return ['ok' => true, 'message' => $response->json('livemode') ? 'Works: a live key, so payments are real.' : 'Works: a test key, so nothing is really charged.'];
+    }
+
+    /**
+     * Who the token is, and how many calls it has left this hour.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    private function github(Connection $connection): array
+    {
+        try {
+            $response = Http::timeout(10)->acceptJson()->withToken($connection->secret('token') ?? '')
+                ->withHeaders(['X-GitHub-Api-Version' => '2022-11-28'])->withUserAgent('Zyrenn')
+                ->get(GithubCall::API.'/user');
+        } catch (ConnectionException) {
+            return ['ok' => false, 'message' => 'Could not reach GitHub.'];
+        }
+
+        if (! $response->successful()) {
+            return ['ok' => false, 'message' => $response->status() === 401 ? 'GitHub does not know this token, or it has run out.' : "GitHub answered with {$response->status()}."];
+        }
+
+        $left = $response->header('X-RateLimit-Remaining');
+
+        return ['ok' => true, 'message' => 'Works: signed in as '.$response->json('login').(is_numeric($left) ? ', '.number_format((int) $left).' calls left this hour' : '').'.'];
     }
 
     /**

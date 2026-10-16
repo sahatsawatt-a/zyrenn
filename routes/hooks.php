@@ -16,6 +16,10 @@ Route::prefix('hooks')->name('hooks.')->middleware('throttle:hooks')->group(func
     Route::post('line/{connection}', [HookController::class, 'line'])->name('line');
     // Any platform at all, sending in the app's own shape (a "Custom channel" connection)
     Route::post('channel/{connection}', [HookController::class, 'channel'])->name('channel');
+    // What happens in a GitHub repository, signed with the connection's webhook secret
+    Route::post('github/{connection}', [HookController::class, 'github'])->name('github');
+    // What happens on a Stripe account, signed with the endpoint's signing secret
+    Route::post('stripe/{connection}', [HookController::class, 'stripe'])->name('stripe');
     // Meta asks first, to be shown the address is the app's, then sends
     Route::match(['GET', 'POST'], 'whatsapp/{connection}', [HookController::class, 'whatsapp'])->name('whatsapp');
     // A connection's ref, and never "signed-in": that is the way back from signing in, below

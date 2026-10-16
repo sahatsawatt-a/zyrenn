@@ -358,6 +358,19 @@ final class Definition
                     ], $value);
                     break;
 
+                case 'libraries':
+                    // Names of libraries an admin added, each once
+                    $value = is_array($value) ? array_values(array_unique(array_filter(array_map(
+                        fn ($name) => is_string($name) ? mb_substr(trim($name), 0, 214) : '',
+                        $value,
+                    ), fn (string $name) => $name !== ''))) : [];
+
+                    if (count($value) > 20) {
+                        $errors[] = "{$label} has more than 20 libraries.";
+                        $value = [];
+                    }
+                    break;
+
                 case 'number':
                     if ($value !== null && $value !== '' && ! is_numeric($value)) {
                         $errors[] = "{$label} should be a number.";

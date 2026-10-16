@@ -3,6 +3,7 @@
 namespace App\Support\Workflow\Inbound;
 
 use App\Models\Chat\ChatMessage;
+use App\Support\Workflow\Steps\StripeCall;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
@@ -33,6 +34,17 @@ final class Envelope
 
     /** Everything a bot is told of; reactions have to be asked for by name. */
     public const TELEGRAM_UPDATES = ['message', 'edited_message', 'channel_post', 'callback_query', 'inline_query', 'poll_answer', 'my_chat_member', 'message_reaction', 'pre_checkout_query'];
+
+    /** What a Stripe trigger may wait for, and the event types each is. */
+    public const STRIPE_KINDS = [
+        'checkout' => ['checkout.session.completed', 'checkout.session.async_payment_succeeded'],
+        'payment' => ['payment_intent.succeeded'],
+        'failed' => ['payment_intent.payment_failed', 'checkout.session.async_payment_failed', 'invoice.payment_failed'],
+        'invoice' => ['invoice.paid'],
+        'refund' => ['charge.refunded'],
+        'subscription' => ['customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'],
+        'dispute' => ['charge.dispute.created'],
+    ];
 
     /**
      * What a trigger's "When" takes, by the envelope's type: its choice => the types.
@@ -725,6 +737,186 @@ final class Envelope
         }
 
         return $shown.$part($at);
+    }
+
+    /**
+     * Something that happened in a GitHub repository, as its webhook tells
+     * it: the event (issues, pull_request, push, ...) and its action
+     * (opened, closed, ...), the repository and who did it, a line saying
+     * what it was -- and, by the event, the issue, pull request, comment,
+     * push, release or Actions run it was about. The whole of what GitHub
+     * sent is in body, unless it is too big to keep.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public static function github(string $event, array $payload, string $delivery): array
+    {
+        $at = fn (string $path) => data_get($payload, $path);
+        $repo = (string) ($at('repository.full_name') ?? '');
+        $action = is_string($at('action')) ? $at('action') : null;
+        $issue = is_array($at('issue')) ? $at('issue') : null;
+        $pull = is_array($at('pull_request')) ? $at('pull_request') : null;
+        $labels = fn (mixed $of) => array_values(array_filter(array_map(fn ($label) => is_array($label) ? ($label['name'] ?? null) : null, (array) $of), is_string(...)));
+
+        $about = array_filter([
+            'issue' => $issue === null ? null : [
+                'number' => $issue['number'] ?? null,
+                'title' => $issue['title'] ?? null,
+                'body' => $issue['body'] ?? '',
+                'state' => $issue['state'] ?? null,
+                'labels' => $labels($issue['labels'] ?? []),
+                'author' => $issue['user']['login'] ?? null,
+                'pull' => isset($issue['pull_request']),
+                'url' => $issue['html_url'] ?? null,
+            ],
+            'pull' => $pull === null ? null : [
+                'number' => $pull['number'] ?? null,
+                'title' => $pull['title'] ?? null,
+                'body' => $pull['body'] ?? '',
+                'state' => $pull['state'] ?? null,
+                'draft' => (bool) ($pull['draft'] ?? false),
+                'merged' => (bool) ($pull['merged'] ?? false),
+                'head' => $pull['head']['ref'] ?? null,
+                'base' => $pull['base']['ref'] ?? null,
+                'author' => $pull['user']['login'] ?? null,
+                'url' => $pull['html_url'] ?? null,
+            ],
+            'comment' => is_array($at('comment')) ? [
+                'id' => $at('comment.id'),
+                'body' => $at('comment.body') ?? '',
+                'author' => $at('comment.user.login'),
+                'url' => $at('comment.html_url'),
+            ] : null,
+            'push' => $event === 'push' ? [
+                'ref' => $at('ref'),
+                'branch' => is_string($at('ref')) && str_starts_with($at('ref'), 'refs/heads/') ? substr($at('ref'), 11) : null,
+                'tag' => is_string($at('ref')) && str_starts_with($at('ref'), 'refs/tags/') ? substr($at('ref'), 10) : null,
+                'before' => $at('before'),
+                'after' => $at('after'),
+                'commits' => array_map(fn ($commit) => [
+                    'sha' => $commit['id'] ?? null,
+                    'message' => $commit['message'] ?? null,
+                    'author' => $commit['author']['username'] ?? $commit['author']['name'] ?? null,
+                    'url' => $commit['url'] ?? null,
+                ], array_values(array_filter((array) $at('commits'), is_array(...)))),
+                'compare' => $at('compare'),
+            ] : null,
+            'release' => is_array($at('release')) ? [
+                'tag' => $at('release.tag_name'),
+                'name' => $at('release.name'),
+                'body' => $at('release.body') ?? '',
+                'prerelease' => (bool) $at('release.prerelease'),
+                'url' => $at('release.html_url'),
+            ] : null,
+            'run' => is_array($at('workflow_run')) ? [
+                'id' => $at('workflow_run.id'),
+                'name' => $at('workflow_run.name'),
+                'status' => $at('workflow_run.status'),
+                'conclusion' => $at('workflow_run.conclusion'),
+                'branch' => $at('workflow_run.head_branch'),
+                'url' => $at('workflow_run.html_url'),
+            ] : null,
+        ], fn ($part) => $part !== null);
+
+        $who = (string) ($at('sender.login') ?? 'Someone');
+        $subject = match (true) {
+            isset($about['comment'], $issue) => "a comment on #{$issue['number']} {$issue['title']}",
+            isset($about['pull']) => "pull request #{$about['pull']['number']} {$about['pull']['title']}",
+            isset($about['issue']) => "issue #{$about['issue']['number']} {$about['issue']['title']}",
+            isset($about['release']) => "release {$about['release']['tag']}",
+            isset($about['run']) => "the run of {$about['run']['name']}",
+            default => null,
+        };
+        $text = match (true) {
+            isset($about['push']) => "{$who} pushed ".count($about['push']['commits']).' commit'.(count($about['push']['commits']) === 1 ? '' : 's').' to '.($about['push']['branch'] ?? $about['push']['tag'] ?? $at('ref')),
+            $subject !== null => trim("{$who} ".($action ?? $event)." {$subject}"),
+            default => trim("{$who} {$event} ".($action ?? '')),
+        }.($repo === '' ? '' : " in {$repo}");
+
+        // What GitHub sent, whole, while it is small enough to keep with the run
+        $whole = json_encode($payload) ?: '';
+
+        return [
+            'service' => 'github',
+            'type' => $event,
+            'id' => $delivery,
+            'action' => $action,
+            'repo' => $repo,
+            'sender' => ['login' => $at('sender.login'), 'url' => $at('sender.html_url')],
+            'text' => $text,
+            'url' => $about['comment']['url'] ?? $about['pull']['url'] ?? $about['issue']['url'] ?? $about['release']['url'] ?? $about['run']['url'] ?? $about['push']['compare'] ?? $at('repository.html_url'),
+            ...$about,
+            'body' => strlen($whole) <= 64 * 1024 ? $payload : null,
+        ];
+    }
+
+    /**
+     * Something that happened on a Stripe account, as its webhook tells it:
+     * the event's type (checkout.session.completed, ...) and the thing it is
+     * about -- a checkout, a payment, an invoice, a subscription -- with how
+     * much, who paid, and a line saying what happened. The whole of it is in
+     * object, unless it is too big to keep.
+     *
+     * @param  array<string, mixed>  $event
+     * @return array<string, mixed>
+     */
+    public static function stripe(array $event): array
+    {
+        $object = is_array($event['data']['object'] ?? null) ? $event['data']['object'] : [];
+        $at = fn (string $path) => data_get($object, $path);
+        $kind = (string) ($at('object') ?? '');
+        $type = (string) $event['type'];
+        $live = (bool) ($event['livemode'] ?? false);
+        $money = StripeCall::amount($at('amount_total') ?? $at('amount_paid') ?? $at('amount_received') ?? $at('amount_refunded') ?? $at('amount') ?? $at('amount_due'), $at('currency'));
+        $email = $at('customer_details.email') ?? $at('customer_email') ?? $at('receipt_email') ?? $at('billing_details.email');
+        $name = $at('customer_details.name') ?? $at('customer_name') ?? $at('billing_details.name');
+        $customer = is_string($at('customer')) ? $at('customer') : $at('customer.id');
+        $how = $money['amount'] === null ? '' : ' of '.number_format((float) $money['amount'], $money['amount'] == (int) $money['amount'] ? 0 : 2).' '.strtoupper((string) $money['currency']);
+        $who = is_string($email) ? " from {$email}" : (is_string($name) ? " from {$name}" : '');
+        $what = match (true) {
+            str_starts_with($type, 'checkout.session.') && str_ends_with($type, 'failed') => "A checkout payment{$how} failed{$who}",
+            str_starts_with($type, 'checkout.session.') => "A checkout{$how} was paid{$who}",
+            $type === 'payment_intent.succeeded' => "A payment{$how} came in{$who}",
+            $type === 'payment_intent.payment_failed' => "A payment{$how} failed{$who}: ".($at('last_payment_error.message') ?? 'no reason given'),
+            $type === 'invoice.paid' => 'Invoice '.($at('number') ?? '')."{$how} was paid{$who}",
+            $type === 'invoice.payment_failed' => 'Paying invoice '.($at('number') ?? '')."{$how} failed{$who}",
+            $type === 'charge.refunded' => "A payment was refunded{$how}{$who}",
+            str_starts_with($type, 'customer.subscription.') => 'A subscription was '.substr($type, 22).' ('.($at('status') ?? '').')',
+            $type === 'charge.dispute.created' => "A payment{$how} is disputed: ".($at('reason') ?? ''),
+            default => "Stripe: {$type}",
+        };
+        $page = match ($kind) {
+            'checkout.session' => is_string($at('payment_intent')) ? "payments/{$at('payment_intent')}" : null,
+            'payment_intent' => "payments/{$at('id')}",
+            'charge' => is_string($at('payment_intent')) ? "payments/{$at('payment_intent')}" : null,
+            'invoice' => "invoices/{$at('id')}",
+            'subscription' => "subscriptions/{$at('id')}",
+            'customer' => "customers/{$at('id')}",
+            'dispute' => "disputes/{$at('id')}",
+            default => null,
+        };
+        $whole = json_encode($object) ?: '';
+
+        return [
+            'service' => 'stripe',
+            'type' => $type,
+            'id' => $event['id'],
+            'live' => $live,
+            'kind' => $kind,
+            'object_id' => $at('id'),
+            'status' => $at('status'),
+            ...$money,
+            'customer' => $customer,
+            'email' => $email,
+            'name' => $name,
+            'reference' => $at('client_reference_id'),
+            'metadata' => (object) (is_array($at('metadata')) ? $at('metadata') : []),
+            'payment' => is_string($at('payment_intent')) ? $at('payment_intent') : ($kind === 'payment_intent' ? $at('id') : null),
+            'text' => $what.($live ? '' : ' (test)'),
+            'url' => $page === null ? null : 'https://dashboard.stripe.com/'.($live ? '' : 'test/').$page,
+            'object' => strlen($whole) <= 64 * 1024 ? $object : null,
+        ];
     }
 
     /**

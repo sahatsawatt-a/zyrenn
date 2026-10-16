@@ -409,6 +409,132 @@ class HookController extends Controller
     }
 
     /**
+     * Something that happened in a GitHub repository, by the webhook set on
+     * it (or on the owner's account), signed with the connection's webhook
+     * secret. GitHub's ping, when the webhook is made, is only answered; the
+     * same delivery sent again starts nothing more.
+     */
+    public function github(Request $request, string $connection): JsonResponse
+    {
+        $github = Connection::where('ref_id', $connection)->where('service', Services::GITHUB)->first();
+        $secret = $github?->secret('webhook_secret');
+
+        if ($github === null || ! filled($secret) || ! hash_equals('sha256='.hash_hmac('sha256', $request->getContent(), (string) $secret), (string) $request->header('X-Hub-Signature-256'))) {
+            return response()->json(['ok' => false], 403);
+        }
+
+        $event = (string) $request->header('X-GitHub-Event');
+        $payload = $request->json()->all();
+
+        if ($event === 'ping' || $event === '' || $payload === []) {
+            return response()->json(['ok' => true]);
+        }
+
+        $delivery = (string) ($request->header('X-GitHub-Delivery') ?: hash('sha256', $request->getContent()));
+        $envelope = Envelope::github($event, $payload, $delivery);
+
+        Ingest::fire(
+            "github:{$github->ref_id}",
+            $delivery,
+            $envelope,
+            Listeners::for('github', $github->ref_id),
+            fn (WorkflowListener $listener) => self::githubWants($listener->settings, $envelope),
+        );
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Something that happened on a Stripe account -- a payment made, one
+     * failed, an invoice paid -- by the endpoint set in its Dashboard, signed
+     * with the endpoint's secret: an HMAC of when it was sent and what was
+     * sent, no older than five minutes. The same event sent again starts
+     * nothing more.
+     */
+    public function stripe(Request $request, string $connection): JsonResponse
+    {
+        $stripe = Connection::where('ref_id', $connection)->where('service', Services::STRIPE)->first();
+        $secret = (string) $stripe?->secret('webhook_secret');
+        $signed = [];
+
+        foreach (explode(',', (string) $request->header('Stripe-Signature')) as $part) {
+            [$name, $value] = array_pad(explode('=', trim($part), 2), 2, '');
+            $signed[$name][] = $value;
+        }
+
+        $at = (int) ($signed['t'][0] ?? 0);
+        $mac = hash_hmac('sha256', $at.'.'.$request->getContent(), $secret);
+
+        if ($stripe === null || $secret === '' || abs(time() - $at) > 300
+            || ! collect($signed['v1'] ?? [])->contains(fn (string $one) => hash_equals($mac, $one))) {
+            return response()->json(['ok' => false], 403);
+        }
+
+        $event = $request->json()->all();
+
+        if (! is_string($event['id'] ?? null) || ! is_string($event['type'] ?? null)) {
+            return response()->json(['ok' => true]);
+        }
+
+        $envelope = Envelope::stripe($event);
+
+        Ingest::fire(
+            "stripe:{$stripe->ref_id}",
+            $event['id'],
+            $envelope,
+            Listeners::for('stripe', $stripe->ref_id),
+            fn (WorkflowListener $listener) => self::stripeWants($listener->settings, $envelope),
+        );
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Whether a Stripe trigger takes this event: of the kind it waits for,
+     * or one of the types it names.
+     *
+     * @param  array<string, mixed>  $settings
+     * @param  array<string, mixed>  $envelope
+     */
+    private static function stripeWants(array $settings, array $envelope): bool
+    {
+        $on = (string) ($settings['on'] ?? 'payment');
+        $named = array_values(array_filter(array_map(trim(...), preg_split('/[\s,]+/', (string) ($settings['events'] ?? '')) ?: [])));
+        $type = (string) $envelope['type'];
+
+        return match ($on) {
+            'any' => true,
+            'named' => $named !== [] && collect($named)->contains(fn (string $one) => $one === $type || (str_ends_with($one, '.*') && str_starts_with($type, substr($one, 0, -1)))),
+            default => in_array($type, Envelope::STRIPE_KINDS[$on] ?? [], true),
+        };
+    }
+
+    /**
+     * Whether a GitHub trigger takes this event: of the kind it waits for,
+     * with one of the actions it names, in its repository, on its branch.
+     *
+     * @param  array<string, mixed>  $settings
+     * @param  array<string, mixed>  $envelope
+     */
+    private static function githubWants(array $settings, array $envelope): bool
+    {
+        $words = fn (string $name) => array_values(array_filter(array_map(
+            fn (string $word) => mb_strtolower(trim($word)),
+            preg_split('/[\s,]+/', (string) ($settings[$name] ?? '')) ?: [],
+        )));
+        $on = (string) ($settings['on'] ?? 'any');
+        $actions = $words('actions');
+        $repos = $words('repo');
+        $branches = $words('branch');
+        $branch = $envelope['push']['branch'] ?? $envelope['pull']['base'] ?? $envelope['run']['branch'] ?? null;
+
+        return ($on === 'any' || $on === $envelope['type'])
+            && ($actions === [] || in_array(mb_strtolower((string) $envelope['action']), $actions, true))
+            && ($repos === [] || in_array(mb_strtolower((string) $envelope['repo']), $repos, true))
+            && ($branches === [] || in_array(mb_strtolower((string) $branch), $branches, true));
+    }
+
+    /**
      * Meta asking, once, when a webhook is set up in its app: only the
      * connection's own verify token is answered, with what Meta sent to be
      * given back.

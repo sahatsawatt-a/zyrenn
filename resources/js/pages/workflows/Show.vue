@@ -68,6 +68,8 @@ const props = defineProps<{
     groups: Record<string, string>;
     // A group with many kinds, in parts: each part's name and its kinds, in order
     sections: Record<string, Record<string, string[]>>;
+    // The heading each group is listed under; any other is a service
+    headings: Record<string, 'general' | 'zyrenn'>;
     breadcrumbs: { ref_id: string; name: string }[];
 }>();
 
@@ -569,8 +571,10 @@ function takeTheirs() {
                     :types="nodeTypes"
                     :groups="groups"
                     :sections="sections"
+                    :headings="headings"
                     :after="palette.nextAfter.value"
                     :compact="compact"
+                    :started="kindsOf().some((type) => type?.trigger)"
                     @add="palette.addInView"
                     @close="palette.showPalette(false)"
                     @forget="nextFrom = null"

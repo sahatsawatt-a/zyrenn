@@ -131,6 +131,7 @@ class WorkflowController extends Controller
             'activity' => Audit::of($workflow),
             'groups' => NodeTypes::groups(),
             'sections' => NodeTypes::sections(),
+            'headings' => NodeTypes::headings(),
             'breadcrumbs' => self::crumbs($workflow->folder),
         ]);
     }

@@ -7,6 +7,7 @@ use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
 use App\Models\Concerns\KeepsRevisions;
 use App\Models\Concerns\RecordsEditor;
+use App\Models\Concerns\TellsLists;
 use App\Models\User;
 use App\Support\Live\Live;
 use App\Support\Workflow\Definition;
@@ -42,8 +43,11 @@ use Illuminate\Support\Facades\DB;
 #[Fillable(['title', 'definition'])]
 class Workflow extends Model
 {
+    /** What its lists show of it: other saves, made while it is edited, aren't told. */
+    public const LISTED_BY = ['title', 'folder_id', 'enabled', 'published_version_id'];
+
     /** @use HasFactory<WorkflowFactory> */
-    use BelongsToOwner, HasFactory, HasRefId, KeepsRevisions, RecordsEditor;
+    use BelongsToOwner, HasFactory, HasRefId, KeepsRevisions, RecordsEditor, TellsLists;
 
     /**
      * Mirror the column defaults so new instances match what the database stores.

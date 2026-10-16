@@ -3,7 +3,15 @@
 // typed -- and answers in the chat as the workflow. Published and switched
 // on, it runs when someone writes in the chat, and the chat shows its answer
 // as it comes.
-import { SHOTS, runBoard, tinker, open as openPage } from './harness.mjs';
+import {
+    open as openPage,
+    paletteGroup,
+    paletteGroups,
+    paletteStep,
+    runBoard,
+    SHOTS,
+    tinker,
+} from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);
 const TITLE = `e2e steps ${RUN}`;
@@ -73,19 +81,15 @@ await runBoard(
         await page.waitForURL(/\/workflows\/\w+$/);
         const editor = page.url();
         await page.getByLabel('Workflow title').fill(TITLE);
-        const groups = await page
-            .locator('[data-step-palette] h3')
-            .allInnerTexts();
+        const groups = await paletteGroups(page);
         check(
             'the palette is grouped by service, each with its trigger first',
             ['FLOW', 'CHAT', 'TABLES', 'AI', 'WEB', 'TELEGRAM', 'LINE'].every(
                 (g) => groups.map((t) => t.toUpperCase()).includes(g),
             ) &&
-                (await page
-                    .locator('[data-step-palette] section')
-                    .filter({
-                        has: page.locator('h3', { hasText: /^Telegram$/ }),
-                    })
+                (await (
+                    await paletteGroup(page, 'Telegram')
+                )
                     .locator('[data-palette-step]')
                     .first()
                     .getAttribute('data-palette-step')) === 'trigger.telegram',
@@ -95,7 +99,7 @@ await runBoard(
         // The chat trigger in place of the one made to start with
         await open('start');
         await settings.locator('[data-remove-step]').click();
-        await page.locator('[data-palette-step="trigger.chat"]').click();
+        await (await paletteStep(page, 'trigger.chat')).click();
         await step('chat_message').waitFor();
         await pick(settings.locator('#setting-room'), ROOM);
         check(
@@ -115,7 +119,7 @@ await runBoard(
         );
 
         // Add a row: the table, then its columns, all chosen
-        await page.locator('[data-palette-step="table.add"]').click();
+        await (await paletteStep(page, 'table.add')).click();
         await step('add_a_row').waitFor();
         await pick(settings.locator('#setting-table'), TABLE);
         await settings.locator('[data-add-field]').click();
@@ -142,7 +146,7 @@ await runBoard(
         );
 
         // Answer in the chat, as the workflow
-        await page.locator('[data-palette-step="chat.send"]').click();
+        await (await paletteStep(page, 'chat.send')).click();
         await step('write_in_a_room').waitFor();
         await pick(settings.locator('#setting-room'), ROOM);
         await settings
@@ -233,7 +237,7 @@ await runBoard(
             await message.inputValue(),
         );
 
-        await page.locator('[data-palette-step="logic.if"]').click();
+        await (await paletteStep(page, 'logic.if')).click();
         const condition = settings.locator('#setting-condition');
         await condition.waitFor();
         await part.dragTo(condition);

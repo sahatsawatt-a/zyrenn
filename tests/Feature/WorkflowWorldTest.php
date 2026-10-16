@@ -5,15 +5,19 @@ namespace Tests\Feature;
 use App\Models\Chat\ChatMessage;
 use App\Models\Chat\ChatRoom;
 use App\Models\Connection;
+use App\Models\Note\Note;
 use App\Models\Project;
 use App\Models\Table\Table;
+use App\Models\Ticket\Ticket;
 use App\Models\User;
 use App\Models\Workflow\Workflow;
 use App\Models\Workflow\WorkflowDelivery;
 use App\Models\Workflow\WorkflowNodeRun;
 use App\Models\Workflow\WorkflowRun;
 use App\Models\Workflow\WorkflowVersion;
+use App\Support\Markdown\TiptapMarkdown;
 use App\Support\Table\TableStorage;
+use App\Support\Workflow\Choices;
 use App\Support\Workflow\Engine;
 use App\Support\Workflow\Inbound\Schedules;
 use App\Support\Workflow\Inbound\TelegramPoll;
@@ -782,5 +786,100 @@ class WorkflowWorldTest extends TestCase
         $this->assertStringContainsString('added the channel as a friend', $who->error['message']);
         $this->assertSame(RunStatus::Succeeded, $run->fresh()->status);
         $this->assertSame(['Someone wrote'], $run->fresh()->logs()->pluck('message')->all());
+    }
+
+    // --- Tickets and notes ---
+
+    public function test_a_projects_workflow_files_finds_and_changes_its_tickets()
+    {
+        $owner = User::factory()->create();
+        $helper = User::factory()->create(['email' => 'helper@example.com']);
+        $project = Project::start($owner, 'Shop');
+        $project->members()->attach($helper, ['role' => Project::EDITOR]);
+        Ticket::factory()->for($project)->create(['number' => 1, 'title' => 'Old one', 'status' => Ticket::DONE]);
+
+        $run = $this->runChain($owner, [
+            $this->node('file', 'ticket.file', ['type' => 'bug', 'title' => 'Checkout fails: {{ trigger.error }}', 'body' => 'Seen at {{ trigger.at }}', 'unit' => 'Checkout', 'priority' => 'high', 'assignee' => 'helper@example.com']),
+            $this->node('find', 'tickets.find', ['status' => 'left', 'type' => 'any', 'search' => 'checkout', 'limit' => 10]),
+            $this->node('move', 'ticket.update', ['number' => '{{ node("file").number }}', 'status' => 'in_progress', 'priority' => 'keep', 'assignee' => 'nobody']),
+        ], ['error' => 'card refused', 'at' => '10:42'], $project);
+
+        $this->assertSame(RunStatus::Succeeded, $run->status, (string) $run->error);
+        $filed = $this->step($run, 'file')->output;
+        $this->assertSame([2, 'Checkout fails: card refused', 'high', 'helper@example.com'], [$filed['number'], $filed['title'], $filed['priority'], $filed['assignee']]);
+        $this->assertStringContainsString('/p/'.$project->ref_id.'/tickets', $filed['url']);
+        // Only what is still to be done, with the words: not the old, done one
+        $this->assertSame(1, $this->step($run, 'find')->output['count']);
+        $this->assertSame(2, $this->step($run, 'find')->output['tickets'][0]['number']);
+
+        $ticket = $project->tickets()->where('number', 2)->sole();
+        $this->assertSame([Ticket::IN_PROGRESS, 'high', null, 'Seen at 10:42', 'Checkout'], [$ticket->status, $ticket->priority, $ticket->assigned_to, $ticket->body, $ticket->unit]);
+        $this->assertTrue($owner->is($ticket->creator));
+
+        // Its own project's tickets only
+        $other = Project::start($owner, 'Elsewhere');
+        $wrong = $this->runChain($owner, [$this->node('file', 'ticket.file', ['project' => $other->ref_id, 'type' => 'bug', 'title' => 'x', 'priority' => 'normal'])], [], $project);
+        $this->assertStringContainsString('only with its own project', $wrong->error);
+    }
+
+    public function test_a_ticket_put_on_hold_or_dropped_says_why()
+    {
+        $owner = User::factory()->create();
+        $project = Project::start($owner, 'Shop');
+        Ticket::factory()->for($project)->create(['number' => 7, 'title' => 'Slow page']);
+
+        $silent = $this->runChain($owner, [$this->node('hold', 'ticket.update', ['number' => '#7', 'status' => 'on_hold', 'priority' => 'keep'])], [], $project);
+        $this->assertSame('Change a ticket: Say what it is waiting on.', $silent->error);
+        $this->assertSame(Ticket::OPEN, $project->tickets()->sole()->status);
+
+        $said = $this->runChain($owner, [$this->node('hold', 'ticket.update', ['number' => '7', 'status' => 'on_hold', 'reason' => 'Waiting on {{ trigger.who }}', 'priority' => 'low'])], ['who' => 'the host'], $project);
+        $this->assertSame(RunStatus::Succeeded, $said->status, (string) $said->error);
+        $this->assertSame([Ticket::ON_HOLD, 'Waiting on the host', 'low'], [$project->tickets()->sole()->status, $project->tickets()->sole()->reason, $project->tickets()->sole()->priority]);
+
+        $none = $this->runChain($owner, [$this->node('move', 'ticket.update', ['number' => '99', 'status' => 'done', 'priority' => 'keep'])], [], $project);
+        $this->assertSame('Change a ticket: "Shop" has no ticket #99.', $none->error);
+    }
+
+    public function test_ones_own_workflow_works_tickets_only_in_a_project_one_may_change()
+    {
+        $user = User::factory()->create();
+        $mine = Project::start($user, 'Mine');
+        $looking = Project::start(User::factory()->create(), 'Looking');
+        $looking->members()->attach($user, ['role' => Project::VIEWER]);
+
+        $filed = $this->runChain($user, [$this->node('file', 'ticket.file', ['project' => 'mine', 'type' => 'feature', 'title' => 'Dark mode', 'priority' => 'normal'])]);
+        $this->assertSame(RunStatus::Succeeded, $filed->status, (string) $filed->error);
+        $this->assertSame('feature', $mine->tickets()->sole()->type);
+
+        $unsaid = $this->runChain($user, [$this->node('find', 'tickets.find', ['status' => 'all', 'type' => 'any', 'limit' => 5])]);
+        $this->assertSame('Find tickets: Choose the project whose tickets these are.', $unsaid->error);
+
+        $viewer = $this->runChain($user, [$this->node('find', 'tickets.find', ['project' => $looking->ref_id, 'status' => 'all', 'type' => 'any', 'limit' => 5])]);
+        $this->assertStringContainsString('Only an owner or editor of "Looking"', $viewer->error);
+
+        // The editor offers just those
+        $this->assertSame(['Mine'], collect(Choices::for($user)['projects'])->pluck('name')->all());
+        $this->assertSame(['Looking'], collect(Choices::for($looking)['projects'])->pluck('name')->all());
+    }
+
+    public function test_a_note_is_written_into_a_folder_and_added_to_at_either_end()
+    {
+        $user = User::factory()->create();
+
+        $run = $this->runChain($user, [
+            $this->node('write', 'note.create', ['title' => 'Report {{ trigger.day }}', 'markdown' => "## Done\n\n- {{ trigger.done }}", 'folder' => 'Reports/2026']),
+            $this->node('more', 'note.append', ['note' => '{{ node("write").ref_id }}', 'markdown' => '- Shipped the fix', 'where' => 'end']),
+            $this->node('top', 'note.append', ['note' => 'report monday', 'markdown' => 'Written by a workflow.', 'where' => 'start']),
+        ], ['day' => 'Monday', 'done' => 'Answered the inbox']);
+
+        $this->assertSame(RunStatus::Succeeded, $run->status, (string) $run->error);
+        $note = Note::query()->where('title', 'Report Monday')->sole();
+        $this->assertSame('2026', $note->folder?->name);
+        $this->assertSame('Reports', $note->folder?->parent?->name);
+        $this->assertSame("Written by a workflow.\n\n## Done\n\n- Answered the inbox\n\n- Shipped the fix\n", TiptapMarkdown::toMarkdown($this->withoutBlockIds($note->content)));
+        $this->assertSame($note->ref_id, $this->step($run, 'more')->output['ref_id']);
+
+        $lost = $this->runChain($user, [$this->node('more', 'note.append', ['note' => 'Nothing like it', 'markdown' => 'x', 'where' => 'end'])]);
+        $this->assertSame('Add to a note: There is no note "Nothing like it" here.', $lost->error);
     }
 }

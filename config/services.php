@@ -78,6 +78,11 @@ return [
         'url' => env('CODE_URL', 'http://code:3000'),
     ],
 
+    'python' => [
+        // The Python runner (docker/python): on the compose network `sandbox` alone
+        'url' => env('PYTHON_URL', 'http://python:3000'),
+    ],
+
     'chrome' => [
         // The PDF printer (docker/chrome), private on the compose network
         'url' => env('CHROME_URL', 'http://chrome:3000'),

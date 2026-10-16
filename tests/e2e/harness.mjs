@@ -980,3 +980,46 @@ export async function makeNote({ page, afterwards }, title, markdown) {
 
     return ref;
 }
+
+// ---- The workflow editor's step palette ----
+
+/**
+ * One of the palette's groups opened, by its name ("GitHub", "Data"): its
+ * steps are then in a section headed by that name, which is given back.
+ */
+export async function paletteGroup(page, title) {
+    const palette = page.locator('[data-step-palette]');
+    await palette.locator('[data-palette-search]').fill('');
+    const back = palette.locator('[data-palette-back]');
+
+    if (await back.count()) {
+        await back.click();
+    }
+
+    await palette.locator(`[data-palette-title="${title}"]`).click();
+
+    return palette.locator('[data-palette-open]');
+}
+
+/** A kind of step in the palette, found by its kind ("logic.if"), ready to click or drag. */
+export async function paletteStep(page, kind) {
+    const palette = page.locator('[data-step-palette]');
+    await palette.locator('[data-palette-search]').fill(kind);
+
+    return palette.locator(`[data-palette-step="${kind}"]`);
+}
+
+/** The names of the palette's groups, in order, as the list of them shows them. */
+export async function paletteGroups(page) {
+    const palette = page.locator('[data-step-palette]');
+    await palette.locator('[data-palette-search]').fill('');
+    const back = palette.locator('[data-palette-back]');
+
+    if (await back.count()) {
+        await back.click();
+    }
+
+    return palette
+        .locator('[data-palette-title]')
+        .evaluateAll((rows) => rows.map((row) => row.dataset.paletteTitle));
+}

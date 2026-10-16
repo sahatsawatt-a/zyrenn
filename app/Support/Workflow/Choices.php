@@ -8,9 +8,13 @@ use App\Models\Connection;
 use App\Models\Drive\DriveFolder;
 use App\Models\Knowledge\KnowledgeBase;
 use App\Models\Owner;
+use App\Models\Project;
 use App\Models\Table\Table;
 use App\Models\Table\TableColumn;
+use App\Models\User;
 use App\Models\Workflow\Workflow;
+use App\Support\Workflow\Code\CodeLibraries;
+use App\Support\Workflow\Code\CodeSettings;
 use App\Support\Workflow\Inbound\Hooks;
 
 /**
@@ -58,6 +62,17 @@ final class Choices
             // What an AI may answer from
             'knowledge' => KnowledgeBase::query()->of($owner)->orderBy('title')->get(['ref_id', 'title'])
                 ->map(fn (KnowledgeBase $base) => $base->only(['ref_id', 'title']))->values(),
+            // Whose tickets a step may work: a project's workflow, its own
+            // project's; one's own workflow, any project one may change
+            'projects' => ($owner instanceof Project
+                ? collect([$owner])
+                : ($owner instanceof User
+                    ? $owner->projects()->wherePivotIn('role', [Project::OWNER, Project::EDITOR])->orderBy('name')->get()
+                    : collect()))
+                ->map(fn (Project $project) => ['ref_id' => $project->ref_id, 'name' => $project->name])->values(),
+            // What "Run code" may use: the libraries the app's admins added, by language
+            'libraries' => CodeLibraries::choices(),
+            'python' => CodeSettings::pythonOn(),
             'hooks' => Hooks::url('w/'),
             'timezone' => config('app.timezone'),
         ];

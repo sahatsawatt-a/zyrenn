@@ -3,11 +3,12 @@
 // canvas. It saves itself; what stands in the way of publishing is shown on
 // the steps, and Publish freezes it. After a reload it is all still there.
 import {
-    SHOTS,
-    runBoard,
-    tinker,
     open as openPage,
+    paletteStep,
     reopen,
+    runBoard,
+    SHOTS,
+    tinker,
 } from './harness.mjs';
 
 const TITLE = `e2e flow ${Date.now().toString().slice(-6)}`;
@@ -63,7 +64,7 @@ await runBoard(
         await page.getByLabel('Workflow title').fill(TITLE);
 
         // --- steps from the palette ---
-        await page.locator('[data-palette-step="logic.if"]').click();
+        await (await paletteStep(page, 'logic.if')).click();
         await step('if').waitFor();
         check(
             'clicking a step in the palette adds it, set up beside the canvas',
@@ -72,18 +73,18 @@ await runBoard(
 
         // Dragged onto the canvas instead
         const canvas = await page.locator('[data-canvas]').boundingBox();
-        await page
-            .locator('[data-palette-step="output.log"]')
-            .dragTo(page.locator('[data-canvas] .vue-flow__pane'), {
-                targetPosition: {
-                    x: canvas.width * 0.75,
-                    y: canvas.height * 0.25,
-                },
-            });
+        await (
+            await paletteStep(page, 'output.log')
+        ).dragTo(page.locator('[data-canvas] .vue-flow__pane'), {
+            targetPosition: {
+                x: canvas.width * 0.75,
+                y: canvas.height * 0.25,
+            },
+        });
         await step('log').waitFor();
         check('a step can be dragged onto the canvas', true);
 
-        await page.locator('[data-palette-step="output.log"]').click();
+        await (await paletteStep(page, 'output.log')).click();
         await step('log_2').waitFor();
         check('a second of a kind gets a key of its own', true);
 

@@ -5,7 +5,8 @@
  * The code is the body of a function. It reads `trigger`, `input`,
  * `node("key")` and `steps` as a workflow's formulas do, may `await`, and
  * what it returns is what the step gives out. `console.log` goes to the run's
- * log. There is nothing else to reach: no require, no fetch, no timers.
+ * log. There is nothing else to reach: no fetch, no timers, and require()
+ * gives only the libraries the step chose, loaded ahead of its code.
  */
 import { parentPort, workerData } from 'node:worker_threads';
 import {
@@ -24,12 +25,12 @@ const MAX_OUT = 1024 * 1024; // what it may give back, as JSON
 const MAX_LOGS = 100;
 const MAX_LOG = 2000;
 
-const { code, data, seconds } = workerData;
+const { code, data, seconds, libraries = [] } = workerData;
 const logs = [];
 
 // The lines before the code itself, taken off the line an error names
 const BEFORE = 1;
-const source = `(async () => { const __d = JSON.parse(__data); const trigger = __d.trigger, input = __d.input, steps = __d.steps ?? {}; const node = (key) => steps[key]; const __say = (...parts) => __log(parts.map((part) => { if (typeof part === 'string') return part; try { return JSON.stringify(part) ?? String(part); } catch { return String(part); } }).join(' ')); const console = { log: __say, info: __say, warn: __say, error: __say, debug: __say }; const __out = await (async function () { "use strict";
+const source = `(async () => { const require = (name) => { const lib = (globalThis.__libs ?? {})[name]; if (lib === undefined) throw new Error('There is no library "' + name + '" here: a step uses only the libraries chosen for it.'); return lib; }; const __d = JSON.parse(__data); const trigger = __d.trigger, input = __d.input, steps = __d.steps ?? {}; const node = (key) => steps[key]; const __say = (...parts) => __log(parts.map((part) => { if (typeof part === 'string') return part; try { return JSON.stringify(part) ?? String(part); } catch { return String(part); } }).join(' ')); const console = { log: __say, info: __say, warn: __say, error: __say, debug: __say }; const __out = await (async function () { "use strict";
 ${code}
 }).call(undefined); return __out === undefined ? 'null' : (JSON.stringify(__out) ?? 'null'); })()`;
 
@@ -91,6 +92,28 @@ async function run() {
         });
         vm.setProp(vm.global, '__log', log);
         log.dispose();
+
+        // Each library chosen, made ready to require() before the code runs
+        for (const library of libraries) {
+            const loaded = vm.evalCode(
+                `globalThis.__libs = globalThis.__libs ?? {}; globalThis.__libs[${JSON.stringify(String(library.name))}] = (function () { var module = { exports: {} }; var exports = module.exports; var global = globalThis;\n${String(library.source)}\n; return module.exports; })();`,
+                `lib-${library.name}.js`,
+            );
+
+            if (loaded.error) {
+                const error = vm.dump(loaded.error);
+                loaded.error.dispose();
+                const said = failed(error);
+
+                return {
+                    ...said,
+                    error: `The library “${library.name}” could not be loaded: ${said.error}`,
+                    line: null,
+                };
+            }
+
+            loaded.value.dispose();
+        }
 
         const started = vm.evalCode(source, 'code.js');
 

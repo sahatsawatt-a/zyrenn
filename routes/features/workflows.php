@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Workflow\CodeAdminController;
 use App\Http\Controllers\Workflow\WorkflowController;
 use App\Http\Controllers\Workflow\WorkflowFolderController;
 use App\Http\Controllers\Workflow\WorkflowRunController;
@@ -26,4 +27,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('workflow-folders', WorkflowFolderController::class)
         ->only(['update', 'destroy'])
         ->parameters(['workflow-folders' => 'folder']);
+
+    // What "Run code" may use and how long it may run: the app's admins say
+    Route::prefix('admin/code')->name('admin.code.')->group(function () {
+        Route::get('/', [CodeAdminController::class, 'page'])->name('page');
+        Route::patch('settings', [CodeAdminController::class, 'settings'])->name('settings');
+        Route::post('libraries', [CodeAdminController::class, 'store'])->middleware('throttle:20,1')->name('libraries.store');
+        Route::patch('libraries/{library}', [CodeAdminController::class, 'update'])->name('libraries.update');
+        Route::delete('libraries/{library}', [CodeAdminController::class, 'destroy'])->name('libraries.destroy');
+    });
 });

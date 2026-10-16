@@ -130,6 +130,23 @@ class ConnectionFactory extends Factory
     }
 
     /**
+     * A Stripe test key, with a webhook signing secret for its trigger.
+     */
+    public function stripe(): static
+    {
+        return $this->state(['name' => 'Stripe', 'service' => Services::STRIPE, 'settings' => [], 'secrets' => ['secret_key' => 'sk_test_key', 'webhook_secret' => 'whsec_secret']]);
+    }
+
+    /**
+     * A GitHub token, working on zyrenn/app unless a step names another, with
+     * a webhook secret for its trigger.
+     */
+    public function github(): static
+    {
+        return $this->state(['name' => 'GitHub', 'service' => Services::GITHUB, 'settings' => ['repo' => 'zyrenn/app'], 'secrets' => ['token' => 'ghp-token', 'webhook_secret' => 'gh-secret']]);
+    }
+
+    /**
      * A PromptX account signed in, its account token running out in $days.
      */
     public function promptx(int $days = 30, string $refresh = 'refresh-1'): static

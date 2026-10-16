@@ -5,7 +5,7 @@
 // the run says so. Nothing is spent.
 //
 // Needs the app to reach the internet.
-import { SHOTS, runBoard, tinker } from './harness.mjs';
+import { paletteGroup, runBoard, SHOTS, tinker } from './harness.mjs';
 
 const RUN = Date.now().toString().slice(-6);
 const TITLE = `e2e search ${RUN}`;
@@ -92,14 +92,8 @@ const failed = await runBoard(
         const settings = page.locator('[data-step-settings]');
         const shown = async (name) =>
             (await settings.locator(`#setting-${name}`).count()) === 1;
-        const kinds = (group) =>
-            page
-                .locator('[data-step-palette] section')
-                .filter({
-                    has: page.locator('h3', {
-                        hasText: new RegExp(`^${group}$`),
-                    }),
-                })
+        const kinds = async (group) =>
+            (await paletteGroup(page, group))
                 .locator('[data-palette-step]')
                 .evaluateAll((steps) =>
                     steps.map((one) => one.getAttribute('data-palette-step')),
@@ -132,7 +126,9 @@ const failed = await runBoard(
                 'tavily.search,tavily.extract,tavily.crawl,tavily.map,tavily.usage',
             ofTavily.join(', '),
         );
-        await page
+        await (
+            await paletteGroup(page, 'SerpApi')
+        )
             .locator('[data-palette-step="serpapi.google"]')
             .scrollIntoViewIfNeeded();
         await page.screenshot({ path: `${SHOTS}/workflow-search-palette.png` });

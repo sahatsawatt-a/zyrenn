@@ -20,6 +20,7 @@ import {
     ChartNoAxesCombined,
     Presentation,
     Settings,
+    SquareCode,
     TestTubes,
     Ticket,
     Workflow,
@@ -51,6 +52,7 @@ import {
 } from '@/routes';
 import { inboxChanges, useUnreadChats } from '@/composables/useUnreadChats';
 import { owned } from '@/lib/projects';
+import { page as codeAdminPage } from '@/routes/admin/code';
 import { page as testRunsPage } from '@/routes/admin/test-runs';
 import { index as boardsIndex } from '@/routes/boards';
 import { index as checksIndex } from '@/routes/checks';
@@ -262,7 +264,10 @@ const footerNavItems = computed<NavItem[]>(() => [
     },
     // About the app itself, for whoever runs it: apart from anyone's own pages
     ...(page.props.auth.user?.is_admin
-        ? [{ title: 'Test runs', href: testRunsPage(), icon: TestTubes }]
+        ? [
+              { title: 'Test runs', href: testRunsPage(), icon: TestTubes },
+              { title: 'Code', href: codeAdminPage(), icon: SquareCode },
+          ]
         : []),
 ]);
 </script>
