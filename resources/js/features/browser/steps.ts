@@ -17,9 +17,15 @@ export type StepKind =
     | 'see'
     | 'gone'
     | 'address'
-    | 'shot';
+    | 'shot'
+    | 'down'
+    | 'move'
+    | 'up'
+    | 'drag';
 
 export type Step = {
+    // Its own lasting id, so its history follows it through edits
+    id?: string;
     do: StepKind;
     url?: string;
     target?: string;
@@ -37,7 +43,32 @@ export type Step = {
     note?: string;
     // How long a demo video stays on it, in seconds: its note's hold, or its pause
     wait?: number | string | null;
+    // How long it waits for the site before it fails, in seconds: in place of its suite's step limit
+    timeout?: number | string | null;
+    // Holding the pointer (down, move, up, drag) -- see BrowserCheck::stepRules.
+    // Where in the thing it is pressed, or a move ends: "0.2,0.3" of its box
+    at?: string;
+    // What a drag is dropped on
+    onto?: string;
+    motion?: Motion;
+    // "0.2,0.3 0.5,0.8 500ms 0.8,0.3": of the thing's box, or pixels with none
+    points?: string;
+    // SVG path data, 0,0 where it is pressed
+    path?: string;
+    units?: 'px' | 'box';
+    // Pixels on: "120,-40"
+    by?: string;
+    // Seconds the move takes
+    duration?: number | string | null;
+    // Held until it lets go: "Shift", "Alt+Shift"
+    keys?: string;
+    button?: 'left' | 'right' | 'middle';
+    clicks?: number | string | null;
+    pointer?: 'mouse' | 'pen' | 'touch';
 };
+
+/** How a move goes: straight through its points, a curve through them, or a path. */
+export type Motion = 'straight' | 'curve' | 'path';
 
 export type StepField = 'url' | 'target' | 'text' | 'key' | 'file';
 
@@ -101,6 +132,25 @@ export const KINDS: Record<
         placeholder: 'What to scroll to, or leave empty for a screen down',
         group: 'do',
     },
+    drag: {
+        label: 'Drag',
+        fields: ['target'],
+        placeholder: 'What to press on: a card, a slider, a canvas',
+        group: 'do',
+    },
+    down: {
+        label: 'Press and hold',
+        fields: ['target'],
+        placeholder: 'What to press on: a canvas, a card',
+        group: 'do',
+    },
+    move: {
+        label: 'Move the pointer',
+        fields: ['target'],
+        placeholder: 'The thing its points are in (or none)',
+        group: 'do',
+    },
+    up: { label: 'Let go', fields: [], group: 'do' },
     see: {
         label: 'Expect to see',
         fields: ['target'],
@@ -160,6 +210,19 @@ export type Check = {
     fresh?: boolean;
 };
 
+/** One step of a run's log: when, where it ended up, and what it met. */
+export type LogEntry = {
+    check: string;
+    step: number;
+    // In ms from the start of its check's page
+    from: number;
+    to: number;
+    url: string;
+    // How long it waited on the site, in ms
+    waited?: number;
+    lines: string[];
+};
+
 /** Who a run signs in as, once, by which of the suite's checks (its id). */
 export type SignIn = { name: string; check: string };
 
@@ -175,6 +238,10 @@ export type RunChoice = {
     checks: string[];
     // Every check one after another in one browser, filmed as one
     one_film?: boolean;
+    // The waiting on the site cut out of the film (true unless said)
+    cut_waits?: boolean;
+    // Only a try: followed as any run, then kept nowhere
+    trial?: boolean;
 };
 export type Every = 'off' | 'hour' | 'day' | 'weekdays';
 export type Speed = 'quick' | 'watch' | 'steady' | 'slow' | 'custom';
@@ -200,6 +267,21 @@ export const SPEEDS: Record<Speed, { label: string; about: string }> = {
     custom: { label: 'Your own', about: 'Set each part of the pace.' },
 };
 
+/** How long a step and a whole check may wait, in seconds. */
+export type Waits = { step: number; check: number };
+
+/**
+ * How long checks may wait: what a suite waits that sets none, the most one
+ * may set, and, for an admin, the bounds that most is set within.
+ */
+export type Limits = {
+    default: Waits;
+    most: Waits;
+    floor?: Waits;
+    ceiling?: Waits;
+    set?: string;
+};
+
 /** A picture or film kept in the Drive. */
 export type Kept = { name: string; url: string; ref_id: string };
 
@@ -211,6 +293,8 @@ export type StepResult = {
     error?: string;
     // In the Drive, or (when not kept) the picture itself
     shot?: string | Kept | null;
+    // Where in the run's one film it began, in ms
+    at?: number;
 };
 
 /** What one check did in a run. */
@@ -222,7 +306,10 @@ export type CheckResult = {
     planned: number;
     steps: StepResult[];
     refused: string[];
-    video: (Kept & { partial?: boolean }) | null;
+    // `cut`: how much waiting on the site was cut from the film, in ms
+    video: (Kept & { partial?: boolean; cut?: number }) | null;
+    // Where in the run's one film it begins, in ms
+    film_at?: number;
     problem?: string;
     // Cut short by someone stopping the run
     stopped?: boolean;
@@ -239,6 +326,8 @@ export type StartedBy = 'person' | 'timetable' | 'workflow';
 export type CheckRun = {
     ref_id: string;
     state: RunState;
+    // Only a try: kept nowhere, and taken away a while after it ends
+    trial?: boolean;
     settings: {
         speed: Speed;
         pace: Pace;
@@ -246,6 +335,7 @@ export type CheckRun = {
         record: boolean;
         keep: boolean;
         checks: string[];
+        one_film?: boolean;
     };
     results: CheckResult[];
     created_at: string;
@@ -255,6 +345,8 @@ export type CheckRun = {
     started_by: StartedBy;
     tickets: { number: number; title: string; new: boolean; url: string }[];
     folder: string | null;
+    // The suite's own folder in the Drive, once this run keeps anything
+    suite_folder?: string | null;
     url: string;
     // Why it has not started, while it waits
     waiting_for: string | null;
@@ -263,6 +355,9 @@ export type CheckRun = {
     // Once stopped: by whom and where, in a sentence
     stopped: string | null;
     stop: string;
+    // What each step met in the browser: for the app's admins alone, null
+    // for anyone else
+    log?: LogEntry[] | null;
 };
 
 /** A suite as the page lists it. */
@@ -302,7 +397,17 @@ export type Suite = {
     runs: RunSummary[];
     // How each check did the last time it ran, by its id
     latest: Record<string, { ok: boolean; took: number; at: string }>;
-    urls: { update: string; runs: string; look: string; live: string };
+    urls: {
+        update: string;
+        runs: string;
+        look: string;
+        live: string;
+        versions: string;
+    };
+    // Which version of its checks these are (SuiteVersions)
+    version: number;
+    // Its folder in the Drive, once a run has kept anything there
+    folder: string | null;
     // When it runs by itself, and whether a failure files a ticket
     settings: {
         every: Every;
@@ -310,6 +415,8 @@ export type Suite = {
         zone: string | null;
         tickets: boolean;
     };
+    // How long its steps and checks wait, in seconds; null for the default
+    limits: { step: number | null; check: number | null };
     project: boolean;
     next_run_at: string | null;
     // Only the names of its hidden values: a value is never sent back
@@ -407,6 +514,37 @@ export function lingers(step: Step): number {
     return ['see', 'gone', 'address', 'shot'].includes(step.do) ? 0 : 1.15;
 }
 
+/** A new step's own id: a few letters and digits, as the server keeps them. */
+export const stepId = () =>
+    Array.from(crypto.getRandomValues(new Uint8Array(8)), (byte) =>
+        'abcdefghijklmnopqrstuvwxyz0123456789'.charAt(byte % 36),
+    ).join('');
+
+// " holding Shift", " with the right button" -- or nothing
+function holding(step: Step) {
+    const how = [
+        step.keys?.trim() ? `holding ${step.keys.trim()}` : null,
+        step.button === 'right' || step.button === 'middle'
+            ? `with the ${step.button} button`
+            : null,
+        step.pointer === 'pen'
+            ? 'with a pen'
+            : step.pointer === 'touch'
+              ? 'with a finger'
+              : null,
+    ].filter(Boolean);
+
+    return how.length ? ` ${how.join(', ')}` : '';
+}
+
+const pixels = (by: string) => `${by.trim().replace(/\s*,\s*/, ', ')} px`;
+
+function counted(points: string) {
+    const n = points.match(/-?[\d.]+\s*,\s*-?[\d.]+/g)?.length ?? 0;
+
+    return `${n} point${n === 1 ? '' : 's'}`;
+}
+
 /** A step in a few words, as a run and a caption say it (BrowserCheck::say). */
 export function say(step: Step): string {
     switch (step.do) {
@@ -436,6 +574,42 @@ export function say(step: Step): string {
             return `Press ${step.key ?? 'Enter'}`;
         case 'see':
             return `Expect to see ${which(step)}"${step.target ?? ''}"`;
+        case 'down':
+            return `${Number(step.clicks) === 2 ? 'Double-click and hold' : 'Press down on'} ${which(step)}"${step.target ?? ''}"${holding(step)}`;
+        case 'move':
+            if (step.motion === 'path') {
+                return `Move along a path${step.target ? ` on "${step.target}"` : ''}`;
+            }
+
+            if (step.by?.trim()) {
+                return `Move by ${pixels(step.by)}`;
+            }
+
+            if (!step.target) {
+                return `Move through ${counted(step.points ?? '')}`;
+            }
+
+            return step.points?.trim()
+                ? `Move across ${which(step)}"${step.target}"`
+                : `Move to ${which(step)}"${step.target}"`;
+        case 'up':
+            return 'Let go';
+        case 'drag': {
+            const thing = `${which(step)}"${step.target ?? ''}"`;
+            const how =
+                step.motion === 'path'
+                    ? `draw a path on ${thing}`
+                    : step.onto?.trim()
+                      ? `drag ${thing} onto "${step.onto.trim()}"`
+                      : step.by?.trim()
+                        ? `drag ${thing} by ${pixels(step.by)}`
+                        : `draw across ${thing}`;
+
+            return `${Number(step.clicks) === 2 ? 'Double-click and ' : ''}${how}${holding(step)}`.replace(
+                /^./,
+                (first) => first.toUpperCase(),
+            );
+        }
         default:
             return 'Take a picture';
     }

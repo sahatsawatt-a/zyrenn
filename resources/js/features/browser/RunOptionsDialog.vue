@@ -43,6 +43,7 @@ const captions = ref(true);
 const record = ref(false);
 const keep = ref(false);
 const oneFilm = ref(false);
+const cutWaits = ref(true);
 const only = ref<Set<string>>(new Set());
 
 watch(open, (now) => {
@@ -94,6 +95,7 @@ function start() {
         keep: keep.value,
         checks: only.value.size === props.checks.length ? [] : [...only.value],
         one_film: record.value && oneFilm.value,
+        cut_waits: cutWaits.value,
     });
     open.value = false;
 }
@@ -202,6 +204,14 @@ function start() {
                     >
                         All checks in one film
                         <Switch v-model="oneFilm" data-test="run-one-film" />
+                    </label>
+                    <label
+                        v-if="record"
+                        class="flex items-center justify-between gap-3 px-3 py-2"
+                        title="Waits of 2.5 s or more for the site -- a page loading, words coming -- left out of the film, with a note saying how long was skipped. Off: filmed as it happened."
+                    >
+                        Cut out waiting for the page
+                        <Switch v-model="cutWaits" data-test="run-cut-waits" />
                     </label>
                     <label
                         class="flex items-center justify-between gap-3 px-3 py-2"

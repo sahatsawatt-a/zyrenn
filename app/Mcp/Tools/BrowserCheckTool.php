@@ -6,13 +6,16 @@ use App\Models\Browser\BrowserRun;
 use App\Models\Browser\BrowserSuite;
 use App\Models\Drive\DriveFolder;
 use App\Models\Owner;
+use App\Models\User;
 use App\Support\Browser\BrowserCheck;
+use App\Support\Browser\Limits;
 use App\Support\Browser\SuiteRun;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Validation\ValidationException;
+use Laravel\Mcp\Request;
 
 /**
  * Base for the browser check tools: suites of checks of a public site, the
@@ -38,7 +41,7 @@ abstract class BrowserCheckTool extends ScopedTool
         return $schema->object([
             'do' => $schema->string()->enum(BrowserCheck::KINDS)->required(),
             'url' => $schema->string()->max(4000)->description('For "open": the page, https://...'),
-            'target' => $schema->string()->max(200)->description('For "click", "hover", "type", "choose", "upload", "see" and "gone": what it says on the page (look-at-page lists the names). For "scroll": what to scroll to, or none for a screen further down.'),
+            'target' => $schema->string()->max(200)->description('For "click", "hover", "type", "choose", "upload", "see" and "gone": what it says on the page (look-at-page lists the names). For "scroll": what to scroll to, or none for a screen further down. For "down" and "drag": what to press on (a canvas, a card); for "move": the thing its points are in, if any.'),
             'text' => $schema->string()->max(2000)->description('For "type": what to type; {{name}} for a hidden value. For "choose": the option to choose. For "address": part of the address the page must be at. For "upload": the file\'s name.'),
             'key' => $schema->string()->max(30)->description('For "press": Enter, Tab, Escape, Backspace, ArrowDown, ArrowUp or Space.'),
             'selector' => $schema->string()->max(1000)->description('For a thing with no words of its own (a picture), its "selector" as look-at-page gives it.'),
@@ -47,6 +50,20 @@ abstract class BrowserCheckTool extends ScopedTool
             'file' => $schema->string()->max(40)->description('For "upload": the ref_id of the Drive file to add (list-drive finds it).'),
             'note' => $schema->string()->max(600)->description('For any step: what to tell someone watching it, a few sentences at most -- how to do this in the app, why it matters. A demo video captions only steps with a note, in these words.'),
             'wait' => $schema->number()->min(0)->max(30)->description('For any step: how many seconds a demo video stays on it after it is done (0 to 30, e.g. 4.5) -- in place of its note\'s own time (3 to 8 s by its length) or, with no note, its pause. 0 goes straight on. Left out, the defaults.'),
+            // Holding the pointer: "down" ... "move" ... "up", or "drag" in one
+            'at' => $schema->string()->description('For "down" and "drag": where in the thing it is pressed; for "move" with a target: where it ends. Fractions of the thing\'s box, "0.2,0.3" (0,0 top left, 1,1 bottom right); left out, its middle.'),
+            'onto' => $schema->string()->max(200)->description('For "drag": the thing it is dropped on, by what it says -- a column, a bin.'),
+            'motion' => $schema->string()->enum(['straight', 'curve', 'path'])->description('For "move" and "drag": "straight" (the default) goes in straight lines through any "points"; "curve" goes smoothly through them; "path" follows "path".'),
+            'points' => $schema->string()->max(2000)->description('For "move" and "drag": the points it goes through, "0.2,0.3 0.5,0.8 0.8,0.3" -- fractions of the thing\'s box, or with no target pixels from where the pointer is. It ends at the last, unless "onto", "by" or (a move) "at" says. "500ms" after a point pauses there.'),
+            'path' => $schema->string()->max(4000)->description('For "move" and "drag" with "motion": "path": SVG path data -- M L H V C S Q T A Z, absolute or relative -- for circles, arcs, spirals, shapes. 0,0 is where it is pressed, in pixels (or with "units": "box", the thing\'s top left, 1,1 its bottom right). Each M after the first lifts and presses again: several strokes in one step. "500ms" between pieces pauses. E.g. a circle of radius 60: "M 0 0 a 60 60 0 1 0 120 0 a 60 60 0 1 0 -120 0".'),
+            'units' => $schema->string()->enum(['px', 'box'])->description('For "path": pixels from where it is pressed (the default), or "box", fractions of the thing\'s box.'),
+            'by' => $schema->string()->description('For "move" and "drag": moved this many pixels on, "120,-40".'),
+            'duration' => $schema->number()->min(0)->max(20)->description('For "move" and "drag": how many seconds the move takes, for a film at a person\'s pace. Left out, as the run\'s speed has it (at once when quick).'),
+            'keys' => $schema->string()->max(40)->description('For "down" and "drag": keys held until it lets go, "Shift" or "Alt+Shift" (Shift, Alt, Control, Meta) -- a straight line, a perfect shape.'),
+            'button' => $schema->string()->enum(['left', 'right', 'middle'])->description('For "down" and "drag": the mouse button; left unless said.'),
+            'clicks' => $schema->integer()->min(1)->max(2)->description('For "down" and "drag": 2 to double-click and hold on the second -- double-click and drag.'),
+            'pointer' => $schema->string()->enum(['mouse', 'pen', 'touch'])->description('For "down" and "drag": pressed with a mouse (the default), a pen or a finger. Steps between a "down" and its "up" -- "press" Escape, "see", "shot" -- are done while it is held; a check that ends while held lets go.'),
+            'timeout' => $schema->integer()->min(1)->max(Limits::CEILING['step'])->description('For any step: how many seconds it waits for the site -- a page to load, a thing to turn up or go -- before it fails, in place of the suite\'s step limit (10 s unless the suite says otherwise), up to the most an admin allows. For a slow page or a long job. Left out, the suite\'s.'),
         ]);
     }
 
@@ -169,6 +186,10 @@ abstract class BrowserCheckTool extends ScopedTool
                 'next' => $suite->next_run_at?->toIso8601String(),
             ],
             'files_tickets' => (bool) ($suite->settings['tickets'] ?? false),
+            // What it waits, in seconds, within the most allowed
+            'time_limits' => Limits::of($suite),
+            // Which version of its checks these are; each run says which it tested
+            'version' => $suite->version,
             // Only the names: a hidden value is never given out
             'hidden_values' => array_column($suite->secret_values ?? [], 'name'),
             'url' => $suite->project_id !== null
@@ -183,11 +204,13 @@ abstract class BrowserCheckTool extends ScopedTool
      *
      * @return array<string, mixed>
      */
-    protected function runDescribed(BrowserRun $run): array
+    protected function runDescribed(BrowserRun $run, bool $log = false): array
     {
         return [
             'ref_id' => $run->ref_id,
             'state' => $run->state,
+            // The version of the suite's checks it tested
+            'suite_version' => $run->suite_version,
             'summary' => match (true) {
                 $run->ended() => SuiteRun::summary($run),
                 $run->state === BrowserRun::WAITING => 'Not started yet. '.SuiteRun::waitingFor($run),
@@ -195,6 +218,7 @@ abstract class BrowserCheckTool extends ScopedTool
                 default => 'Still running: '.count($run->results ?? []).' checks done so far.',
             },
             'speed' => $run->settings['speed'],
+            ...($run->trial ? ['try' => 'Only a try: kept nowhere, and taken away an hour after it ends.'] : []),
             'filmed' => (bool) $run->settings['record'],
             'started_by' => $run->started_by,
             'checks' => array_map(fn (array $check) => [
@@ -212,7 +236,18 @@ abstract class BrowserCheckTool extends ScopedTool
             ], $run->results ?? []),
             'tickets' => array_column($run->tickets ?? [], 'number'),
             'created_at' => $run->created_at?->toIso8601String(),
+            // What each step met in the browser, for an admin
+            ...($log ? ['log' => $run->log ?? []] : []),
         ];
+    }
+
+    /**
+     * Whether a run's log is given out: on the admin server, or to a key of
+     * one of the app's admins.
+     */
+    protected function seesLogs(Request $request): bool
+    {
+        return $this->global || ($request->user() instanceof User && $request->user()->is_admin);
     }
 
     /** One of the owner's runs, by ref_id. */

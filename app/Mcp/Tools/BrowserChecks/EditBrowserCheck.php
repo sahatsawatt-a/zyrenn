@@ -4,6 +4,7 @@ namespace App\Mcp\Tools\BrowserChecks;
 
 use App\Mcp\Tools\BrowserCheckTool;
 use App\Support\Browser\BrowserCheck;
+use App\Support\Browser\Limits;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -29,7 +30,8 @@ class EditBrowserCheck extends BrowserCheckTool
             'remove' => $schema->array()->items($schema->integer()->min(1))->description('The numbers of the steps to take out, e.g. [3].'),
             'replace' => $schema->array()->items($schema->object([
                 'step' => $schema->integer()->min(1)->required(),
-                'with' => $this->stepSchema($schema)->required(),
+                // A step's fields are written out once, in "add"
+                'with' => $schema->object()->description('The whole step, as in "add".')->required(),
             ]))->description('Steps put in place of others, by number.'),
             'notes' => $schema->array()->items($schema->object([
                 'step' => $schema->integer()->min(1)->required(),
@@ -39,6 +41,10 @@ class EditBrowserCheck extends BrowserCheckTool
                 'step' => $schema->integer()->min(1)->required(),
                 'wait' => $schema->number()->min(0)->max(30)->nullable()->required(),
             ]))->description('How long a demo video stays on steps, by number, in seconds: [{"step": 5, "wait": 4}]. null: the default again.'),
+            'timeouts' => $schema->array()->items($schema->object([
+                'step' => $schema->integer()->min(1)->required(),
+                'timeout' => $schema->integer()->min(1)->max(Limits::CEILING['step'])->nullable()->required(),
+            ]))->description('How long steps wait for the site before they fail, by number, in seconds: [{"step": 1, "timeout": 40}] for a slow page. null: the suite\'s limit again.'),
             'add' => $schema->array()->items($this->stepSchema($schema))->description('Steps to add, in order.'),
             'at' => $schema->integer()->min(1)->description('The number of the step the added ones go before; left out, they go at the end.'),
             'rename' => $schema->string()->max(200)->description('Its new name.'),
@@ -57,8 +63,9 @@ class EditBrowserCheck extends BrowserCheckTool
         $replace = (array) ($request->get('replace') ?? []);
         $notes = (array) ($request->get('notes') ?? []);
         $waits = (array) ($request->get('waits') ?? []);
+        $timeouts = (array) ($request->get('timeouts') ?? []);
 
-        foreach ([...$remove, ...array_map(fn ($one) => (int) ($one['step'] ?? 0), [...$replace, ...$notes, ...$waits])] as $number) {
+        foreach ([...$remove, ...array_map(fn ($one) => (int) ($one['step'] ?? 0), [...$replace, ...$notes, ...$waits, ...$timeouts])] as $number) {
             if ($number < 1 || $number > $count) {
                 return Response::error("The check has steps 1 to {$count}: there is no step {$number}.");
             }
@@ -75,6 +82,10 @@ class EditBrowserCheck extends BrowserCheckTool
 
         foreach ($waits as $one) {
             $steps[(int) $one['step'] - 1]['wait'] = $one['wait'] ?? null;
+        }
+
+        foreach ($timeouts as $one) {
+            $steps[(int) $one['step'] - 1]['timeout'] = $one['timeout'] ?? null;
         }
 
         $kept = [];

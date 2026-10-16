@@ -40,9 +40,10 @@ final class SuiteRun
      * @param  array{glide: int, typing: int, pause: int}|null  $pace
      * @param  list<string>  $checks  the checks to run; all of them when none
      * @param  bool  $oneFilm  the checks done one after another in one browser, filmed as one
-     * @return array{speed: string, pace: array{glide: int, typing: int, pause: int}, captions: bool, record: bool, keep: bool, checks: list<string>, one_film: bool}
+     * @param  bool  $cutWaits  a film with the waiting on the site cut out of it
+     * @return array{speed: string, pace: array{glide: int, typing: int, pause: int}, captions: bool, record: bool, keep: bool, checks: list<string>, one_film: bool, cut_waits: bool}
      */
-    public static function settings(string $speed, ?array $pace = null, bool $captions = false, bool $record = false, bool $keep = false, array $checks = [], bool $oneFilm = false): array
+    public static function settings(string $speed, ?array $pace = null, bool $captions = false, bool $record = false, bool $keep = false, array $checks = [], bool $oneFilm = false, bool $cutWaits = true): array
     {
         return [
             'speed' => $speed,
@@ -54,22 +55,48 @@ final class SuiteRun
             'keep' => $record || $keep,
             'checks' => $checks,
             'one_film' => $record && $oneFilm,
+            'cut_waits' => $record && $cutWaits,
         ];
     }
 
     /**
-     * A new run of `$suite`, waiting to be carried out.
+     * A new run of `$suite`, waiting to be carried out. A `trial` is only a
+     * try: done and followed as any other, then kept nowhere -- not in the
+     * suite's history, no tickets, nothing in the Drive, so it is not filmed
+     * -- and taken away soon after it ends (forgetTries).
      *
-     * @param  array{speed: string, pace: array{glide: int, typing: int, pause: int}, captions: bool, record: bool, keep: bool, checks: list<string>, one_film?: bool}  $settings
+     * @param  array{speed: string, pace: array{glide: int, typing: int, pause: int}, captions: bool, record: bool, keep: bool, checks: list<string>, one_film?: bool, cut_waits?: bool}  $settings
      */
-    public static function start(BrowserSuite $suite, ?User $by, array $settings, string $startedBy = self::PERSON): BrowserRun
+    public static function start(BrowserSuite $suite, ?User $by, array $settings, string $startedBy = self::PERSON, bool $trial = false): BrowserRun
     {
-        return $suite->runs()->create([
+        if ($trial) {
+            $settings = ['record' => false, 'keep' => false, 'one_film' => false, 'cut_waits' => false] + $settings;
+        }
+
+        return $suite->allRuns()->create([
             'state' => BrowserRun::WAITING,
+            'trial' => $trial,
             'created_by' => $by?->id,
             'settings' => $settings,
             'started_by' => $startedBy,
         ]);
+    }
+
+    /** How long a try is kept after it ends, for whoever is looking at it. */
+    public const TRIAL_KEPT_MINUTES = 60;
+
+    /**
+     * Takes away the tries that ended a while ago -- and any left unfinished
+     * for a day. Answers with how many went.
+     */
+    public static function forgetTries(): int
+    {
+        return BrowserRun::query()
+            ->where('trial', true)
+            ->where(fn ($query) => $query
+                ->where('ended_at', '<', now()->subMinutes(self::TRIAL_KEPT_MINUTES))
+                ->orWhere('created_at', '<', now()->subDay()))
+            ->delete();
     }
 
     /**
@@ -130,7 +157,9 @@ final class SuiteRun
             }
         }
 
-        return $run->refresh();
+        $run->refresh()->tell();
+
+        return $run;
     }
 
     /** Whether someone has asked for this run to stop, as the database has it now. */
@@ -191,10 +220,12 @@ final class SuiteRun
             return $run->refresh();
         }
 
-        $run->refresh();
+        $run->refresh()->tell();
 
         $suite = $run->suite;
         $settings = $run->settings;
+        // What it tests: the version of the suite's checks it starts with
+        $run->forceFill(['suite_version' => $suite->version])->saveQuietly();
         $owner = $suite->owner();
         $by = $run->creator;
         // A sign-in is done once, before the checks that start from it -- not
@@ -230,6 +261,8 @@ final class SuiteRun
         // Signed in once, as each person the checks start as: the browser
         // state each sign-in leaves is held here for this run alone
         $whom = array_map(fn (array $check) => $suite->identityFor($check), $checks);
+        // How long its steps and checks may wait: its own, within the most allowed
+        $limits = Limits::of($suite);
         $keepShot = $settings['keep'] ? fn (string $shot, string $name) => BrowserCheck::keep($shot, $name, $owner, $folderFor(), $by) : null;
         ['states' => $states, 'results' => $results, 'failed' => $failed, 'stopped' => $stopped]
             = self::signIns($run, $suite, array_values(array_unique(array_filter($whom))), $values, $keepShot);
@@ -243,7 +276,7 @@ final class SuiteRun
         // check's part of the answer then kept as its own -- once everyone
         // in it could be signed in
         $film = ($settings['one_film'] ?? false) && $failed === [] && $checks !== []
-            ? self::film(array_map(fn (array $check, ?string $as) => [...$check, 'as' => $as], $checks, $whom), $settings, $values, $run->ref_id, $states)
+            ? self::film(array_map(fn (array $check, ?string $as) => [...$check, 'as' => $as], $checks, $whom), $settings, $values, $run->ref_id, $states, $limits)
             : null;
         $filmKept = null;
 
@@ -272,9 +305,12 @@ final class SuiteRun
             try {
                 $answer = $film === null
                     ? BrowserCheck::run($check['steps'], $settings['pace'], $settings['captions'], $settings['record'], $values, $check['size'] ?? 'desktop', $run->ref_id,
-                        $whom[$at] !== null ? ['state' => $states[$whom[$at]]] : [])
+                        $whom[$at] !== null ? ['state' => $states[$whom[$at]]] : [], $limits, $settings['cut_waits'] ?? true)
                     : self::chapter($film, $at);
+                // Where in the one film it begins, for its player to go to
+                $filmAt = $film !== null && isset($film['starts'][$at]) ? (int) $film['starts'][$at] : null;
                 $halted = $answer['halted'] && count($answer['steps']) < count($check['steps']);
+                self::journal($run, $check['title'], $answer['log'], $values);
 
                 // Stopped before its first step: there is nothing of it to keep
                 if ($halted && $answer['steps'] === [] && $film === null) {
@@ -306,13 +342,14 @@ final class SuiteRun
                     'steps' => $steps,
                     'planned' => count($check['steps']),
                     'refused' => $answer['refused'],
-                    'video' => self::partial($partial, match (true) {
+                    'video' => self::cut((int) (($film ?? $answer)['cut'] ?? 0), self::partial($partial, match (true) {
                         $film !== null => $filmKept ??= ($film['video'] ?? null) !== null
                             ? BrowserCheck::keep($film['video'], trim($suite->title ?: 'Browser checks').($partial ? ' (partial)' : '').'.webm', $owner, $folderFor(), $by)
                             : null,
                         $answer['video'] !== null => BrowserCheck::keep($answer['video'], "{$check['title']}".($partial ? ' (partial)' : '').'.webm', $owner, $folderFor(), $by),
                         default => null,
-                    }),
+                    })),
+                    ...($filmAt !== null ? ['film_at' => $filmAt] : []),
                     ...($halted ? ['stopped' => true] : []),
                 ];
                 $stopped = $halted;
@@ -360,12 +397,27 @@ final class SuiteRun
             'ended_at' => now(),
         ])->save();
 
-        // A run someone stopped proves nothing broke: no tickets
-        if (! $passed && ! $stopped && $owner instanceof Project && ($suite->settings['tickets'] ?? false)) {
+        // How long each step took and waited, for how long it usually needs
+        StepTimings::keep($run);
+
+        // A run someone stopped proves nothing broke, and a try is kept nowhere: no tickets
+        if (! $passed && ! $stopped && ! $run->trial && $owner instanceof Project && ($suite->settings['tickets'] ?? false)) {
             self::fileTickets($run, $owner);
         }
 
         return $run;
+    }
+
+    /**
+     * A film kept in the Drive, with how much waiting on the site was cut
+     * from it (ms), so the run page can say so.
+     *
+     * @param  array<string, mixed>|null  $video
+     * @return array<string, mixed>|null
+     */
+    private static function cut(int $cut, ?array $video): ?array
+    {
+        return $video !== null && $cut > 0 ? [...$video, 'cut' => $cut] : $video;
     }
 
     /**
@@ -417,7 +469,8 @@ final class SuiteRun
                         : "There is no sign-in called \"{$name}\": add it in the suite's settings, or start the check signed out.");
                 }
 
-                $answer = BrowserCheck::run($check['steps'], BrowserCheck::SPEEDS['quick'], false, false, $values, $check['size'] ?? 'desktop', $run->ref_id, ['keep' => true]);
+                $answer = BrowserCheck::run($check['steps'], BrowserCheck::SPEEDS['quick'], false, false, $values, $check['size'] ?? 'desktop', $run->ref_id, ['keep' => true], Limits::of($suite));
+                self::journal($run, $title, $answer['log'], $values);
 
                 foreach ($answer['steps'] as $at => $step) {
                     $step['say'] = BrowserCheck::say($check['steps'][$at]);
@@ -464,9 +517,10 @@ final class SuiteRun
      * @param  array<string, mixed>  $settings
      * @param  array<string, string>  $values
      * @param  array<string, array<string, mixed>>  $states  the browser state each sign-in left
+     * @param  array{step: int, check: int}  $limits
      * @return array<string, mixed>
      */
-    private static function film(array $checks, array $settings, array $values, string $token, array $states = []): array
+    private static function film(array $checks, array $settings, array $values, string $token, array $states = [], array $limits = Limits::DEFAULT): array
     {
         try {
             return BrowserCheck::film(
@@ -478,6 +532,8 @@ final class SuiteRun
                 $checks[0]['size'] ?? 'desktop',
                 $token,
                 $states,
+                $limits,
+                $settings['cut_waits'] ?? true,
             );
         } catch (Throwable $problem) {
             return ['problem' => $problem];
@@ -489,7 +545,7 @@ final class SuiteRun
      * nothing for a check the film never reached.
      *
      * @param  array<string, mixed>  $film
-     * @return array{steps: list<array<string, mixed>>, refused: list<string>, video: null, halted: bool}
+     * @return array{steps: list<array<string, mixed>>, refused: list<string>, video: null, halted: bool, log: list<array<string, mixed>>}
      */
     private static function chapter(array $film, int $at): array
     {
@@ -502,7 +558,66 @@ final class SuiteRun
             'refused' => $at === 0 ? $film['refused'] : [],
             'video' => null,
             'halted' => (bool) ($film['halted'] ?? false),
+            // What its own steps met, of the one film's log
+            'log' => array_values(array_filter($film['log'] ?? [], fn (array $entry) => ($entry['chapter'] ?? 0) === $at)),
         ];
+    }
+
+    /** No run keeps more of its log than this, in lines. */
+    public const LOG_LINES = 200;
+
+    /** Nor a line longer than this. */
+    private const LOG_LINE = 240;
+
+    /**
+     * Keeps what each step of `$check` met in the browser, for the app's
+     * admins: when it began and ended, where it ended up, how long it waited
+     * on the site, and its console, page errors and failed requests -- every
+     * hidden value the steps type blotted out of it, each line cut short, and
+     * the whole run's log held to LOG_LINES.
+     *
+     * @param  list<array<string, mixed>>  $entries  as the browser gave them, a step each
+     * @param  array<string, string>  $values  the suite's hidden values
+     */
+    private static function journal(BrowserRun $run, string $check, array $entries, array $values): void
+    {
+        if ($entries === []) {
+            return;
+        }
+
+        // Hidden values, not the Drive files a step adds (those are no secret)
+        $secrets = array_filter($values, fn (string $value, string $name) => ! str_starts_with($name, 'file:') && mb_strlen($value) >= 3, ARRAY_FILTER_USE_BOTH);
+        $blot = fn (string $text) => mb_substr(str_replace(array_values($secrets), '•••', $text), 0, self::LOG_LINE);
+
+        $log = $run->log ?? [];
+        $room = self::LOG_LINES - array_sum(array_map(fn (array $entry) => count($entry['lines']) + 1, $log));
+
+        foreach ($entries as $entry) {
+            if ($room <= 0) {
+                break;
+            }
+
+            $lines = array_map(fn ($line) => $blot((string) $line), array_values(array_filter((array) ($entry['lines'] ?? []), 'is_string')));
+            // The step itself takes a line; what does not fit is said in the last
+            $fits = $room - 1;
+            $kept = count($lines) <= $fits ? $lines : [
+                ...array_slice($lines, 0, max(0, $fits - 1)),
+                '… '.(count($lines) - max(0, $fits - 1)).' more left out: the log is full',
+            ];
+
+            $log[] = [
+                'check' => $check,
+                'step' => (int) ($entry['step'] ?? 0),
+                'from' => (int) ($entry['from'] ?? 0),
+                'to' => (int) ($entry['to'] ?? 0),
+                'url' => $blot((string) ($entry['url'] ?? '')),
+                ...(isset($entry['waited']) ? ['waited' => (int) $entry['waited']] : []),
+                'lines' => $kept,
+            ];
+            $room -= count($kept) + 1;
+        }
+
+        $run->forceFill(['log' => $log])->save();
     }
 
     /**
@@ -611,7 +726,7 @@ final class SuiteRun
             $open = Ticket::query()
                 ->where('project_id', $project->id)
                 ->where('title', $title)
-                ->whereIn('status', [Ticket::OPEN, Ticket::IN_PROGRESS])
+                ->whereIn('status', Ticket::UNSETTLED)
                 ->first();
 
             if ($open !== null) {

@@ -76,7 +76,7 @@ class BrowserChecksTest extends TestCase
         $this->assertSame([
             ['do' => 'open', 'url' => 'https://shop.example.com'],
             ['do' => 'type', 'target' => 'Email', 'text' => 'ada@example.com'],
-        ], $suite->checks[0]['steps']);
+        ], $this->withoutStepIds($suite->checks[0]['steps']));
     }
 
     public function test_a_new_suite_starts_empty_and_runs_only_once_it_has_a_check()
@@ -234,7 +234,7 @@ class BrowserChecksTest extends TestCase
             ['do' => 'click', 'target' => 'Thumbnail for Cosmos', 'selector' => 'body > a:nth-of-type(2)'],
         ]]]])->assertOk();
 
-        $steps = $suite->fresh()->checks[0]['steps'];
+        $steps = $this->withoutStepIds($suite->fresh()->checks[0]['steps']);
         // Only what a step's kind uses: an address is not found by place
         $this->assertSame(['do' => 'open', 'url' => 'https://shop.example.com'], $steps[0]);
         $this->assertSame(['do' => 'click', 'target' => 'Add to cart', 'selector' => '#inventory > div:nth-of-type(3) > button', 'nth' => '3'], $steps[1]);
@@ -252,7 +252,7 @@ class BrowserChecksTest extends TestCase
             ['do' => 'choose', 'target' => 'Sort by', 'text' => 'Price (low to high)', 'url' => 'https://left.over'],
         ]]]])->assertOk();
 
-        $step = $suite->fresh()->checks[0]['steps'][1];
+        $step = $this->withoutStepIds($suite->fresh()->checks[0]['steps'])[1];
         $this->assertSame(['do' => 'choose', 'target' => 'Sort by', 'text' => 'Price (low to high)'], $step);
         $this->assertSame('Choose "Price (low to high)" in "Sort by"', BrowserCheck::say($step));
         $this->assertSame(
@@ -277,7 +277,7 @@ class BrowserChecksTest extends TestCase
             ['do' => 'address', 'text' => '/thank-you'],
         ]]]])->assertOk();
 
-        $steps = $suite->fresh()->checks[0]['steps'];
+        $steps = $this->withoutStepIds($suite->fresh()->checks[0]['steps']);
         $this->assertSame([
             ['do' => 'open', 'url' => 'https://shop.example.com'],
             ['do' => 'hover', 'target' => 'Products'],
@@ -315,7 +315,7 @@ class BrowserChecksTest extends TestCase
             ['do' => 'shot'],
         ]]]])->assertOk();
 
-        $steps = $suite->fresh()->checks[0]['steps'];
+        $steps = $this->withoutStepIds($suite->fresh()->checks[0]['steps']);
         // Any kind may have one; an empty one is none
         $this->assertSame([
             ['do' => 'open', 'url' => 'https://example.com', 'note' => 'Start at the home page.'],
@@ -345,7 +345,7 @@ class BrowserChecksTest extends TestCase
             ['do' => 'open', 'url' => 'https://example.com', 'note' => 'Start at the home page.', 'wait' => '6'],
             ['do' => 'see', 'target' => 'Welcome', 'wait' => '1.3'],
             ['do' => 'shot'],
-        ], $suite->fresh()->checks[0]['steps']);
+        ], $this->withoutStepIds($suite->fresh()->checks[0]['steps']));
         $this->actingAs($user)->patchJson(route('checks.suites.update', $suite), ['checks' => [['id' => 'home', 'title' => 'Home', 'steps' => [
             ['do' => 'shot', 'wait' => 31],
         ]]]])->assertJsonValidationErrors(['checks.0.steps.0.wait']);
@@ -475,7 +475,12 @@ class BrowserChecksTest extends TestCase
 
         $this->actingAs($owner)->getJson(route('checks.runs.show', $run))
             ->assertJsonPath('results.0.video.name', 'Home.webm')
-            ->assertJsonPath('folder', route('projects.drive.index', ['project' => $project, 'folder' => $run->driveFolder->ref_id]));
+            ->assertJsonPath('folder', route('projects.drive.index', ['project' => $project, 'folder' => $run->driveFolder->ref_id]))
+            ->assertJsonPath('suite_folder', route('projects.drive.index', ['project' => $project, 'folder' => $run->driveFolder->parent->ref_id]));
+
+        // The suite's own way to it: the folder every run's is in
+        $this->getJson(route('checks.suites.show', $suite))
+            ->assertJsonPath('folder', route('projects.drive.index', ['project' => $project, 'folder' => $run->driveFolder->parent->ref_id]));
     }
 
     public function test_a_film_the_browser_made_into_mp4_is_kept_as_mp4()
@@ -504,7 +509,11 @@ class BrowserChecksTest extends TestCase
         Http::fake(['chrome:3000/check' => Http::response([
             // The second check stopped at its second step; the third never began
             'steps' => [['ok' => true, 'took' => 300], ['ok' => true, 'took' => 40], ['ok' => false, 'took' => 10000, 'error' => 'Nothing showing "Thanks" turned up.']],
-            'chapters' => [[['ok' => true, 'took' => 300]], [['ok' => true, 'took' => 40], ['ok' => false, 'took' => 10000, 'error' => 'Nothing showing "Thanks" turned up.']], []],
+            'chapters' => [[['ok' => true, 'took' => 300, 'at' => 3200]], [['ok' => true, 'took' => 40, 'at' => 7900], ['ok' => false, 'took' => 10000, 'error' => 'Nothing showing "Thanks" turned up.', 'at' => 9100]], []],
+            // Where in the film each check began
+            'starts' => [500, 5100],
+            // The waiting on the site cut from it, in ms
+            'cut' => 21000,
             'url' => 'https://example.com/',
             'title' => 'Example',
             'refused' => [],
@@ -523,14 +532,18 @@ class BrowserChecksTest extends TestCase
         ])->assertSuccessful();
         $this->work();
 
-        // One browser, asked once, with each check's name and steps
-        Http::assertSentCount(1);
-        Http::assertSent(fn (Request $request) => $request['record'] === true
+        // One browser, asked once, with each check's name and steps (and its
+        // film, come back as WebM, then made MP4 on its own)
+        $this->assertCount(1, Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/check')));
+        Http::assertSent(fn (Request $request) => isset($request['record']) && $request['record'] === true
             && array_column($request['chapters'], 'title') === ['Signing in', 'Buying', 'Signing out']
             && $request['chapters'][0]['steps'][0]['note'] === 'Start here.');
 
         $run = BrowserRun::sole();
         $this->assertTrue($run->settings['one_film']);
+        // Its waits on the site cut out, as a film is unless asked otherwise
+        $this->assertTrue($run->settings['cut_waits']);
+        Http::assertSent(fn (Request $request) => isset($request['chapters']) && $request['cutWaits'] === true);
         $this->assertSame([true, false, false], array_column($run->results, 'ok'));
         $this->assertSame([1, 2, 0], array_map(fn (array $check) => count($check['steps']), $run->results));
         $this->assertSame('Buying', $run->results[1]['title']);
@@ -540,6 +553,12 @@ class BrowserChecksTest extends TestCase
         $films = $user->driveFiles()->where('name', 'like', '%.webm')->get();
         $this->assertSame(['Shop.webm'], $films->pluck('name')->all());
         $this->assertSame(['Shop.webm', 'Shop.webm', 'Shop.webm'], array_column(array_column($run->results, 'video'), 'name'));
+
+        // Where each check and step is in it, for its one player to go to
+        $this->assertSame([500, 5100, null], array_map(fn (array $check) => $check['film_at'] ?? null, $run->results));
+        $this->assertSame([7900, 9100], array_column($run->results[1]['steps'], 'at'));
+        // And how much waiting was cut from it, for the run page to say
+        $this->assertSame([21000, 21000, 21000], array_column(array_column($run->results, 'video'), 'cut'));
     }
 
     public function test_a_browser_that_cannot_be_reached_fails_the_check_plainly()

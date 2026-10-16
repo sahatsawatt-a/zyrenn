@@ -2,9 +2,11 @@
 
 namespace App\Models\Browser;
 
+use App\Events\BrowserRunChanged;
 use App\Models\Concerns\HasRefId;
 use App\Models\Drive\DriveFolder;
 use App\Models\User;
+use App\Support\Live\Live;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -18,9 +20,11 @@ use Illuminate\Support\Carbon;
  * @property string $ref_id
  * @property int $suite_id
  * @property int|null $created_by
- * @property array{pace: array{glide: int, typing: int, pause: int}, speed: string, captions: bool, record: bool, keep: bool, checks: list<string>, one_film?: bool} $settings
+ * @property array{pace: array{glide: int, typing: int, pause: int}, speed: string, captions: bool, record: bool, keep: bool, checks: list<string>, one_film?: bool, cut_waits?: bool} $settings
  * @property string $state
+ * @property bool $trial only a try: kept nowhere, and taken away soon after it ends
  * @property list<array<string, mixed>>|null $results
+ * @property list<array{check: string, step: int, from: int, to: int, url: string, waited?: int, lines: list<string>}>|null $log what each step met in the browser, for the app's admins (SuiteRun::journal)
  * @property int|null $drive_folder_id
  * @property string $started_by
  * @property list<array{number: int, title: string, new: bool}>|null $tickets
@@ -48,13 +52,30 @@ class BrowserRun extends Model
     protected $guarded = [];
 
     /**
+     * Whoever has its suite open is told each time it moves on: it is saved
+     * in a worker, so the one who started it hears too.
+     */
+    protected static function booted(): void
+    {
+        static::saved(fn (BrowserRun $run) => $run->tell());
+    }
+
+    /** Tells those with its suite open where it stands -- after a change saved around the model. */
+    public function tell(): void
+    {
+        Live::tellEveryone(new BrowserRunChanged($this));
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
     {
         return [
             'settings' => 'array',
+            'trial' => 'boolean',
             'results' => 'array',
+            'log' => 'array',
             'tickets' => 'array',
             'started_at' => 'datetime',
             'ended_at' => 'datetime',

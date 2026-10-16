@@ -21,13 +21,18 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { ask } from './http';
-import type { Every, SignIn, Suite } from './steps';
+import type { Every, Limits, SignIn, Suite } from './steps';
+import TimeLimits from './TimeLimits.vue';
 
 // How a suite goes on by itself: when it runs without being asked, whether a
 // failure files a ticket in its project, and the hidden values its steps
 // type (a password, say) -- each kept as soon as it is changed.
 
-const props = defineProps<{ suite: Suite; canChange: boolean }>();
+const props = defineProps<{
+    suite: Suite;
+    canChange: boolean;
+    limits: Limits;
+}>();
 
 const EVERY: Record<Every, string> = {
     off: 'Only when asked',
@@ -267,6 +272,8 @@ function addValue() {
                 </p>
             </div>
         </section>
+
+        <TimeLimits :suite="suite" :can-change="canChange" :limits="limits" />
 
         <!-- A ticket when one fails -->
         <section v-if="suite.project" class="rounded-xl border">

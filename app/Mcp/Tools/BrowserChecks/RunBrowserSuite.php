@@ -30,6 +30,8 @@ class RunBrowserSuite extends BrowserCheckTool
             'as' => $schema->string()->enum(['test', 'demo'])->default('test')->description('A quick test, or a filmed demo video.'),
             'one_film' => $schema->boolean()->description('For "demo": every check one after another in one browser -- what one leaves, the next finds -- filmed as one video, with each check\'s name shown as it starts. Stops at the first check that fails.'),
             'speed' => $schema->string()->enum(['watch', 'steady', 'slow'])->description('For "demo": how fast it goes. "steady" when left out.'),
+            'cut_waits' => $schema->boolean()->description('For "demo": cut the waiting on the site (a page loading, words coming) out of the film, with a note saying how long was skipped. True when left out; false films it all as it happened.'),
+            'try' => $schema->boolean()->description('Only a try, while a check is being written: a quick test, followed as any other, then kept nowhere -- not in the suite\'s runs or health, no tickets, nothing in the Drive -- and taken away an hour after it ends. Never filmed.'),
             'wait' => $schema->integer()->min(0)->max(120)->default(0)->description('Seconds to wait for it to end.'),
         ];
     }
@@ -53,6 +55,11 @@ class RunBrowserSuite extends BrowserCheckTool
 
         $demo = $request->get('as') === 'demo';
         $speed = $request->get('speed') ?? 'steady';
+        $try = (bool) $request->get('try', false);
+
+        if ($try && $demo) {
+            return Response::error('A try is never filmed: leave out "as": "demo", or "try".');
+        }
 
         if (! in_array($speed, ['watch', 'steady', 'slow'], true)) {
             return Response::error('"speed" is one of watch, steady or slow.');
@@ -63,7 +70,8 @@ class RunBrowserSuite extends BrowserCheckTool
             record: $demo,
             checks: $only === '' ? [] : array_column($checks, 'id'),
             oneFilm: $demo && (bool) $request->get('one_film', false),
-        ));
+            cutWaits: (bool) $request->get('cut_waits', true),
+        ), trial: $try);
         RunBrowserChecks::dispatch($run->id);
 
         $until = microtime(true) + min(120, max(0, (int) $request->get('wait', 0)));

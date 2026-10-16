@@ -199,8 +199,15 @@ await runBoard(
             'and it is in the Drive, with its pictures, in a folder of the run',
             (await test('check-run-folder').count()) === 1 &&
                 tinker(
-                    `echo ${user}->driveFiles()->whereIn('name', ['Signing up.webm', 'Signing up - step 5.jpg'])->count();`,
+                    `echo ${user}->driveFiles()->whereIn('name', ['Signing up.mp4', 'Signing up.webm', 'Signing up - step 5.jpg'])->count();`,
                 ) === '2',
+        );
+        await soon(
+            'and the suite gets a way to its folder in the Drive',
+            async () =>
+                /\/drive\?folder=/.test(
+                    (await test('suite-folder').getAttribute('href')) ?? '',
+                ),
         );
         await page.screenshot({ path: `${SHOTS}/browser-check-filmed.png` });
 

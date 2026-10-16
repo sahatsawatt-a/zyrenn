@@ -167,6 +167,12 @@ class McpBrowserChecksTest extends TestCase
         // A demo goes steady, unless asked otherwise
         $this->assertTrue($demo['record']);
         $this->assertSame('steady', $demo['speed']);
+        // And cuts the waiting on the site from its film, unless asked not to
+        $this->assertTrue($demo['cut_waits']);
+        UserServer::actingAs($user)
+            ->tool(RunBrowserSuite::class, ['suite' => 'Shop', 'as' => 'demo', 'cut_waits' => false])
+            ->assertOk();
+        $this->assertFalse(BrowserRun::latest('id')->first()->settings['cut_waits']);
         UserServer::actingAs($user)
             ->tool(RunBrowserSuite::class, ['suite' => 'Shop', 'as' => 'demo', 'speed' => 'slow'])
             ->assertOk();
@@ -229,7 +235,7 @@ class McpBrowserChecksTest extends TestCase
         $suite->refresh();
         $this->assertSame(['a', 'b'], array_slice(array_column($suite->checks, 'id'), 0, 2));
         $this->assertCount(4, $suite->checks[0]['steps']);
-        $this->assertSame([['do' => 'open', 'url' => 'https://shop.example.com']], $suite->checks[1]['steps']);
+        $this->assertSame([['do' => 'open', 'url' => 'https://shop.example.com']], $this->withoutStepIds($suite->checks[1]['steps']));
         $this->assertSame('Paying', $suite->checks[2]['title']);
     }
 
@@ -338,7 +344,7 @@ class McpBrowserChecksTest extends TestCase
         $this->assertSame([
             ['do' => 'open', 'url' => 'https://shop.example.com'],
             ['do' => 'click', 'target' => 'Log in'],
-        ], $check['steps']);
+        ], $this->withoutStepIds($check['steps']));
 
         UserServer::actingAs($user)->tool(CloseBrowserPage::class, ['page' => $id])->assertOk();
         UserServer::actingAs($user)

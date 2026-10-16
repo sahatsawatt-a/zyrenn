@@ -20,7 +20,22 @@ use RuntimeException;
  */
 class BrowserCheck
 {
-    public const KINDS = ['open', 'click', 'hover', 'type', 'choose', 'upload', 'press', 'back', 'scroll', 'see', 'gone', 'address', 'shot'];
+    public const KINDS = ['open', 'click', 'hover', 'type', 'choose', 'upload', 'press', 'back', 'scroll', 'see', 'gone', 'address', 'shot', 'down', 'move', 'up', 'drag'];
+
+    /**
+     * What a press, move or drag may say beyond its thing, kept only when
+     * given: where in the thing (`at`), what it is dropped `onto`, how it
+     * moves (`motion`, `points`, `path`, `units`, `by`, `duration`), and how
+     * it is held (`keys`, `button`, `clicks`, `pointer`).
+     */
+    private const HOLDING = [
+        'down' => ['at', 'keys', 'button', 'clicks', 'pointer'],
+        'move' => ['at', 'motion', 'points', 'path', 'units', 'by', 'duration'],
+        'drag' => ['at', 'onto', 'motion', 'points', 'path', 'units', 'by', 'duration', 'keys', 'button', 'clicks', 'pointer'],
+    ];
+
+    /** A point: "0.2,0.3" -- fractions of a thing's box, or pixels. */
+    private const POINT = '/^\s*-?\d*\.?\d+\s*,\s*-?\d*\.?\d+\s*$/';
 
     /** The biggest file a step adds to a page, in bytes. */
     public const MOST_FILE = 10 * 1024 * 1024;
@@ -55,8 +70,32 @@ class BrowserCheck
         return [
             $prefix => ['required', 'array', 'min:1', 'max:30'],
             "{$prefix}.*.do" => ['required', Rule::in(self::KINDS)],
+            "{$prefix}.*.id" => ['nullable', 'string', 'regex:'.self::STEP_ID],
             "{$prefix}.*.url" => [...$needed('open'), 'nullable', 'string', 'max:4000', ...($complete ? ['regex:#^(https?://|data:text/html)#i'] : [])],
-            "{$prefix}.*.target" => [...$needed('click,hover,type,choose,upload,see,gone'), 'nullable', 'string', 'max:200'],
+            "{$prefix}.*.target" => [...$needed('click,hover,type,choose,upload,see,gone,down,drag'), 'nullable', 'string', 'max:200'],
+            // Where in the thing it is pressed, or a move ends: fractions of its box, "0.5,0.5" its middle
+            "{$prefix}.*.at" => ['nullable', 'string', 'regex:'.self::POINT],
+            // A thing a drag is dropped on, by what it says
+            "{$prefix}.*.onto" => ['nullable', 'string', 'max:200'],
+            // Straight lines (through any points), a smooth curve through them, or SVG path data
+            "{$prefix}.*.motion" => ['nullable', Rule::in(['straight', 'curve', 'path'])],
+            // "0.2,0.3 0.4,0.5 500ms 0.6,0.3": fractions of the thing's box, or pixels from where it is with no thing; "500ms" pauses
+            "{$prefix}.*.points" => ['nullable', 'string', 'max:2000', 'regex:/^[\d\s.,\-ms]*$/i'],
+            // SVG path data (M L H V C S Q T A Z), 0,0 where it is pressed; each new M a new stroke; "500ms" between pieces pauses
+            "{$prefix}.*.path" => ['nullable', 'string', 'max:4000', 'regex:/^[MLHVCSQTAZ\d\s.,eE+\-]*$/i'],
+            // The path in pixels from where it is pressed, or in the thing's box (0,0 its top left, 1,1 its bottom right)
+            "{$prefix}.*.units" => ['nullable', Rule::in(['px', 'box'])],
+            // Moved this many pixels on: "120,-40"
+            "{$prefix}.*.by" => ['nullable', 'string', 'regex:'.self::POINT],
+            // How long the move takes, in seconds: a film's, at a person's pace
+            "{$prefix}.*.duration" => ['nullable', 'numeric', 'between:0,20'],
+            // Keys held while it is: "Shift", "Alt+Shift"
+            "{$prefix}.*.keys" => ['nullable', 'string', 'max:40', 'regex:/^\s*((shift|alt|option|ctrl|control|meta|cmd|command)[\s+,]*)*$/i'],
+            "{$prefix}.*.button" => ['nullable', Rule::in(['left', 'right', 'middle'])],
+            // 2 for a double-click, held on the second
+            "{$prefix}.*.clicks" => ['nullable', 'integer', 'between:1,2'],
+            // A mouse, a pen or a finger
+            "{$prefix}.*.pointer" => ['nullable', Rule::in(['mouse', 'pen', 'touch'])],
             // What is typed, the option chosen from a list, the file's name, or what the address has in it
             "{$prefix}.*.text" => [...$needed('choose,address'), 'nullable', 'string', 'max:2000'],
             // The Drive file a step adds to the page, by its ref_id
@@ -72,6 +111,8 @@ class BrowserCheck
             "{$prefix}.*.note" => ['nullable', 'string', 'max:600'],
             // How long a demo video stays on it, in seconds: in place of its note's hold or its pause
             "{$prefix}.*.wait" => ['nullable', 'numeric', 'between:0,30'],
+            // How long it waits for the site before it fails, in seconds: in place of its suite's step limit
+            "{$prefix}.*.timeout" => ['nullable', 'integer', 'between:1,'.Limits::CEILING['step']],
         ];
     }
 
@@ -99,6 +140,11 @@ class BrowserCheck
                 $kept['do'] === 'type' && trim($kept['target']) === '' => 'say which field to type into',
                 $kept['do'] === 'choose' && trim($kept['target']) === '' => 'say which list to choose from',
                 $kept['do'] === 'choose' && trim($kept['text']) === '' => 'say what to choose',
+                $kept['do'] === 'down' && trim($kept['target']) === '' => 'say what to press down on',
+                $kept['do'] === 'drag' && trim($kept['target']) === '' => 'say what to drag',
+                in_array($kept['do'], ['move', 'drag'], true) && ($kept['motion'] ?? '') === 'path' && trim($kept['path'] ?? '') === '' => 'give the path to follow',
+                $kept['do'] === 'move' && ($kept['motion'] ?? '') !== 'path' && trim($kept['target']) === '' && ! isset($kept['by']) && ! isset($kept['points']) => 'say where to move to',
+                $kept['do'] === 'drag' && ($kept['motion'] ?? '') !== 'path' && ! isset($kept['onto']) && ! isset($kept['by']) && ! isset($kept['points']) => 'say where to drag it to',
                 default => null,
             };
 
@@ -154,8 +200,53 @@ class BrowserCheck
             'choose' => 'Choose "'.Str::limit((string) ($step['text'] ?? ''), 40)."\" in \"{$target}\"",
             'press' => 'Press '.($step['key'] ?? 'Enter'),
             'see' => "Expect to see {$which}\"{$target}\"",
+            'down' => (($step['clicks'] ?? '') === '2' ? 'Double-click and hold' : 'Press down on')." {$which}\"{$target}\"".self::holding($step),
+            'move' => match (true) {
+                ($step['motion'] ?? '') === 'path' => 'Move along a path'.($target === '' ? '' : " on \"{$target}\""),
+                isset($step['by']) => 'Move by '.self::pixels((string) $step['by']),
+                $target === '' => 'Move through '.self::count((string) ($step['points'] ?? ''), 'point'),
+                isset($step['points']) => "Move across {$which}\"{$target}\"",
+                default => "Move to {$which}\"{$target}\"",
+            },
+            'up' => 'Let go',
+            'drag' => ucfirst((($step['clicks'] ?? '') === '2' ? 'Double-click and ' : '').match (true) {
+                ($step['motion'] ?? '') === 'path' => "draw a path on {$which}\"{$target}\"",
+                isset($step['onto']) => "drag {$which}\"{$target}\" onto \"{$step['onto']}\"",
+                isset($step['by']) => "drag {$which}\"{$target}\" by ".self::pixels((string) $step['by']),
+                default => "draw across {$which}\"{$target}\"",
+            }).self::holding($step),
             default => 'Take a picture',
         };
+    }
+
+    /**
+     * " holding Shift", " with the right button" -- or nothing.
+     *
+     * @param  array<string, mixed>  $step
+     */
+    private static function holding(array $step): string
+    {
+        $how = array_filter([
+            isset($step['keys']) ? 'holding '.$step['keys'] : null,
+            in_array($step['button'] ?? null, ['right', 'middle'], true) ? "with the {$step['button']} button" : null,
+            in_array($step['pointer'] ?? null, ['pen', 'touch'], true) ? ($step['pointer'] === 'pen' ? 'with a pen' : 'with a finger') : null,
+        ]);
+
+        return $how === [] ? '' : ' '.implode(', ', $how);
+    }
+
+    /** "120,-40" -> "120, -40 px". */
+    private static function pixels(string $by): string
+    {
+        return preg_replace('/\s*,\s*/', ', ', trim($by)).' px';
+    }
+
+    /** "3 points", "1 point" -- the pairs in a list of them. */
+    private static function count(string $points, string $one): string
+    {
+        $n = preg_match_all('/-?[\d.]+\s*,\s*-?[\d.]+/', $points);
+
+        return "{$n} {$one}".($n === 1 ? '' : 's');
     }
 
     /**
@@ -175,20 +266,22 @@ class BrowserCheck
      *                                                                         browser state a sign-in left (`state`), and/or keep the
      *                                                                         state this one leaves (`keep`), answered as `state` when every
      *                                                                         step went through -- never kept anywhere but the run in hand
-     * @return array{steps: list<array<string, mixed>>, url: string, title: string, refused: list<string>, video: string|null, halted: bool, state: array<string, mixed>|null}
+     * @param  array{step: int, check: int}  $limits  how long each step and the whole check may wait, in seconds
+     * @param  bool  $cutWaits  filmed: the waiting on the site cut out of the film
+     * @return array{steps: list<array<string, mixed>>, url: string, title: string, refused: list<string>, video: string|null, halted: bool, state: array<string, mixed>|null, log: list<array<string, mixed>>}
      */
-    public static function run(array $steps, array $pace = self::SPEEDS['quick'], bool $captions = false, bool $record = false, array $values = [], string $size = 'desktop', ?string $token = null, array $signIn = []): array
+    public static function run(array $steps, array $pace = self::SPEEDS['quick'], bool $captions = false, bool $record = false, array $values = [], string $size = 'desktop', ?string $token = null, array $signIn = [], array $limits = Limits::DEFAULT, bool $cutWaits = true): array
     {
         $steps = array_map(fn (array $step) => self::filled(self::tidy($step), $values), $steps);
 
         $response = Chrome::post('/check', ['steps' => $steps, 'pace' => $pace, 'captions' => $captions, 'record' => $record, 'size' => $size, 'token' => $token,
-            'state' => $signIn['state'] ?? null, 'keepState' => $signIn['keep'] ?? false],
-            self::allowance($steps, $pace, $captions) + ($record ? self::CONVERTING : 0));
+            'state' => $signIn['state'] ?? null, 'keepState' => $signIn['keep'] ?? false, 'limits' => self::inMs($limits), 'cutWaits' => $cutWaits],
+            self::allowance($steps, $pace, $captions, $limits) + ($record ? self::CONVERTING : 0));
 
         /** @var array{steps: list<array<string, mixed>>, url: string, title: string, refused: list<string>, video?: string|null, halted?: bool, state?: array<string, mixed>|null} $answer */
         $answer = $response->json();
 
-        return $answer + ['video' => null, 'halted' => false, 'state' => null];
+        return $answer + ['video' => null, 'halted' => false, 'state' => null, 'log' => []];
     }
 
     /**
@@ -212,9 +305,11 @@ class BrowserCheck
      * @param  array<string, string>  $values
      * @param  string|null  $token  what the browser knows it by, to stop it part way (stop())
      * @param  array<string, array<string, mixed>>  $states  the browser state each sign-in left, by its name
-     * @return array{steps: list<array<string, mixed>>, chapters: list<list<array<string, mixed>>>, url: string, title: string, refused: list<string>, video: string|null, halted: bool}
+     * @param  array{step: int, check: int}  $limits  how long each step and the whole film may wait, in seconds
+     * @param  bool  $cutWaits  filmed: the waiting on the site cut out of the film
+     * @return array{steps: list<array<string, mixed>>, chapters: list<list<array<string, mixed>>>, url: string, title: string, refused: list<string>, video: string|null, halted: bool, log: list<array<string, mixed>>}
      */
-    public static function film(array $checks, array $pace, bool $captions, array $values = [], string $size = 'desktop', ?string $token = null, array $states = []): array
+    public static function film(array $checks, array $pace, bool $captions, array $values = [], string $size = 'desktop', ?string $token = null, array $states = [], array $limits = Limits::DEFAULT, bool $cutWaits = true): array
     {
         $chapters = array_map(fn (array $check) => [
             'title' => $check['title'],
@@ -225,13 +320,24 @@ class BrowserCheck
         // Each check's name is shown for a few seconds before it
         $titles = $captions && count($chapters) > 1 ? count($chapters) * 3 : 0;
 
-        $response = Chrome::post('/check', ['chapters' => $chapters, 'pace' => $pace, 'captions' => $captions, 'record' => true, 'size' => $size, 'token' => $token, 'states' => (object) $states],
-            self::allowance($all, $pace, $captions) + $titles + self::CONVERTING);
+        $response = Chrome::post('/check', ['chapters' => $chapters, 'pace' => $pace, 'captions' => $captions, 'record' => true, 'size' => $size, 'token' => $token, 'states' => (object) $states, 'limits' => self::inMs($limits), 'cutWaits' => $cutWaits],
+            self::allowance($all, $pace, $captions, $limits) + $titles + self::CONVERTING);
 
-        /** @var array{steps: list<array<string, mixed>>, chapters: list<list<array<string, mixed>>>, url: string, title: string, refused: list<string>, video?: string|null, halted?: bool} $answer */
+        /** @var array{steps: list<array<string, mixed>>, chapters: list<list<array<string, mixed>>>, starts?: list<int>, url: string, title: string, refused: list<string>, video?: string|null, halted?: bool} $answer */
         $answer = $response->json();
 
-        return $answer + ['video' => null, 'halted' => false];
+        return $answer + ['video' => null, 'halted' => false, 'log' => []];
+    }
+
+    /**
+     * Limits in seconds, as the browser takes them: in ms.
+     *
+     * @param  array{step: int, check: int}  $limits
+     * @return array{step: int, check: int}
+     */
+    private static function inMs(array $limits): array
+    {
+        return ['step' => $limits['step'] * 1000, 'check' => $limits['check'] * 1000];
     }
 
     /** Seconds more for a filmed run: its film is made into MP4 after it ends. */
@@ -244,8 +350,9 @@ class BrowserCheck
      *
      * @param  list<array<string, mixed>>  $steps
      * @param  array{glide: int, typing: int, pause: int}  $pace
+     * @param  array{step: int, check: int}  $limits
      */
-    private static function allowance(array $steps, array $pace, bool $captions): int
+    private static function allowance(array $steps, array $pace, bool $captions, array $limits = Limits::DEFAULT): int
     {
         $typed = array_sum(array_map(fn (array $step) => mb_strlen($step['text'] ?? ''), $steps));
         $held = $captions ? array_sum(array_map(fn (array $step) => match (true) {
@@ -254,7 +361,8 @@ class BrowserCheck
             default => 0,
         }, $steps)) : 0;
 
-        return 120 + (int) ceil((count($steps) * ($pace['glide'] + 150 + $pace['pause']) + $typed * $pace['typing'] + $held) / 1000);
+        // The browser's own allowance, and a little more to answer in
+        return $limits['check'] + 30 + (int) ceil((count($steps) * ($pace['glide'] + 150 + $pace['pause']) + $typed * $pace['typing'] + $held) / 1000);
     }
 
     /**
@@ -387,9 +495,12 @@ class BrowserCheck
         return rtrim(($parts['host'] ?? $url).($parts['path'] ?? ''), '/');
     }
 
+    /** What a step's own id may be: a few letters and digits. */
+    public const STEP_ID = '/^[A-Za-z0-9]{4,16}$/';
+
     /**
      * Only what the step's kind uses: a click has no address, a picture no
-     * target -- and its note and wait, whatever its kind.
+     * target -- and its note, wait and time limit, whatever its kind.
      *
      * @param  array<string, mixed>  $step
      * @return array<string, string>
@@ -398,7 +509,7 @@ class BrowserCheck
     {
         $uses = match ($step['do']) {
             'open' => ['url'],
-            'click', 'hover', 'see', 'gone', 'scroll' => ['target'],
+            'click', 'hover', 'see', 'gone', 'scroll', 'down', 'move', 'drag' => ['target'],
             'type', 'choose' => ['target', 'text'],
             'upload' => ['target', 'text', 'file'],
             'address' => ['text'],
@@ -406,17 +517,30 @@ class BrowserCheck
             default => [],
         };
 
-        $kept = ['do' => (string) $step['do']];
+        $kept = [
+            // Its own lasting id, so its history follows it through edits
+            ...(is_string($step['id'] ?? null) && preg_match(self::STEP_ID, $step['id']) ? ['id' => $step['id']] : []),
+            'do' => (string) $step['do'],
+        ];
 
         foreach ($uses as $field) {
             $kept[$field] = (string) ($step[$field] ?? '');
         }
 
-        if (in_array($kept['do'], ['click', 'hover', 'type', 'choose', 'upload', 'see', 'gone', 'scroll'], true) && is_string($step['frame'] ?? null) && $step['frame'] !== '') {
+        // How it presses, moves and is held: only what was given
+        foreach (self::HOLDING[$kept['do']] ?? [] as $field) {
+            $given = $step[$field] ?? null;
+
+            if ((is_string($given) && trim($given) !== '') || is_int($given) || is_float($given)) {
+                $kept[$field] = trim((string) $given);
+            }
+        }
+
+        if (in_array($kept['do'], ['click', 'hover', 'type', 'choose', 'upload', 'see', 'gone', 'scroll', 'down', 'move', 'drag'], true) && is_string($step['frame'] ?? null) && $step['frame'] !== '') {
             $kept['frame'] = $step['frame'];
         }
 
-        if (in_array($kept['do'], ['click', 'hover', 'type', 'choose', 'upload', 'see', 'scroll'], true)) {
+        if (in_array($kept['do'], ['click', 'hover', 'type', 'choose', 'upload', 'see', 'scroll', 'down', 'move', 'drag'], true)) {
             if (is_string($step['selector'] ?? null) && $step['selector'] !== '') {
                 $kept['selector'] = $step['selector'];
             }
@@ -435,6 +559,11 @@ class BrowserCheck
         // And how long a demo stays on it, to a tenth of a second
         if (is_numeric($step['wait'] ?? null)) {
             $kept['wait'] = (string) round(min(30, max(0, (float) $step['wait'])), 1);
+        }
+
+        // And how long it waits for the site, never past the most an admin allows
+        if (is_numeric($step['timeout'] ?? null) && (int) $step['timeout'] > 0) {
+            $kept['timeout'] = (string) min((int) $step['timeout'], Limits::most()['step']);
         }
 
         return $kept;
@@ -461,7 +590,7 @@ class BrowserCheck
             return $step;
         }
 
-        foreach (['url', 'target', 'text'] as $field) {
+        foreach (['url', 'target', 'text', 'onto'] as $field) {
             if (isset($step[$field])) {
                 $step[$field] = (string) preg_replace_callback(
                     '/\{\{\s*([A-Za-z][\w-]*)\s*\}\}/',
@@ -482,7 +611,8 @@ class BrowserCheck
      */
     private static function tidy(array $step): array
     {
-        $kept = self::only($step);
+        // Its id is the suite's to follow it by: the browser has no use for it
+        $kept = array_diff_key(self::only($step), ['id' => true]);
 
         return $kept + ['say' => self::say($kept)];
     }

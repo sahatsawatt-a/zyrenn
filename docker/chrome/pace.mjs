@@ -219,7 +219,7 @@ export const caption = (page, text, tone = 'now') =>
                     foot = document.createElement('div');
                     foot.id = 'e2e-caption';
                     foot.style.cssText =
-                        'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;box-sizing:border-box;width:max-content;max-width:max(70vw,min(92vw,340px));padding:12px 20px;border-radius:12px;font:500 17px/1.45 system-ui,sans-serif;color:#fff;white-space:pre-line;overflow-wrap:anywhere;box-shadow:0 6px 24px rgba(0,0,0,.25);pointer-events:none';
+                        'position:fixed;left:50%;bottom:72px;transform:translateX(-50%);z-index:2147483647;box-sizing:border-box;width:max-content;max-width:max(70vw,min(92vw,340px));padding:12px 20px;border-radius:12px;font:500 17px/1.45 system-ui,sans-serif;color:#fff;white-space:pre-line;overflow-wrap:anywhere;box-shadow:0 6px 24px rgba(0,0,0,.25);pointer-events:none';
                     // Out of the pointer's way: to the top while it is under
                     // the box, back down once it is clear of where it was
                     addEventListener(
@@ -237,12 +237,13 @@ export const caption = (page, text, tone = 'now') =>
                             } else if (
                                 !low &&
                                 !near(
-                                    innerHeight - 24 - box.height,
-                                    innerHeight - 24,
+                                    innerHeight - 72 - box.height,
+                                    innerHeight - 72,
                                 )
                             ) {
                                 foot.style.top = '';
-                                foot.style.bottom = '24px';
+                                // Clear of a player's controls over the film's foot
+                                foot.style.bottom = '72px';
                             }
                         },
                         true,

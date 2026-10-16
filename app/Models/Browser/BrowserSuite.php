@@ -4,8 +4,11 @@ namespace App\Models\Browser;
 
 use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
+use App\Models\Concerns\TellsLists;
 use App\Models\Drive\DriveFile;
 use App\Support\Browser\BrowserCheck;
+use App\Support\Browser\Limits;
+use App\Support\Browser\SuiteVersions;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -29,7 +32,8 @@ use Illuminate\Validation\Rule;
  * @property int|null $created_by
  * @property string $title
  * @property list<array{id: string, title: string, size?: string, as?: string, fresh?: bool, steps: list<array<string, string>>}> $checks
- * @property array{every?: string, at?: string, zone?: string, tickets?: bool, sign_ins?: list<array{name: string, check: string}>}|null $settings
+ * @property int $version
+ * @property array{every?: string, at?: string, zone?: string, tickets?: bool, sign_ins?: list<array{name: string, check: string}>, limits?: array{step?: int, check?: int}}|null $settings
  * @property list<array{name: string, value: string}>|null $secret_values
  * @property CarbonInterface|null $next_run_at
  * @property Carbon|null $created_at
@@ -39,7 +43,7 @@ use Illuminate\Validation\Rule;
 #[Hidden(['secret_values'])]
 class BrowserSuite extends Model
 {
-    use BelongsToOwner, HasRefId;
+    use BelongsToOwner, HasRefId, TellsLists;
 
     /**
      * @return array<string, string>
@@ -83,6 +87,11 @@ class BrowserSuite extends Model
             'settings.at' => ['nullable', 'regex:/^([01]\d|2[0-3]):[0-5]\d$/'],
             'settings.zone' => ['nullable', 'timezone:all'],
             'settings.tickets' => ['boolean'],
+            // How long its steps and checks wait, in seconds, up to the most
+            // an admin allows; null for the default
+            'limits' => ['sometimes', 'array'],
+            'limits.step' => ['nullable', 'integer', 'min:1', 'max:'.Limits::most()['step']],
+            'limits.check' => ['nullable', 'integer', 'min:10', 'max:'.Limits::most()['check']],
             // A value left out is kept as it was
             'values' => ['sometimes', 'array', 'max:20'],
             'values.*.name' => ['required', 'string', 'regex:/^[A-Za-z][\w-]{0,39}$/', 'distinct'],
@@ -147,8 +156,11 @@ class BrowserSuite extends Model
                 'id' => (string) ($check['id'] ?? $ids[(string) $check['title']] ?? Str::lower(Str::random(8))),
                 'title' => (string) $check['title'],
                 'size' => $check['size'] ?? 'desktop',
-                // Only what each step's kind uses
-                'steps' => array_values(array_map(BrowserCheck::only(...), $check['steps'])),
+                // Only what each step's kind uses, each with its own id
+                'steps' => self::stepIds(
+                    array_values(array_map(BrowserCheck::only(...), $check['steps'])),
+                    $this->stepsOf((string) ($check['id'] ?? $ids[(string) $check['title']] ?? '')),
+                ),
                 // Whom it starts signed in as, when not the suite's first; or signed out
                 ...(is_string($check['as'] ?? null) && $check['as'] !== '' ? ['as' => $check['as']] : []),
                 ...(($check['fresh'] ?? false) === true ? ['fresh' => true] : []),
@@ -163,6 +175,7 @@ class BrowserSuite extends Model
                 // Only a project has tickets to file
                 'tickets' => $this->project_id !== null && (bool) ($given['settings']['tickets'] ?? false),
                 ...($this->signIns() !== [] ? ['sign_ins' => $this->signIns()] : []),
+                ...(isset($this->settings['limits']) ? ['limits' => $this->settings['limits']] : []),
             ];
             $this->next_run_at = $this->nextRunAfter(CarbonImmutable::now());
         }
@@ -181,6 +194,17 @@ class BrowserSuite extends Model
             ], $given['sign_ins']), fn (array $signIn) => $signIn['check'] !== ''))];
         }
 
+        // Each left out or null waits the default
+        if (isset($given['limits'])) {
+            $limits = array_filter([
+                'step' => isset($given['limits']['step']) ? (int) $given['limits']['step'] : null,
+                'check' => isset($given['limits']['check']) ? (int) $given['limits']['check'] : null,
+            ], fn (?int $seconds) => $seconds !== null);
+            $settings = $this->settings ?? [];
+            unset($settings['limits']);
+            $this->settings = [...$settings, ...($limits !== [] ? ['limits' => $limits] : [])];
+        }
+
         if (isset($given['values'])) {
             $before = $this->values();
             $this->secret_values = array_values(array_map(fn (array $value) => [
@@ -190,6 +214,71 @@ class BrowserSuite extends Model
         }
 
         return $this;
+    }
+
+    /**
+     * The steps a check of this suite has now, by its id: those it had before
+     * a change, for the ones coming back to keep their ids.
+     *
+     * @return list<array<string, string>>
+     */
+    private function stepsOf(string $checkId): array
+    {
+        foreach ($this->getOriginal('checks') ?? [] as $check) {
+            if (is_array($check) && ($check['id'] ?? null) === $checkId) {
+                return array_values(array_filter($check['steps'] ?? [], 'is_array'));
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Each step with an id of its own, lasting through edits: the one it was
+     * given, else that of the same step as it was before (written again
+     * whole, say over MCP), else a new one -- no two alike in a check.
+     *
+     * @param  list<array<string, string>>  $steps
+     * @param  list<array<string, string>>  $before
+     * @return list<array<string, string>>
+     */
+    private static function stepIds(array $steps, array $before): array
+    {
+        $sameness = fn (array $step) => implode("\0", [$step['do'] ?? '', $step['url'] ?? '', $step['target'] ?? '', $step['text'] ?? '', $step['key'] ?? '']);
+        $taken = [];
+        $free = [];
+
+        foreach ($before as $old) {
+            if (isset($old['id'])) {
+                $free[$sameness($old)][] = $old['id'];
+            }
+        }
+
+        foreach ($steps as $step) {
+            if (isset($step['id'])) {
+                $taken[$step['id']] = true;
+            }
+        }
+
+        foreach ($steps as $at => $step) {
+            $id = $step['id'] ?? null;
+
+            // Given twice in one check: the second is a step of its own
+            if ($id !== null && ($taken[$id] ?? 0) === 'used') {
+                $id = null;
+            }
+
+            while ($id === null) {
+                $same = $sameness($step);
+                $id = ($free[$same] ?? []) !== [] ? array_shift($free[$same]) : Str::lower(Str::random(8));
+                $id = isset($taken[$id]) ? null : $id;
+            }
+
+            $taken[$id] = 'used';
+            $steps[$at] = ['id' => $id, ...array_diff_key($step, ['id' => true])];
+        }
+
+        return $steps;
     }
 
     /**
@@ -262,10 +351,46 @@ class BrowserSuite extends Model
     }
 
     /**
+     * Its runs as its history keeps them -- what its health, last run and
+     * tickets go by: not a try, which is kept nowhere.
+     *
      * @return HasMany<BrowserRun, $this>
      */
     public function runs(): HasMany
     {
+        return $this->allRuns()->where('trial', false);
+    }
+
+    /**
+     * Every run of it, tries too.
+     *
+     * @return HasMany<BrowserRun, $this>
+     */
+    public function allRuns(): HasMany
+    {
         return $this->hasMany(BrowserRun::class, 'suite_id');
+    }
+
+    /**
+     * Each version of its checks, as they changed.
+     *
+     * @return HasMany<BrowserSuiteVersion, $this>
+     */
+    public function versions(): HasMany
+    {
+        return $this->hasMany(BrowserSuiteVersion::class, 'browser_suite_id');
+    }
+
+    /** Being put back as an earlier version: kept as a version of its own. */
+    public bool $restoring = false;
+
+    protected static function booted(): void
+    {
+        // Each change to its checks kept as a version (SuiteVersions)
+        static::saved(function (BrowserSuite $suite) {
+            if ($suite->wasRecentlyCreated || $suite->wasChanged('checks')) {
+                SuiteVersions::keep($suite, $suite->restoring);
+            }
+        });
     }
 }

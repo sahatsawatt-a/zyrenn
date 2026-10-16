@@ -7,10 +7,13 @@ import {
     CircleX,
     FolderOpen,
     Loader2,
+    Play,
 } from '@lucide/vue';
 import { Link } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
+import VideoPlayer from '@/components/media/VideoPlayer.vue';
+import type { Chapter } from '@/components/media/VideoPlayer.vue';
 import PictureDialog from '@/features/chat/components/PictureDialog.vue';
 import { SPEEDS, seconds, shotUrl } from './steps';
 import type { CheckResult, CheckRun } from './steps';
@@ -18,7 +21,8 @@ import type { CheckResult, CheckRun } from './steps';
 // One run of a suite, said plainly: how it went in a sentence, then each check
 // -- passed or where it stopped and why -- with its film and its pictures. A
 // check that failed is open; one that passed opens on a click. A run still
-// waiting or going can be stopped.
+// waiting or going can be stopped. A run filmed as one has one player, above
+// its checks, each check's part of it marked and gone to from the check.
 
 const props = defineProps<{ run: CheckRun; total: number }>();
 const emit = defineEmits<{ stop: [] }>();
@@ -108,6 +112,57 @@ const toggle = (check: CheckResult) => {
 
     opened.value = next;
 };
+
+// ------------------------------------------------------------ One film
+// The checks done one after another and filmed as one: the film once, at the
+// top, rather than under every check
+const film = computed(() => {
+    const videos = props.run.results.flatMap((check) =>
+        check.video ? [check.video] : [],
+    );
+
+    return props.run.settings.one_film &&
+        videos.length > 0 &&
+        videos.every((video) => video.url === videos[0].url)
+        ? videos[0]
+        : null;
+});
+const player = ref<InstanceType<typeof VideoPlayer> | null>(null);
+const now = ref(0);
+// Each check's part of the film, a chapter on its timeline
+const parts = computed(() =>
+    props.run.results
+        .filter((check) => check.film_at !== undefined)
+        .map((check, at) => ({
+            check,
+            number: at + 1,
+            from: check.film_at! / 1000,
+        })),
+);
+const chapters = computed<Chapter[]>(() =>
+    parts.value.map((part) => ({
+        at: part.from,
+        title: `${part.number}. ${part.check.title}`,
+    })),
+);
+const playing = computed(
+    () => parts.value.findLast((part) => part.from <= now.value + 0.05) ?? null,
+);
+
+/** The film from `ms` in, played, in view. */
+function playFrom(ms: number) {
+    if (!player.value) {
+        return;
+    }
+
+    player.value.seek(ms / 1000);
+    now.value = ms / 1000;
+    void player.value.play();
+    player.value.video?.scrollIntoView({
+        block: 'nearest',
+        behavior: 'smooth',
+    });
+}
 
 // ------------------------------------------------------------ Pictures
 const pictures = computed(() =>
@@ -213,6 +268,40 @@ const show = (check: string, at: number) =>
             </li>
         </ul>
 
+        <div v-if="film" class="space-y-1.5" data-test="run-film">
+            <VideoPlayer
+                ref="player"
+                :src="film.url"
+                :chapters="chapters"
+                class="w-full rounded-md border"
+                data-test="check-video"
+                @timeupdate="now = $event"
+            />
+            <p
+                v-if="playing"
+                class="text-muted-foreground truncate text-xs"
+                data-test="run-film-now"
+            >
+                {{ playing.number }} of {{ parts.length }} ·
+                {{ playing.check.title }}
+            </p>
+            <p
+                v-if="film.cut"
+                class="text-muted-foreground text-xs"
+                data-test="film-cut"
+            >
+                {{ Math.round(film.cut / 1000) }} s of waiting for the site was
+                cut from the film.
+            </p>
+            <p
+                v-if="film.partial"
+                class="text-muted-foreground text-xs"
+                data-test="check-video-partial"
+            >
+                Partial: the run was stopped before the film was done.
+            </p>
+        </div>
+
         <ul class="space-y-2">
             <li
                 v-for="check in run.results"
@@ -253,6 +342,19 @@ const show = (check: string, at: number) =>
                             >{{ verdict(check) }}</span
                         >
                     </span>
+                    <span
+                        v-if="film && check.film_at !== undefined"
+                        role="button"
+                        tabindex="0"
+                        class="text-muted-foreground hover:text-foreground hover:bg-accent -my-0.5 rounded p-0.5"
+                        :aria-label="`Play ${check.title} in the film`"
+                        title="Play it in the film"
+                        data-test="check-play"
+                        @click.stop="playFrom(check.film_at)"
+                        @keydown.enter.stop.prevent="playFrom(check.film_at)"
+                    >
+                        <Play class="size-4" />
+                    </span>
                     <ChevronDown
                         class="text-muted-foreground mt-0.5 size-4 shrink-0 transition-transform"
                         :class="{ 'rotate-180': isOpen(check) }"
@@ -260,16 +362,22 @@ const show = (check: string, at: number) =>
                 </button>
 
                 <div v-if="isOpen(check)" class="space-y-3 px-3 pb-3">
-                    <video
-                        v-if="check.video"
+                    <VideoPlayer
+                        v-if="check.video && !film"
                         :src="check.video.url"
-                        controls
-                        preload="metadata"
-                        class="w-full rounded-md border bg-black"
+                        class="w-full rounded-md border"
                         data-test="check-video"
                     />
                     <p
-                        v-if="check.video?.partial"
+                        v-if="check.video?.cut && !film"
+                        class="text-muted-foreground text-xs"
+                        data-test="film-cut"
+                    >
+                        {{ Math.round(check.video.cut / 1000) }} s of waiting
+                        for the site was cut from the film.
+                    </p>
+                    <p
+                        v-if="check.video?.partial && !film"
                         class="text-muted-foreground text-xs"
                         data-test="check-video-partial"
                     >
@@ -302,7 +410,18 @@ const show = (check: string, at: number) =>
                                     >{{ step.error }}</span
                                 >
                             </span>
+                            <button
+                                v-if="film && step.at !== undefined"
+                                type="button"
+                                class="text-muted-foreground hover:text-foreground text-xs tabular-nums underline-offset-2 hover:underline"
+                                title="Play from this step in the film"
+                                data-test="step-play"
+                                @click="playFrom(step.at)"
+                            >
+                                {{ seconds(step.took) }}
+                            </button>
                             <span
+                                v-else
                                 class="text-muted-foreground text-xs tabular-nums"
                                 >{{ seconds(step.took) }}</span
                             >
@@ -344,6 +463,50 @@ const show = (check: string, at: number) =>
                 </div>
             </li>
         </ul>
+
+        <!-- What each step met in the browser: for the app's admins, folded -->
+        <details
+            v-if="run.log?.length"
+            class="rounded-lg border px-3 py-2 text-xs"
+            data-test="check-run-log"
+        >
+            <summary class="text-muted-foreground cursor-pointer font-medium">
+                Log
+                <span class="font-normal"
+                    >· {{ run.log.length }}
+                    {{ run.log.length === 1 ? 'step' : 'steps' }}</span
+                >
+            </summary>
+            <ol class="mt-2 space-y-2">
+                <li
+                    v-for="(entry, at) in run.log"
+                    :key="at"
+                    class="min-w-0"
+                    data-test="check-run-log-step"
+                >
+                    <p class="text-muted-foreground flex flex-wrap gap-x-2">
+                        <span class="text-foreground font-medium"
+                            >{{ entry.check }}, step {{ entry.step + 1 }}</span
+                        >
+                        <span class="tabular-nums"
+                            >{{ seconds(entry.from) }}–{{
+                                seconds(entry.to)
+                            }}</span
+                        >
+                        <span
+                            v-if="(entry.waited ?? 0) >= 100"
+                            class="tabular-nums"
+                            >waited {{ seconds(entry.waited ?? 0) }}</span
+                        >
+                        <span class="min-w-0 truncate">{{ entry.url }}</span>
+                    </p>
+                    <pre
+                        v-if="entry.lines.length"
+                        class="bg-muted mt-1 overflow-x-auto rounded px-2 py-1 font-mono text-[11px] leading-snug break-all whitespace-pre-wrap"
+                        >{{ entry.lines.join('\n') }}</pre>
+                </li>
+            </ol>
+        </details>
 
         <PictureDialog
             :open="showing !== null"

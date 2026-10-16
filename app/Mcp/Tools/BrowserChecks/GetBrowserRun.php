@@ -11,7 +11,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[IsReadOnly]
-#[Description('How a run of browser checks went, or is going: a sentence for the whole run, each check\'s verdict (where it stopped and why), the Drive addresses of its pictures and films, and any bug tickets it filed.')]
+#[Description('How a run of browser checks went, or is going: a sentence for the whole run, each check\'s verdict (where it stopped and why), the Drive addresses of its pictures and films, and any bug tickets it filed. For the app\'s admins, also its log: what each step met in the browser -- its console, page errors and failed requests, hidden values blotted out.')]
 class GetBrowserRun extends BrowserCheckTool
 {
     protected function arguments(JsonSchema $schema): array
@@ -23,6 +23,8 @@ class GetBrowserRun extends BrowserCheckTool
 
     public function handle(Request $request): ResponseFactory
     {
-        return Response::structured($this->runDescribed($this->runCalled($this->targetOwner($request), trim((string) $request->get('ref_id')))));
+        $run = $this->runCalled($this->targetOwner($request), trim((string) $request->get('ref_id')));
+
+        return Response::structured($this->runDescribed($run, log: $this->seesLogs($request)));
     }
 }

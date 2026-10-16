@@ -5,12 +5,16 @@ import {
     EyeOff,
     Eye,
     Globe,
+    Hand,
+    HandGrab,
     Keyboard,
     ListChecks,
+    Move,
     MoveDown,
     MousePointer2,
     MousePointerClick,
     Paperclip,
+    Spline,
     TextCursorInput,
 } from '@lucide/vue';
 import type { Component } from 'vue';
@@ -32,6 +36,10 @@ export const KIND_ICONS: Record<StepKind, Component> = {
     gone: EyeOff,
     address: AtSign,
     shot: Camera,
+    down: HandGrab,
+    move: Spline,
+    up: Hand,
+    drag: Move,
 };
 
 // Checking steps stand out from doing ones
@@ -49,4 +57,8 @@ export const KIND_TONE: Record<StepKind, string> = {
     gone: 'text-emerald-600 bg-emerald-500/10',
     address: 'text-emerald-600 bg-emerald-500/10',
     shot: 'text-amber-600 bg-amber-500/10',
+    down: 'text-violet-600 bg-violet-500/10',
+    move: 'text-violet-600 bg-violet-500/10',
+    up: 'text-violet-600 bg-violet-500/10',
+    drag: 'text-violet-600 bg-violet-500/10',
 };

@@ -12,6 +12,7 @@ import {
     Loader2,
     Lock,
     Monitor,
+    Move,
     MousePointer2,
     MousePointerClick,
     Smartphone,
@@ -82,12 +83,15 @@ const page = ref<Look | null>(null);
 // What the browser is doing now, in words
 const doing = ref<string | null>(null);
 const problem = ref<string | null>(null);
-const mode = ref<'click' | 'hover' | 'see'>('click');
+const mode = ref<'click' | 'hover' | 'see' | 'drag'>('click');
 const typing = ref<Thing | null>(null);
 const typed = ref('');
 const typedInput = ref<InstanceType<typeof Input> | null>(null);
 // A list being chosen from, and how its step finds it
 const choosing = ref<{ thing: Thing; where: Where } | null>(null);
+// What is being dragged: picked first, then where it is dropped
+const dragging = ref<{ thing: Thing; where: Where } | null>(null);
+watch(mode, () => (dragging.value = null));
 
 type Where = { selector?: string; nth?: number; frame?: string };
 
@@ -109,6 +113,7 @@ watch(open, (now) => {
     problem.value = null;
     typing.value = null;
     choosing.value = null;
+    dragging.value = null;
     mode.value = 'click';
 
     if (started.value) {
@@ -206,6 +211,25 @@ async function picked(thing: Thing) {
 
     if (mode.value === 'hover') {
         return attempt({ do: 'hover', target: thing.name, ...where });
+    }
+
+    // What to drag, then what it is dropped onto
+    if (mode.value === 'drag') {
+        if (!dragging.value) {
+            dragging.value = { thing, where };
+
+            return;
+        }
+
+        const from = dragging.value;
+        dragging.value = null;
+
+        return attempt({
+            do: 'drag',
+            target: from.thing.name,
+            ...from.where,
+            onto: thing.name,
+        });
     }
 
     // A list the browser draws itself: its options, to choose from here
@@ -440,6 +464,13 @@ const MODES = [
         icon: MousePointer2,
         title: 'A click on the page holds the pointer over it: a menu that opens on its own',
         test: 'build-hover',
+    },
+    {
+        value: 'drag' as const,
+        label: 'Drag',
+        icon: Move,
+        title: 'Click what to drag, then what to drop it onto',
+        test: 'build-drag',
     },
     {
         value: 'see' as const,
@@ -717,6 +748,30 @@ const SCREEN_ICONS = SCREENS.map(({ value, icon, label, test }) => ({
                     </Button>
                 </div>
 
+                <!-- A drag: what it is, picked; where it goes, next -->
+                <p
+                    v-if="mode === 'drag'"
+                    class="text-muted-foreground flex items-center gap-2 text-xs"
+                    data-test="build-drag-hint"
+                >
+                    <Move class="size-3.5" />
+                    <template v-if="dragging"
+                        >Now click what to drop “{{ dragging.thing.name }}”
+                        onto.
+                        <button
+                            type="button"
+                            class="underline"
+                            @click="dragging = null"
+                        >
+                            Cancel
+                        </button></template
+                    >
+                    <template v-else
+                        >Click what to drag. To draw, add a Drag step to the
+                        check and say how it moves.</template
+                    >
+                </p>
+
                 <!-- What to choose from a list -->
                 <div
                     v-if="choosing"
@@ -844,7 +899,12 @@ const SCREEN_ICONS = SCREENS.map(({ value, icon, label, test }) => ({
                             class="h-full"
                             :class="{ 'pointer-events-none opacity-50': doing }"
                             :look="page"
-                            :marked="typing ?? choosing?.thing ?? null"
+                            :marked="
+                                typing ??
+                                choosing?.thing ??
+                                dragging?.thing ??
+                                null
+                            "
                             :kinds="[
                                 'field',
                                 'button',

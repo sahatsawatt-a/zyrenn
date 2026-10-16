@@ -26,11 +26,17 @@
  *   POST /look    -> {steps} -> the same, done quickly, and what is on the page
  *                    they lead to: its fields, buttons, links and writing, and
  *                    a picture of it, for choosing what a next step is about.
+ *   POST /mp4     -> {url} -> video/mp4: the video at url (a WebM in the
+ *                    Drive, by a signed link) made into H.264 MP4.
  *   Any failure is a JSON {"error"} with a 4xx/5xx -- never an empty 200.
  */
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { chromium } from 'playwright';
 import {
+    asMp4,
     closeLive,
     openLive,
     runCheck,
@@ -364,6 +370,7 @@ const server = http.createServer(async (req, res) => {
                 '/pdf',
                 '/png',
                 '/shots',
+                '/mp4',
                 '/check',
                 '/check/stop',
                 '/look',
@@ -433,6 +440,40 @@ const server = http.createServer(async (req, res) => {
 
         if (typeof body.url !== 'string' || !/^https?:\/\//.test(body.url)) {
             return fail(res, 400, 'url is required and must be http(s)');
+        }
+
+        if (path === '/mp4') {
+            const work = await mkdtemp(join(tmpdir(), 'mp4-'));
+
+            try {
+                const got = await fetch(body.url);
+
+                if (!got.ok) {
+                    return fail(res, 502, `the video answered ${got.status}`);
+                }
+
+                const webm = join(work, 'in.webm');
+                await writeFile(webm, Buffer.from(await got.arrayBuffer()));
+
+                const film = await asMp4(webm, 600_000);
+
+                if (film.type !== 'video/mp4') {
+                    return fail(
+                        res,
+                        500,
+                        'the video could not be made into MP4',
+                    );
+                }
+
+                res.writeHead(200, {
+                    'Content-Type': 'video/mp4',
+                    'Content-Length': film.bytes.length,
+                });
+
+                return res.end(film.bytes);
+            } finally {
+                await rm(work, { recursive: true, force: true });
+            }
         }
 
         if (path === '/shots') {

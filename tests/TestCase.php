@@ -39,9 +39,23 @@ abstract class TestCase extends BaseTestCase
      * three seconds unless told otherwise -- which was nine tenths of the whole
      * suite's time. A job that should come due later is moved to with travel().
      */
+    /**
+     * A check's steps without the ids each is given to follow it through edits
+     * (BrowserSuite), for comparing them with what was written.
+     *
+     * @param  list<array<string, mixed>>  $steps
+     * @return list<array<string, mixed>>
+     */
+    protected function withoutStepIds(array $steps): array
+    {
+        return array_map(fn (array $step) => array_diff_key($step, ['id' => true]), $steps);
+    }
+
     protected function work(): void
     {
-        $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0])->assertSuccessful();
+        // The worker's own memory cap is for a worker; here it shares the
+        // test run's, which a whole suite grows past it
+        $this->artisan('queue:work', ['--stop-when-empty' => true, '--sleep' => 0, '--memory' => 4096])->assertSuccessful();
     }
 
     /**

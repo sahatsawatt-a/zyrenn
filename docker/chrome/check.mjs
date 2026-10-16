@@ -15,6 +15,7 @@
  * resources/js/features/browser/cursor.js, is mounted beside it as
  * cursor.mjs): the browser is handed in by server.mjs.
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { execFile } from 'node:child_process';
 import dns from 'node:dns';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -49,6 +50,10 @@ export const KINDS = [
     'gone',
     'address',
     'shot',
+    'down',
+    'move',
+    'up',
+    'drag',
 ];
 
 /**
@@ -76,9 +81,104 @@ const MOST_STEPS = 30;
 const MOST_CHAPTERS = 50;
 // How long each check's name is shown before it starts, in a film of several
 const TITLE_HOLD = 2500;
+// How long a step waits for the site, and a check may take at full speed (a
+// slowed one is given longer): as its suite set them, within these at most
 const STEP_MAX = 10_000;
-// How long a check may take at full speed; a slowed one is given longer
 const CHECK_MAX = 90_000;
+const CEILING = { step: 300_000, check: 1_800_000 };
+const limits = new AsyncLocalStorage();
+const within = (asked, fallback, most) =>
+    Number.isFinite(Number(asked)) && Number(asked) > 0
+        ? Math.min(most, Math.max(1000, Number(asked)))
+        : fallback;
+/** How long a step waits, for the check in hand. */
+const stepMax = () => limits.getStore()?.step ?? STEP_MAX;
+
+// A wait on the site this long or longer is cut from a film; the last moment
+// of it is kept, so the page arriving does not jump
+const CUT_FROM = 2500;
+const CUT_KEEP = 1000;
+
+/**
+ * Waits on the site -- a page loading, words coming or going, a thing to
+ * click turning up -- noted, while a check is filmed, as stretches of the
+ * film (ms from its start) to cut once it is made (cutsOf). In a demo, a wait
+ * long enough to be cut says so on the page as it ends.
+ */
+async function waitingOn(work) {
+    const store = limits.getStore();
+    const film = store?.film;
+    const began = Date.now();
+
+    try {
+        return await work();
+    } finally {
+        const ended = Date.now();
+
+        // How long the step in hand has waited on the site, all told
+        if (store?.stepClock) {
+            store.stepClock.waited += ended - began;
+        }
+
+        if (film) {
+            film.waits.push([began - film.from, ended - film.from]);
+
+            if (film.captions && ended - began >= CUT_FROM) {
+                await skippedNote(
+                    film.page,
+                    Math.round((ended - began - CUT_KEEP) / 1000),
+                ).catch(() => {});
+            }
+        }
+    }
+}
+
+/**
+ * "Waiting for the page -- 20 s skipped", a moment in the top corner: clear of
+ * the caption at the foot, and of a player's controls over it.
+ */
+const skippedNote = (page, seconds) =>
+    page.evaluate((seconds) => {
+        const note = document.createElement('div');
+        note.style.cssText =
+            'position:fixed;left:16px;top:16px;z-index:2147483646;pointer-events:none;padding:6px 10px;border-radius:8px;background:rgba(15,23,42,.82);color:#e2e8f0;font:500 13px/1.3 system-ui,sans-serif';
+        // Behind a closed shadow root: shown, never found by a step
+        note.attachShadow({
+            mode: 'closed',
+        }).textContent = `Waiting for the page -- ${seconds} s skipped`;
+        (document.body ?? document.documentElement).append(note);
+        setTimeout(() => note.remove(), 2000);
+    }, seconds);
+
+/**
+ * The stretches to cut from a film, from the waits noted in it: each long
+ * enough, overlapping ones joined, the last moment of each kept.
+ */
+function cutsOf(waits) {
+    const joined = [];
+
+    for (const [from, to] of [...waits].sort((a, b) => a[0] - b[0])) {
+        const last = joined.at(-1);
+
+        if (last && from <= last[1]) {
+            last[1] = Math.max(last[1], to);
+        } else {
+            joined.push([from, to]);
+        }
+    }
+
+    return joined
+        .filter(([from, to]) => to - from >= CUT_FROM)
+        .map(([from, to]) => [from, to - CUT_KEEP]);
+}
+
+/** Where a moment of a film falls once `cuts` are taken out of it. */
+const afterCuts = (at, cuts) =>
+    cuts.reduce(
+        (moved, [from, to]) =>
+            at <= from ? moved : moved - (Math.min(at, to) - from),
+        at,
+    );
 // A film bigger than this is left out of the answer rather than sent
 const MOST_VIDEO = 80 * 1024 * 1024;
 
@@ -89,8 +189,15 @@ const run = promisify(execFile);
  * Mac, a deck, a chat app -- where the WebM the browser records does not.
  * Should the converting fail, the WebM it was.
  */
-async function asMp4(webm) {
+export async function asMp4(webm, timeout = 120_000, cuts = []) {
     const mp4 = webm.replace(/\.webm$/, '') + '.mp4';
+    // Waits cut out (cutsOf, in ms): the frames between kept out, and the
+    // rest timed again one after another, at the 25 a second it is made at
+    const kept = cuts.length
+        ? `fps=25,select='not(${cuts
+              .map(([from, to]) => `between(t,${from / 1000},${to / 1000})`)
+              .join('+')})',setpts=N/(25*TB),`
+        : '';
 
     try {
         await run(
@@ -103,11 +210,14 @@ async function asMp4(webm) {
                 webm,
                 // H.264 wants even sides
                 '-vf',
-                'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+                `${kept}scale=trunc(iw/2)*2:trunc(ih/2)*2`,
                 '-c:v',
                 'libx264',
                 '-preset',
                 'veryfast',
+                // A few cores, not all: the machine runs much else beside
+                '-threads',
+                '4',
                 '-crf',
                 '23',
                 '-pix_fmt',
@@ -117,10 +227,14 @@ async function asMp4(webm) {
                 '-an',
                 mp4,
             ],
-            { timeout: 120_000 },
+            { timeout },
         );
 
-        return { bytes: await readFile(mp4), type: 'video/mp4' };
+        return {
+            bytes: await readFile(mp4),
+            type: 'video/mp4',
+            cut: cuts.length > 0,
+        };
     } catch (e) {
         console.error('[film] kept as webm:', e && e.message ? e.message : e);
 
@@ -380,8 +494,31 @@ async function locate(
 ) {
     const order = candidates(page, target, field, where, frame, nth);
     const began = Date.now();
-    const deadline = began + STEP_MAX;
+    const deadline = began + stepMax();
 
+    // Found at once, as most are: no wait to speak of
+    for (const one of order) {
+        if (await one.count().catch(() => 0)) {
+            return one;
+        }
+    }
+
+    return waitingOn(() =>
+        lookFor(page, order, began, deadline, target, field, frame, nth),
+    );
+}
+
+/** locate()'s waiting part: looked for again until it turns up, or the time is gone. */
+async function lookFor(
+    page,
+    order,
+    began,
+    deadline,
+    target,
+    field,
+    frame,
+    nth,
+) {
     do {
         for (const one of order) {
             if (await one.count().catch(() => 0)) {
@@ -414,7 +551,7 @@ async function locate(
         await page.waitForTimeout(150);
     } while (Date.now() < deadline);
 
-    throw new Error(`Timeout ${STEP_MAX}ms exceeded`);
+    throw new Error(`Timeout ${stepMax()}ms exceeded`);
 }
 
 /** Whether anything showing goes by `target` now, without waiting for it. */
@@ -945,7 +1082,7 @@ const thingsOnPage = () => {
 
 const picture = async (page) =>
     `data:image/jpeg;base64,${(
-        await page.screenshot({ type: 'jpeg', quality: 70, timeout: STEP_MAX })
+        await page.screenshot({ type: 'jpeg', quality: 70, timeout: stepMax() })
     ).toString('base64')}`;
 
 /** Plain words for what Playwright says went wrong. */
@@ -968,12 +1105,20 @@ function plainly(error, step) {
         return 'Say which file to add.';
     }
 
+    if (message === 'NO_WHERE') {
+        return 'Say where to move it to.';
+    }
+
+    if (message === 'BAD_PATH') {
+        return 'The path could not be followed: give SVG path data, as M 0 0 C 40 -60 120 -60 160 0.';
+    }
+
     if (message === 'NO_BACK') {
         return 'There was no page before this one to go back to.';
     }
 
     if (message === 'STILL_THERE') {
-        return `"${step.target}" was still showing after ${STEP_MAX / 1000} seconds.`;
+        return `"${step.target}" was still showing after ${stepMax() / 1000} seconds.`;
     }
 
     if (message.startsWith('NOT_AT ')) {
@@ -987,7 +1132,7 @@ function plainly(error, step) {
     if (/Timeout .* exceeded/i.test(message)) {
         return step.do === 'open'
             ? 'The page did not load in time.'
-            : `Nothing showing "${step.target}" turned up in ${STEP_MAX / 1000} seconds.`;
+            : `Nothing showing "${step.target}" turned up in ${stepMax() / 1000} seconds.`;
     }
 
     if (
@@ -1031,13 +1176,21 @@ const cursorScript = (glide) =>
             }
 
             const cursor = draw();
+            // Pointer events: a pen's and a finger's as well as a mouse's
             addEventListener(
-                'mousemove',
-                (event) => cursor.moveTo(event.clientX, event.clientY, glide),
+                'pointermove',
+                // Held down, it is drawing or dragging: followed point by
+                // point, not glided after
+                (event) =>
+                    cursor.moveTo(
+                        event.clientX,
+                        event.clientY,
+                        event.buttons ? 0 : glide,
+                    ),
                 true,
             );
             addEventListener(
-                'mousedown',
+                'pointerdown',
                 (event) => cursor.press(event.clientX, event.clientY),
                 true,
             );
@@ -1050,17 +1203,439 @@ const cursorScript = (glide) =>
         }
     })})(${String(drawCursor)}, ${glide})`;
 
+// Where the pointer is on each page, and how it is held: steps that press,
+// move and let go apart, with others done between while it is held. A mouse
+// (any button), a pen or a finger -- the last two sent as the browser's own
+// input, which Playwright's mouse cannot be
+const pointers = new WeakMap();
+
+function pointerOf(page) {
+    if (!pointers.has(page)) {
+        pointers.set(page, {
+            x: 0,
+            y: 0,
+            down: false,
+            kind: 'mouse',
+            button: 'left',
+            keys: [],
+            cdp: null,
+        });
+    }
+
+    return pointers.get(page);
+}
+
+// The keys held with it, as a person holds Shift for a straight line
+const KEY_NAMES = {
+    shift: 'Shift',
+    alt: 'Alt',
+    option: 'Alt',
+    ctrl: 'Control',
+    control: 'Control',
+    meta: 'Meta',
+    cmd: 'Meta',
+    command: 'Meta',
+};
+const keysOf = (text) => [
+    ...new Set(
+        String(text ?? '')
+            .split(/[\s+,]+/)
+            .map((key) => KEY_NAMES[key.toLowerCase()])
+            .filter(Boolean),
+    ),
+];
+const MODIFIERS = { Alt: 1, Control: 2, Meta: 4, Shift: 8 };
+const BUTTONS = { left: 1, right: 2, middle: 4 };
+
+// One press, move or release, as the pointer in hand sends it
+async function send(page, what, x, y, clickCount = 1) {
+    const pointer = pointerOf(page);
+
+    if (pointer.kind === 'mouse') {
+        if (what === 'move') {
+            await page.mouse.move(x, y);
+        } else {
+            await page.mouse[what]({ button: pointer.button, clickCount });
+        }
+
+        return;
+    }
+
+    pointer.cdp ??= await page.context().newCDPSession(page);
+    const modifiers = pointer.keys.reduce(
+        (sum, key) => sum + MODIFIERS[key],
+        0,
+    );
+
+    if (pointer.kind === 'touch') {
+        if (what === 'down') {
+            await pointer.cdp
+                .send('Emulation.setTouchEmulationEnabled', { enabled: true })
+                .catch(() => {});
+        }
+
+        // A finger off the screen has nowhere to move
+        if (what !== 'move' || pointer.down) {
+            await pointer.cdp.send('Input.dispatchTouchEvent', {
+                type: { down: 'touchStart', move: 'touchMove', up: 'touchEnd' }[
+                    what
+                ],
+                touchPoints: what === 'up' ? [] : [{ x, y }],
+                modifiers,
+            });
+        }
+
+        return;
+    }
+
+    await pointer.cdp.send('Input.dispatchMouseEvent', {
+        type: { down: 'mousePressed', move: 'mouseMoved', up: 'mouseReleased' }[
+            what
+        ],
+        x,
+        y,
+        button: what === 'move' && !pointer.down ? 'none' : pointer.button,
+        buttons:
+            (what === 'move' && pointer.down) || what === 'down'
+                ? BUTTONS[pointer.button]
+                : 0,
+        clickCount,
+        modifiers,
+        pointerType: 'pen',
+    });
+}
+
+// Pressed where the pointer is: with keys held, a button, a pen or finger,
+// and pressed twice for a double-click and drag
+async function press(page, step) {
+    const pointer = pointerOf(page);
+    await letGo(page);
+    pointer.kind = ['pen', 'touch'].includes(step.pointer)
+        ? step.pointer
+        : 'mouse';
+    pointer.button = ['right', 'middle'].includes(step.button)
+        ? step.button
+        : 'left';
+    pointer.keys = keysOf(step.keys);
+
+    for (const key of pointer.keys) {
+        await page.keyboard.down(key);
+    }
+
+    if (Number(step.clicks) === 2) {
+        await send(page, 'down', pointer.x, pointer.y, 1);
+        await send(page, 'up', pointer.x, pointer.y, 1);
+        await send(page, 'down', pointer.x, pointer.y, 2);
+    } else {
+        await send(page, 'down', pointer.x, pointer.y);
+    }
+
+    pointer.down = true;
+}
+
+// Let go, if it was held, and the keys held with it: also when a check ends,
+// fails or is stopped meanwhile
+async function letGo(page) {
+    const pointer = pointerOf(page);
+
+    if (pointer.down) {
+        await send(page, 'up', pointer.x, pointer.y).catch(() => {});
+        pointer.down = false;
+    }
+
+    for (const key of pointer.keys.splice(0)) {
+        await page.keyboard.up(key).catch(() => {});
+    }
+}
+
+// "0.2,0.3 0.4,0.5 500ms 0.6,0.3": the points, and a pause after any
+function pointsOf(text) {
+    const points = [];
+
+    for (const [, x, y, ms] of String(text ?? '').matchAll(
+        /(-?[\d.]+)\s*,\s*(-?[\d.]+)|(\d+)\s*ms/gi,
+    )) {
+        if (ms !== undefined) {
+            if (points.length) {
+                points.at(-1).pause = Math.min(10_000, Number(ms));
+            }
+        } else {
+            points.push({ x: Number(x), y: Number(y) });
+        }
+    }
+
+    return points.filter(
+        (point) => Number.isFinite(point.x) && Number.isFinite(point.y),
+    );
+}
+
+// A thing's box on the screen: brought into sight first, unless the pointer
+// is held, when scrolling would move what is being drawn on
+async function boxOf(page, thing) {
+    await thing.waitFor({ state: 'visible', timeout: stepMax() });
+
+    if (!pointerOf(page).down) {
+        await thing.scrollIntoViewIfNeeded({ timeout: stepMax() });
+    }
+
+    const box = await thing.boundingBox({ timeout: stepMax() });
+
+    if (!box) {
+        throw new Error('Timeout exceeded');
+    }
+
+    return box;
+}
+
+// A point in a box, given as fractions of it: its middle when not given
+const pointIn = (box, point) => ({
+    x: box.x + box.width * (point?.x ?? 0.5),
+    y: box.y + box.height * (point?.y ?? 0.5),
+});
+
+// Points every few pixels along a line, or along a smooth curve through each
+// point given (Catmull-Rom): what a hand moving there passes over -- and a
+// pause where one was asked for
+function along(anchors, smooth) {
+    const way = [];
+    const at = (i) => anchors[Math.max(0, Math.min(anchors.length - 1, i))];
+
+    for (let i = 0; i < anchors.length - 1; i++) {
+        const [p0, p1, p2, p3] = [at(i - 1), at(i), at(i + 1), at(i + 2)];
+        const n = Math.min(
+            300,
+            Math.max(2, Math.ceil(Math.hypot(p2.x - p1.x, p2.y - p1.y) / 4)),
+        );
+
+        for (let j = 1; j <= n; j++) {
+            const t = j / n;
+            const on = (a, b, c, d) =>
+                smooth
+                    ? 0.5 *
+                      (2 * b +
+                          (-a + c) * t +
+                          (2 * a - 5 * b + 4 * c - d) * t * t +
+                          (-a + 3 * b - 3 * c + d) * t * t * t)
+                    : b + (c - b) * t;
+            way.push({
+                x: on(p0.x, p1.x, p2.x, p3.x),
+                y: on(p0.y, p1.y, p2.y, p3.y),
+            });
+        }
+
+        if (p2.pause) {
+            way.push({ pause: p2.pause });
+        }
+    }
+
+    return way;
+}
+
+// SVG path data -- lines, curves, arcs, several strokes (each new M) --
+// followed as the page's own browser draws it. 0,0 is where the pointer is,
+// or with `box` the thing's top left corner, 1,1 its bottom right. "500ms"
+// between pieces pauses there
+async function pathed(page, from, data, box) {
+    const way = [];
+
+    for (const piece of String(data).split(/(\d+\s*ms)/i)) {
+        const pause = /^(\d+)\s*ms$/i.exec(piece.trim());
+
+        if (pause) {
+            way.push({ pause: Math.min(10_000, Number(pause[1])) });
+            continue;
+        }
+
+        if (!piece.trim()) {
+            continue;
+        }
+
+        const scale = box ? Math.max(box.width, box.height) : 1;
+        const drawn = await page.evaluate(
+            ({ d, scale }) => {
+                const svg = document.createElementNS(
+                    'http://www.w3.org/2000/svg',
+                    'svg',
+                );
+                const path = document.createElementNS(
+                    'http://www.w3.org/2000/svg',
+                    'path',
+                );
+                path.setAttribute('d', d);
+                svg.style.cssText =
+                    'position:fixed;left:-9999px;top:0;width:1px;height:1px';
+                svg.append(path);
+                document.documentElement.append(svg);
+
+                try {
+                    const length = path.getTotalLength();
+                    const n = Math.min(
+                        2000,
+                        Math.max(1, Math.ceil((length * scale) / 3)),
+                    );
+                    // A step much longer than the rest: a new M, a new stroke
+                    const gap = (3 * length) / n;
+                    let last = null;
+
+                    return Array.from({ length: n + 1 }, (_, i) => {
+                        const point = path.getPointAtLength((length * i) / n);
+                        const jump =
+                            last &&
+                            Math.hypot(point.x - last.x, point.y - last.y) >
+                                gap;
+                        last = point;
+
+                        return [point.x, point.y, jump ? 1 : 0];
+                    });
+                } finally {
+                    svg.remove();
+                }
+            },
+            { d: piece, scale },
+        );
+
+        if (
+            !drawn.length ||
+            !drawn.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y))
+        ) {
+            throw new Error('BAD_PATH');
+        }
+
+        for (const [x, y, jump] of drawn) {
+            way.push({
+                ...(box
+                    ? { x: box.x + box.width * x, y: box.y + box.height * y }
+                    : { x: from.x + x, y: from.y + y }),
+                ...(jump ? { jump: true } : {}),
+            });
+        }
+    }
+
+    return way;
+}
+
+/**
+ * The way a "move" or "drag" goes from where the pointer is: in straight
+ * lines (the default) or a smooth curve ("curve") through any `points`, to
+ * where it ends -- `onto` a thing, `by` pixels on, at `at` in the thing (a
+ * move), or the last point -- or along SVG path data ("path"). Points are
+ * fractions of the thing's box when the step names one, else pixels from
+ * where the pointer is.
+ */
+async function wayOf(page, step, from, box, endsAt) {
+    if (step.motion === 'path') {
+        return pathed(
+            page,
+            from,
+            step.path,
+            step.units === 'box' && box ? box : null,
+        );
+    }
+
+    const place = (point) =>
+        box
+            ? { ...pointIn(box, point), pause: point.pause }
+            : { x: from.x + point.x, y: from.y + point.y, pause: point.pause };
+    const via = pointsOf(step.points).map(place);
+    const [by] = pointsOf(step.by);
+    const [at] = pointsOf(step.at);
+    let end = null;
+
+    if (step.onto) {
+        const onto = await locate(page, step.onto, false, null, step.frame, 1);
+        end = pointIn(await boxOf(page, onto));
+    } else if (by) {
+        end = { x: from.x + by.x, y: from.y + by.y };
+    } else if (endsAt && box && (at || !via.length)) {
+        end = pointIn(box, at);
+    }
+
+    end ??= via.pop();
+
+    if (!end) {
+        throw new Error('NO_WHERE');
+    }
+
+    return along([from, ...via, end], step.motion === 'curve');
+}
+
+// Along the way, over `duration` seconds, or as the check's pace has it --
+// at once when it goes as fast as it can -- lifted and pressed again between
+// strokes
+async function moveAlong(page, way, step, pace) {
+    const pointer = pointerOf(page);
+    const drawn = way.filter((point) => !point.pause);
+    let length = 0;
+
+    for (const [i, point] of drawn.entries()) {
+        const before = drawn[i - 1] ?? pointer;
+
+        if (!point.jump) {
+            length += Math.hypot(point.x - before.x, point.y - before.y);
+        }
+    }
+
+    const asked = Number(step.duration) * 1000;
+    const ms =
+        asked > 0
+            ? Math.min(asked, 20_000)
+            : pace.glide > 0
+              ? Math.min(4000, pace.glide + length * 1.5)
+              : 0;
+    // A pause every few points, not each: a timer is not finer than that
+    const every = Math.max(1, Math.ceil(drawn.length / Math.max(1, ms / 16)));
+    let moved = 0;
+
+    for (const point of way) {
+        if (point.pause) {
+            await page.waitForTimeout(point.pause);
+            continue;
+        }
+
+        const held = pointer.down;
+        const jump =
+            point.jump ||
+            (moved === 0 &&
+                Math.hypot(point.x - pointer.x, point.y - pointer.y) > 4 &&
+                step.motion === 'path');
+
+        if (jump && held) {
+            await send(page, 'up', pointer.x, pointer.y);
+            pointer.down = false;
+        }
+
+        await send(page, 'move', point.x, point.y);
+        pointer.x = point.x;
+        pointer.y = point.y;
+
+        if (jump && held) {
+            await send(page, 'down', point.x, point.y);
+            pointer.down = true;
+        }
+
+        moved++;
+
+        if (ms > 0 && moved % every === 0) {
+            await page.waitForTimeout((ms * every) / drawn.length);
+        }
+    }
+}
+
 async function act(page, step, pace) {
-    const watched = pace.glide > 0;
+    // No gliding to what a step goes by while the pointer is held: that
+    // would drag it there
+    const watched = pace.glide > 0 && !pointerOf(page).down;
     const find = (field = false) =>
         locate(page, step.target, field, step.selector, step.frame, step.nth);
 
     switch (step.do) {
         case 'open': {
-            const answer = await page.goto(step.url, {
-                waitUntil: 'domcontentloaded',
-                timeout: STEP_MAX * 2,
-            });
+            const answer = await waitingOn(() =>
+                page.goto(step.url, {
+                    waitUntil: 'domcontentloaded',
+                    timeout: stepMax() * 2,
+                }),
+            );
 
             if (answer?.headers()['x-check-refused']) {
                 throw new Error('net::ERR_BLOCKED_BY_CLIENT');
@@ -1114,7 +1689,7 @@ async function act(page, step, pace) {
         case 'click': {
             const thing = await find();
             if (watched) await glideTo(thing, pace.glide);
-            await thing.click({ timeout: STEP_MAX });
+            await thing.click({ timeout: stepMax() });
             break;
         }
         case 'hover': {
@@ -1122,7 +1697,7 @@ async function act(page, step, pace) {
             // picture's caption that shows only then
             const thing = await find();
             if (watched) await glideTo(thing, pace.glide);
-            await thing.hover({ timeout: STEP_MAX });
+            await thing.hover({ timeout: stepMax() });
             break;
         }
         case 'type': {
@@ -1159,10 +1734,10 @@ async function act(page, step, pace) {
                 // A date is filled whole: typed key by key, its parts are
                 // read in the order the browser's language puts them
                 await typeInto(thing, step.text ?? '', pace.typing, {
-                    options: { timeout: STEP_MAX },
+                    options: { timeout: stepMax() },
                 });
             } else {
-                await thing.fill(step.text ?? '', { timeout: STEP_MAX });
+                await thing.fill(step.text ?? '', { timeout: stepMax() });
             }
             break;
         }
@@ -1174,7 +1749,7 @@ async function act(page, step, pace) {
             // the list has, looked for without waiting on the one it lacks,
             // as the options may still be coming in
             const text = step.text ?? '';
-            const deadline = Date.now() + STEP_MAX;
+            const deadline = Date.now() + stepMax();
             let by = null;
 
             while (!by) {
@@ -1210,7 +1785,7 @@ async function act(page, step, pace) {
                 .selectOption(
                     by === 'label' ? { label: text } : { value: text },
                     {
-                        timeout: STEP_MAX,
+                        timeout: stepMax(),
                     },
                 )
                 .catch(() => {
@@ -1248,7 +1823,7 @@ async function act(page, step, pace) {
                     })
                     .catch(() => false))
             ) {
-                await field.setInputFiles(file, { timeout: STEP_MAX });
+                await field.setInputFiles(file, { timeout: stepMax() });
                 break;
             }
 
@@ -1256,8 +1831,8 @@ async function act(page, step, pace) {
             const thing = await find();
             if (watched) await glideTo(thing, pace.glide);
             const [chooser] = await Promise.all([
-                page.waitForEvent('filechooser', { timeout: STEP_MAX }),
-                thing.click({ timeout: STEP_MAX }),
+                page.waitForEvent('filechooser', { timeout: stepMax() }),
+                thing.click({ timeout: stepMax() }),
             ]);
             await chooser.setFiles(file);
             break;
@@ -1268,7 +1843,7 @@ async function act(page, step, pace) {
         case 'back': {
             const back = await page.goBack({
                 waitUntil: 'domcontentloaded',
-                timeout: STEP_MAX * 2,
+                timeout: stepMax() * 2,
             });
 
             if (!back) {
@@ -1282,7 +1857,7 @@ async function act(page, step, pace) {
             if (step.target) {
                 const thing = await find();
                 await scrollTo(thing);
-                await thing.scrollIntoViewIfNeeded({ timeout: STEP_MAX });
+                await thing.scrollIntoViewIfNeeded({ timeout: stepMax() });
             } else {
                 await scrollDown(page);
             }
@@ -1296,15 +1871,17 @@ async function act(page, step, pace) {
         }
         case 'gone': {
             // Gone, or never there: given the time a step has to go
-            const deadline = Date.now() + STEP_MAX;
+            const deadline = Date.now() + stepMax();
 
-            while (await showingNow(page, step.target, step.frame)) {
-                if (Date.now() > deadline) {
-                    throw new Error('STILL_THERE');
+            await waitingOn(async () => {
+                while (await showingNow(page, step.target, step.frame)) {
+                    if (Date.now() > deadline) {
+                        throw new Error('STILL_THERE');
+                    }
+
+                    await page.waitForTimeout(150);
                 }
-
-                await page.waitForTimeout(150);
-            }
+            });
             break;
         }
         case 'address': {
@@ -1323,17 +1900,59 @@ async function act(page, step, pace) {
                     one.toLowerCase().includes(String(step.text).toLowerCase()),
                 );
             };
-            const deadline = Date.now() + STEP_MAX;
+            const deadline = Date.now() + stepMax();
 
-            while (!has()) {
-                if (Date.now() > deadline) {
-                    throw new Error(`NOT_AT ${page.url()}`);
+            await waitingOn(async () => {
+                while (!has()) {
+                    if (Date.now() > deadline) {
+                        throw new Error(`NOT_AT ${page.url()}`);
+                    }
+
+                    await page.waitForTimeout(150);
                 }
+            });
+            break;
+        }
+        case 'down':
+        case 'drag': {
+            // Pressed on a thing, at a point in it -- and for a drag, moved
+            // and let go in the same step
+            const box = await boxOf(page, await find());
+            const pointer = pointerOf(page);
+            const start = pointIn(box, pointsOf(step.at)[0]);
+            await letGo(page);
+            await moveAlong(
+                page,
+                watched ? along([{ ...pointer }, start], false) : [start],
+                {},
+                pace,
+            );
+            await press(page, step);
 
-                await page.waitForTimeout(150);
+            if (step.do === 'drag') {
+                await moveAlong(
+                    page,
+                    await wayOf(page, step, start, box, false),
+                    step,
+                    pace,
+                );
+                await letGo(page);
             }
             break;
         }
+        case 'move': {
+            const box = step.target ? await boxOf(page, await find()) : null;
+            await moveAlong(
+                page,
+                await wayOf(page, step, { ...pointerOf(page) }, box, true),
+                step,
+                pace,
+            );
+            break;
+        }
+        case 'up':
+            await letGo(page);
+            break;
         case 'shot':
             break;
     }
@@ -1379,6 +1998,84 @@ const COUNTING =
  * "Are you sure?" answered yes; and what it is still waiting for followed,
  * so `settled()` can wait for what a click set going. `close()` always.
  */
+// What a check's page meets, a step at a time, for the app's admins: its
+// console -- errors and warnings, and the rest only while there is little of
+// it -- uncaught errors, requests that failed or were answered 400 or worse,
+// and the page itself crashing. Each line short, each address without its
+// query: nothing a request carried is kept.
+const LOG_STEP_LINES = 25;
+const LOG_INFO_LINES = 5;
+const LOG_LINE = 240;
+
+/** An address as the log writes it: where, without what it asked. */
+const bare = (url) => {
+    try {
+        const { origin, pathname, protocol } = new URL(url);
+
+        // A page of its own (data:, about:) has no origin: what kind it is
+        return /^https?:$/.test(protocol)
+            ? `${origin}${pathname}`
+            : `${protocol}${pathname.split(',')[0].slice(0, 40)}`;
+    } catch {
+        return String(url).split(/[?#]/)[0];
+    }
+};
+
+/**
+ * Starts listening on `page`, and answers with `now()` -- ms since -- and
+ * `take()`, the lines met since it was last asked.
+ */
+function keepJournal(page) {
+    const began = Date.now();
+    let lines = [];
+    let infos = 0;
+
+    const when = () => `+${((Date.now() - began) / 1000).toFixed(1)}s`;
+    const add = (line) => {
+        if (lines.length < LOG_STEP_LINES) {
+            lines.push(`${when()} ${line}`.slice(0, LOG_LINE));
+        }
+    };
+
+    page.on('console', (message) => {
+        const type = message.type();
+
+        if (type === 'error' || type === 'warning') {
+            add(
+                `console.${type === 'warning' ? 'warn' : 'error'}: ${message.text()}`,
+            );
+        } else if (infos < LOG_INFO_LINES && ['log', 'info'].includes(type)) {
+            infos++;
+            add(`console.${type}: ${message.text()}`);
+        }
+    });
+    page.on('pageerror', (error) => add(`page error: ${error.message}`));
+    page.on('requestfailed', (request) =>
+        add(
+            `${request.method()} ${bare(request.url())} failed: ${request.failure()?.errorText ?? 'no answer'}`,
+        ),
+    );
+    page.on('response', (response) => {
+        if (response.status() >= 400) {
+            add(
+                `${response.request().method()} ${bare(response.url())} ${response.status()}`,
+            );
+        }
+    });
+    page.on('crash', () => add('the page crashed'));
+
+    return {
+        now: () => Date.now() - began,
+        take() {
+            const taken = lines;
+            lines = [];
+            infos = 0;
+
+            return taken;
+        },
+    };
+}
+
 async function openPage(
     browser,
     { size = 'desktop', glide = 0, films = null, state = null } = {},
@@ -1424,6 +2121,10 @@ async function openPage(
     );
 
     const page = await context.newPage();
+    // When its film begins: where each step is in it is counted from here
+    const filmedFrom = Date.now();
+    // What it meets, for the run's log
+    const journal = keepJournal(page);
 
     // What the page is still waiting for -- itself, and what it asks for
     // its data -- to tell when what a click set going has arrived
@@ -1472,7 +2173,7 @@ async function openPage(
         following = (async () => {
             await opened
                 .waitForURL((url) => url.href !== 'about:blank', {
-                    timeout: STEP_MAX,
+                    timeout: stepMax(),
                     waitUntil: 'commit',
                 })
                 .catch(() => {});
@@ -1483,7 +2184,7 @@ async function openPage(
                 await page
                     .goto(url, {
                         waitUntil: 'domcontentloaded',
-                        timeout: STEP_MAX * 2,
+                        timeout: stepMax() * 2,
                     })
                     .catch(() => {});
             }
@@ -1495,6 +2196,8 @@ async function openPage(
         context,
         refused,
         viewport,
+        filmedFrom,
+        journal,
         // Until the page has stopped asking for things, a while at most: a
         // sign-in through a slow tunnel is still on its way when the click
         // is done, and the next step looks on the page it leads to
@@ -1533,7 +2236,44 @@ async function openPage(
  * and an error -- with a picture -- when it did not; a picture when it was
  * one. `pictures` false for a step done only to get somewhere.
  */
-async function doStep(
+// What a step that gave up waiting says, of each way it can (plainly())
+const TIMED_OUT =
+    /still showing after|did not load in time|turned up in \d+ seconds|which does not have/;
+
+async function doStep(opened, step, options = {}) {
+    // A step may wait for the site longer or less than its suite's steps
+    // do: for that step only, the rest of the run as it was
+    const own = Number(step.timeout) * 1000;
+    // In a run (not a page being built on): how long it waited on the site,
+    // and whether it gave up waiting -- what tells how long a step needs
+    const clock = limits.getStore()?.stepClock;
+
+    if (clock) {
+        clock.waited = 0;
+    }
+
+    const result = await (own > 0
+        ? limits.run(
+              {
+                  ...limits.getStore(),
+                  step: within(own, STEP_MAX, CEILING.step),
+              },
+              () => stepWith(opened, step, options),
+          )
+        : stepWith(opened, step, options));
+
+    return clock
+        ? {
+              ...result,
+              waited: clock.waited,
+              ...(!result.ok && TIMED_OUT.test(result.error ?? '')
+                  ? { timedOut: true }
+                  : {}),
+          }
+        : result;
+}
+
+async function stepWith(
     opened,
     step,
     { pace = paceOf(null), captions = false, pictures = true } = {},
@@ -1565,7 +2305,7 @@ async function doStep(
                 step.do,
             )
         ) {
-            await opened.settled();
+            await waitingOn(() => opened.settled());
         }
 
         // Somewhere it could not go: a refused tunnel, or no such site
@@ -1659,7 +2399,7 @@ async function lookAt(opened) {
         seen = await read();
         seen.things.push(...(await inFrames(page, seen.frames)));
         shot = await page
-            .screenshot({ type: 'jpeg', quality: 70, timeout: STEP_MAX })
+            .screenshot({ type: 'jpeg', quality: 70, timeout: stepMax() })
             .catch(() => null);
     } finally {
         if (height > viewport.height) {
@@ -1809,9 +2549,11 @@ const stateOf = (given) =>
  * Moves the page's browser from one saved state to another -- signed in as
  * someone else, or signed out -- between the checks of one film: its
  * cookies swapped, and each site's localStorage either one knew emptied and
- * filled as the other has it.
+ * filled as the other has it, on a page of its own, off the film. The
+ * filmed page, unless the check opens a page first, is loaded again as the
+ * one now signed in.
  */
-async function switchState(opened, from, to) {
+async function switchState(opened, from, to, opensFirst) {
     await opened.context.clearCookies();
 
     if (to?.cookies.length) {
@@ -1828,26 +2570,50 @@ async function switchState(opened, from, to) {
         sites.set(site.origin, site.localStorage ?? []);
     }
 
-    for (const [origin, items] of sites) {
-        try {
-            await opened.page.goto(origin, {
-                waitUntil: 'domcontentloaded',
-                timeout: 15_000,
-            });
-            await opened.page.evaluate((items) => {
-                localStorage.clear();
+    const aside = sites.size ? await opened.context.newPage() : null;
 
-                for (const { name, value } of items) {
-                    localStorage.setItem(name, value);
-                }
-            }, items);
-        } catch {
-            // A site that cannot be reached keeps what it had; the steps say so
+    try {
+        for (const [origin, items] of sites) {
+            try {
+                await aside.goto(origin, {
+                    waitUntil: 'domcontentloaded',
+                    timeout: 15_000,
+                });
+                await aside.evaluate((items) => {
+                    localStorage.clear();
+
+                    for (const { name, value } of items) {
+                        localStorage.setItem(name, value);
+                    }
+                }, items);
+            } catch {
+                // A site that cannot be reached keeps what it had; the steps say so
+            }
         }
+    } finally {
+        await aside?.close();
+    }
+
+    if (!opensFirst && /^https?:/.test(opened.page.url())) {
+        await opened.page
+            .reload({ waitUntil: 'domcontentloaded', timeout: 15_000 })
+            .catch(() => {});
     }
 }
 
-export async function runCheck(browser, body) {
+export function runCheck(browser, body) {
+    const asked = body?.limits ?? {};
+
+    return limits.run(
+        {
+            step: within(asked.step, STEP_MAX, CEILING.step),
+            check: within(asked.check, CHECK_MAX, CEILING.check),
+        },
+        () => checkWith(browser, body),
+    );
+}
+
+async function checkWith(browser, body) {
     // Several checks one after another in the one page, filmed as one: what
     // one leaves -- signed in, a file added -- the next finds. Each may name
     // whom it starts signed in as (`as`, one of `states`), switched to as it
@@ -1866,6 +2632,7 @@ export async function runCheck(browser, body) {
                   typeof chapter?.as === 'string'
                       ? (states[chapter.as] ?? null)
                       : null,
+              as: typeof chapter?.as === 'string' ? chapter.as : null,
           }))
         : [{ title: '', steps: stepsOf(body), state: stateOf(body?.state) }];
     const steps = chapters.flatMap((chapter) => chapter.steps);
@@ -1906,6 +2673,20 @@ export async function runCheck(browser, body) {
         });
         // Whom the browser is signed in as just now, to switch as needed
         let current = chapters[0].state;
+
+        // Each step's own wait on the site, counted as it goes (doStep)
+        limits.getStore().stepClock = { waited: 0 };
+
+        // Filmed: its waits on the site noted, to be cut from the film --
+        // unless whoever started it wants it all, as it happened
+        if (record && body?.cutWaits !== false) {
+            limits.getStore().film = {
+                from: opened.filmedFrom,
+                page: opened.page,
+                captions,
+                waits: [],
+            };
+        }
         // A slowed check is given the time its slowing takes, on top
         const typed = steps.reduce(
             (sum, step) => sum + String(step.text ?? '').length,
@@ -1921,13 +2702,18 @@ export async function runCheck(browser, body) {
             : 0;
         const titled = captions && chapters.length > 1;
         const allowed =
-            CHECK_MAX +
+            limits.getStore().check +
             steps.length * (pace.glide + 150 + pace.pause) +
             typed * pace.typing +
             held +
             (titled ? chapters.length * TITLE_HOLD : 0);
         const deadline = Date.now() + allowed;
         const done = chapters.map(() => []);
+        // What each step met, for the run's log (keepJournal)
+        const log = [];
+        // Where in the film each check begins, and each step, in ms
+        const inFilm = () => Date.now() - opened.filmedFrom;
+        const starts = [];
         let stopped = false;
         // Asked to stop by whoever started it: the film so far is kept
         let halted = false;
@@ -1944,16 +2730,29 @@ export async function runCheck(browser, body) {
 
             // Signed in as someone else, or signed out, for this check
             if (chapter.state !== current) {
-                await switchState(opened, current, chapter.state);
+                await switchState(
+                    opened,
+                    current,
+                    chapter.state,
+                    chapter.steps[0]?.do === 'open',
+                );
                 current = chapter.state;
             }
 
-            // Each check's name, across the page, as it starts
+            starts[at] = inFilm();
+
+            // Each check's name, across the page, as it starts -- and whom
+            // it is done as, so a switch between people is plain to see
             if (titled && chapter.title) {
                 await titleCard(
                     opened.page,
                     chapter.title,
-                    `${at + 1} of ${chapters.length}`,
+                    [
+                        `${at + 1} of ${chapters.length}`,
+                        chapter.as ? `as ${chapter.as}` : null,
+                    ]
+                        .filter(Boolean)
+                        .join(' · '),
                 );
                 await opened.page.waitForTimeout(TITLE_HOLD);
                 await titleCard(opened.page, null);
@@ -1976,12 +2775,26 @@ export async function runCheck(browser, body) {
                     break;
                 }
 
+                const began = inFilm();
+                const from = opened.journal.now();
                 const result = await doStep(opened, step, {
                     pace,
                     captions,
                     pictures: !look,
                 });
-                done[at].push(result);
+                done[at].push(record ? { ...result, at: began } : result);
+                // What it met, for the run's log
+                log.push({
+                    chapter: at,
+                    step: done[at].length - 1,
+                    from,
+                    to: opened.journal.now(),
+                    url: bare(opened.page.url()),
+                    ...(Number.isFinite(result.waited)
+                        ? { waited: result.waited }
+                        : {}),
+                    lines: opened.journal.take(),
+                });
 
                 if (!result.ok) {
                     stopped = true;
@@ -1990,6 +2803,9 @@ export async function runCheck(browser, body) {
 
                 await linger(opened.page, step, pace, captions);
             }
+
+            // Not left held into the next check, however this one ended
+            await letGo(opened.page);
         }
 
         if (look) {
@@ -2003,11 +2819,14 @@ export async function runCheck(browser, body) {
 
         const answer = {
             steps: done.flat(),
-            ...(Array.isArray(body?.chapters) ? { chapters: done } : {}),
+            ...(Array.isArray(body?.chapters)
+                ? { chapters: done, ...(record ? { starts } : {}) }
+                : {}),
             url: opened.page.url(),
             title: await opened.page.title().catch(() => ''),
             refused: [...opened.refused],
             ...(halted ? { halted: true } : {}),
+            log,
             // A sign-in that went through: the state it leaves, for the
             // checks that start from it. Never kept here
             ...(body?.keepState &&
@@ -2020,9 +2839,40 @@ export async function runCheck(browser, body) {
         let video = null;
 
         if (record) {
+            const cuts = cutsOf(limits.getStore().film?.waits ?? []);
             await opened.context.close();
             const path = await opened.page.video()?.path();
-            const film = path ? await asMp4(path) : null;
+            const film = path ? await asMp4(path, 120_000, cuts) : null;
+
+            // Cut: where each check and step is in the film, moved to match
+            if (film?.cut) {
+                answer.steps = answer.steps.map((step) =>
+                    step.at === undefined
+                        ? step
+                        : { ...step, at: afterCuts(step.at, cuts) },
+                );
+
+                if (answer.chapters) {
+                    answer.chapters = answer.chapters.map((steps) =>
+                        steps.map((step) =>
+                            step.at === undefined
+                                ? step
+                                : { ...step, at: afterCuts(step.at, cuts) },
+                        ),
+                    );
+                }
+
+                if (answer.starts) {
+                    answer.starts = answer.starts.map((at) =>
+                        afterCuts(at, cuts),
+                    );
+                }
+
+                answer.cut = Math.round(
+                    cuts.reduce((sum, [from, to]) => sum + to - from, 0),
+                );
+            }
+
             video =
                 film && film.bytes.length <= MOST_VIDEO
                     ? `data:${film.type};base64,${film.bytes.toString('base64')}`

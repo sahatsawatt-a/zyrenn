@@ -36,8 +36,63 @@ import DriveFileDialog from '@/features/chat/components/DriveFileDialog.vue';
 import type { DriveFile } from '@/lib/drive';
 import { KIND_ICONS, KIND_TONE } from './icons';
 import PickDialog from './PickDialog.vue';
+import PointerFields from './PointerFields.vue';
 import { GROUPS, KEYS, KINDS, lingers, say } from './steps';
 import type { Look, Step, StepGroup, StepKind, Thing } from './steps';
+
+// How long a demo film stays on a step, and how long a step may wait, as
+// choices: "Auto" (its caption's time, or the pace's) and "the suite's" are
+// what is left out
+const AUTO = 'auto';
+const STAYS = [0, 1, 2, 3, 5, 8, 10, 15, 20, 30];
+const GIVE_UPS = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 300];
+
+const seconds = (value: number) =>
+    value === 0 ? 'No pause' : `${Number(value.toFixed(1))} s`;
+
+/** The choices, with what is set now kept among them. */
+const choices = (all: number[], now: number | string | null | undefined) =>
+    [
+        ...new Set([
+            ...all,
+            ...(now == null || now === '' ? [] : [Number(now)]),
+        ]),
+    ].sort((a, b) => a - b);
+
+const autoStay = (step: Step) => {
+    const at = lingers(step);
+
+    return at === 0 ? 'no pause' : `${Math.round(at)} s`;
+};
+
+/** How long its caption is up for, all told. */
+const shownFor = (step: Step) =>
+    `${Math.round(step.wait == null ? lingers(step) : Number(step.wait))} s`;
+
+// A caption box as tall as what is written in it, up to a point
+const grow = (el: HTMLTextAreaElement) => {
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight + 2, 240)}px`;
+};
+// (and again when its width changes: on a narrower screen its words take more lines)
+const watchers = new WeakMap<HTMLTextAreaElement, ResizeObserver>();
+const vGrow = {
+    mounted: (el: HTMLTextAreaElement) => {
+        grow(el);
+        el.addEventListener('input', () => grow(el));
+        let width = el.clientWidth;
+        const watcher = new ResizeObserver(() => {
+            if (el.clientWidth !== width) {
+                width = el.clientWidth;
+                grow(el);
+            }
+        });
+        watcher.observe(el);
+        watchers.set(el, watcher);
+    },
+    updated: grow,
+    unmounted: (el: HTMLTextAreaElement) => watchers.get(el)?.disconnect(),
+};
 
 // One check's steps, one under another, each said in a line -- what it does,
 // in words -- and opened to change it: what it does, and what it needs (the
@@ -51,6 +106,9 @@ const props = defineProps<{
     readonly?: boolean;
     // The page the first `upto` steps lead to, and what is on it
     look?: (upto: number) => Promise<Look>;
+    // How long a step waits for the site, as its suite says, and the most one may
+    stepLimit?: number;
+    stepMost?: number;
 }>();
 const emit = defineEmits<{ change: [] }>();
 
@@ -70,8 +128,9 @@ const opened = ref<Set<Step>>(
 );
 
 function unwritten(step: Step) {
-    // Scrolling to nothing in particular goes a screen down
-    if (step.do === 'scroll') {
+    // Scrolling to nothing in particular goes a screen down; a move may go
+    // by points or pixels alone
+    if (step.do === 'scroll' || step.do === 'move') {
         return false;
     }
 
@@ -387,6 +446,20 @@ function filed(file: DriveFile) {
                         data-test="step-text"
                         @update:model-value="emit('change')"
                     />
+                    <!-- A drag's common case: from one thing onto another -->
+                    <Input
+                        v-if="step.do === 'drag'"
+                        :model-value="step.onto ?? ''"
+                        :readonly="readonly"
+                        placeholder="Dropped onto…"
+                        aria-label="What it is dropped onto"
+                        class="h-8 min-w-0 sm:flex-1"
+                        data-test="step-onto"
+                        @update:model-value="
+                            step.onto = String($event) || undefined;
+                            emit('change');
+                        "
+                    />
                     <Button
                         v-if="step.do === 'upload'"
                         variant="outline"
@@ -434,50 +507,144 @@ function filed(file: DriveFile) {
                         {{
                             step.do === 'back'
                                 ? 'Goes back to the page before, as the browser’s back button does.'
-                                : 'A picture of the page as it is now, kept with the run.'
+                                : step.do === 'up'
+                                  ? 'Lets go of what was pressed and held, with any keys held.'
+                                  : 'A picture of the page as it is now, kept with the run.'
                         }}
                     </p>
                 </div>
 
+                <PointerFields
+                    v-if="['down', 'move', 'drag'].includes(step.do)"
+                    :step="step"
+                    :readonly="readonly"
+                    @change="emit('change')"
+                />
+
+                <!-- For a demo film: what to tell whoever watches, how long the
+                     film stays on it; for a slow site: how long it may wait -->
                 <div
-                    v-if="!readonly || step.note || step.wait != null"
-                    class="flex gap-2 sm:col-span-2"
+                    v-if="
+                        !readonly ||
+                        step.note ||
+                        step.wait != null ||
+                        step.timeout != null
+                    "
+                    class="space-y-2 sm:col-span-2"
                 >
-                    <textarea
-                        v-model="step.note"
-                        :readonly="readonly"
-                        rows="2"
-                        maxlength="600"
-                        class="bg-background dark:bg-input/30 border-input min-w-0 flex-1 rounded-md border px-3 py-1.5 text-sm"
-                        placeholder="A note for a demo video (optional): what to tell whoever watches this step"
-                        aria-label="A note for a demo video"
-                        data-test="step-note"
-                        @input="emit('change')"
-                    />
-                    <label
-                        class="text-muted-foreground flex w-20 shrink-0 flex-col gap-1 text-[11px]"
-                        title="How long a demo video stays on this step, in seconds. Empty: as long as its note needs, or the pace's pause."
-                    >
-                        Stay (s)
-                        <Input
-                            :model-value="step.wait ?? ''"
+                    <label class="block space-y-1">
+                        <span
+                            class="text-muted-foreground flex items-baseline justify-between gap-2 text-xs"
+                        >
+                            Caption in a demo film
+                            <span
+                                v-if="step.note?.trim()"
+                                class="tabular-nums"
+                                data-test="step-note-says"
+                                >{{ step.note.trim().length }}/600 · up about
+                                {{ shownFor(step) }}</span
+                            >
+                        </span>
+                        <textarea
+                            v-model="step.note"
+                            v-grow
                             :readonly="readonly"
-                            type="number"
-                            min="0"
-                            max="30"
-                            step="0.5"
-                            :placeholder="String(lingers(step))"
-                            class="h-8 px-2"
-                            data-test="step-wait"
-                            @update:model-value="
-                                step.wait =
-                                    $event === '' || $event == null
-                                        ? null
-                                        : Number($event);
-                                emit('change');
-                            "
+                            rows="2"
+                            maxlength="600"
+                            class="bg-background dark:bg-input/30 border-input block w-full resize-none rounded-md border px-3 py-2 text-sm leading-relaxed"
+                            placeholder="Optional: what to tell whoever watches this step"
+                            aria-label="Caption in a demo film"
+                            data-test="step-note"
+                            @input="emit('change')"
                         />
                     </label>
+                    <div class="grid grid-cols-2 gap-2 sm:max-w-md">
+                        <label class="space-y-1">
+                            <span class="text-muted-foreground block text-xs"
+                                >Stays on screen</span
+                            >
+                            <Select
+                                :model-value="
+                                    step.wait == null
+                                        ? AUTO
+                                        : String(Number(step.wait))
+                                "
+                                :disabled="readonly"
+                                @update:model-value="
+                                    step.wait =
+                                        $event === AUTO ? null : Number($event);
+                                    emit('change');
+                                "
+                            >
+                                <SelectTrigger
+                                    size="sm"
+                                    class="w-full"
+                                    aria-label="How long a demo film stays on this step"
+                                    title="How long a demo film stays on this step once it is done"
+                                    data-test="step-wait"
+                                >
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem :value="AUTO"
+                                        >Auto · {{ autoStay(step) }}</SelectItem
+                                    >
+                                    <SelectItem
+                                        v-for="one in choices(STAYS, step.wait)"
+                                        :key="one"
+                                        :value="String(one)"
+                                        >{{ seconds(one) }}</SelectItem
+                                    >
+                                </SelectContent>
+                            </Select>
+                        </label>
+                        <!-- For a slow page or a long job: this step alone waits longer -->
+                        <label class="space-y-1">
+                            <span class="text-muted-foreground block text-xs"
+                                >Gives up after</span
+                            >
+                            <Select
+                                :model-value="
+                                    step.timeout == null
+                                        ? AUTO
+                                        : String(step.timeout)
+                                "
+                                :disabled="readonly"
+                                @update:model-value="
+                                    step.timeout =
+                                        $event === AUTO ? null : Number($event);
+                                    emit('change');
+                                "
+                            >
+                                <SelectTrigger
+                                    size="sm"
+                                    class="w-full"
+                                    aria-label="How long this step waits for the site before it fails"
+                                    :title="`How long this step waits for the site before it fails, up to ${stepMost ?? 60} s`"
+                                    data-test="step-timeout"
+                                >
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem :value="AUTO"
+                                        >Suite's
+                                        {{ stepLimit ?? 10 }} s</SelectItem
+                                    >
+                                    <SelectItem
+                                        v-for="one in choices(
+                                            GIVE_UPS.filter(
+                                                (it) => it <= (stepMost ?? 60),
+                                            ),
+                                            step.timeout,
+                                        )"
+                                        :key="one"
+                                        :value="String(one)"
+                                        >{{ seconds(one) }}</SelectItem
+                                    >
+                                </SelectContent>
+                            </Select>
+                        </label>
+                    </div>
                 </div>
             </div>
         </li>

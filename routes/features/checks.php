@@ -16,6 +16,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('checks/suites/{suite}', [BrowserCheckController::class, 'showSuite'])->name('checks.suites.show');
     Route::patch('checks/suites/{suite}', [BrowserCheckController::class, 'updateSuite'])->name('checks.suites.update');
     Route::delete('checks/suites/{suite}', [BrowserCheckController::class, 'destroySuite'])->name('checks.suites.destroy');
+    // Its checks as each version of them was, and putting one back
+    Route::get('checks/suites/{suite}/versions', [BrowserCheckController::class, 'versions'])->name('checks.suites.versions');
+    Route::post('checks/suites/{suite}/versions/{version}/restore', [BrowserCheckController::class, 'restoreVersion'])->whereNumber('version')->name('checks.suites.versions.restore');
     Route::post('checks/suites/{suite}/look', [BrowserCheckController::class, 'look'])->middleware('throttle:30,1')->name('checks.suites.look');
     // A page kept open while a check is built by clicking through it
     Route::post('checks/suites/{suite}/live', [BrowserCheckController::class, 'openLive'])->middleware('throttle:20,1')->name('checks.suites.live');
@@ -24,6 +27,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('checks/suites/{suite}/runs', [BrowserCheckController::class, 'startRun'])->middleware('throttle:20,1')->name('checks.runs.store');
     Route::get('checks/runs/{browserRun}', [BrowserCheckController::class, 'showRun'])->name('checks.runs.show');
     Route::post('checks/runs/{browserRun}/stop', [BrowserCheckController::class, 'stopRun'])->name('checks.runs.stop');
+
+    // The most anyone's checks may wait: the app's admins set it
+    Route::patch('admin/checks/limits', [BrowserCheckController::class, 'setLimits'])->name('admin.checks.limits');
 
     // The app's own browser suites, run and followed -- about the app itself,
     // so for its admins, and kept apart from anyone's browser checks

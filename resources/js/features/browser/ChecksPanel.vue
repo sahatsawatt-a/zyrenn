@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { router } from '@inertiajs/vue3';
 import {
     ChevronDown,
     CircleCheck,
@@ -10,6 +9,7 @@ import {
     Copy,
     EllipsisVertical,
     Film,
+    FolderOpen,
     History,
     ListChecks,
     Loader2,
@@ -17,6 +17,7 @@ import {
     MonitorCheck,
     MousePointerClick,
     PencilLine,
+    FlaskConical,
     Play,
     Plus,
     Search,
@@ -26,11 +27,14 @@ import {
     Tablet,
     Trash2,
 } from '@lucide/vue';
+import { echoIsConfigured } from '@laravel/echo-vue';
+import { Link } from '@inertiajs/vue3';
 import { useDebounceFn, useIntervalFn } from '@vueuse/core';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import DeleteDialog from '@/components/common/DeleteDialog.vue';
 import EmptyState from '@/components/common/EmptyState.vue';
+import { usePresence } from '@/composables/usePresence';
 import NameDialog from '@/components/common/NameDialog.vue';
 import SegmentTabs from '@/components/common/SegmentTabs.vue';
 import { Button } from '@/components/ui/button';
@@ -59,12 +63,14 @@ import { ask } from './http';
 import RunBars from './RunBars.vue';
 import RunOptionsDialog from './RunOptionsDialog.vue';
 import StepsEditor from './StepsEditor.vue';
-import { SIZES as SCREEN_SIZES, SPEEDS } from './steps';
+import { SIZES as SCREEN_SIZES, SPEEDS, stepId } from './steps';
 import SuiteSettings from './SuiteSettings.vue';
+import SuiteVersions from './SuiteVersions.vue';
 import { ago, took } from './time';
 import type {
     Check,
     CheckRun,
+    Limits,
     LivePage,
     LiveStep,
     Look,
@@ -73,6 +79,7 @@ import type {
     RunState,
     Size,
     Speed,
+    StartedBy,
     Step,
     Suite,
     SuiteSummary,
@@ -92,6 +99,7 @@ const props = defineProps<{
     canChange: boolean;
     newSuite: string;
     speeds: Record<Exclude<Speed, 'custom'>, Pace>;
+    limits: Limits;
 }>();
 
 // ------------------------------------------------------------ Which suite
@@ -105,13 +113,24 @@ const shownSuites = computed(() =>
     ),
 );
 
+// The last suite chosen wins, and its tab is set when it is chosen: a slow
+// load must not take back a tab moved to meanwhile
+let choosing = 0;
+
 async function choose(summary: SuiteSummary) {
+    const mine = ++choosing;
+    tab.value = 'checks';
     await saveNow();
-    suite.value = await ask<Suite>({ url: summary.url, method: 'get' });
+    const chosen = await ask<Suite>({ url: summary.url, method: 'get' });
+
+    if (mine !== choosing) {
+        return;
+    }
+
+    suite.value = chosen;
     suite.value.latest ??= {};
     openChecks.value = new Set();
     run.value = null;
-    tab.value = 'checks';
 
     if (suite.value.runs[0]) {
         await showRun(suite.value.runs[0].url);
@@ -177,6 +196,14 @@ async function saveNow() {
     pending = false;
     status.value = 'saving';
     const saving = suite.value;
+
+    // Each step made here since the last save: given its own id now, once,
+    // so the next save sends the same one and its history follows it
+    for (const check of saving.checks) {
+        for (const step of check.steps) {
+            step.id ??= stepId();
+        }
+    }
 
     try {
         await ask(
@@ -390,6 +417,22 @@ function startAs(check: Check, whom: string) {
 
 // ------------------------------------------------------------ Runs
 const run = ref<CheckRun | null>(null);
+
+// Its earlier versions, and one put back: the suite as it now is
+const versionsOpen = ref(false);
+const restored = (back: Suite) => {
+    suite.value = back;
+};
+// The first run to keep anything makes the suite a folder in the Drive: the
+// way there shows from then on, without the page asked again
+watch(
+    () => run.value?.suite_folder,
+    (folder) => {
+        if (folder && suite.value && !suite.value.folder) {
+            suite.value.folder = folder;
+        }
+    },
+);
 const starting = ref<'test' | 'demo' | 'custom' | null>(null);
 const going = computed(
     () => run.value?.state === 'waiting' || run.value?.state === 'running',
@@ -432,6 +475,8 @@ function runAs(
     kind: 'test' | 'demo',
     only: string | null = null,
     oneFilm = false,
+    // Only a try, while a check is being written: a quick test kept nowhere
+    trial = false,
 ) {
     void start(kind, {
         speed: kind === 'test' ? 'quick' : 'steady',
@@ -441,6 +486,7 @@ function runAs(
         keep: kind === 'demo',
         checks: only ? [only] : [],
         one_film: oneFilm,
+        trial,
     });
 }
 
@@ -458,15 +504,23 @@ async function start(kind: 'test' | 'demo' | 'custom', choice: RunChoice) {
             { url: suite.value.urls.runs, method: 'post' },
             choice,
         );
-        suite.value.runs.unshift({
-            ref_id: run.value.ref_id,
-            state: run.value.state,
-            speed: choice.speed,
-            record: choice.record,
-            started_by: 'person',
-            created_at: run.value.created_at,
-            url: run.value.url,
-        });
+        const started = run.value;
+
+        // (the channel may have told of it already); a try is never listed
+        if (
+            !started.trial &&
+            !suite.value.runs.some((one) => one.ref_id === started.ref_id)
+        ) {
+            suite.value.runs.unshift({
+                ref_id: started.ref_id,
+                state: started.state,
+                speed: choice.speed,
+                record: choice.record,
+                started_by: 'person',
+                created_at: started.created_at,
+                url: started.url,
+            });
+        }
         tab.value = 'runs';
     } catch (problem) {
         toast.error((problem as Error).message);
@@ -475,51 +529,167 @@ async function start(kind: 'test' | 'demo' | 'custom', choice: RunChoice) {
     }
 }
 
-// Followed until it ends
-useIntervalFn(async () => {
-    if (!run.value || !going.value) {
+// ---------------------------------------------------- Following runs
+// How a run went, shown where its checks and the suite are listed too --
+// once it has ended, from the whole of it
+const settled = new Set<string>();
+
+function settle(now: CheckRun) {
+    const current = suite.value;
+
+    // A try says nothing of how the suite stands
+    if (!current || settled.has(now.ref_id) || now.trial) {
         return;
     }
 
-    await showRun(run.value.url);
-    const now = run.value;
-    const listed = suite.value?.runs.find((one) => one.ref_id === now.ref_id);
+    settled.add(now.ref_id);
+    const listed = current.runs.find((one) => one.ref_id === now.ref_id);
 
     if (listed) {
         listed.state = now.state;
+        listed.passed = now.results.filter((check) => check.ok).length;
+        listed.total = now.results.length;
+        listed.took =
+            now.started_at && now.ended_at
+                ? new Date(now.ended_at).getTime() -
+                  new Date(now.started_at).getTime()
+                : null;
     }
 
-    if (!going.value && suite.value) {
-        // How it went, shown where its checks are listed too
-        if (listed) {
-            listed.passed = now.results.filter((check) => check.ok).length;
-            listed.total = now.results.length;
-            listed.took =
-                now.started_at && now.ended_at
-                    ? new Date(now.ended_at).getTime() -
-                      new Date(now.started_at).getTime()
-                    : null;
-        }
-
-        for (const check of now.results) {
-            suite.value.latest[check.id] = {
+    for (const check of now.results) {
+        // Not run, for a sign-in that failed: it says nothing of the check
+        if (!check.not_run) {
+            current.latest[check.id] = {
                 ok: check.ok,
                 took: check.took,
                 at: now.created_at,
             };
         }
-
-        const summary = summaries.value.find(
-            (one) => one.ref_id === suite.value?.ref_id,
-        );
-
-        if (summary) {
-            summary.last = now.state;
-            summary.last_at = now.created_at;
-            summary.recent = [...(summary.recent ?? []), now.state].slice(-10);
-        }
     }
-}, 1500);
+
+    const summary = summaries.value.find(
+        (one) => one.ref_id === current.ref_id,
+    );
+
+    if (summary) {
+        summary.last = now.state;
+        summary.last_at = now.created_at;
+        summary.recent = [...(summary.recent ?? []), now.state].slice(-10);
+    }
+}
+
+const ended = (state: RunState) => state !== 'waiting' && state !== 'running';
+
+/** The run shown, read whole again: its checks' steps and pictures. */
+async function follow() {
+    if (!run.value) {
+        return;
+    }
+
+    await showRun(run.value.url);
+
+    if (run.value && ended(run.value.state)) {
+        settle(run.value);
+    }
+}
+
+// What the suite's channel tells of each of its runs as it moves on --
+// started here, in another tab, by its timetable, a workflow or an
+// assistant. Each message is the whole of where a run stands, numbered, so
+// one that arrives late is older and left be.
+type RunHeard = {
+    run: string;
+    state: RunState;
+    // Only a try: followed while it is shown, never listed
+    trial: boolean;
+    stop_asked: boolean;
+    seq: number;
+    speed: Speed;
+    record: boolean;
+    started_by: StartedBy;
+    created_at: string;
+    url: string;
+    checks: { id: string; ok: boolean; done: number }[];
+};
+
+const newest = new Map<string, number>();
+
+function heard(news: RunHeard) {
+    const current = suite.value;
+
+    if (!current || (newest.get(news.run) ?? 0) > news.seq) {
+        return;
+    }
+
+    newest.set(news.run, news.seq);
+
+    // A try is followed only while it is the run shown
+    if (news.trial && run.value?.ref_id !== news.run) {
+        return;
+    }
+
+    let listed = current.runs.find((one) => one.ref_id === news.run);
+
+    if (!listed && !news.trial) {
+        listed = {
+            ref_id: news.run,
+            state: news.state,
+            speed: news.speed,
+            record: news.record,
+            started_by: news.started_by,
+            created_at: news.created_at,
+            url: news.url,
+        };
+        current.runs.unshift(listed);
+    }
+
+    if (listed) {
+        listed.state = news.state;
+    }
+
+    // The run shown: where it stands at once, and its checks read again
+    // only when one has more to show
+    const shown = run.value;
+
+    if (shown?.ref_id === news.run) {
+        const more =
+            news.checks.length !== shown.results.length ||
+            news.checks.some(
+                (check, at) =>
+                    check.done !== shown.results[at]?.steps.length ||
+                    check.ok !== shown.results[at]?.ok,
+            );
+
+        shown.state = news.state;
+        shown.stop_asked = news.stop_asked;
+
+        if (more || ended(news.state)) {
+            void follow();
+        }
+
+        return;
+    }
+
+    // Another of its runs, ended: read once, for how it went
+    if (ended(news.state) && !settled.has(news.run)) {
+        void ask<CheckRun>({ url: news.url, method: 'get' }).then(settle);
+    }
+}
+
+usePresence(() => (suite.value ? `checks.${suite.value.ref_id}` : ''), {
+    'run.changed': heard,
+});
+
+// Asked again now and then all the same, in case a message went astray --
+// and every moment where there is no socket to hear them on
+useIntervalFn(
+    () => {
+        if (going.value) {
+            void follow();
+        }
+    },
+    () => (echoIsConfigured() ? 30_000 : 1500),
+);
 
 const runTotal = computed(() =>
     run.value?.settings.checks.length
@@ -566,28 +736,13 @@ if (summaries.value[0]) {
     <div class="space-y-4">
         <!-- Where suites are kept -->
         <div class="flex flex-wrap items-center gap-2 text-sm">
-            <span class="text-muted-foreground">Kept in</span>
-            <Select
-                :model-value="spaces.find((one) => one.current)?.url"
-                @update:model-value="router.visit($event as string)"
+            <!-- Whose they are, as the sidebar's switcher chose: changed there -->
+            <span class="text-muted-foreground" data-test="checks-space"
+                >Kept in
+                <span class="text-foreground font-medium">{{
+                    spaces.find((one) => one.current)?.label
+                }}</span></span
             >
-                <SelectTrigger
-                    class="w-56"
-                    size="sm"
-                    aria-label="Kept in"
-                    data-test="checks-space"
-                >
-                    <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem
-                        v-for="one in spaces"
-                        :key="one.url"
-                        :value="one.url"
-                        >{{ one.label }}</SelectItem
-                    >
-                </SelectContent>
-            </Select>
             <span v-if="space" class="text-muted-foreground text-xs"
                 >Pictures and films go to this project's Drive.</span
             >
@@ -780,6 +935,22 @@ if (summaries.value[0]) {
                                 <Clapperboard v-else />
                                 Demo video
                             </Button>
+                            <!-- Where its films and pictures are kept -->
+                            <Button
+                                v-if="suite.folder"
+                                variant="ghost"
+                                size="icon"
+                                as-child
+                            >
+                                <Link
+                                    :href="suite.folder"
+                                    aria-label="Open its folder in the Drive"
+                                    title="Open its folder in the Drive: every run's films and pictures"
+                                    data-test="suite-folder"
+                                >
+                                    <FolderOpen />
+                                </Link>
+                            </Button>
                             <DropdownMenu>
                                 <DropdownMenuTrigger as-child>
                                     <Button
@@ -815,6 +986,12 @@ if (summaries.value[0]) {
                                     <DropdownMenuItem @select="tab = 'settings'"
                                         ><Settings2 />
                                         Settings</DropdownMenuItem
+                                    >
+                                    <DropdownMenuItem
+                                        data-test="suite-versions"
+                                        @select="versionsOpen = true"
+                                        ><History /> Earlier
+                                        versions</DropdownMenuItem
                                     >
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem
@@ -1032,6 +1209,21 @@ if (summaries.value[0]) {
                                     >
                                         <Play />
                                     </Button>
+                                    <!-- While it is being written: tried, and kept nowhere -->
+                                    <Button
+                                        v-if="canChange"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        aria-label="Try this check, keeping nothing"
+                                        title="Try this check, keeping nothing: not in the runs or health, no tickets, nothing in the Drive"
+                                        :disabled="!!starting || going"
+                                        data-test="check-try"
+                                        @click="
+                                            runAs('test', check.id, false, true)
+                                        "
+                                    >
+                                        <FlaskConical />
+                                    </Button>
                                     <DropdownMenu v-if="canChange">
                                         <DropdownMenuTrigger as-child>
                                             <Button
@@ -1168,6 +1360,14 @@ if (summaries.value[0]) {
                                         :steps="check.steps"
                                         :readonly="!canChange"
                                         :look="(upto) => lookAt(check, upto)"
+                                        :step-limit="
+                                            Math.min(
+                                                suite.limits.step ??
+                                                    limits.default.step,
+                                                limits.most.step,
+                                            )
+                                        "
+                                        :step-most="limits.most.step"
                                         @change="changed"
                                     />
                                 </div>
@@ -1202,8 +1402,9 @@ if (summaries.value[0]) {
                     v-show="tab === 'runs'"
                     class="grid gap-4 p-3 sm:p-4 xl:grid-cols-[17rem_minmax(0,1fr)]"
                 >
+                    <!-- A try is shown, though never listed -->
                     <EmptyState
-                        v-if="!suite.runs.length"
+                        v-if="!suite.runs.length && !run"
                         :icon="History"
                         title="No runs yet"
                         class="xl:col-span-2"
@@ -1215,6 +1416,7 @@ if (summaries.value[0]) {
                     </EmptyState>
                     <template v-else>
                         <ul
+                            v-if="suite.runs.length"
                             class="divide-y self-start overflow-hidden rounded-lg border"
                             data-test="run-history"
                         >
@@ -1226,6 +1428,9 @@ if (summaries.value[0]) {
                                         'bg-accent':
                                             past.ref_id === run?.ref_id,
                                     }"
+                                    data-test="run-row"
+                                    :data-run="past.ref_id"
+                                    :data-state="past.state"
                                     @click="showRun(past.url)"
                                 >
                                     <CircleCheck
@@ -1276,19 +1481,36 @@ if (summaries.value[0]) {
                                 </button>
                             </li>
                         </ul>
-                        <CheckRunView
+                        <div
                             v-if="run"
-                            :run="run"
-                            :total="runTotal"
                             class="min-w-0"
-                            @stop="stopRun"
-                        />
+                            :class="{ 'xl:col-span-2': !suite.runs.length }"
+                        >
+                            <p
+                                v-if="run.trial"
+                                class="text-muted-foreground mb-2 flex items-center gap-1.5 text-xs"
+                                data-test="run-trial"
+                            >
+                                <FlaskConical class="size-3.5 shrink-0" />
+                                Only a try: kept nowhere, and gone an hour after
+                                it ends.
+                            </p>
+                            <CheckRunView
+                                :run="run"
+                                :total="runTotal"
+                                @stop="stopRun"
+                            />
+                        </div>
                     </template>
                 </div>
 
                 <!-- How it goes on by itself -->
                 <div v-show="tab === 'settings'" class="p-3 sm:p-4">
-                    <SuiteSettings :suite="suite" :can-change="canChange" />
+                    <SuiteSettings
+                        :suite="suite"
+                        :can-change="canChange"
+                        :limits="limits"
+                    />
                 </div>
             </section>
         </div>
@@ -1303,6 +1525,13 @@ if (summaries.value[0]) {
             :step-page="stepPage"
             :close-page="closePage"
             @done="built"
+        />
+        <SuiteVersions
+            v-if="suite"
+            v-model:open="versionsOpen"
+            :suite="suite"
+            :can-change="canChange"
+            @restored="restored"
         />
         <RunOptionsDialog
             v-if="suite"

@@ -50,5 +50,6 @@ class RunBrowserChecks implements ShouldQueue
             ->update(['state' => BrowserRun::STOPPED, 'ended_at' => now()]);
         BrowserRun::whereKey($this->runId)->whereIn('state', [BrowserRun::WAITING, BrowserRun::RUNNING])
             ->update(['state' => BrowserRun::FAILED, 'ended_at' => now()]);
+        BrowserRun::find($this->runId)?->tell();
     }
 }

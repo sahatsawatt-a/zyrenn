@@ -5,6 +5,7 @@ namespace App\Mcp\Tools\BrowserChecks;
 use App\Mcp\Tools\BrowserCheckTool;
 use App\Models\Browser\BrowserSuite;
 use App\Support\Browser\BrowserCheck;
+use App\Support\Browser\Limits;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -27,6 +28,13 @@ real browser, in order:
   {"do": "gone", "target": "Loading…"}             words that must not be (waits for them to go)
   {"do": "address", "text": "/thank-you"}          the page's address must have this in it
   {"do": "shot"}                                   take a picture
+  {"do": "drag", "target": "Card", "onto": "Done"} press, move and let go: drop a thing on another
+  {"do": "down", "target": "Canvas", "at": "0.2,0.5"} press and hold (fractions of its box); then
+  {"do": "move", "target": "Canvas", "points": "0.5,0.3 0.8,0.5", "motion": "curve"} -- draw --
+  {"do": "up"}                                     let go; steps between are done while it is held
+A move or drag may follow SVG path data ("motion": "path") for circles, arcs and several strokes,
+hold keys ("keys": "Shift"), use another button, double-click first ("clicks": 2), press with a
+"pen" or a finger ("pointer": "touch"), and take "duration" seconds; the step fields say how.
 A link that opens a new tab is followed in the same one. Something inside a frame of the page (a
 card form) takes the "frame" look-at-page gives it; one of several sharing a name takes "nth".
 A target is found as a person would look: a button first, then a link, a field, words; exact before
@@ -47,19 +55,7 @@ class SaveBrowserSuite extends BrowserCheckTool
 {
     protected function arguments(JsonSchema $schema): array
     {
-        $step = $schema->object([
-            'do' => $schema->string()->enum(BrowserCheck::KINDS)->required(),
-            'url' => $schema->string()->max(4000),
-            'target' => $schema->string()->max(200),
-            'text' => $schema->string()->max(2000),
-            'key' => $schema->string()->max(30),
-            'selector' => $schema->string()->max(1000),
-            'nth' => $schema->integer()->min(1)->max(50),
-            'frame' => $schema->string()->max(1000),
-            'file' => $schema->string()->max(40),
-            'note' => $schema->string()->max(600),
-            'wait' => $schema->number()->min(0)->max(30),
-        ]);
+        $step = $this->stepSchema($schema);
 
         return [
             'suite' => $schema->string()->max(200)->description('The suite to change, by ref_id or name. Leave out to make a new one.'),
@@ -83,6 +79,10 @@ class SaveBrowserSuite extends BrowserCheckTool
                 'name' => $schema->string()->max(40)->description('Who it signs in as, a short word: "member", "admin".')->required(),
                 'check' => $schema->string()->max(200)->description('The check of this suite that signs in, by its name.')->required(),
             ]))->description('Sign in once a run, as each of these, and start every other check signed in -- as the first unless a check says otherwise. Replaces the list it had; [] for none.'),
+            'time_limits' => $schema->object([
+                'step' => $schema->integer()->description('Seconds each step waits for the site before it fails (default '.Limits::DEFAULT['step'].').'),
+                'check' => $schema->integer()->description('Seconds a whole check may take at full speed (default '.Limits::DEFAULT['check'].'); a slowed or filmed run gets its slowing on top.'),
+            ])->description('For a slow site, up to the most allowed (now '.Limits::most()['step'].' s a step, '.Limits::most()['check'].' s a check). One left out waits the default.'),
         ];
     }
 
@@ -112,6 +112,7 @@ class SaveBrowserSuite extends BrowserCheckTool
                 : null,
             'values' => $request->get('hidden_values'),
             'sign_ins' => $request->get('sign_ins'),
+            'limits' => $request->get('time_limits'),
         ], fn ($value) => $value !== null);
 
         // A sign-in names a check this suite has, written now or before

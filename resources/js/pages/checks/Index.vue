@@ -3,7 +3,12 @@ import { Head } from '@inertiajs/vue3';
 import { MonitorCheck } from '@lucide/vue';
 import PageHeader from '@/components/common/PageHeader.vue';
 import ChecksPanel from '@/features/browser/ChecksPanel.vue';
-import type { Pace, Speed, SuiteSummary } from '@/features/browser/steps';
+import type {
+    Limits,
+    Pace,
+    Speed,
+    SuiteSummary,
+} from '@/features/browser/steps';
 
 // Browser checks: suites of checks of any public site, kept in one's own
 // space or a project's, built by clicking through its pages and run in a
@@ -17,6 +22,7 @@ defineProps<{
     canChange: boolean;
     newSuite: string;
     speeds: Record<Exclude<Speed, 'custom'>, Pace>;
+    limits: Limits;
 }>();
 </script>
 
@@ -37,6 +43,7 @@ defineProps<{
             :can-change="canChange"
             :new-suite="newSuite"
             :speeds="speeds"
+            :limits="limits"
         />
     </div>
 </template>
