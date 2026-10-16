@@ -1,10 +1,10 @@
 // What a drawing on a board says as a circuit: its parts, which pins are
 // joined to which, and what looks wrong with it. Read from the symbols and
 // the wires between their pins, so the drawing is the design.
-import { pinFor } from '@/features/boards/composables/connectors';
-import { boundsOf } from '@/features/boards/composables/geometry';
-import { isConnector } from '@/features/boards/composables/items';
-import type { Endpoint, Item } from '@/features/boards/composables/items';
+import { pinFor } from '@/features/boards/model/connectors';
+import { boundsOf } from '@/features/boards/model/geometry';
+import { isConnector } from '@/features/boards/model/items';
+import type { Endpoint, Item } from '@/features/boards/model/items';
 import { netKind } from './parse';
 import { isSymbol, pinList, pinsOf, symbolOf, wordsOf } from './symbols';
 import type { SymbolDef } from './symbols';

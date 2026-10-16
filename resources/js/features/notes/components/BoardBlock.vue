@@ -10,8 +10,8 @@ import {
     ref,
     watch,
 } from 'vue';
-import type { Item } from '@/features/boards/composables/items';
-import { nameOf } from '@/features/boards/composables/items';
+import type { Item } from '@/features/boards/model/items';
+import { nameOf } from '@/features/boards/model/items';
 import type { BoardContent, BoardSummary } from '@/features/boards/lib/api';
 import { boardContent, listBoards } from '@/features/boards/lib/api';
 import { holdPrint } from '@/lib/printReady';
@@ -26,8 +26,7 @@ import { show } from '@/routes/boards';
 const props = defineProps<NodeViewProps>();
 
 // Konva is heavy and most notes hold no board at all
-const loadBoardView = () =>
-    import('@/features/boards/components/BoardView.vue');
+const loadBoardView = () => import('@/features/boards/drawing/BoardView.vue');
 const BoardView = defineAsyncComponent(loadBoardView);
 
 // The PDF printer waits for the board to be drawn (see printReady)

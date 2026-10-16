@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 import { onMounted } from 'vue';
-import BoardView from '@/features/boards/components/BoardView.vue';
-import type { Deck } from '@/features/boards/composables/deck';
-import type { Item } from '@/features/boards/composables/items';
+import BoardView from '@/features/boards/drawing/BoardView.vue';
+import type { Deck } from '@/features/boards/deck/deck';
+import type { Item } from '@/features/boards/model/items';
 import { markEditorReady } from '@/lib/printReady';
 
 // A board drawn for the renderer (App\Support\Board\BoardRender) and nothing else:

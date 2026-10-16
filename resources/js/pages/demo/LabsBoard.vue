@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
-import BoardCanvas from '@/features/boards/components/BoardCanvas.vue';
+import BoardCanvas from '@/features/boards/canvas/BoardCanvas.vue';
 import { logicBoard } from '@/features/labs/logicBoard';
 
 // What was added to boards last, on the canvas real boards use: the new

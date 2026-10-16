@@ -1,6 +1,6 @@
 // Reading boards from somewhere that is not the board page -- a note showing
 // one, say. The board's own page holds its items already and needs none of this.
-import type { Item } from '@/features/boards/composables/items';
+import type { Item } from '@/features/boards/model/items';
 import { owned } from '@/lib/projects';
 import { content, pick } from '@/routes/boards';
 import { pick as projectPick } from '@/routes/projects/boards';

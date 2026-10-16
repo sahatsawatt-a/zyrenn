@@ -1,5 +1,5 @@
 {
-    "about": "How a board's frames are made into a deck: its themes (a few colours and two typefaces), the parts each kind of slide is laid out from on a 960 x 540 frame, and the type each part is set in. Read by the canvas (composables/deck.ts) and by the server (App\\Support\\Board\\Deck), so a slide is laid out the same wherever it is asked for.",
+    "about": "How a board's frames are made into a deck: its themes (a few colours and two typefaces), the parts each kind of slide is laid out from on a 960 x 540 frame, and the type each part is set in. Read by the canvas (deck/deck.ts) and by the server (App\\Support\\Board\\Deck), so a slide is laid out the same wherever it is asked for.",
     "frame": { "width": 960, "height": 540, "margin": 56 },
     "themes": [
         {

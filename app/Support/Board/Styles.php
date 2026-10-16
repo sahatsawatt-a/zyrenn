@@ -7,7 +7,7 @@ namespace App\Support\Board;
  * put a colour on with -- soft, solid, outline, bold, light.
  *
  * One list, resources/js/features/boards/lib/styles.json, is read by the
- * canvas (composables/styles.ts) and here, so "solid:indigo" from an MCP
+ * canvas (model/styles.ts) and here, so "solid:indigo" from an MCP
  * client paints what the canvas's own Style picker would.
  */
 class Styles
@@ -59,7 +59,7 @@ class Styles
     /**
      * What putting a colour on in a style changes about an item of a kind:
      * fill, line and words for a shape; the line for a connector or ink; the
-     * words for a text. The same sums as styled() in composables/styles.ts.
+     * words for a text. The same sums as styled() in model/styles.ts.
      *
      * @return array<string, mixed>
      */

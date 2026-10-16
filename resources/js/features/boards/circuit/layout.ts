@@ -8,9 +8,9 @@
 import {
     attachmentsOf,
     connectorPoints,
-} from '@/features/boards/composables/connectors';
-import { makeItem } from '@/features/boards/composables/items';
-import type { Endpoint, Item, Side } from '@/features/boards/composables/items';
+} from '@/features/boards/model/connectors';
+import { makeItem } from '@/features/boards/model/items';
+import type { Endpoint, Item, Side } from '@/features/boards/model/items';
 import type { Circuit, Net, Part } from './parse';
 import {
     GRID,

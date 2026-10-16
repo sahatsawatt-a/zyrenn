@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
     attachmentsOf,
     connectorPoints,
-} from '@/features/boards/composables/connectors';
-import { isConnector, makeItem } from '@/features/boards/composables/items';
-import type { Item } from '@/features/boards/composables/items';
+} from '@/features/boards/model/connectors';
+import { isConnector, makeItem } from '@/features/boards/model/items';
+import type { Item } from '@/features/boards/model/items';
 import { circuitExamples } from './examples';
 import { layOut } from './layout';
 import { billOfMaterials, circuitText, readCircuit } from './netlist';

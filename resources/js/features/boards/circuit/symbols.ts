@@ -2,7 +2,7 @@
 // are, and how it sits on the board once it is turned. One list (symbols.json)
 // is read by the canvas, by the drawing a note makes from text, and by the
 // server (App\Support\Board\Symbols), so a part is the same part everywhere.
-import type { Item, Side } from '@/features/boards/composables/items';
+import type { Item, Side } from '@/features/boards/model/items';
 import library from './symbols.json';
 
 /** Where a symbol's name and value are written, as it is drawn unturned. */

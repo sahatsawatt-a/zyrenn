@@ -1,7 +1,7 @@
 // A logic circuit run: every net high or low, worked out from its inputs
 // through its gates. The drawing is the circuit -- the same pins and wires
 // the netlist is read from -- so what is drawn is what runs.
-import type { Item } from '@/features/boards/composables/items';
+import type { Item } from '@/features/boards/model/items';
 import { wiring } from './netlist';
 import { symbolOf, wordsOf } from './symbols';
 

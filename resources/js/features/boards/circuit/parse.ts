@@ -18,7 +18,7 @@
 // its left and after a "|" those down its right:
 //
 //     U2: chip 74HC595 [SER, SRCLK, RCLK | QA, QB, QC]
-import type { Side } from '@/features/boards/composables/items';
+import type { Side } from '@/features/boards/model/items';
 import {
     chipFrom,
     findSymbol,

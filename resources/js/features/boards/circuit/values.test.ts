@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Item } from '@/features/boards/composables/items';
+import type { Item } from '@/features/boards/model/items';
 import { layOut } from './layout';
 import { parseCircuit } from './parse';
 import { besideRun, boardValues } from './values';

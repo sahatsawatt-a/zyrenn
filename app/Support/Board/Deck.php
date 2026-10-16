@@ -8,7 +8,7 @@ namespace App\Support\Board;
  * layout.
  *
  * One list, resources/js/features/boards/lib/deck.json, holds the themes and
- * layouts, read here and by the canvas (composables/deck.ts), so a slide is
+ * layouts, read here and by the canvas (deck/deck.ts), so a slide is
  * laid out the same wherever it is asked for. What a board keeps is its
  * content's "deck": a theme by its id, any of its colours or typefaces said
  * otherwise, the header and footer, and whether slides are numbered. Those

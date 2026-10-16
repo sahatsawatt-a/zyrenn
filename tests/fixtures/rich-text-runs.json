@@ -1,0 +1,52 @@
+{
+    "about": "A rich board label's lines and the runs each is read as: [text, bold, code]. The canvas (resources/js/features/boards/drawing/labels.ts, runsOf) and the server (App\\Support\\Board\\LabelFit::runs) must read each the same; labels.test.ts and tests/Unit/LabelFitTest.php both check every case here.",
+    "cases": [
+        {
+            "line": "compare_by handling and ROW_WEBHOOK_URL",
+            "runs": [["compare_by handling and ROW_WEBHOOK_URL", false, false]]
+        },
+        {
+            "line": "an _aside_ here, snake_case_name too",
+            "runs": [
+                ["an ", false, false],
+                ["aside", false, false],
+                [" here, snake_case_name too", false, false]
+            ]
+        },
+        {
+            "line": "set `ROW_WEBHOOK_URL` and *go*",
+            "runs": [
+                ["set ", false, false],
+                ["ROW_WEBHOOK_URL", false, true],
+                [" and ", false, false],
+                ["go", false, false]
+            ]
+        },
+        {
+            "line": "**`docker compose up`** in `code/`",
+            "runs": [
+                ["docker compose up", true, true],
+                [" in ", false, false],
+                ["code/", false, true]
+            ]
+        },
+        {
+            "line": "*see `x_y`*",
+            "runs": [
+                ["see ", false, false],
+                ["x_y", false, true]
+            ]
+        },
+        {
+            "line": "\\_private\\_ and 2 \\* 3 and \\`x\\`",
+            "runs": [["_private_ and 2 * 3 and `x`", false, false]]
+        },
+        {
+            "line": "**bold** then plain",
+            "runs": [
+                ["bold", true, false],
+                [" then plain", false, false]
+            ]
+        }
+    ]
+}

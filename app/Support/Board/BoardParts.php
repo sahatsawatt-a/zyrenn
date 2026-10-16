@@ -7,7 +7,7 @@ namespace App\Support\Board;
  * rather than every item with every colour for one sticky note.
  *
  * What belongs to a frame is worked out as the canvas works it out for its
- * layers list (resources/js/features/boards/composables/layers.ts): an item sits in the
+ * layers list (resources/js/features/boards/model/layers.ts): an item sits in the
  * smallest frame its middle falls inside, and a connector goes with what it
  * joins.
  */

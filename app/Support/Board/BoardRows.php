@@ -9,7 +9,7 @@ use Illuminate\Support\Str;
  * fields and methods.
  *
  * The canvas keeps them as rows on the item and draws them a row to a line
- * under a titled band (resources/js/features/boards/composables/rows.ts). The
+ * under a titled band (resources/js/features/boards/model/rows.ts). The
  * sums here are the canvas's own, so a board an MCP client writes is as tall
  * as its rows need and its connectors hold on where the canvas would have put
  * them; tests keep the two to the same numbers.

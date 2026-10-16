@@ -5,9 +5,9 @@ import {
     attachmentsOf,
     connectorPoints,
     midpointOf,
-} from '@/features/boards/composables/connectors';
-import { INK, isConnector } from '@/features/boards/composables/items';
-import type { Item } from '@/features/boards/composables/items';
+} from '@/features/boards/model/connectors';
+import { INK, isConnector } from '@/features/boards/model/items';
+import type { Item } from '@/features/boards/model/items';
 import { WARNED, besideRun } from './values';
 import {
     LABEL_SIZE,

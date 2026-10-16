@@ -1,5 +1,5 @@
 {
-    "about": "Diagrams a board can be started from. Each is a list of items as an MCP client would write them (kind, words, a box, and for a connector the ids it joins), so the canvas (composables/templates.ts) and the server (App\\Support\\Board\\Templates) read the same list.",
+    "about": "Diagrams a board can be started from. Each is a list of items as an MCP client would write them (kind, words, a box, and for a connector the ids it joins), so the canvas (model/templates.ts) and the server (App\\Support\\Board\\Templates) read the same list.",
     "templates": [
         {
             "id": "flowchart",

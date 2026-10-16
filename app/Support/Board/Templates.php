@@ -7,7 +7,7 @@ namespace App\Support\Board;
  *
  * One list, resources/js/features/boards/lib/templates.json, holds each as an
  * MCP client would write it, and is read by the canvas
- * (composables/templates.ts) and here -- so the template a client asks for is
+ * (model/templates.ts) and here -- so the template a client asks for is
  * the one the Templates button puts on a board.
  */
 class Templates

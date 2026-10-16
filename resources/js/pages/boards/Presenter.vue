@@ -3,11 +3,11 @@ import { Head } from '@inertiajs/vue3';
 import { ChevronLeft, ChevronRight, X } from '@lucide/vue';
 import { useIntervalFn } from '@vueuse/core';
 import { computed, ref } from 'vue';
-import BoardView from '@/features/boards/components/BoardView.vue';
+import BoardView from '@/features/boards/drawing/BoardView.vue';
 import {
     presenterChannel,
     usePresenterView,
-} from '@/features/boards/composables/usePresenterLink';
+} from '@/features/boards/deck/usePresenterLink';
 
 // The presenter's own window while a board is shown as slides, on their
 // screen rather than the audience's: what they say over this slide, the

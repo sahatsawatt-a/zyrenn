@@ -5,7 +5,7 @@
 import { SHOTS, runBoard, until } from './harness.mjs';
 
 // How rows are laid out under a title, at the size a new table is set in
-// (composables/rows.ts)
+// (model/rows.ts)
 const HEAD = 34;
 const ROW = 23;
 const tall = (rows) => HEAD + rows * ROW + 6;

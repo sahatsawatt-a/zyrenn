@@ -6,7 +6,7 @@ namespace App\Support\Board;
  * Translates between the board canvas's items and the short form MCP clients
  * read and write.
  *
- * A canvas item (resources/js/features/boards/composables/items.ts) carries twenty-odd
+ * A canvas item (resources/js/features/boards/model/items.ts) carries twenty-odd
  * fields, most of which matter to one kind of shape only. A client sends the
  * few that say what it wants -- a kind, a label, maybe a box -- and this fills
  * the rest in with the defaults the toolbar uses, lays out whatever arrived

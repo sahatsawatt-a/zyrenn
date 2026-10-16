@@ -1,6 +1,6 @@
 // Wires met part-way along: where a point lands on one, so a new wire can be
 // joined to it with a dot.
-import type { Item } from '@/features/boards/composables/items';
+import type { Item } from '@/features/boards/model/items';
 import { GRID } from './symbols';
 
 /**

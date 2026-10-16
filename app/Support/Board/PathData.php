@@ -6,7 +6,7 @@ namespace App\Support\Board;
  * SVG path data -- the `d` of a <path> -- read into moves, straight lines,
  * cubic and quadratic curves and closes, every point absolute: arcs become
  * cubic curves and the shorthands (H, V, S, T) their full forms. The canvas
- * reads paths the same way (resources/js/features/boards/composables/pathData.ts).
+ * reads paths the same way (resources/js/features/boards/pen/pathData.ts).
  *
  * Every segment carries all its numbers, 0 where its kind has none; a
  * close carries the point it goes back to.

@@ -10,7 +10,7 @@ use Tests\TestCase;
 
 /**
  * Rows as the server reads and lays them out. The canvas does the same sums
- * (resources/js/features/boards/composables/rows.ts) and its tests hold the
+ * (resources/js/features/boards/model/rows.ts) and its tests hold the
  * same numbers: the two have to agree, or a connector an MCP client draws to
  * a column lands on the one above it.
  */

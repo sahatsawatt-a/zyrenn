@@ -1,8 +1,8 @@
 import { layOut } from '@/features/boards/circuit/layout';
 import { parseCircuit } from '@/features/boards/circuit/parse';
 import { pinOf, symbolOf } from '@/features/boards/circuit/symbols';
-import { makeItem } from '@/features/boards/composables/items';
-import type { Item } from '@/features/boards/composables/items';
+import { makeItem } from '@/features/boards/model/items';
+import type { Item } from '@/features/boards/model/items';
 
 // The board the labs page opens: the logic parts being tried out, each wired
 // up and ready to click -- three-input gates, a push-button, a 7-segment

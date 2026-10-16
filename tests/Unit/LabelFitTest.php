@@ -3,11 +3,12 @@
 namespace Tests\Unit;
 
 use App\Support\Board\LabelFit;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
  * A rich label's words as the server reads them to measure. The canvas reads
- * them the same (resources/js/features/boards/composables/labels.ts, runsOf)
+ * them the same (resources/js/features/boards/drawing/labels.ts, runsOf)
  * and its tests hold the same cases.
  */
 class LabelFitTest extends TestCase
@@ -18,21 +19,27 @@ class LabelFitTest extends TestCase
         return (fn () => self::runs($line, false))->call(new LabelFit);
     }
 
-    public function test_an_underscore_inside_a_word_is_only_an_underscore()
+    /**
+     * @return iterable<string, array{string, list<array{string, bool, bool}>}>
+     */
+    public static function sharedCases(): iterable
     {
-        $this->assertSame([['compare_by handling and ROW_WEBHOOK_URL', false, false]], $this->runs('compare_by handling and ROW_WEBHOOK_URL'));
-        $this->assertSame(['an ', 'aside', ' here, snake_case_name too'], array_column($this->runs('an _aside_ here, snake_case_name too'), 0));
+        $shared = json_decode((string) file_get_contents(__DIR__.'/../fixtures/rich-text-runs.json'), true);
+
+        foreach ($shared['cases'] as $case) {
+            yield $case['line'] => [$case['line'], $case['runs']];
+        }
     }
 
-    public function test_code_and_escaped_marks_are_read_as_the_canvas_reads_them()
+    /**
+     * The same cases the canvas is held to (labels.test.ts).
+     *
+     * @param  list<array{string, bool, bool}>  $runs
+     */
+    #[DataProvider('sharedCases')]
+    public function test_a_line_is_read_as_the_canvas_reads_it(string $line, array $runs)
     {
-        $this->assertSame([['set ', false, false], ['ROW_WEBHOOK_URL', false, true], [' and ', false, false], ['go', false, false]], $this->runs('set `ROW_WEBHOOK_URL` and *go*'));
-        $this->assertSame([['_private_ and 2 * 3 and `x`', false, false]], $this->runs('\\_private\\_ and 2 \\* 3 and \\`x\\`'));
-    }
-
-    public function test_code_inside_bold_words_is_still_code()
-    {
-        $this->assertSame([['docker compose up', true, true], [' in ', false, false], ['code/', false, true]], $this->runs('**`docker compose up`** in `code/`'));
+        $this->assertSame($runs, $this->runs($line));
     }
 
     public function test_code_is_measured_in_mono_with_room_for_its_tint()

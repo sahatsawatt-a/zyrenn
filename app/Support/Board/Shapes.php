@@ -6,7 +6,7 @@ namespace App\Support\Board;
  * The shapes a board draws from a path: more flowchart, UML, architecture.
  *
  * One list, resources/js/features/boards/lib/shapes.json, is read by the
- * canvas (composables/shapes.ts) and here, so a shape an MCP client names is
+ * canvas (model/shapes.ts) and here, so a shape an MCP client names is
  * one the canvas can draw, and starts as it would from the toolbar.
  */
 class Shapes
@@ -60,7 +60,7 @@ class Shapes
     /**
      * The ways a kind can be drawn besides its usual one, by name: its own
      * ("stacked", "shaded"), and for a kind with an icon "card", "badge" and
-     * "icon" -- as designsOf() in composables/shapes.ts lists them.
+     * "icon" -- as designsOf() in model/shapes.ts lists them.
      *
      * @return list<string>
      */

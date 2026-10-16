@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { isConnector, makeItem } from '@/features/boards/composables/items';
-import type { Item } from '@/features/boards/composables/items';
+import { isConnector, makeItem } from '@/features/boards/model/items';
+import type { Item } from '@/features/boards/model/items';
 import { layOut } from './layout';
 import { newMemory, simulate, truthTable } from './logic';
 import { parseCircuit } from './parse';

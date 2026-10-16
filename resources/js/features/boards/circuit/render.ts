@@ -1,7 +1,7 @@
 // Circuit text to a drawing, in one step: read, laid out, drawn -- and, when
 // the text asks for its values, worked out, with the answers written on it.
-import { isConnector } from '@/features/boards/composables/items';
-import type { Item } from '@/features/boards/composables/items';
+import { isConnector } from '@/features/boards/model/items';
+import type { Item } from '@/features/boards/model/items';
 import { layOut } from './layout';
 import { parseCircuit } from './parse';
 import type { Circuit } from './parse';

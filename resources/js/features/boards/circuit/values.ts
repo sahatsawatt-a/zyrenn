@@ -1,8 +1,8 @@
 // A worked-out circuit as words on its drawing: what is written under each
 // part and beside each wire. The same for a circuit drawn from text in a
 // note and for one drawn by hand on a board.
-import { connectorPoints } from '@/features/boards/composables/connectors';
-import type { Item } from '@/features/boards/composables/items';
+import { connectorPoints } from '@/features/boards/model/connectors';
+import type { Item } from '@/features/boards/model/items';
 import { readCircuit, wiring } from './netlist';
 import type { NetRow, PartRow } from './netlist';
 import type { Net } from './parse';

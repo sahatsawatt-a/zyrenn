@@ -1,5 +1,5 @@
 {
-    "about": "Ready-made looks for what is drawn on a board, read by the canvas (composables/styles.ts) and by the server (App\\Support\\Board\\Styles), so a style an MCP client names is the one the canvas paints. colours: families of shades (Tailwind's), and 'solid': the shade white words read on at 4.5:1 or better. sets: colour sets to choose from, in their own order -- the last is the set's grey, for lines and what has no colour of its own. styles: how a colour is put on a shape -- the shade of its fill, its line and its words ('white', or a shade), and the line's width. A connector takes its style's line; a text item, its words.",
+    "about": "Ready-made looks for what is drawn on a board, read by the canvas (model/styles.ts) and by the server (App\\Support\\Board\\Styles), so a style an MCP client names is the one the canvas paints. colours: families of shades (Tailwind's), and 'solid': the shade white words read on at 4.5:1 or better. sets: colour sets to choose from, in their own order -- the last is the set's grey, for lines and what has no colour of its own. styles: how a colour is put on a shape -- the shade of its fill, its line and its words ('white', or a shade), and the line's width. A connector takes its style's line; a text item, its words.",
     "colours": {
         "slate": {
             "label": "Slate",
