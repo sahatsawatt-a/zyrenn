@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, setLayoutProps } from '@inertiajs/vue3';
+import { Head, router, setLayoutProps } from '@inertiajs/vue3';
 import { ArrowLeft } from '@lucide/vue';
 import type {
     GeoJSONSource,
@@ -17,6 +17,7 @@ import { pin, placePin } from '@/components/map/markers';
 import type { LocalPlace } from '@/components/map/PlaceSearch.vue';
 import PlaceSearch from '@/components/map/PlaceSearch.vue';
 import { useMap } from '@/components/map/useMap';
+import { useSpaceChanges } from '@/composables/useSpaceChanges';
 import { matchingSaved } from '@/components/map/useSavedPlaces';
 import type { Candidate, PlaceList, Route, SavedPlace } from '@/lib/maps';
 import { whatIsHere } from '@/lib/maps';
@@ -31,6 +32,18 @@ const props = defineProps<{ lists: PlaceList[]; places: SavedPlace[] }>();
 
 const editable = canChange();
 const store = usePlaceStore(props);
+
+// Places saved, moved or taken away elsewhere -- by MCP or someone else in the
+// project -- come onto the map: the store takes the lists as they now are
+useSpaceChanges(['places'], () =>
+    router.reload({
+        only: ['lists', 'places'],
+        onSuccess: () => {
+            store.lists.value = [...props.lists];
+            store.places.value = [...props.places];
+        },
+    }),
+);
 
 watchEffect(() =>
     setLayoutProps({

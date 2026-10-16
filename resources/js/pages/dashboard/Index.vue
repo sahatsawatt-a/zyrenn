@@ -15,6 +15,7 @@ import {
     Table2,
     Users,
 } from '@lucide/vue';
+import { watchDebounced } from '@vueuse/core';
 import { computed } from 'vue';
 import type { Component } from 'vue';
 import Panel from '@/features/dashboard/components/Panel.vue';
@@ -23,6 +24,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { getInitials } from '@/composables/useInitials';
+import { useSpaceChanges } from '@/composables/useSpaceChanges';
+import { chatChanges } from '@/composables/useUnreadChats';
 import { canChange, owned } from '@/lib/projects';
 import { formatBytes, formatRelativeTime } from '@/lib/utils';
 import { dashboard } from '@/routes';
@@ -86,6 +89,17 @@ const props = defineProps<{
     }[];
     fromProjects?: Recent[];
 }>();
+
+// What is in the space, made, renamed or taken away elsewhere, and its chats as they are written
+// in, as they happen -- not each word typed into a note
+useSpaceChanges(
+    ['notes', 'boards', 'tables', 'drive'],
+    ['counts', 'recent', 'todos'],
+);
+watchDebounced(chatChanges, () => router.reload({ only: ['chats'] }), {
+    debounce: 400,
+    maxWait: 2000,
+});
 
 defineOptions({
     layout: { breadcrumbs: [{ title: 'Dashboard', href: dashboard() }] },

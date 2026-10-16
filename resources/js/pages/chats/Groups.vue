@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { Plus, Users } from '@lucide/vue';
+import { watchDebounced } from '@vueuse/core';
 import { computed, ref } from 'vue';
 import PeoplePicker from '@/features/chat/components/PeoplePicker.vue';
 import type { Person } from '@/features/chat/components/PeoplePicker.vue';
@@ -18,6 +19,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { chatChanges } from '@/composables/useUnreadChats';
 import { join } from '@/routes/chats';
 import { store as startGroup } from '@/routes/projects/chat';
 
@@ -38,6 +40,12 @@ const props = defineProps<{
 
 const page = usePage();
 const project = computed(() => page.props.project!);
+
+// Written in or changed by others, the project's groups say so as it happens
+watchDebounced(chatChanges, () => router.reload({ only: ['groups'] }), {
+    debounce: 400,
+    maxWait: 2000,
+});
 
 const rooms = computed(() =>
     props.groups.map((group) => ({

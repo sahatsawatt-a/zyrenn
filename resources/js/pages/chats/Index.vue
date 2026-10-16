@@ -8,6 +8,7 @@ import {
     Plus,
     Users,
 } from '@lucide/vue';
+import { watchDebounced } from '@vueuse/core';
 import { ref } from 'vue';
 import PeoplePicker from '@/features/chat/components/PeoplePicker.vue';
 import type { Person } from '@/features/chat/components/PeoplePicker.vue';
@@ -22,6 +23,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { chatChanges } from '@/composables/useUnreadChats';
 import {
     index,
     store as startRoom,
@@ -53,6 +55,16 @@ const props = defineProps<{
     // Whether one's own room may have an AI agent (CHAT_AGENTS); off, AI comes from workflows
     agents: boolean;
 }>();
+
+// Written in -- by someone else, or a workflow in one's own -- a room moves up and counts what is new
+watchDebounced(
+    chatChanges,
+    () => router.reload({ only: ['personal', 'direct', 'groups'] }),
+    {
+        debounce: 400,
+        maxWait: 2000,
+    },
+);
 
 defineOptions({
     layout: { breadcrumbs: [{ title: 'Chat', href: index() }] },

@@ -5,6 +5,7 @@ namespace App\Models\Map;
 use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
 use App\Models\Concerns\RecordsEditor;
+use App\Models\Concerns\TellsLists;
 use Database\Factories\Map\PlaceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -33,7 +34,7 @@ use Illuminate\Support\Carbon;
 class Place extends Model
 {
     /** @use HasFactory<PlaceFactory> */
-    use BelongsToOwner, HasFactory, HasRefId, RecordsEditor;
+    use BelongsToOwner, HasFactory, HasRefId, RecordsEditor, TellsLists;
 
     /**
      * Mirror the column defaults so new instances match what the database stores.

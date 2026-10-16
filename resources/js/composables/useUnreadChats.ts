@@ -9,6 +9,10 @@ const unread = ref(0);
 // count beside it, ask again for what they show
 export const inboxChanges = ref(0);
 
+// Goes up whenever any chat of the user's is written in or changed: the pages listing their chats
+// ask again for what they show
+export const chatChanges = ref(0);
+
 /** Set the count from what the server said, such as after reading a room. */
 export const setUnreadChats = (count: number) => (unread.value = count);
 
@@ -35,6 +39,8 @@ export function useUnreadChats() {
             .listen(
                 '.chat.message',
                 (event: { room: string; kind?: string }) => {
+                    chatChanges.value++;
+
                     // A customer's chat is the inbox's to count, by how many are still to be answered
                     if (event.kind === 'customer') {
                         inboxChanges.value++;
@@ -51,7 +57,10 @@ export function useUnreadChats() {
                     }
                 },
             )
-            .listen('.chat.room', () => inboxChanges.value++);
+            .listen('.chat.room', () => {
+                inboxChanges.value++;
+                chatChanges.value++;
+            });
 
         onBeforeUnmount(() => echo().leave(channel));
     }

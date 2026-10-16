@@ -1,9 +1,11 @@
 <?php
 
 use App\Models\Board\Board;
+use App\Models\Browser\BrowserSuite;
 use App\Models\Chat\ChatRoom;
 use App\Models\Map\Trip;
 use App\Models\Note\Note;
+use App\Models\Project;
 use App\Models\Table\Table;
 use App\Models\User;
 use App\Models\Workflow\Workflow;
@@ -12,6 +14,9 @@ use Illuminate\Support\Facades\Broadcast;
 Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
     return (int) $user->id === (int) $id;
 });
+
+// What a project's lists hold changing (ListChanged): any of its members
+Broadcast::channel('projects.{project}', fn (User $user, Project $project) => $project->roleOf($user) !== null);
 
 // Who has a note, board, table, trip or workflow open, and what changes in it. Anyone who
 // may see it may listen; what they are shown of each other is their name.
@@ -22,6 +27,8 @@ Broadcast::channel('boards.{board}', fn (User $user, Board $board) => $user->can
 Broadcast::channel('tables.{table}', fn (User $user, Table $table) => $user->can('view', $table) ? $here($user) : false);
 Broadcast::channel('trips.{trip}', fn (User $user, Trip $trip) => $user->can('view', $trip) ? $here($user) : false);
 Broadcast::channel('workflows.{workflow}', fn (User $user, Workflow $workflow) => $user->can('view', $workflow) ? $here($user) : false);
+// A suite of browser checks open: how each of its runs goes, as it goes
+Broadcast::channel('checks.{suite}', fn (User $user, BrowserSuite $suite) => $user->can('view', $suite) ? $here($user) : false);
 
 // Who has a chat room open, and what is said in it: anyone in the room
 Broadcast::channel('chats.{room}', fn (User $user, ChatRoom $room) => $room->includes($user) ? $here($user) : false);

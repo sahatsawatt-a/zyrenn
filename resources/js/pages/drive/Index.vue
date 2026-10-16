@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
-import { FolderPlus, HardDrive, SearchX, Upload } from '@lucide/vue';
+import { Download, FolderPlus, HardDrive, SearchX, Upload } from '@lucide/vue';
 import { useFileDialog } from '@vueuse/core';
 import { computed, ref } from 'vue';
+import { toast } from 'vue-sonner';
 import FileCard from '@/features/drive/components/FileCard.vue';
 import DeleteDialog from '@/components/common/DeleteDialog.vue';
 import EmptyState from '@/components/common/EmptyState.vue';
@@ -22,6 +23,7 @@ import type { FolderRef } from '@/composables/useFolderPage';
 import { useListFilters } from '@/composables/useListFilters';
 import { useMediaViewer } from '@/composables/useMediaViewer';
 import type { ViewerItem } from '@/composables/useMediaViewer';
+import { useSpaceChanges } from '@/composables/useSpaceChanges';
 import type { DriveFile } from '@/lib/drive';
 import { canChange, currentProject, owned } from '@/lib/projects';
 import * as driveRoutes from '@/routes/drive';
@@ -44,6 +46,13 @@ const props = defineProps<{
     allFolders: { ref_id: string; path: string }[];
 }>();
 
+// Files a workflow saved, MCP uploaded or someone else added, renamed or
+// took away show here as it happens
+useSpaceChanges(
+    ['drive'],
+    ['folder', 'breadcrumbs', 'folders', 'files', 'allFolders'],
+);
+
 const isEmpty = computed(() => !props.folders.length && !props.files.length);
 
 // A project's viewers look and download, but add nothing
@@ -60,6 +69,20 @@ const description = computed(() =>
 // Listing, uploading and new folders go to the project the page is in, or the user's own
 const index = owned(driveRoutes.index, projectDriveRoutes.index);
 const storeFile = owned(fileRoutes.store, projectFileRoutes.store);
+const zipped = owned(driveRoutes.zip, projectDriveRoutes.zip);
+
+/**
+ * A folder -- with the folders in it -- or the whole Drive, downloaded as one
+ * zip. The browser saves it to disk as it comes, however big it is.
+ */
+function downloadZip(target: { ref_id: string; name: string } | null): void {
+    toast.info(
+        `Zipping “${target?.name ?? 'the Drive'}”: it downloads when it is ready.`,
+    );
+    window.location.assign(
+        zipped.url({ query: target ? { folder: target.ref_id } : {} }),
+    );
+}
 
 // ------------------------------------------------- Search, sort and filter
 const {
@@ -206,6 +229,16 @@ const openFile = (file: DriveFile) => {
             :title="folder?.name ?? 'Drive'"
             :description="description"
         >
+            <Button
+                v-if="!isEmpty && !isSearching"
+                variant="outline"
+                :title="`Download ${folder ? `“${folder.name}”` : 'the whole Drive'} as a zip`"
+                data-test="drive-zip"
+                @click="downloadZip(folder)"
+            >
+                <Download />
+                <span class="max-sm:sr-only">Download</span>
+            </Button>
             <Button v-if="editable" variant="outline" @click="newFolder">
                 <FolderPlus />
                 New folder
@@ -274,6 +307,8 @@ const openFile = (file: DriveFile) => {
                     :query="props.filters.q"
                     :over="isOver(item.ref_id)"
                     :dragging="isDragging(item)"
+                    export-label="Download as zip"
+                    @export="downloadZip(item)"
                     @rename="rename(folderItem(item))"
                     @move="move(folderItem(item))"
                     @remove="remove(folderItem(item))"

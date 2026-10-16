@@ -45,7 +45,8 @@ export function usePresence(
     const join = (channel: string) => {
         leave();
 
-        if (!echoIsConfigured()) {
+        // Nothing open yet (a page that has not chosen what it shows)
+        if (!channel || !echoIsConfigured()) {
             return;
         }
 

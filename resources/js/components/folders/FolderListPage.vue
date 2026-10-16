@@ -20,6 +20,8 @@ import type { FolderItem } from '@/composables/useFolderDialogs';
 import { useFolderPage } from '@/composables/useFolderPage';
 import type { FolderRef } from '@/composables/useFolderPage';
 import { useListFilters } from '@/composables/useListFilters';
+import { useSpaceChanges } from '@/composables/useSpaceChanges';
+import type { ListKind } from '@/composables/useSpaceChanges';
 import { deliver, fetchExport } from '@/lib/exporting';
 import { canChange, owned } from '@/lib/projects';
 import type { OwnRoute, ProjectRoute } from '@/lib/projects';
@@ -97,6 +99,14 @@ defineSlots<{
     top?: () => unknown;
 }>();
 
+// Made, renamed, moved or deleted elsewhere -- by someone else, a workflow or
+// MCP -- it shows here: the page's folders and its list, asked for again
+// (each page names its list after its kind: notes, boards, …)
+useSpaceChanges(
+    [`${props.kind}s` as ListKind],
+    ['folder', 'breadcrumbs', 'folders', `${props.kind}s`, 'allFolders'],
+);
+
 const isEmpty = computed(() => !props.folders.length && !props.items.length);
 
 // A folder, or the whole top level, made into a zip on the server and
@@ -116,6 +126,8 @@ async function exportFolder(target: { ref_id: string; name: string } | null) {
         `${name}.zip`,
         'application/zip',
         `Couldn’t export “${name}”.`,
+        // Named as the server names it: a project's name comes first
+        true,
     ).then((file) => deliver(file, 'download'));
 
     toast.promise(job, {

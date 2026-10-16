@@ -16,6 +16,19 @@ return [
     'name' => env('APP_NAME', 'Laravel'),
 
     /*
+    | Where the app is served from the dev server (Vite, reloading as files
+    | change): whoever works on it, the browser checks and the PDF printer
+    | (`web`). Everywhere else gets the built app in public/build, so it is
+    | not reloaded under someone using it.
+    */
+    'serve_built' => (bool) env('SERVE_BUILT', false),
+
+    'dev_hosts' => array_values(array_filter(array_map(
+        fn (string $host) => strtolower(trim($host)),
+        explode(',', (string) env('DEV_HOSTS', '127.0.0.1,localhost,web')),
+    ))),
+
+    /*
     |--------------------------------------------------------------------------
     | Contact Address
     |--------------------------------------------------------------------------

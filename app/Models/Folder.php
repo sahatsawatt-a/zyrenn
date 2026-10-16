@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
+use App\Models\Concerns\TellsLists;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -24,7 +25,7 @@ use Illuminate\Support\Carbon;
  */
 abstract class Folder extends Model
 {
-    use BelongsToOwner, HasRefId;
+    use BelongsToOwner, HasRefId, TellsLists;
 
     /**
      * @var list<string>

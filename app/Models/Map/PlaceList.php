@@ -4,6 +4,7 @@ namespace App\Models\Map;
 
 use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
+use App\Models\Concerns\TellsLists;
 use Database\Factories\Map\PlaceListFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -28,7 +29,7 @@ use Illuminate\Support\Carbon;
 class PlaceList extends Model
 {
     /** @use HasFactory<PlaceListFactory> */
-    use BelongsToOwner, HasFactory, HasRefId;
+    use BelongsToOwner, HasFactory, HasRefId, TellsLists;
 
     /** The colours a new list is given in turn. */
     public const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];

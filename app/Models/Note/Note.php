@@ -6,6 +6,7 @@ use App\Events\Deleted;
 use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
 use App\Models\Concerns\RecordsEditor;
+use App\Models\Concerns\TellsLists;
 use App\Support\Live\Collab;
 use App\Support\Live\Live;
 use App\Support\Markdown\TiptapMarkdown;
@@ -36,11 +37,14 @@ use Illuminate\Support\Carbon;
 #[Hidden(['ydoc'])]
 class Note extends Model
 {
+    /** What its lists show of it: other saves, made while it is edited, aren't told. */
+    public const LISTED_BY = ['title', 'folder_id'];
+
     /** What the people editing a note share live, besides where it is filed. */
     private const SHARED = ['content', 'title', 'is_wide'];
 
     /** @use HasFactory<NoteFactory> */
-    use BelongsToOwner, HasFactory, HasRefId, RecordsEditor;
+    use BelongsToOwner, HasFactory, HasRefId, RecordsEditor, TellsLists;
 
     /**
      * Mirror the column defaults so new instances match what the database stores.

@@ -6,6 +6,7 @@ use App\Events\TableChanged;
 use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
 use App\Models\Concerns\RecordsEditor;
+use App\Models\Concerns\TellsLists;
 use App\Support\Live\Live;
 use App\Support\Table\TableStorage;
 use Database\Factories\Table\TableFactory;
@@ -33,7 +34,7 @@ use Illuminate\Support\Carbon;
 class Table extends Model
 {
     /** @use HasFactory<TableFactory> */
-    use BelongsToOwner, HasFactory, HasRefId, RecordsEditor;
+    use BelongsToOwner, HasFactory, HasRefId, RecordsEditor, TellsLists;
 
     /** How tightly the rows are drawn. */
     public const DENSITIES = ['compact', 'normal', 'spacious'];

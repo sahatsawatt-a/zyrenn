@@ -7,6 +7,7 @@ use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
 use App\Models\Concerns\KeepsRevisions;
 use App\Models\Concerns\RecordsEditor;
+use App\Models\Concerns\TellsLists;
 use App\Support\Maps\TripDocument;
 use Database\Factories\Map\TripFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -33,8 +34,11 @@ use Illuminate\Support\Carbon;
 #[Fillable(['title', 'content'])]
 class Trip extends Model
 {
+    /** What its lists show of it: other saves, made while it is edited, aren't told. */
+    public const LISTED_BY = ['title', 'folder_id'];
+
     /** @use HasFactory<TripFactory> */
-    use BelongsToOwner, HasFactory, HasRefId, KeepsRevisions, RecordsEditor;
+    use BelongsToOwner, HasFactory, HasRefId, KeepsRevisions, RecordsEditor, TellsLists;
 
     /**
      * Mirror the column defaults so new instances match what the database stores.
