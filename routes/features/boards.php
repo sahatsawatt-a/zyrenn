@@ -3,6 +3,7 @@
 use App\Http\Controllers\Board\BoardController;
 use App\Http\Controllers\Board\BoardFolderController;
 use App\Http\Controllers\Board\BoardRenderController;
+use App\Http\Controllers\Board\BoardShapeController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'verified'])->group(function () {
@@ -35,6 +36,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('board-folders', BoardFolderController::class)
         ->only(['update', 'destroy'])
         ->parameters(['board-folders' => 'folder']);
+
+    // Shapes of one's own, made on a board, for the shape library of any board
+    Route::get('boards/{board}/shapes', [BoardShapeController::class, 'index'])->name('boards.shapes.index');
+    Route::post('boards/{board}/shapes', [BoardShapeController::class, 'store'])->middleware('throttle:30,1')->name('boards.shapes.store');
+    Route::patch('board-shapes/{boardShape}', [BoardShapeController::class, 'update'])->name('board-shapes.update');
+    Route::delete('board-shapes/{boardShape}', [BoardShapeController::class, 'destroy'])->name('board-shapes.destroy');
 });
 
 // The board drawn for the renderer (App\Support\Board\BoardRender), which is signed

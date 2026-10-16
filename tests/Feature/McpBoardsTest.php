@@ -103,6 +103,90 @@ class McpBoardsTest extends TestCase
         );
     }
 
+    public function test_pencil_strokes_are_drawn_by_points_or_along_a_path_and_kept_when_changed()
+    {
+        $user = User::factory()->create();
+
+        UserServer::actingAs($user)->tool(CreateBoard::class, ['title' => 'Sketch', 'items' => [
+            // By points, where they say: a tick
+            ['id' => 'tick', 'kind' => 'draw', 'stroke' => '#16a34a', 'points' => [100, 200, 120, 220, 160, 170]],
+            // As pairs, from a corner of its own
+            ['id' => 'dash', 'kind' => 'draw', 'x' => 300, 'y' => 300, 'points' => [[0, 0], [50, 0]]],
+            // Along a path: a straight run, then a curve
+            ['id' => 'wave', 'kind' => 'draw', 'd' => 'M400 100 L440 100 Q480 60 520 100'],
+        ]])->assertOk();
+
+        $board = $user->boards()->sole();
+        $items = $this->stored($board);
+
+        // Kept from its first point, as a hand's stroke is
+        $this->assertEquals([100, 200], [$items['tick']['x'], $items['tick']['y']]);
+        $this->assertEquals([0, 0, 20, 20, 60, -30], $items['tick']['points']);
+        $this->assertSame('#16a34a', $items['tick']['stroke']);
+        $this->assertEquals([300, 300], [$items['dash']['x'], $items['dash']['y']]);
+        $this->assertEquals([0, 0, 50, 0], $items['dash']['points']);
+
+        // The path followed in small steps: through the straight run, round the curve, to its end
+        $wave = $items['wave']['points'];
+        $this->assertEquals([400, 100], [$items['wave']['x'], $items['wave']['y']]);
+        $this->assertGreaterThan(20, count($wave));
+        $this->assertEquals([120, 0], array_slice($wave, -2));
+        $this->assertLessThan(-10, min(array_filter($wave, fn ($value, $at) => $at % 2 === 1, ARRAY_FILTER_USE_BOTH)));
+
+        // Changed (its colour) or the board written again whole: its ink is kept
+        UserServer::actingAs($user)->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'update_items' => [['id' => 'tick', 'stroke' => '#dc2626']]])->assertOk();
+        $this->assertEquals([0, 0, 20, 20, 60, -30], $this->stored($board)['tick']['points']);
+        $this->assertSame('#dc2626', $this->stored($board)['tick']['stroke']);
+
+        // New points put it where they say
+        UserServer::actingAs($user)->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'update_items' => [['id' => 'dash', 'points' => [10, 10, 10, 60]]]])->assertOk();
+        $this->assertEquals([10, 10], [$this->stored($board)['dash']['x'], $this->stored($board)['dash']['y']]);
+    }
+
+    public function test_a_sketch_is_several_strokes_heavy_or_light_steady_or_not()
+    {
+        $user = User::factory()->create();
+
+        UserServer::actingAs($user)->tool(CreateBoard::class, ['title' => 'Sketch', 'items' => [
+            // Lifted between: three strokes, one for each M
+            ['id' => 'hatch', 'kind' => 'draw', 'd' => 'M0 0 L40 40 M20 0 L60 40 M40 0 L80 40', 'lineWidth' => 8, 'opacity' => 0.4],
+            // The same line, drawn steady and drawn by an unsteady hand
+            ['id' => 'steady', 'kind' => 'draw', 'd' => 'M0 200 L300 200'],
+            ['id' => 'sketchy', 'kind' => 'draw', 'd' => 'M0 200 L300 200', 'rough' => 2],
+        ]])->assertOk();
+
+        $board = $user->boards()->sole();
+        $items = $this->stored($board);
+
+        $this->assertSame(['hatch', 'hatch-2', 'hatch-3', 'steady', 'sketchy'], array_keys($items));
+        $this->assertEquals([20, 0], [$items['hatch-2']['x'], $items['hatch-2']['y']]);
+        // Heavy and faint, each of them
+        $this->assertEquals([8, 8], [$items['hatch']['inkWidth'], $items['hatch-3']['inkWidth']]);
+        $this->assertEqualsWithDelta(0.4, $items['hatch-2']['opacity'], 0.001);
+
+        // Steady stays on its line; unsteady wanders off it, a little
+        $ys = fn (array $points) => array_values(array_filter($points, fn ($value, $at) => $at % 2 === 1, ARRAY_FILTER_USE_BOTH));
+        $this->assertSame([0.0], array_values(array_unique(array_map('floatval', $ys($items['steady']['points'])))));
+        $wander = array_map('abs', $ys($items['sketchy']['points']));
+        $this->assertGreaterThan(0.5, max($wander));
+        $this->assertLessThan(7, max($wander));
+
+        // Changed later, it keeps its weight
+        UserServer::actingAs($user)->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'update_items' => [['id' => 'hatch', 'stroke' => '#ea580c']]])->assertOk();
+        $this->assertSame(8.0, (float) $this->stored($board)['hatch']['inkWidth']);
+
+        // Pressed as a stylus does: heavier where harder, kept when changed; a
+        // count that does not match its points is left out
+        UserServer::actingAs($user)->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'add_items' => [
+            ['id' => 'swell', 'kind' => 'draw', 'points' => [0, 400, 50, 400, 100, 400], 'pressures' => [0.1, 0.9, 0.2]],
+            ['id' => 'odd', 'kind' => 'draw', 'points' => [0, 500, 50, 500], 'pressures' => [0.4]],
+        ]])->assertOk();
+        $this->assertEquals([0.1, 0.9, 0.2], $this->stored($board)['swell']['pressures']);
+        $this->assertArrayNotHasKey('pressures', $this->stored($board)['odd']);
+        UserServer::actingAs($user)->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'update_items' => [['id' => 'swell', 'opacity' => 0.8]]])->assertOk();
+        $this->assertEquals([0.1, 0.9, 0.2], $this->stored($board)['swell']['pressures']);
+    }
+
     public function test_get_board_reads_back_what_was_drawn()
     {
         $user = User::factory()->create();

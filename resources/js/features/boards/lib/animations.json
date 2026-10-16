@@ -1,0 +1,47 @@
+{
+    "about": "A slide's animations: the effects of each kind, how a step starts, how the show moves to a slide, and the limits on a step. Read by the canvas (deck/build.ts) and the server (App\\Support\\Board\\Animations), so a step an MCP client sends is one the show can play.",
+    "kinds": [
+        { "id": "in", "label": "Entrance" },
+        { "id": "emphasis", "label": "Emphasis" },
+        { "id": "out", "label": "Exit" }
+    ],
+    "effects": {
+        "in": [
+            { "id": "appear", "label": "Appear" },
+            { "id": "fade", "label": "Fade" },
+            { "id": "fly", "label": "Fly in", "from": true },
+            { "id": "zoom", "label": "Zoom" },
+            { "id": "wipe", "label": "Wipe", "from": true }
+        ],
+        "emphasis": [
+            { "id": "pulse", "label": "Pulse" },
+            { "id": "spin", "label": "Spin" },
+            { "id": "blink", "label": "Blink" }
+        ],
+        "out": [
+            { "id": "fade", "label": "Fade" },
+            { "id": "fly", "label": "Fly out", "from": true },
+            { "id": "zoom", "label": "Zoom" },
+            { "id": "disappear", "label": "Disappear" }
+        ]
+    },
+    "starts": [
+        { "id": "click", "label": "On click" },
+        { "id": "with", "label": "With previous" },
+        { "id": "after", "label": "After previous" }
+    ],
+    "froms": ["left", "right", "top", "bottom"],
+    "transitions": [
+        { "id": "glide", "label": "Glide" },
+        { "id": "fade", "label": "Fade" },
+        { "id": "cut", "label": "None" }
+    ],
+    "speeds": [
+        { "ms": 250, "label": "Fast" },
+        { "ms": 500, "label": "Normal" },
+        { "ms": 1000, "label": "Slow" }
+    ],
+    "duration": { "default": 500, "min": 50, "max": 10000 },
+    "delay": { "max": 30000 },
+    "most": 200
+}

@@ -166,6 +166,47 @@ export function useCamera(
         );
     };
 
+    /**
+     * Bring `box` to the middle of the room the panels leave at the zoom its
+     * words read at their own size (100%) -- zoomed out only as far as it
+     * takes to fit there.
+     */
+    const readable = (
+        box: Box | null,
+        {
+            animate = true,
+            padding = 48,
+            inset = {},
+        }: { animate?: boolean; padding?: number; inset?: Inset } = {},
+    ) => {
+        if (!box || !viewport.width.value) {
+            return;
+        }
+
+        const fitted = cameraFor(box, padding, inset);
+
+        if (fitted.scale < 1) {
+            flyTo(fitted, animate);
+
+            return;
+        }
+
+        // As fitted, but at 100%: the same middle, the scale its words were written at
+        const middle = {
+            x: fitted.x + (box.x + box.width / 2) * fitted.scale,
+            y: fitted.y + (box.y + box.height / 2) * fitted.scale,
+        };
+
+        flyTo(
+            {
+                scale: 1,
+                x: middle.x - (box.x + box.width / 2),
+                y: middle.y - (box.y + box.height / 2),
+            },
+            animate,
+        );
+    };
+
     /** Put the camera at `next`, gliding there or straight away. */
     const flyTo = (
         next: { scale: number; x: number; y: number },
@@ -230,6 +271,7 @@ export function useCamera(
         zoomBy,
         focus,
         reveal,
+        readable,
         reset,
     };
 }

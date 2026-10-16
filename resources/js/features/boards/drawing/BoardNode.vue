@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type Konva from 'konva';
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, inject, nextTick, ref, watch } from 'vue';
 import { Group } from 'vue-konva';
+import { ERASING } from '@/features/boards/model/erase';
+import { useBuildHidden } from '@/features/boards/deck/useBuild';
 import { blending, cacheBlur } from '@/features/boards/drawing/blur';
 import type { Item } from '@/features/boards/model/items';
 import { isConnector } from '@/features/boards/model/items';
@@ -38,6 +40,10 @@ const props = defineProps<{
 }>();
 
 const path = computed(() => props.pathOf(props.item));
+// Kept off the slide by its animations while presenting: not yet come in, or gone
+const buildHidden = useBuildHidden();
+// Passed over by the eraser: faded, until it is let go and they are gone
+const erasing = inject(ERASING, ref(new Set<string>()));
 const dragBound = computed(() => props.snap(props.item));
 
 const config = computed(() => ({
@@ -45,7 +51,8 @@ const config = computed(() => ({
     x: props.item.x,
     y: props.item.y,
     rotation: props.item.rotation,
-    opacity: props.item.opacity ?? 1,
+    opacity: erasing.value.has(props.item.id) ? 0.2 : (props.item.opacity ?? 1),
+    visible: !buildHidden.value.has(props.item.id),
     ...blending(props.item),
     width: props.item.width,
     height: props.item.height,

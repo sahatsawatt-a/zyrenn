@@ -1,7 +1,9 @@
 import type Konva from 'konva';
 import { huggedHeight } from '../drawing/labels';
 import type { ComputedRef, Ref } from 'vue';
-import { nextTick, ref } from 'vue';
+import { nextTick, ref, watch } from 'vue';
+import { strokesTouched } from '../model/erase';
+import { pressureOf } from '../model/ink';
 import {
     firstWords,
     isSymbol,
@@ -32,6 +34,7 @@ type Drawing = {
         select: (ids: string[]) => void;
         toggleInSelection: (id: string) => void;
         add: (item: Item, options?: { keepSelection?: boolean }) => void;
+        remove: (ids: string[]) => void;
         commit: () => void;
         settle: (dropped?: string[]) => void;
         makeItem: (
@@ -194,6 +197,44 @@ export function useDrawing({
         board.items.value.push(dot, rest);
     };
 
+    // ------------------------------------------------------------ Eraser
+    // The pencil strokes a drag of the eraser has passed over, faded while it
+    // goes on, all taken together when it is let go: one undo brings them back
+    const erasing = ref<Set<string>>(new Set());
+    let erasedTo: { x: number; y: number } | null = null;
+    // How near a stroke the eraser has to pass, as it looks on screen
+    const reach = () => 10 / camera.scale.value + 2;
+
+    // Another tool chosen mid-drag (Escape goes back to Select): nothing is
+    // taken, and nothing half-drawn is put down -- a stroke, a shape or a
+    // line is on the board only once it is let go
+    // (at once, not at the next tick: a stroke begun right after choosing the
+    // pencil is never the one dropped)
+    watch(
+        tool,
+        () => {
+            erasedTo = null;
+            erasing.value = new Set();
+            draft.value = null;
+            clearTarget();
+        },
+        { flush: 'sync' },
+    );
+
+    const eraseAlong = (to: { x: number; y: number }) => {
+        const touched = strokesTouched(
+            board.items.value,
+            erasedTo ?? to,
+            to,
+            reach(),
+        );
+        erasedTo = to;
+
+        if (touched.some((id) => !erasing.value.has(id))) {
+            erasing.value = new Set([...erasing.value, ...touched]);
+        }
+    };
+
     const onPointerDown = (event: Konva.KonvaEventObject<PointerEvent>) => {
         drewJustNow = false;
 
@@ -204,6 +245,20 @@ export function useDrawing({
         const point = pointerOnBoard();
 
         if (!point) {
+            return;
+        }
+
+        // The eraser -- or a pen turned over, its eraser end down, whatever
+        // tool is chosen
+        const penEraser =
+            event.evt.pointerType === 'pen' && (event.evt.buttons & 32) !== 0;
+
+        if (tool.value === 'eraser' || penEraser) {
+            board.select([]);
+            erasedTo = null;
+            erasing.value = new Set();
+            eraseAlong(point);
+
             return;
         }
 
@@ -240,6 +295,13 @@ export function useDrawing({
             item.to = { item: null, side: null, x: point.x, y: point.y };
         } else if (isStroke(item)) {
             item.points = [0, 0];
+
+            // A stylus: how hard it presses, point by point, for heavier ink
+            const pressure = isConnector(item) ? null : pressureOf(event.evt);
+
+            if (pressure !== null) {
+                item.pressures = [pressure];
+            }
             // Nothing stays selected under the pen: its handles would take
             // the strokes meant for the board
             board.select([]);
@@ -271,10 +333,32 @@ export function useDrawing({
             : null;
     };
 
+    /** How hard a pen pressed at each place pointsSince() found, one for each. */
+    const pressuresSince = (
+        event: Konva.KonvaEventObject<PointerEvent>,
+        count: number,
+    ) => {
+        const moves = event.evt.getCoalescedEvents?.() ?? [];
+        const read = (moves.length === count ? moves : [event.evt]).map(
+            (move) => pressureOf(move) ?? 0.5,
+        );
+
+        return Array.from(
+            { length: count },
+            (_, at) => read[at] ?? read[read.length - 1],
+        );
+    };
+
     const onPointerMove = (event?: Konva.KonvaEventObject<PointerEvent>) => {
         const point = pointerOnBoard();
 
         if (!point) {
+            return;
+        }
+
+        if (erasedTo) {
+            eraseAlong(point);
+
             return;
         }
 
@@ -299,13 +383,22 @@ export function useDrawing({
             // A new array rather than a push: vue-konva compares the config it was
             // handed, and pushing leaves the same array reference in place, so the
             // stroke only appeared once the item was committed on release.
+            const since = pointsSince(event) ?? [point];
             current.item.points = [
                 ...current.item.points,
-                ...(pointsSince(event) ?? [point]).flatMap((at) => [
+                ...since.flatMap((at) => [
                     at.x - current.originX,
                     at.y - current.originY,
                 ]),
             ];
+
+            // As hard as it pressed at each of them: one for every point
+            if (current.item.pressures && event) {
+                current.item.pressures = [
+                    ...current.item.pressures,
+                    ...pressuresSince(event, since.length),
+                ];
+            }
 
             return;
         }
@@ -340,6 +433,15 @@ export function useDrawing({
     let drewJustNow = false;
 
     const onPointerUp = () => {
+        if (erasedTo) {
+            const gone = [...erasing.value];
+            erasedTo = null;
+            erasing.value = new Set();
+            board.remove(gone);
+
+            return;
+        }
+
         if (marqueeStart) {
             const box = marquee.value;
 
@@ -453,6 +555,9 @@ export function useDrawing({
      * coming down to move the board.
      */
     const cancelPointer = () => {
+        // Let go of mid-sweep (Escape): nothing is taken
+        erasedTo = null;
+        erasing.value = new Set();
         draft.value = null;
         marqueeStart = null;
         marquee.value = null;
@@ -723,6 +828,7 @@ export function useDrawing({
 
     return {
         draft,
+        erasing,
         guides,
         marquee,
         shapeAt,

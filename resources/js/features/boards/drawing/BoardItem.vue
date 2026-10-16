@@ -2,12 +2,14 @@
 import { Ellipse, Line, Path, Rect, Star } from 'vue-konva';
 import type { Hops } from '@/lib/lineHops';
 import { polygonPoints } from '../model/geometry';
+import { pressed } from '../model/ink';
 import type { Item } from '../model/items';
 import { POLYGONS, hasText, isConnector, isPath } from '../model/items';
 import { hasHeader, headerSide } from '../model/rows';
 import { SELECTED, useItemLook } from './itemLook';
 import ConnectorShape from './kinds/ConnectorShape.vue';
 import FrameShape from './kinds/FrameShape.vue';
+import InkShape from './kinds/InkShape.vue';
 import ItemLabel from './kinds/ItemLabel.vue';
 import LibraryShape from './kinds/LibraryShape.vue';
 import PictureShape from './kinds/PictureShape.vue';
@@ -212,12 +214,19 @@ const { shown, edge } = useItemLook(props);
             hitStrokeWidth: Math.max(12, item.lineWidth),
         }"
     />
+    <!-- Pressed by a stylus: as heavy as it was pressed, point by point -->
+    <InkShape
+        v-else-if="item.kind === 'draw' && pressed(item)"
+        :item="item"
+        :selected="selected"
+        :shown="shown"
+    />
     <Line
         v-else-if="item.kind === 'draw'"
         :config="{
             points: item.points,
             stroke: selected ? SELECTED : shown(item.stroke),
-            strokeWidth: 3,
+            strokeWidth: item.inkWidth ?? 3,
             lineCap: 'round',
             lineJoin: 'round',
             tension: 0.4,

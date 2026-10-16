@@ -6,6 +6,9 @@ import { Switch } from '@/components/ui/switch';
 import { isSymbol, symbolOf } from '../circuit/symbols';
 import DeckSettings from '../deck/DeckSettings.vue';
 import type { Deck } from '../deck/deck';
+import type { BuildStep } from '../deck/build';
+import ItemAnimation from '../deck/ItemAnimation.vue';
+import SlideAnimations from '../deck/SlideAnimations.vue';
 import SlideSettings from '../deck/SlideSettings.vue';
 import type { Item } from '../model/items';
 import { hasText } from '../model/items';
@@ -33,12 +36,20 @@ const props = defineProps<{
     fill: string;
     stroke: string;
     itemCount: number;
+    // The selection is one whole group, to be undone
+    grouped?: boolean;
+    // It can be kept as a shape of one's own (not on the demo board)
+    savable?: boolean;
     frameCount: number;
     // What a selected connector joins, e.g. "rect → database"
     link?: string;
     // The deck the frames make, once it can be changed
     deck?: Deck | null;
     deckReady?: boolean;
+    // The slide one selected item is on, and what each item is called: for
+    // animating it, and for a slide's list of animations
+    slide?: Item | null;
+    nameOf?: (id: string) => string;
 }>();
 
 const emit = defineEmits<{
@@ -47,6 +58,9 @@ const emit = defineEmits<{
     resize: [{ width?: number; height?: number; x?: number; y?: number }];
     duplicate: [];
     remove: [];
+    group: [];
+    ungroup: [];
+    'save-shape': [];
     reorder: ['front' | 'back' | 'forward' | 'backward'];
     update: [Partial<Item>];
     turn: [];
@@ -58,6 +72,9 @@ const emit = defineEmits<{
     // The deck changed, and every slide put in its look
     deck: [Deck | null];
     'restyle-deck': [];
+    // A slide's animations changed, and one played through for its author
+    animate: [slide: string, build: BuildStep[]];
+    preview: [slide: Item];
 }>();
 
 // A picker opens beside the panel; on a phone, where the panel is a sheet
@@ -175,8 +192,14 @@ const summary = computed(() => {
         <div v-if="selection.length" class="inspector-body">
             <ItemActions
                 :turnable="symbols.length > 0"
+                :groupable="selection.length > 1"
+                :grouped="grouped"
+                :savable="savable"
                 @reorder="emit('reorder', $event)"
                 @turn="emit('turn')"
+                @group="emit('group')"
+                @ungroup="emit('ungroup')"
+                @save-shape="emit('save-shape')"
                 @duplicate="emit('duplicate')"
                 @remove="emit('remove')"
             />
@@ -255,6 +278,13 @@ const summary = computed(() => {
                 :frame="frames[0]"
                 @update="emit('update', $event)"
             />
+            <SlideAnimations
+                v-if="frames.length === 1 && nameOf"
+                :frame="frames[0]"
+                :name-of="nameOf"
+                @update="emit('update', $event)"
+                @preview="emit('preview', frames[0])"
+            />
             <DeckSettings
                 v-if="frames.length && deckReady"
                 :deck="deck ?? null"
@@ -275,6 +305,15 @@ const summary = computed(() => {
                 v-if="line"
                 :line="line"
                 @update="emit('update', $event)"
+            />
+
+            <!-- How it comes in, draws the eye or goes, on its slide -->
+            <ItemAnimation
+                v-if="one && slide && one.kind !== 'frame'"
+                :item="one"
+                :slide="slide"
+                @build="emit('animate', slide.id, $event)"
+                @preview="emit('preview', slide)"
             />
 
             <!-- Where it is and how big, to the pixel: there when wanted -->
@@ -372,6 +411,29 @@ const summary = computed(() => {
      (LookSettings, LabelSettings, SlideSettings and the rest), which a scoped
      style would not reach -->
 <style>
+/* A fold keeps the fiddly settings out of the way until they are wanted */
+.inspector-fold > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.25rem 0;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    cursor: pointer;
+}
+.inspector-fold > summary span {
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+}
+.inspector-fold[open] > summary {
+    margin-bottom: 0.25rem;
+}
+
 /* A word on how to use what is above it */
 .inspector-hint {
     font-size: 0.75rem;

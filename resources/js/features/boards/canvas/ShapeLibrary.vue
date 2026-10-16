@@ -16,6 +16,7 @@ import {
     LayoutTemplate,
     MousePointer2,
     PenTool,
+    Eraser,
     Pencil,
     RectangleHorizontal,
     Redo2,
@@ -43,6 +44,8 @@ import type { Tool } from '@/features/boards/model/items';
 import { SHAPE_GROUPS } from '@/features/boards/model/shapes';
 import type { ShapeDef } from '@/features/boards/model/shapes';
 import ShapeIcon from '../inspector/ShapeIcon.vue';
+import type { MyShape } from '../model/myShapes';
+import MyShapesSection from './MyShapesSection.vue';
 import SymbolIcon from '../circuit/SymbolIcon.vue';
 
 // The tools along the bottom middle of the canvas: the everyday ones a click
@@ -57,6 +60,9 @@ const props = defineProps<{
     compact?: boolean;
     // Whether there is a table on the board to write out as SQL
     hasSchema?: boolean;
+    // Shapes of one's own to put on the board; null where there are none to
+    // have, as on the demo board
+    myShapes?: MyShape[] | null;
 }>();
 
 const emit = defineEmits<{
@@ -68,6 +74,11 @@ const emit = defineEmits<{
     schema: [];
     undo: [];
     redo: [];
+    // The flyout opened: shapes of one's own are asked for then
+    'library-open': [];
+    'place-shape': [shape: MyShape];
+    'rename-shape': [shape: MyShape, name: string];
+    'remove-shape': [shape: MyShape];
 }>();
 
 // A shape has an icon and a key; one from the shape library, or an
@@ -105,6 +116,12 @@ const after: Entry[] = [
     { tool: 'arrow', icon: ArrowUpRight, label: 'Connector', key: 'A' },
     { tool: 'draw', icon: Pencil, label: 'Pencil', key: 'D' },
     {
+        tool: 'eraser',
+        icon: Eraser,
+        label: 'Eraser: takes away pencil marks',
+        key: 'X',
+    },
+    {
         tool: 'path',
         icon: PenTool,
         label: 'Vector pen: click for corners, drag for curves',
@@ -117,7 +134,9 @@ const after: Entry[] = [
 // Of those, the ones a phone's bar still has room for
 const afterShown = computed(() =>
     props.compact
-        ? after.filter((entry) => ['arrow', 'draw'].includes(entry.tool))
+        ? after.filter((entry) =>
+              ['arrow', 'draw', 'eraser'].includes(entry.tool),
+          )
         : after,
 );
 const afterFolded = computed(() =>
@@ -205,6 +224,13 @@ const shapeActive = computed(() =>
 
 const open = ref(false);
 const search = ref('');
+watch(open, (now) => now && emit('library-open'));
+
+const placeShape = (shape: MyShape) => {
+    emit('place-shape', shape);
+    open.value = false;
+    search.value = '';
+};
 
 const shown = computed(() => {
     const term = search.value.trim().toLowerCase();
@@ -335,6 +361,15 @@ const pickShape = (entry: Entry) => {
                         data-test="shape-search"
                     />
                 </label>
+
+                <MyShapesSection
+                    v-if="myShapes"
+                    :shapes="myShapes"
+                    :search="search"
+                    @place="placeShape"
+                    @rename="(shape, name) => emit('rename-shape', shape, name)"
+                    @remove="emit('remove-shape', $event)"
+                />
 
                 <template v-for="group in shown" :key="group.name">
                     <!-- Above the first of a folded set: the row that unfolds

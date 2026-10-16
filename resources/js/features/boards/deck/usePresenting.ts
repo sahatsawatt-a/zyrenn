@@ -65,7 +65,7 @@ export function usePresenting({
         () => board.frames.value[frameIndex.value] ?? null,
     );
 
-    const showFrame = (index: number) => {
+    const showFrame = (index: number, animate = true) => {
         const frames = board.frames.value;
 
         if (!frames.length) {
@@ -73,7 +73,7 @@ export function usePresenting({
         }
 
         frameIndex.value = Math.min(frames.length - 1, Math.max(0, index));
-        fit(frames[frameIndex.value], true);
+        fit(frames[frameIndex.value], animate);
     };
 
     /** The slide fitted again: the room under it has changed. */

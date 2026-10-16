@@ -4,6 +4,7 @@ namespace App\Models\Concerns;
 
 use App\Models\Board\Board;
 use App\Models\Board\BoardFolder;
+use App\Models\Board\BoardShape;
 use App\Models\Browser\BrowserSuite;
 use App\Models\Connection;
 use App\Models\Drive\DriveFile;
@@ -65,6 +66,16 @@ trait OwnsContent
     public function boardFolders(): HasMany
     {
         return $this->hasMany(BoardFolder::class);
+    }
+
+    /**
+     * Shapes of its own, made on a board, for any of its boards.
+     *
+     * @return HasMany<BoardShape, $this>
+     */
+    public function boardShapes(): HasMany
+    {
+        return $this->hasMany(BoardShape::class);
     }
 
     /**

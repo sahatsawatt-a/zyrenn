@@ -60,6 +60,7 @@ export function useBoard(initial: Item[] | null = null) {
     const copy = (item: Item): Item => ({
         ...item,
         points: [...item.points],
+        ...(item.pressures ? { pressures: [...item.pressures] } : {}),
         // (a table's rows are its own, not shared with a copy of it)
         ...(item.rows ? { rows: item.rows.map((row) => ({ ...row })) } : {}),
         from: item.from ? { ...item.from } : null,
@@ -148,14 +149,75 @@ export function useBoard(initial: Item[] | null = null) {
         () => new Map(items.value.map((item) => [item.id, item])),
     );
 
+    // A group is picked whole: whatever names one of its items names them all
+    const withGroups = (ids: string[]): string[] => {
+        const groups = new Set(
+            ids.map((id) => byId.value.get(id)?.group).filter(Boolean),
+        );
+
+        if (!groups.size) {
+            return ids;
+        }
+
+        return [
+            ...new Set([
+                ...ids,
+                ...items.value
+                    .filter((item) => item.group && groups.has(item.group))
+                    .map((item) => item.id),
+            ]),
+        ];
+    };
+
     const select = (ids: string[]) => {
-        selection.value = ids;
+        selection.value = withGroups(ids);
     };
 
     const toggleInSelection = (id: string) => {
+        const together = withGroups([id]);
+
         selection.value = selection.value.includes(id)
-            ? selection.value.filter((other) => other !== id)
-            : [...selection.value, id];
+            ? selection.value.filter((other) => !together.includes(other))
+            : [...new Set([...selection.value, ...together])];
+    };
+
+    /** The group the selection is, whole and alone; null when it is not one. */
+    const selectionGroup = computed(() => {
+        const group = selected.value[0]?.group;
+
+        return group &&
+            selected.value.every((item) => item.group === group) &&
+            items.value.filter((item) => item.group === group).length ===
+                selected.value.length
+            ? group
+            : null;
+    });
+
+    /** What is selected, made one group: picked, moved and sized together. */
+    const group = () => {
+        if (selected.value.length < 2) {
+            return;
+        }
+
+        commit();
+        const id = `g${newId()}`;
+
+        for (const item of selected.value) {
+            item.group = id;
+        }
+    };
+
+    /** The selection's groups undone: each of its items on its own again. */
+    const ungroup = () => {
+        if (!selected.value.some((item) => item.group)) {
+            return;
+        }
+
+        commit();
+
+        for (const item of selected.value) {
+            delete item.group;
+        }
     };
 
     // ------------------------------------------------------------ mutation
@@ -565,6 +627,9 @@ export function useBoard(initial: Item[] | null = null) {
         selected,
         select,
         toggleInSelection,
+        selectionGroup,
+        group,
+        ungroup,
         add,
         place,
         remove,

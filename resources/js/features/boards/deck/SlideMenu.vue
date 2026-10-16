@@ -48,10 +48,11 @@ const drawn = (part: SlideLayout['parts'][number]) => {
                 variant="ghost"
                 size="sm"
                 title="A new slide after the last, laid out: a title, two columns, a big number…"
+                aria-label="New slide"
                 data-test="new-slide"
             >
                 <GalleryVerticalEnd />
-                <span v-if="!compact">Slide</span>
+                <span v-if="!compact">New slide</span>
             </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" class="w-60">

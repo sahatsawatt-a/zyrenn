@@ -6,6 +6,7 @@ use App\Events\Deleted;
 use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
 use App\Models\Concerns\RecordsEditor;
+use App\Models\Concerns\TellsLists;
 use App\Support\Live\Collab;
 use App\Support\Live\Live;
 use Database\Factories\Board\BoardFactory;
@@ -33,11 +34,14 @@ use Illuminate\Support\Carbon;
 #[Hidden(['ydoc'])]
 class Board extends Model
 {
+    /** What its lists show of it: other saves, made while it is edited, aren't told. */
+    public const LISTED_BY = ['title', 'folder_id'];
+
     /** What the people editing a board share live, besides where it is filed. */
     private const SHARED = ['content', 'title'];
 
     /** @use HasFactory<BoardFactory> */
-    use BelongsToOwner, HasFactory, HasRefId, RecordsEditor;
+    use BelongsToOwner, HasFactory, HasRefId, RecordsEditor, TellsLists;
 
     /**
      * Mirror the column defaults so new instances match what the database stores.

@@ -1,6 +1,7 @@
 // The board's data model. Everything on the canvas is one flat list of items in
 // paint order, which keeps z-order, undo snapshots and hit-testing simple.
 import { symbolOf } from '@/features/boards/circuit/symbols';
+import type { BuildStep, Transition } from '../deck/build';
 import { makeRow, rowsHeight } from './rows';
 import type { Row } from './rows';
 import { SHAPE_PATHS, shapeOf } from './shapes';
@@ -171,6 +172,10 @@ export type Item = {
     verticalAlign: VerticalAlign;
     // Freehand keeps its shape as points relative to x/y
     points: number[];
+    // How heavy pencil ink is drawn: 3 unless said
+    inkWidth?: number;
+    // How hard a stylus pressed at each point (0 to 1): ink heavier there (ink.ts)
+    pressures?: number[];
     // Out of sight, and out of reach of the pointer, from the layers list
     hidden: boolean;
     locked: boolean;
@@ -190,6 +195,9 @@ export type Item = {
     // A shape drawn more than one way: a lane with its title down its side,
     // a database as a card with an icon (model/shapes, designsOf)
     variant?: string;
+    // Picked, moved and sized together with every item that shares it: a
+    // group made by hand, or a shape of one's own put on the board
+    group?: string;
     // The colour its words are written in; left out, whatever reads best
     // on its fill
     color?: string;
@@ -248,6 +256,10 @@ export type Item = {
     section?: string;
     // A frame only: no header, footer or number of the deck's on it
     bare?: boolean;
+    // A frame only: its animations, in the order they play while presenting,
+    // and how the show moves on to it (deck/build.ts)
+    build?: BuildStep[];
+    transition?: Transition;
     // A path only: its points as SVG path data, starting at 0,0, and the box
     // they span -- drawn scaled from that box to the item's
     d?: string;
@@ -265,7 +277,7 @@ export type Item = {
 };
 
 // A symbol is picked with the tool, as "symbol:resistor"
-export type Tool = 'select' | ItemKind | `symbol:${string}`;
+export type Tool = 'select' | 'eraser' | ItemKind | `symbol:${string}`;
 
 /** The kind of item a tool draws, and which symbol when it draws one. */
 export const drawnBy = (tool: Tool): { kind: ItemKind; symbol?: string } =>

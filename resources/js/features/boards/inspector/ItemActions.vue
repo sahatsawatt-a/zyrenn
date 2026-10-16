@@ -4,17 +4,31 @@ import {
     ChevronDown,
     ChevronUp,
     Copy,
+    Group,
     RotateCw,
     SendToBack,
+    Shapes,
     Trash2,
+    Ungroup,
 } from '@lucide/vue';
 
 // What can be done to whatever is selected: its place in the stack, a
-// quarter turn for a part of a circuit, a copy, and away with it.
-defineProps<{ turnable: boolean }>();
+// quarter turn for a part of a circuit, a group made or undone, kept as a
+// shape of one's own, a copy, and away with it.
+defineProps<{
+    turnable: boolean;
+    // Several things that can be made one group, or one group that can be undone
+    groupable?: boolean;
+    grouped?: boolean;
+    // Whether it can be kept as a shape of one's own, for any board
+    savable?: boolean;
+}>();
 const emit = defineEmits<{
     reorder: [to: 'front' | 'back' | 'forward' | 'backward'];
     turn: [];
+    group: [];
+    ungroup: [];
+    'save-shape': [];
     duplicate: [];
     remove: [];
 }>();
@@ -62,6 +76,33 @@ const emit = defineEmits<{
             @click="emit('turn')"
         >
             <RotateCw class="size-4" />
+        </button>
+        <button
+            v-if="grouped"
+            type="button"
+            title="Ungroup: each on its own again"
+            data-test="ungroup"
+            @click="emit('ungroup')"
+        >
+            <Ungroup class="size-4" />
+        </button>
+        <button
+            v-else-if="groupable"
+            type="button"
+            title="Group: picked, moved and sized together"
+            data-test="group"
+            @click="emit('group')"
+        >
+            <Group class="size-4" />
+        </button>
+        <button
+            v-if="savable"
+            type="button"
+            title="Save as my shape, for any board"
+            data-test="save-shape"
+            @click="emit('save-shape')"
+        >
+            <Shapes class="size-4" />
         </button>
         <button
             type="button"

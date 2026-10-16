@@ -20,10 +20,14 @@ defineProps<{
     /** Whether the presenter's own window can be opened from here. */
     canOpenPresenter: boolean;
     fullScreen: boolean;
+    /** The clicks this slide's animations still wait for, and have had. */
+    clicksLeft: number;
+    clicksDone: number;
 }>();
 const notesShown = defineModel<boolean>('notesShown', { required: true });
 const emit = defineEmits<{
-    show: [index: number];
+    next: [];
+    back: [];
     presenter: [];
     fullScreen: [];
     stop: [];
@@ -59,8 +63,8 @@ const emit = defineEmits<{
             type="button"
             class="board-zoom"
             data-test="prev-frame"
-            :disabled="frameIndex === 0"
-            @click="emit('show', frameIndex - 1)"
+            :disabled="frameIndex === 0 && !clicksDone"
+            @click="emit('back')"
         >
             <ChevronLeft class="size-4" />
         </button>
@@ -77,8 +81,13 @@ const emit = defineEmits<{
             type="button"
             class="board-zoom"
             data-test="next-frame"
-            :disabled="frameIndex >= count - 1"
-            @click="emit('show', frameIndex + 1)"
+            :title="
+                clicksLeft
+                    ? `Next click: ${clicksLeft} left on this slide`
+                    : 'Next slide'
+            "
+            :disabled="frameIndex >= count - 1 && !clicksLeft"
+            @click="emit('next')"
         >
             <ChevronRight class="size-4" />
         </button>

@@ -24,7 +24,7 @@ import PresenceAvatars from '@/components/common/PresenceAvatars.vue';
 import { useSharedItems } from '@/features/boards/canvas/useBoardSync';
 import { usePresence } from '@/composables/usePresence';
 import { sharingIsOn, useShared } from '@/composables/useShared';
-import { canChange, owned } from '@/lib/projects';
+import { canChange, currentProject, owned } from '@/lib/projects';
 import {
     destroy,
     index as ownIndex,
@@ -37,7 +37,9 @@ import {
 import { presenterChannel } from '@/features/boards/deck/usePresenterLink';
 import PdfPreview from '@/components/media/PdfPreview.vue';
 import NoteBacklinks from '@/features/notes/components/NoteBacklinks.vue';
-import { fetchExport } from '@/lib/exporting';
+import { fetchExport, nameFrom } from '@/lib/exporting';
+import { zip } from '@/lib/zip';
+import type { ZipEntry } from '@/lib/zip';
 import { index as projectIndex } from '@/routes/projects/boards';
 
 type Board = {
@@ -55,6 +57,12 @@ const props = defineProps<{
 
 // A project's viewers see the whole board, drawn as it is, and change nothing
 const editable = canChange();
+// Shapes of one's own are kept from this board; its project's owners and
+// editors may keep one for everyone there
+const myShapes = {
+    board: props.board.ref_id,
+    project: editable ? (currentProject()?.name ?? null) : null,
+};
 
 // Set as this page deletes the board, which then hears of it like everyone else
 let deletingHere = false;
@@ -272,8 +280,76 @@ const drawing = ref('Drawing the board…');
 
 function openExport(): void {
     frameCount.value = currentFrames().length;
+    videoCount.value = boardVideos().length;
     previewing.value = true;
 }
+
+/**
+ * The board's videos kept in the Drive, each once: a PDF or a picture can
+ * only show a still of them, so an export of a board with videos is a zip
+ * with them beside it, to be played.
+ */
+const boardVideos = () => {
+    const seen = new Set<string>();
+
+    return (shared ? viewed.value : items).filter((item) => {
+        const src = item.kind === 'video' ? item.src?.split('?')[0] : null;
+
+        if (!src || !/^\/drive\/files\/\w+$/.test(src) || seen.has(src)) {
+            return false;
+        }
+
+        seen.add(src);
+
+        return true;
+    });
+};
+
+// Counted as the dialog opens, so it says what the zip will hold
+const videoCount = ref(0);
+
+/** What was drawn, and the board's videos in a folder beside it, as one zip. */
+async function zipWithVideos(files: File[]): Promise<File> {
+    const entries: ZipEntry[] = files.map((file) => ({
+        name: file.name,
+        data: file,
+    }));
+    const taken = new Set<string>();
+
+    for (const [index, video] of boardVideos().entries()) {
+        const response = await fetch(video.src!.split('?')[0]);
+
+        if (!response.ok) {
+            throw new Error(`Couldn’t take video ${index + 1} along.`);
+        }
+
+        const data = await response.blob();
+        const extension = data.type.split('/')[1]?.split(';')[0] || 'mp4';
+        const wanted = nameFrom(response) ?? `Video ${index + 1}.${extension}`;
+        let name = wanted.replace(/[/\\]/g, '-');
+
+        // Two videos of one name stay two files
+        for (let n = 2; taken.has(name); n++) {
+            name = wanted.replace(/(\.[^.]+)?$/, ` (${n})$1`);
+        }
+
+        taken.add(name);
+        entries.push({ name: `videos/${name}`, data });
+    }
+
+    return new File([await zip(entries)], `${boardName()}.zip`, {
+        type: 'application/zip',
+    });
+}
+
+const bundle = computed(() =>
+    videoCount.value
+        ? {
+              note: `It comes as a zip, with the board’s ${videoCount.value === 1 ? 'video' : `${videoCount.value} videos`} beside the ${format.value === 'pdf' ? 'PDF' : 'pictures'}, to play.`,
+              make: zipWithVideos,
+          }
+        : null,
+);
 
 const boardName = () => title.value.trim() || 'Untitled board';
 
@@ -468,6 +544,7 @@ const statusLabel = computed(() => {
             url: presenter.url(props.board.ref_id),
             channel: presenterChannel(props.board.ref_id),
         }"
+        :my-shapes="myShapes"
         @change="onBoardChange"
         @deck="onDeckChange"
     >
@@ -554,6 +631,7 @@ const statusLabel = computed(() => {
         title="Export preview"
         styles-label="Export as"
         :working="drawing"
+        :bundle="bundle"
         wait-for-choice
     />
 </template>

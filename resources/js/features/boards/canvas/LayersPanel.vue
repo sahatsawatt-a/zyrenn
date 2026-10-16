@@ -272,11 +272,12 @@ const onDrop = (target: Item) => {
     border: 1px solid var(--border);
     border-radius: var(--radius-xl);
     box-shadow: 0 4px 16px -4px rgb(15 23 42 / 0.14);
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    /* Its heading stays put; only the list under it scrolls */
+    overflow: hidden;
 }
 
 .layers-head {
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -320,8 +321,12 @@ const onDrop = (target: Item) => {
 
 .layers-list {
     display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
     gap: 1px;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 /* The frame a group belongs to, and how many things are on it */

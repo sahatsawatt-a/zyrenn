@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\Board\Board;
+use App\Models\Board\BoardShape;
 use App\Models\Browser\BrowserSuite;
 use App\Models\Chat\ChatRoom;
 use App\Models\Connection;
@@ -19,6 +20,7 @@ use App\Models\Workflow\Workflow;
 use App\Policies\ChatPolicy;
 use App\Policies\ContentPolicy;
 use App\Support\Formula\Dependents;
+use App\Support\Live\Listed;
 use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -52,9 +54,12 @@ class AppServiceProvider extends ServiceProvider
         // A formula that reads a trip or another table follows it when it changes
         Dependents::listen();
 
+        // Lists open in a space follow what is made, changed and deleted in it, from anywhere
+        Listed::listen();
+
         // One policy for everything a user or a project owns; the Gate finds
         // Folder's for each kind of folder
-        foreach ([Note::class, Board::class, Table::class, Trip::class, PlaceList::class, Place::class, DriveFile::class, Folder::class, Connection::class, Workflow::class, BrowserSuite::class] as $model) {
+        foreach ([Note::class, Board::class, BoardShape::class, Table::class, Trip::class, PlaceList::class, Place::class, DriveFile::class, Folder::class, Connection::class, Workflow::class, BrowserSuite::class] as $model) {
             Gate::policy($model, ContentPolicy::class);
         }
 

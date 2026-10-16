@@ -78,29 +78,6 @@ const onNumber = (field: 'x' | 'y' | 'width' | 'height', event: Event) => {
 </template>
 
 <style scoped>
-/* A fold keeps the fiddly settings out of the way until they are wanted */
-.inspector-fold > summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.25rem 0;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--muted-foreground);
-    cursor: pointer;
-}
-.inspector-fold > summary span {
-    font-weight: 400;
-    letter-spacing: 0;
-    text-transform: none;
-}
-.inspector-fold[open] > summary {
-    margin-bottom: 0.25rem;
-}
-
 .inspector-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -27,12 +27,18 @@ export type PresenterState = {
     title: string;
     /** When the show began, in ms since 1970: for the clock. */
     startedAt: number;
+    /** The clicks this slide's animations still wait for before the next slide. */
+    clicksLeft: number;
+    /** The clicks of this slide's animations played so far. */
+    clicksDone: number;
 };
 
 type Message =
     | { type: 'state'; state: PresenterState }
     | { type: 'hello' }
     | { type: 'go'; index: number }
+    | { type: 'next' }
+    | { type: 'back' }
     | { type: 'stop' };
 
 /** The one channel a board's show and its presenter's window talk on. */
@@ -44,13 +50,19 @@ const plain = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 /**
  * The show's side: tells the presenter's window where the show is whenever
  * that changes (and when a window opens and asks), and does what it asks --
- * the next slide, the one before, the end of the show. Nothing is sent
+ * the next click or the one before (a slide's animations, then the slides),
+ * a slide of its choosing, the end of the show. Nothing is sent
  * between browsers: the window is the presenter's own, beside the show.
  */
 export function useShowLink(
     channel: () => string | null,
     state: () => PresenterState,
-    act: { go: (index: number) => void; stop: () => void },
+    act: {
+        go: (index: number) => void;
+        next: () => void;
+        back: () => void;
+        stop: () => void;
+    },
 ) {
     let port: BroadcastChannel | null = null;
 
@@ -70,6 +82,10 @@ export function useShowLink(
                 post({ type: 'state', state: state() });
             } else if (data.type === 'go') {
                 act.go(data.index);
+            } else if (data.type === 'next') {
+                act.next();
+            } else if (data.type === 'back') {
+                act.back();
             } else if (data.type === 'stop') {
                 act.stop();
             }
@@ -121,20 +137,21 @@ export function usePresenterView(channel: string) {
     onBeforeUnmount(() => port?.close());
 
     const go = (index: number) => post({ type: 'go', index });
+    const next = () => post({ type: 'next' });
+    const back = () => post({ type: 'back' });
     const stop = () => post({ type: 'stop' });
 
-    // The keys a presenter's clicker sends, as in the show itself
+    // The keys a presenter's clicker sends, as in the show itself: a click
+    // at a time, through each slide's animations
     useEventListener(window, 'keydown', (event: KeyboardEvent) => {
-        const at = state.value?.index ?? 0;
-
         if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(event.key)) {
             event.preventDefault();
-            go(at + 1);
+            next();
         } else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(event.key)) {
             event.preventDefault();
-            go(at - 1);
+            back();
         }
     });
 
-    return { state, go, stop };
+    return { state, go, next, back, stop };
 }

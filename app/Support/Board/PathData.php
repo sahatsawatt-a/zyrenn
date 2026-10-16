@@ -276,4 +276,62 @@ final class PathData
             ? ['x' => $minX, 'y' => $minY, 'width' => $maxX - $minX, 'height' => $maxY - $minY]
             : ['x' => 0.0, 'y' => 0.0, 'width' => 0.0, 'height' => 0.0];
     }
+
+    /**
+     * The points along the first stretch of a path -- up to where it lifts
+     * off with another M -- a few units apart, curves followed in small
+     * steps: a line a pencil can draw, as [x, y, x, y, ...].
+     *
+     * @param  list<Segment>  $segments
+     * @return list<float>
+     */
+    public static function sample(array $segments, float $spacing = 4.0): array
+    {
+        $points = [];
+        [$x, $y, $startX, $startY] = [0.0, 0.0, 0.0, 0.0];
+        $add = function (float $px, float $py) use (&$points) {
+            array_push($points, round($px, 2), round($py, 2));
+        };
+
+        foreach ($segments as $at => $s) {
+            if ($s['type'] === 'M') {
+                if ($at > 0) {
+                    break;
+                }
+
+                [$x, $y, $startX, $startY] = [$s['x'], $s['y'], $s['x'], $s['y']];
+                $add($x, $y);
+
+                continue;
+            }
+
+            [$toX, $toY] = $s['type'] === 'Z' ? [$startX, $startY] : [$s['x'], $s['y']];
+            // Enough steps that no two points are far apart: by how far the
+            // segment goes, its handles counted for a curve
+            $reach = abs($toX - $x) + abs($toY - $y)
+                + ($s['type'] === 'C' || $s['type'] === 'Q' ? abs($s['x1'] - $x) + abs($s['y1'] - $y) : 0);
+            $steps = max(1, min(200, (int) ceil($reach / $spacing)));
+
+            for ($i = 1; $i <= $steps; $i++) {
+                $t = $i / $steps;
+                $u = 1 - $t;
+
+                match ($s['type']) {
+                    'C' => $add(
+                        $u ** 3 * $x + 3 * $u * $u * $t * $s['x1'] + 3 * $u * $t * $t * $s['x2'] + $t ** 3 * $toX,
+                        $u ** 3 * $y + 3 * $u * $u * $t * $s['y1'] + 3 * $u * $t * $t * $s['y2'] + $t ** 3 * $toY,
+                    ),
+                    'Q' => $add(
+                        $u * $u * $x + 2 * $u * $t * $s['x1'] + $t * $t * $toX,
+                        $u * $u * $y + 2 * $u * $t * $s['y1'] + $t * $t * $toY,
+                    ),
+                    default => $add($x + ($toX - $x) * $t, $y + ($toY - $y) * $t),
+                };
+            }
+
+            [$x, $y] = [$toX, $toY];
+        }
+
+        return $points;
+    }
 }

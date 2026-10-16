@@ -22,6 +22,7 @@ const TOOL_KEYS: Record<string, Tool> = {
     c: 'cloud',
     a: 'arrow',
     d: 'draw',
+    x: 'eraser',
     l: 'path',
     f: 'frame',
 };
@@ -39,8 +40,9 @@ type Keys = {
     editingId: Ref<string | null>;
     stopEditing: (keep?: boolean) => void;
     presenting: Ref<boolean>;
-    frameIndex: Ref<number>;
-    showFrame: (index: number) => void;
+    /** The show's next click (a slide's animations, then the next slide), and back. */
+    advance: () => void;
+    retreat: () => void;
     stopPresenting: () => void;
     removeSelection: () => void;
     /** Turns the selected parts a quarter turn; false when there are none. */
@@ -59,8 +61,8 @@ export function useShortcuts({
     editingId,
     stopEditing,
     presenting,
-    frameIndex,
-    showFrame,
+    advance,
+    retreat,
     stopPresenting,
     removeSelection,
     turnSelection,
@@ -94,17 +96,23 @@ export function useShortcuts({
                 )) ||
             focused instanceof HTMLTextAreaElement;
 
-        if (event.code === 'Space' && !typing) {
+        // Presenting, Space is the next click, as in any slideshow
+        if (event.code === 'Space' && !typing && !presenting.value) {
             spaceHeld.value = true;
             event.preventDefault();
         }
 
         if (presenting.value) {
-            if (event.key === 'ArrowRight' || event.key === 'PageDown') {
-                showFrame(frameIndex.value + 1);
+            if (
+                ['ArrowRight', 'ArrowDown', 'PageDown'].includes(event.key) ||
+                (event.code === 'Space' && !typing)
+            ) {
+                event.preventDefault();
+                advance();
             }
-            if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
-                showFrame(frameIndex.value - 1);
+            if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(event.key)) {
+                event.preventDefault();
+                retreat();
             }
             if (event.key === 'Escape') {
                 stopPresenting();

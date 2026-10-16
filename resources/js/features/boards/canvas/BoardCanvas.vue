@@ -5,7 +5,7 @@ import { useDebounceFn, useElementSize, useEventListener } from '@vueuse/core';
 import type Konva from 'konva';
 import type { Ref } from 'vue';
 import type * as Y from 'yjs';
-import { computed, onMounted, ref, useTemplateRef, watch } from 'vue';
+import { computed, onMounted, provide, ref, useTemplateRef, watch } from 'vue';
 // Imported into the page rather than installed with app.use(VueKonva): the
 // plugin would put every Konva shape in the main bundle for one demo.
 import { Layer, Stage, Transformer } from 'vue-konva';
@@ -16,7 +16,9 @@ import { useBoardCircuit } from '../circuit/useBoardCircuit';
 import type { Deck } from '../deck/deck';
 import { provideDeck, slidesRestyled } from '../deck/deck';
 import PresentControls from '../deck/PresentControls.vue';
-import { useShow } from '../deck/useShow';
+import { BUILD_HIDDEN } from '../deck/useBuild';
+import { ERASING } from '../model/erase';
+import { FADE, useShow } from '../deck/useShow';
 import BoardFormulae from '../drawing/BoardFormulae.vue';
 import BoardNode from '../drawing/BoardNode.vue';
 import { provideBoardTheme } from '../drawing/useBoardTheme';
@@ -27,10 +29,13 @@ import {
     connectorHops,
     connectorPoints,
 } from '../model/connectors';
-import { boundsOf, boundsOfAll } from '../model/geometry';
+import { boundsOf, boundsOfAll, overlaps } from '../model/geometry';
+import { groupKeys } from '../model/layers';
 import type { Item, Tool } from '../model/items';
 import { isTable } from '../model/schema';
 import { restyled } from '../model/styles';
+import { itemsOfShape } from '../model/myShapes';
+import type { MyShape } from '../model/myShapes';
 import PenOverlay from '../pen/PenOverlay.vue';
 import { usePen } from '../pen/usePen';
 import BoardBar from './BoardBar.vue';
@@ -39,6 +44,7 @@ import BoardPointers from './BoardPointers.vue';
 import BoardVideoControls from './BoardVideoControls.vue';
 import FrameMenu from './FrameMenu.vue';
 import LayersPanel from './LayersPanel.vue';
+import SaveShapeDialog from './SaveShapeDialog.vue';
 import ShapeLibrary from './ShapeLibrary.vue';
 import TemplateDialog from './TemplateDialog.vue';
 import ZoomPill from './ZoomPill.vue';
@@ -50,10 +56,12 @@ import { useDrawing } from './useDrawing';
 import { useFrameMenu } from './useFrameMenu';
 import { useGestures } from './useGestures';
 import { useLabelEditor } from './useLabelEditor';
+import { useMyShapes } from './useMyShapes';
 import { useOnScreen } from './useOnScreen';
 import { usePanels } from './usePanels';
 import { usePictures } from './usePictures';
 import { usePlacing } from './usePlacing';
+import { useShapeSaving } from './useShapeSaving';
 import { useShortcuts } from './useShortcuts';
 import { useTransformer } from './useTransformer';
 import { useVideoControls } from './useVideoControls';
@@ -86,6 +94,10 @@ const props = withDefaults(
         // The presenter's window: where it opens, and the channel it hears
         // the show on. The demo board has none.
         presenter?: { url: string; channel: string } | null;
+        // The board, for shapes of one's own to be kept from it and put on
+        // it; and the project it is in, when its people may share one. The
+        // demo board is kept nowhere and has none.
+        myShapes?: { board: string; project: string | null } | null;
     }>(),
     {
         items: null,
@@ -96,6 +108,7 @@ const props = withDefaults(
         deck: null,
         deckReady: true,
         presenter: null,
+        myShapes: null,
     },
 );
 
@@ -213,6 +226,10 @@ const {
     notesShown,
     openPresenter,
     addSlide,
+    build,
+    curtain,
+    advance,
+    retreat,
 } = useShow({
     board,
     camera,
@@ -226,7 +243,35 @@ const {
     deck: () => props.deck,
     presenter: () => props.presenter,
     slideDecor,
+    stage,
 });
+
+// What a slide's animations keep hidden just now, where each item is drawn
+provide(BUILD_HIDDEN, build.hidden);
+
+// The slide one selected item is on, for animating it there
+const selectedSlide = computed(() => {
+    const [one, more] = board.selected.value;
+
+    if (!one || more || one.kind === 'frame') {
+        return null;
+    }
+
+    const home = groupKeys(board.items.value).get(one.id);
+
+    return board.frames.value.find((frame) => frame.id === home) ?? null;
+});
+
+/** What an item is called in a slide's list of animations. */
+const nameOf = (id: string) => {
+    const item = board.items.value.find((one) => one.id === id);
+    const words = item?.text
+        ?.split('\n')[0]
+        ?.replace(/[*_`#]/g, '')
+        .trim();
+
+    return item ? words || item.kind : 'Deleted item';
+};
 
 const spaceHeld = ref(false);
 
@@ -320,6 +365,7 @@ useTransformer({
 // ------------------------------------------------------- Pointer behaviour
 const {
     draft,
+    erasing,
     guides,
     marquee,
     shapeAt,
@@ -353,6 +399,8 @@ const {
     startEditing: (id) => startEditing(id),
     connectorPath: (item) => connectorPath(item),
 });
+// The strokes the eraser is passing over show they are going
+provide(ERASING, erasing);
 
 // The vector pen: drawing a path a point at a time, and moving a path's
 // points about once it is double-clicked
@@ -432,8 +480,33 @@ const {
 });
 
 // ------------------------------------------------------------------ Actions
+/** The frame an item's middle is on -- the topmost, where frames overlap. */
+const frameUnder = (item: Item): Item | null => {
+    const box = boundsOf(item);
+    const middle = {
+        x: box.x + box.width / 2,
+        y: box.y + box.height / 2,
+        width: 1,
+        height: 1,
+    };
+
+    return (
+        [...board.items.value]
+            .reverse()
+            .find(
+                (one) =>
+                    one.kind === 'frame' &&
+                    !one.hidden &&
+                    one.id !== item.id &&
+                    overlaps(boundsOf(one), middle),
+            ) ?? null
+    );
+};
+
 // Picked from the layers, it is brought into view: the list is often the only
-// way to find something on a big board
+// way to find something on a big board. A frame, or a thing on one, shows the
+// whole frame, as the slide is seen; anything else is shown at the size its
+// words read at. Picked on the canvas, it stays where it is
 const pickLayer = ({ id, add }: { id: string; add: boolean }) => {
     if (add) {
         board.toggleInSelection(id);
@@ -443,8 +516,20 @@ const pickLayer = ({ id, add }: { id: string; add: boolean }) => {
 
     const item = board.byId.value.get(id);
 
-    if (item) {
-        camera.reveal(boundsOf(item), { inset: uncovered() });
+    if (!item) {
+        return;
+    }
+
+    const frame = item.kind === 'frame' ? item : frameUnder(item);
+
+    if (frame) {
+        camera.focus(boundsOf(frame), {
+            animate: true,
+            padding: 48,
+            inset: uncovered(),
+        });
+    } else {
+        camera.readable(boundsOf(item), { inset: uncovered() });
     }
 };
 
@@ -487,7 +572,8 @@ const {
     tool,
     presenting,
     stage,
-    click: (event) => onClick(event),
+    // Presenting, a click on the slide is the next click of the show
+    click: (event) => (presenting.value ? advance() : onClick(event)),
 });
 
 const hasSchema = computed(() => board.items.value.some(isTable));
@@ -505,6 +591,17 @@ const { placeCircuit, placeTemplate } = usePlacing({
     uncovered,
 });
 
+// Shapes of one's own: kept from what is selected, and put down as one group
+// in the middle of what is in view, as a template is
+const myShapes = useMyShapes(props.myShapes?.board ?? null);
+const shapeSaving = useShapeSaving({
+    board,
+    stage,
+    transformer: () => transformerRef.value?.getNode(),
+    shapes: myShapes,
+});
+const placeMyShape = (shape: MyShape) => placeTemplate(itemsOfShape(shape));
+
 useShortcuts({
     board,
     tool,
@@ -512,8 +609,8 @@ useShortcuts({
     editingId,
     stopEditing,
     presenting,
-    frameIndex,
-    showFrame,
+    advance,
+    retreat,
     stopPresenting,
     removeSelection,
     turnSelection,
@@ -689,7 +786,11 @@ const connectorPath = (item: Item) =>
             :data-camera="`${camera.position.value.x},${camera.position.value.y},${camera.scale.value}`"
             class="relative min-h-[420px] flex-1 overflow-hidden"
             :style="{ backgroundColor: theme.paper }"
-            :class="{ 'cursor-grab': panning }"
+            :class="{
+                'cursor-grab': panning,
+                'board-erasing': tool === 'eraser' && !panning,
+            }"
+            :data-tool="tool"
         >
             <div
                 class="pointer-events-none absolute inset-0"
@@ -841,6 +942,11 @@ const connectorPath = (item: Item) =>
                     :has-schema="hasSchema"
                     @circuit-text="writingCircuit = true"
                     @templates="choosingTemplate = true"
+                    :my-shapes="props.myShapes ? myShapes.shapes.value : null"
+                    @library-open="myShapes.load()"
+                    @place-shape="placeMyShape"
+                    @rename-shape="myShapes.rename"
+                    @remove-shape="myShapes.remove"
                     @schema="readingSchema = true"
                     @undo="board.undo"
                     @redo="board.redo"
@@ -890,6 +996,15 @@ const connectorPath = (item: Item) =>
                     :link="connectorLink"
                     :deck="deck"
                     :deck-ready="deckReady"
+                    :slide="selectedSlide"
+                    :name-of="nameOf"
+                    @animate="
+                        (slide, steps) =>
+                            board.updateEach(
+                                new Map([[slide, { build: steps }]]),
+                            )
+                    "
+                    @preview="build.preview"
                     @deck="emit('deck', $event)"
                     @restyle-deck="
                         board.updateEach(
@@ -899,6 +1014,11 @@ const connectorPath = (item: Item) =>
                     @paint="paintFill"
                     @paint-stroke="paintStroke"
                     @resize="resizeSelection"
+                    :grouped="!!board.selectionGroup.value"
+                    :savable="!!props.myShapes"
+                    @group="board.group"
+                    @ungroup="board.ungroup"
+                    @save-shape="shapeSaving.start"
                     @duplicate="board.duplicate"
                     @remove="removeSelection"
                     @reorder="board.reorder"
@@ -938,6 +1058,15 @@ const connectorPath = (item: Item) =>
                 @fit="fitAll()"
             />
 
+            <!-- A fade between slides goes through black -->
+            <div
+                v-if="presenting"
+                class="pointer-events-none absolute inset-0 bg-black transition-opacity ease-in-out"
+                :style="{ opacity: curtain, transitionDuration: `${FADE}ms` }"
+                data-test="present-curtain"
+                :data-build-playing="build.busy.value"
+            />
+
             <!-- Presenting: the notes under the slide, and the way through -->
             <PresentControls
                 v-if="presenting"
@@ -947,7 +1076,10 @@ const connectorPath = (item: Item) =>
                 :current-frame="currentFrame"
                 :can-open-presenter="!!presenter && !compact"
                 :full-screen="fullScreen"
-                @show="showFrame"
+                :clicks-left="build.clicksLeft.value"
+                :clicks-done="Math.max(0, build.played.value - 1)"
+                @next="advance"
+                @back="retreat"
                 @presenter="openPresenter"
                 @full-screen="enterFullScreen"
                 @stop="stopPresenting"
@@ -972,6 +1104,15 @@ const connectorPath = (item: Item) =>
         <TemplateDialog
             v-model:open="choosingTemplate"
             @insert="placeTemplate"
+        />
+
+        <SaveShapeDialog
+            v-if="props.myShapes"
+            v-model:open="shapeSaving.open.value"
+            :preview="shapeSaving.preview.value"
+            :project="props.myShapes.project"
+            :saving="shapeSaving.saving.value"
+            @save="shapeSaving.save"
         />
 
         <MediaViewer />
@@ -1008,6 +1149,15 @@ const connectorPath = (item: Item) =>
 }
 
 /* Anything laid over the canvas: above the stage and the editors on it */
+/* The eraser: a ring the size it reaches, for whoever is rubbing out */
+.board-erasing,
+.board-erasing :deep(canvas) {
+    cursor:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='10' fill='white' fill-opacity='.6' stroke='%23334155' stroke-width='1.5'/%3E%3C/svg%3E")
+            12 12,
+        cell;
+}
+
 .board-float {
     position: absolute;
     z-index: 30;
@@ -1019,6 +1169,10 @@ const connectorPath = (item: Item) =>
 .board-float > :deep(*) {
     min-height: 0;
     overflow-y: auto;
+}
+/* The layers scroll their list alone, under a heading that stays */
+.board-float > :deep(.layers) {
+    overflow: hidden;
 }
 
 /* The tools never run off the canvas: on a narrow one they are slid along */

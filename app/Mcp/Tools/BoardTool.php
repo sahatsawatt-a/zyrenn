@@ -5,6 +5,7 @@ namespace App\Mcp\Tools;
 use App\Models\Board\Board;
 use App\Models\Board\BoardFolder;
 use App\Models\Owner;
+use App\Support\Board\Animations;
 use App\Support\Board\BoardItems;
 use App\Support\Board\BoardRows;
 use App\Support\Board\Shapes;
@@ -75,6 +76,20 @@ abstract class BoardTool extends FiledTool
     }
 
     /**
+     * A list of items whose fields are written out once, in `$like` beside
+     * it, rather than again here: an item's fields are most of what a board
+     * tool says, so each copy is thousands of tokens read for nothing. Kept
+     * to the same rules all the same (itemRules).
+     */
+    protected function itemsLike(JsonSchema $schema, string $description, bool $withId = false): Type
+    {
+        return $schema->array()
+            ->items($withId ? $schema->object(['id' => $schema->string()->max(64)->required()]) : $schema->object())
+            ->max(self::MAX_ITEMS)
+            ->description($description);
+    }
+
+    /**
      * Schema for a circuit written as text, which is laid out on the board.
      */
     protected function circuitArgument(JsonSchema $schema, string $description): Type
@@ -135,6 +150,9 @@ abstract class BoardTool extends FiledTool
             "{$key}.*.color" => ['nullable', 'string', 'max:32'],
             "{$key}.*.shadow" => ['nullable', 'boolean'],
             "{$key}.*.d" => ['nullable', 'string', 'max:20000'],
+            "{$key}.*.points" => ['nullable', 'array', 'max:'.BoardItems::MOST_POINTS],
+            "{$key}.*.rough" => ['nullable'],
+            "{$key}.*.pressures" => ['nullable', 'array', 'max:'.intdiv(BoardItems::MOST_POINTS, 2)],
             "{$key}.*.radius" => ['nullable', 'numeric', 'between:0,2000'],
             "{$key}.*.opacity" => ['nullable', 'numeric', 'between:0,1'],
             "{$key}.*.gradient" => ['nullable', 'string', 'max:32'],
@@ -170,6 +188,16 @@ abstract class BoardTool extends FiledTool
             "{$key}.*.notes" => ['nullable', 'string', 'max:10000'],
             "{$key}.*.section" => ['nullable', 'string', 'max:120'],
             "{$key}.*.bare" => ['nullable', 'boolean'],
+            "{$key}.*.build" => ['nullable', 'array', 'max:'.Animations::most()],
+            "{$key}.*.build.*" => ['array'],
+            "{$key}.*.build.*.item" => ['required', 'string', 'max:64'],
+            "{$key}.*.build.*.kind" => ['required', 'string', 'in:'.implode(',', Animations::kinds())],
+            "{$key}.*.build.*.effect" => ['nullable', 'string', 'in:'.implode(',', Animations::allEffects())],
+            "{$key}.*.build.*.start" => ['nullable', 'string', 'in:'.implode(',', Animations::starts())],
+            "{$key}.*.build.*.duration" => ['nullable', 'integer', 'between:50,10000'],
+            "{$key}.*.build.*.delay" => ['nullable', 'integer', 'between:0,30000'],
+            "{$key}.*.build.*.from" => ['nullable', 'string', 'in:'.implode(',', Animations::froms())],
+            "{$key}.*.transition" => ['nullable', 'string', 'in:'.implode(',', Animations::transitions())],
             "{$key}.*.rows" => ['nullable', 'array', 'max:'.BoardRows::MAX],
             "{$key}.*.rows.*" => ['array'],
             "{$key}.*.rows.*.id" => ['nullable', 'string', 'max:64', 'regex:/^[A-Za-z0-9_-]+$/'],
@@ -214,8 +242,9 @@ abstract class BoardTool extends FiledTool
         $items = is_array($validated[$key] ?? null) ? $validated[$key] : [];
         ksort($items);
 
+        // A pencil path that lifts off and goes on: one stroke for each stretch
         /** @var list<array<string, mixed>> */
-        return array_values($items);
+        return BoardItems::strokesApart(array_values($items));
     }
 
     /**
@@ -304,7 +333,10 @@ abstract class BoardTool extends FiledTool
             'style' => $schema->string()->max(40)->description('A ready-made look, as "style:colour": style one of '.implode(', ', Styles::styleIds()).' -- soft (a pale fill, a coloured line, dark words), solid (a strong fill, white words), outline, bold (a dark fill), light -- and colour one of '.implode(', ', Styles::colourNames()).'. It sets fill, stroke, the words\' "color" and the line width the way the board\'s Style picker does; any of those sent as well wins. Keep to a few colours across a board and one style for things of a kind: "solid:indigo" for services, "soft:emerald" for stores, "soft:slate" for the rest.'),
             'color' => $schema->string()->max(32)->description('The colour the label is written in, as hex. Left out, it is whatever reads best on the fill.'),
             'shadow' => $schema->boolean()->description('true: a soft shadow under it, lifting it off the board.'),
-            'd' => $schema->string()->max(20000)->description('For kind "path": SVG path data -- M, L, H, V, C, S, Q, T, A and Z, upper case absolute or lower case relative, e.g. "M100 300 C200 100 400 100 500 300". Open, it is a line; closed with Z and given a fill, a shape. In board units: with no x and y the path sits where its points say, with them its points are measured from that corner. Its box is worked out from the curve; a width or height scales it.'),
+            'points' => $schema->array()->items($schema->number())->description('For kind "draw" (pencil ink, which the eraser takes): the stroke as [x, y, x, y, ...] in board units, drawn smooth as a hand\'s -- from x and y when given, else where they say. Or give "d".'),
+            'pressures' => $schema->array()->items($schema->number())->description('For kind "draw" with "points": how hard each point was pressed, 0 to 1, one for each -- the ink heavier where pressed (0.5 is as heavy as plain ink), as a stylus draws.'),
+            'rough' => $schema->number()->min(0)->max(3)->description('For kind "draw": how unsteady the hand, 0 (exact) to 3 -- a sketched look for lines drawn by "d".'),
+            'd' => $schema->string()->max(20000)->description('For kind "draw": ink drawn along SVG path data; each M lifts the pencil and starts another stroke (ids id, id-2 ...). A circle: "M50 0 A50 50 0 1 1 49.9 0"; a wave: "M0 0 Q25 -30 50 0 T100 0 T150 0"; a spiral or star: many points in one "d". Its "lineWidth" is how heavy the ink (3 by default), its "opacity" how faint (a highlighter: 12 and 0.35). For kind "path": SVG path data -- M, L, H, V, C, S, Q, T, A and Z, upper case absolute or lower case relative, e.g. "M100 300 C200 100 400 100 500 300". Open, it is a line; closed with Z and given a fill, a shape. In board units: with no x and y the path sits where its points say, with them its points are measured from that corner. Its box is worked out from the curve; a width or height scales it.'),
             'radius' => $schema->number()->description('How round its corners are, in board units: a rect, sticky, frame, image or video. Left out, its kind\'s own (8 on a rect, 0 on a frame).'),
             'opacity' => $schema->number()->description('How solid it is, 0 (unseen) to 1 (the default).'),
             'gradient' => $schema->string()->max(32)->description('A second colour, as hex, its fill fades to -- on shapes, stickies and frames. "" for a plain fill again.'),
@@ -342,6 +374,16 @@ abstract class BoardTool extends FiledTool
             'notes' => $schema->string()->max(10000)->description('For kind "frame": speaker notes, shown to the presenter alone in present mode.'),
             'section' => $schema->string()->max(120)->description('For kind "frame": the part of the deck this slide begins -- what a footer\'s {section} says on it and the slides after it.'),
             'bare' => $schema->boolean()->description('For kind "frame": true leaves the deck\'s header, footer and slide number off this slide -- a title slide. It is still counted.'),
+            'build' => $schema->array()->items($schema->object([
+                'item' => $schema->string()->max(64)->description('The id of an item on this slide.')->required(),
+                'kind' => $schema->string()->enum(Animations::kinds())->description('in: it comes on (hidden until then); emphasis: it draws the eye and stays; out: it goes.')->required(),
+                'effect' => $schema->string()->enum(Animations::allEffects())->description('Entrance: appear, fade, fly (from a side), zoom, wipe (from a side). Emphasis: pulse, spin, blink. Exit: fade, fly (to a side), zoom, disappear.'),
+                'start' => $schema->string()->enum(Animations::starts())->description('click (the default): on the presenter\'s next click; with: as the step before it begins; after: once the step before it ends. Steps before the first click play as the slide comes up.'),
+                'duration' => $schema->integer()->description('How long it plays, ms: 250 fast, 500 (the default) normal, 1000 slow.'),
+                'delay' => $schema->integer()->description('How long it waits once its turn comes, ms.'),
+                'from' => $schema->string()->enum(Animations::froms())->description('For fly and wipe: the side it comes from (or goes to). Default bottom.'),
+            ]))->description('For kind "frame": the slide\'s animations, in the order they play while presenting -- PowerPoint\'s Animation Pane. Sent whole: it replaces the list; [] takes them all off. Pictures and PDFs show the slide as it ends.'),
+            'transition' => $schema->string()->enum(Animations::transitions())->description('For kind "frame": how the show moves on to this slide -- glide (the default: the view moves across the board), fade (through black), or cut (at once).'),
             'hidden' => $schema->boolean()->description('Keep it off the board without deleting it.'),
             'locked' => $schema->boolean()->description('Stop it being picked up on the canvas.'),
             'pdfHidden' => $schema->boolean()->description('For kind "frame": keep it on the board but leave it out of the PDF export, which otherwise has a page for every frame.'),

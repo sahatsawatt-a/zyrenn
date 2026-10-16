@@ -15,7 +15,7 @@ import {
 // in the same browser, and moves it on.
 const props = defineProps<{ board: { ref_id: string; title: string } }>();
 
-const { state, go, stop } = usePresenterView(
+const { state, next, back, stop } = usePresenterView(
     presenterChannel(props.board.ref_id),
 );
 
@@ -117,20 +117,26 @@ const showing = computed(() => state.value?.presenting && state.value.current);
             <footer class="presenter-foot">
                 <button
                     type="button"
-                    :disabled="state.index === 0"
+                    :disabled="state.index === 0 && !state.clicksDone"
                     data-test="presenter-prev"
-                    @click="go(state.index - 1)"
+                    @click="back"
                 >
                     <ChevronLeft class="size-5" />
                     Back
                 </button>
                 <button
                     type="button"
-                    :disabled="state.index >= state.count - 1"
+                    :disabled="
+                        state.index >= state.count - 1 && !state.clicksLeft
+                    "
                     data-test="presenter-next"
-                    @click="go(state.index + 1)"
+                    @click="next"
                 >
-                    Next
+                    {{
+                        state.clicksLeft
+                            ? `Next click (${state.clicksLeft} left)`
+                            : 'Next'
+                    }}
                     <ChevronRight class="size-5" />
                 </button>
                 <button

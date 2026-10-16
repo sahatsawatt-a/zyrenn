@@ -217,6 +217,16 @@ class BoardItems
                 }
             }
 
+            // A slide's animations and how the show moves to it (Animations);
+            // an empty list takes them off
+            if ($kind === 'frame' && is_array($spec['build'] ?? null)) {
+                $item['build'] = Animations::clean($spec['build']);
+            }
+
+            if ($kind === 'frame' && in_array($spec['transition'] ?? null, Animations::transitions(), true)) {
+                $item['transition'] = $spec['transition'];
+            }
+
             // A table's columns, a class's fields and methods: kept as rows,
             // and the shape made as tall as they need unless told a height
             $rows = BoardRows::kindOf($kind);
@@ -268,6 +278,52 @@ class BoardItems
                 $item['height'] = is_numeric($spec['height'] ?? null) ? (float) $spec['height'] : $item['viewHeight'];
                 $spec['x'] ??= $item['x'];
                 $spec['y'] ??= $item['y'];
+            }
+
+            // A pencil stroke's points, in board units -- from x and y when
+            // given, else where they say -- kept from its first point, as a
+            // hand's are
+            // -- or drawn along path data, straight and curved as it says
+            $drawn = $kind === 'draw' && ! is_array($spec['points'] ?? null) && is_string($spec['d'] ?? null)
+                ? PathData::sample(PathData::parse($spec['d']))
+                : null;
+
+            if ($kind === 'draw' && (is_array($spec['points'] ?? null) || $drawn !== null)) {
+                $flat = self::flatPoints($drawn ?? $spec['points']);
+
+                if (count($flat) >= 2) {
+                    $placed = is_numeric($spec['x'] ?? null) && is_numeric($spec['y'] ?? null);
+                    [$firstX, $firstY] = [$flat[0], $flat[1]];
+                    $item['points'] = array_map(
+                        fn (float $value, int $at) => round($value - ($at % 2 === 0 ? $firstX : $firstY), 2),
+                        $flat,
+                        array_keys($flat),
+                    );
+                    $item['x'] = ($placed ? (float) $spec['x'] : 0.0) + $firstX;
+                    $item['y'] = ($placed ? (float) $spec['y'] : 0.0) + $firstY;
+                    $spec['x'] ??= $item['x'];
+                    $spec['y'] ??= $item['y'];
+
+                    // Drawn by hand, a little unsteady: as much as asked
+                    if (is_numeric($spec['rough'] ?? null) || ($spec['rough'] ?? false) === true) {
+                        $item['points'] = self::wobbled($item['points'], $spec['rough'] === true ? 1.0 : (float) $spec['rough'], (string) ($spec['id'] ?? ''));
+                    }
+                }
+            }
+
+            // How hard a stylus pressed at each point, 0 to 1: kept only
+            // with one for every point, as the canvas draws them
+            if ($kind === 'draw' && is_array($spec['pressures'] ?? null)) {
+                $pressures = array_map(fn ($value) => round(max(0.0, min(1.0, (float) $value)), 2), array_values(array_filter($spec['pressures'], 'is_numeric')));
+
+                if (count($pressures) === intdiv(count($item['points'] ?? []), 2) && $pressures !== []) {
+                    $item['pressures'] = $pressures;
+                }
+            }
+
+            // How heavy pencil ink is: its own width, 3 as a hand draws it
+            if ($kind === 'draw' && is_numeric($spec['lineWidth'] ?? null)) {
+                $item['inkWidth'] = max(0.5, min(40.0, (float) $spec['lineWidth']));
             }
 
             // A text item is only its words: unless told how tall it is, it is as
@@ -325,12 +381,108 @@ class BoardItems
             }
         }
 
+        // A slide's animations only of items still on the board
+        $ids = array_fill_keys(array_column($items, 'id'), true);
+
         // Nothing left painted under the frame it sits on, as the canvas keeps it
-        return BoardParts::keepOnFrames(array_map(function (array $item) {
+        return BoardParts::keepOnFrames(array_map(function (array $item) use ($ids) {
             unset($item['placed']);
+
+            if (is_array($item['build'] ?? null)) {
+                $item['build'] = Animations::clean($item['build'], $ids);
+            }
 
             return $item;
         }, $items));
+    }
+
+    /**
+     * Points a little unsteady, as a hand draws: each moved across the line
+     * by a smooth wobble up to `$how` units (0-3) -- the same each time for
+     * one id, so writing a board again does not redraw its sketch.
+     *
+     * @param  list<float>  $points
+     * @return list<float>
+     */
+    public static function wobbled(array $points, float $how, string $id): array
+    {
+        $how = max(0.0, min(3.0, $how));
+        $seed = (crc32($id) % 1000) / 100;
+
+        foreach ($points as $at => $value) {
+            $n = intdiv($at, 2);
+            $points[$at] = round($value + $how * (sin($n * 0.9 + $seed + ($at % 2) * 2.1) + 0.5 * sin($n * 0.37 + $seed * 1.7)), 2);
+        }
+
+        return $points;
+    }
+
+    /**
+     * Pencil strokes asked for along path data that lifts off and goes on
+     * (several M): one stroke each, as a hand draws them -- the first under
+     * the id given, the rest after it (id-2, id-3 ...).
+     *
+     * @param  list<array<string, mixed>>  $specs
+     * @return list<array<string, mixed>>
+     */
+    public static function strokesApart(array $specs): array
+    {
+        $apart = [];
+
+        foreach ($specs as $spec) {
+            if (($spec['kind'] ?? null) !== 'draw' || isset($spec['points']) || ! is_string($spec['d'] ?? null)) {
+                $apart[] = $spec;
+
+                continue;
+            }
+
+            $pieces = [];
+
+            foreach (PathData::parse($spec['d']) as $segment) {
+                if ($segment['type'] === 'M' || $pieces === []) {
+                    $pieces[] = [];
+                }
+
+                $pieces[count($pieces) - 1][] = $segment;
+            }
+
+            foreach ($pieces as $n => $piece) {
+                $apart[] = [
+                    ...$spec,
+                    'd' => PathData::toString($piece),
+                    ...(is_string($spec['id'] ?? null) && $n > 0 ? ['id' => $spec['id'].'-'.($n + 1)] : []),
+                ];
+            }
+        }
+
+        return $apart;
+    }
+
+    /** The most points a pencil stroke keeps: a long scribble, not a picture. */
+    public const MOST_POINTS = 4000;
+
+    /**
+     * Points as [x, y, x, y, ...] -- given that way, or as [x, y] pairs --
+     * numbers only, at most MOST_POINTS of them.
+     *
+     * @param  array<mixed>  $points
+     * @return list<float>
+     */
+    public static function flatPoints(array $points): array
+    {
+        $flat = [];
+
+        foreach ($points as $point) {
+            if (is_array($point) && is_numeric($point[0] ?? null) && is_numeric($point[1] ?? null)) {
+                array_push($flat, (float) $point[0], (float) $point[1]);
+            } elseif (is_numeric($point)) {
+                $flat[] = (float) $point;
+            }
+        }
+
+        $flat = array_slice($flat, 0, self::MOST_POINTS);
+
+        return count($flat) % 2 === 0 ? $flat : array_slice($flat, 0, -1);
     }
 
     /**
@@ -369,6 +521,16 @@ class BoardItems
 
             if ($kind === self::SYMBOL) {
                 $spec['symbol'] = (string) ($item['symbol'] ?? '');
+            }
+
+            // A pencil stroke's ink, from its first point: without it, changed
+            // or written again, it would be drawn as nothing -- and how heavy
+            if ($kind === 'draw' && is_array($item['points'] ?? null)) {
+                $spec['points'] = array_map(fn ($value) => round((float) $value, 1), array_values($item['points']));
+
+                if (is_array($item['pressures'] ?? null) && $item['pressures'] !== []) {
+                    $spec['pressures'] = array_map(fn ($value) => round((float) $value, 2), array_values($item['pressures']));
+                }
             }
 
             // A path's points, in its own box, and how big that box is
@@ -426,6 +588,14 @@ class BoardItems
                 }
             }
 
+            if (is_array($item['build'] ?? null) && $item['build'] !== []) {
+                $spec['build'] = $item['build'];
+            }
+
+            if (is_string($item['transition'] ?? null) && $item['transition'] !== 'glide') {
+                $spec['transition'] = $item['transition'];
+            }
+
             foreach (['fill', 'stroke'] as $colour) {
                 $value = (string) ($item[$colour] ?? '');
 
@@ -440,6 +610,15 @@ class BoardItems
             foreach (['rotation' => 0, 'fontSize' => $kind === self::SYMBOL ? 13 : 16, 'lineWidth' => 2, 'headSize' => 10] as $number => $default) {
                 if (isset($item[$number]) && self::round($item[$number]) !== (float) $default) {
                     $spec[$number] = self::round($item[$number]);
+                }
+            }
+
+            // Pencil ink is as heavy as its own width says
+            if ($kind === 'draw') {
+                unset($spec['lineWidth']);
+
+                if (is_numeric($item['inkWidth'] ?? null) && (float) $item['inkWidth'] !== 3.0) {
+                    $spec['lineWidth'] = self::round($item['inkWidth']);
                 }
             }
 
@@ -545,9 +724,10 @@ class BoardItems
                 unset($merged['height']);
             }
 
-            // New points for a path are where they say, the size they say:
-            // its old place and size are kept only when sent with them
-            if (($merged['kind'] ?? null) === self::PATH && array_key_exists('d', $spec)) {
+            // New points for a path, or a pencil stroke, are where they say, the
+            // size they say: its old place and size are kept only when sent with them
+            if ((($merged['kind'] ?? null) === self::PATH && array_key_exists('d', $spec))
+                || (($merged['kind'] ?? null) === 'draw' && array_key_exists('points', $spec))) {
                 foreach (['x', 'y', 'width', 'height'] as $field) {
                     if (! array_key_exists($field, $spec)) {
                         unset($merged[$field]);
