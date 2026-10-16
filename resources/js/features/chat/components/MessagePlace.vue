@@ -19,17 +19,13 @@ import type { PlaceList } from '@/lib/maps';
 import { owned } from '@/lib/projects';
 import { index as mapsIndex } from '@/routes/maps';
 import { index as projectMapsIndex } from '@/routes/projects/maps';
+import type { ChatPlace as Place } from '../types';
 
 // A place under a chat message: a small map with its pin, what it is called
 // and where, opened larger over the chat -- with the way there, the app's
 // own map of it, and a way to keep it among one's saved places.
 
-export type ChatPlace = {
-    lat: number;
-    lng: number;
-    title: string | null;
-    address: string | null;
-};
+export type ChatPlace = Place;
 
 const props = defineProps<{ place: ChatPlace }>();
 
