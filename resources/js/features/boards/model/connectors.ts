@@ -177,22 +177,142 @@ export const connectorTypeOf = (line: ConnectorLook) =>
             look.lineStyle === line.lineStyle,
     );
 
+type Point = { x: number; y: number };
+type Box = { x: number; y: number; width: number; height: number };
+
+const centreOfBox = (box: Box): Point => ({
+    x: box.x + box.width / 2,
+    y: box.y + box.height / 2,
+});
+
+const hostOf = (end: Endpoint | null, byId: Map<string, Item>) =>
+    end?.item ? (byId.get(end.item) ?? null) : null;
+
+/** What an end is on, as a box: its shape's, or a point where it floats. */
+const boxOfEnd = (end: Endpoint, host: Item | null): Box =>
+    host ? boundsOf(host) : { x: end.x, y: end.y, width: 0, height: 0 };
+
 /**
- * The side an end leaves by. A stored side is one somebody chose, so it is
- * kept; without one the end follows the shapes, turning to face whatever sits
- * at the other end of the line.
+ * The faces of one box that look towards another: those the other's middle
+ * lies beyond. None when the two lie over each other.
  */
-export const sideOf = (
-    end: Endpoint | null,
-    host: Item | null,
-    facing: { x: number; y: number },
-): Side | null => {
-    if (!host) {
-        return null;
+const facesTowards = (box: Box, other: Box): Side[] => {
+    const { x, y } = centreOfBox(other);
+
+    return [
+        x > box.x + box.width ? ('right' as const) : null,
+        x < box.x ? ('left' as const) : null,
+        y > box.y + box.height ? ('bottom' as const) : null,
+        y < box.y ? ('top' as const) : null,
+    ].filter((side) => side !== null);
+};
+
+/**
+ * Whether an end just hangs off its shape's face, rather than holding a pin
+ * of a symbol, a row of a table or a place along a lifeline -- which say for
+ * themselves where it is and which way it leaves.
+ */
+const onFace = (end: Endpoint, host: Item | null): host is Item =>
+    !!host &&
+    !isSymbol(host) &&
+    !(end.pin && hasRows(host) && rowNamed(host, end.pin)) &&
+    !(typeof end.along === 'number' && shapeOf(host.kind)?.slide);
+
+/**
+ * A turn costs a line this much, in board units of length, when its faces
+ * are chosen: enough that one corner beats the two of a Z about as long.
+ */
+const BEND = 60;
+
+/** How long a path is, with each of its turns counted as BEND more. */
+const costOf = (path: Point[]) =>
+    path
+        .slice(1)
+        .reduce(
+            (sum, point, index) =>
+                sum +
+                Math.abs(point.x - path[index].x) +
+                Math.abs(point.y - path[index].y),
+            0,
+        ) +
+    BEND * Math.max(0, path.length - 2);
+
+/**
+ * The faces a connector's ends leave by, where they hang off a face (an end
+ * on a pin, a row or a lifeline is placed by that, and is null here, as is
+ * an end that floats). A stored side is one somebody chose, so it is kept.
+ * Without one an end turns to face the other: of the faces of each shape
+ * that look towards the other, the pair an elbow joins by the shortest
+ * line with the fewest turns -- straight over a gap, round a corner by one
+ * bend -- or, for a curve or a straight line, the nearest pair.
+ * Shapes lying over each other face nothing, and an end then takes the face
+ * nearest the middle of the other.
+ */
+export const sidesOf = (
+    item: Item,
+    byId: Map<string, Item>,
+): { from: Side | null; to: Side | null } => {
+    if (!item.from || !item.to) {
+        return { from: null, to: null };
     }
 
-    return end?.side ?? nearestSide(host, facing);
+    const fromHost = hostOf(item.from, byId);
+    const toHost = hostOf(item.to, byId);
+    const fromBox = boxOfEnd(item.from, fromHost);
+    const toBox = boxOfEnd(item.to, toHost);
+
+    const choices = (end: Endpoint, host: Item | null, box: Box, other: Box) =>
+        !onFace(end, host)
+            ? [null]
+            : end.side
+              ? [end.side]
+              : (() => {
+                    const faces = facesTowards(box, other);
+
+                    return faces.length
+                        ? faces
+                        : [nearestSide(host, centreOfBox(other))];
+                })();
+
+    const froms = choices(item.from, fromHost, fromBox, toBox);
+    const tos = choices(item.to, toHost, toBox, fromBox);
+
+    if (froms.length === 1 && tos.length === 1) {
+        return { from: froms[0], to: tos[0] };
+    }
+
+    let best = { from: froms[0], to: tos[0], cost: Infinity };
+
+    for (const from of froms) {
+        for (const to of tos) {
+            const start =
+                from && fromHost
+                    ? anchorAt(fromHost, from)
+                    : centreOfBox(fromBox);
+            const end =
+                to && toHost ? anchorAt(toHost, to) : centreOfBox(toBox);
+            // A curve or a straight line just takes the nearest faces
+            const cost =
+                item.routing === 'elbow'
+                    ? costOf(elbowPath(start, from, end, to, STUB))
+                    : Math.hypot(end.x - start.x, end.y - start.y);
+
+            if (cost < best.cost) {
+                best = { from, to, cost };
+            }
+        }
+    }
+
+    return { from: best.from, to: best.to };
 };
+
+/** Each connector's faces (sidesOf), by its id, worked out once for a board. */
+export type SidesById = Map<string, { from: Side | null; to: Side | null }>;
+
+export const sidesById = (items: Item[], byId: Map<string, Item>): SidesById =>
+    new Map(
+        items.filter(isConnector).map((item) => [item.id, sidesOf(item, byId)]),
+    );
 
 /** The connectors with an end on each item, by the item's id. */
 export const attachmentsOf = (items: Item[]): Map<string, Item[]> => {
@@ -231,6 +351,95 @@ const otherEndOf = (
     return host ? centreOf(host) : { x: other?.x ?? 0, y: other?.y ?? 0 };
 };
 
+const OPPOSITE: Record<Side, Side> = {
+    left: 'right',
+    right: 'left',
+    top: 'bottom',
+    bottom: 'top',
+};
+
+/** How far in from a side's corners an end may be put. */
+const CORNER = 8;
+
+/**
+ * Where along its side an end alone there goes so its line runs straight
+ * across a gap: level with the far end, when that is on the face opposite
+ * and within reach of this one. Both alone on their faces, they meet in the
+ * middle of the stretch the two faces share; the far end spread among
+ * others, this one lines up with where it was put. Nothing when the faces
+ * do not look at each other, or share no stretch.
+ */
+const levelWith = (
+    item: Item,
+    end: 'from' | 'to',
+    host: Item,
+    side: Side,
+    byId: Map<string, Item>,
+    attached: Map<string, Item[]>,
+    sides?: SidesById,
+): Point | null => {
+    const far = end === 'from' ? 'to' : 'from';
+    const farEnd = item[far];
+    const farHost = hostOf(farEnd, byId);
+    const farSide = (sides?.get(item.id) ?? sidesOf(item, byId))[far];
+
+    if (
+        !farEnd ||
+        !farHost ||
+        farHost.id === host.id ||
+        farSide !== OPPOSITE[side] ||
+        !isFlatSide(farHost, farSide)
+    ) {
+        return null;
+    }
+
+    const across = side === 'top' || side === 'bottom' ? 'x' : 'y';
+    const reach = (box: Box) =>
+        across === 'x'
+            ? { low: box.x + CORNER, high: box.x + box.width - CORNER }
+            : { low: box.y + CORNER, high: box.y + box.height - CORNER };
+    const box = boundsOf(host);
+    const mine = reach(box);
+    const theirs = reach(boundsOf(farHost));
+
+    // The far face has to lie ahead of this one, a gap between them
+    const here = anchorAt(host, side);
+    const there = anchorAt(farHost, farSide);
+
+    if (!ahead(here, side, there)) {
+        return null;
+    }
+
+    const farAlone =
+        (attached.get(farHost.id) ?? []).flatMap((other) =>
+            (['from', 'to'] as const).filter(
+                (which) =>
+                    other[which]?.item === farHost.id &&
+                    (sides?.get(other.id) ?? sidesOf(other, byId))[which] ===
+                        farSide,
+            ),
+        ).length < 2;
+
+    const at: number = farAlone
+        ? (Math.max(mine.low, theirs.low) + Math.min(mine.high, theirs.high)) /
+          2
+        : anchorFor(item, far, farHost, farSide, byId, attached, sides)[across];
+
+    if (
+        at < mine.low ||
+        at > mine.high ||
+        (farAlone &&
+            Math.max(mine.low, theirs.low) > Math.min(mine.high, theirs.high))
+    ) {
+        return null;
+    }
+
+    const length = across === 'x' ? box.width : box.height;
+    const start = across === 'x' ? box.x : box.y;
+
+    return anchorAt(host, side, (at - start) / length);
+};
+
 /**
  * Where an end meets its shape. Alone on a side, the middle of it; sharing a
  * flat side with other connectors, they are spread evenly along it, in the
@@ -244,7 +453,8 @@ const anchorFor = (
     side: Side,
     byId: Map<string, Item>,
     attached?: Map<string, Item[]>,
-) => {
+    sides?: SidesById,
+): Point => {
     if (!attached || !isFlatSide(host, side)) {
         return anchorAt(host, side);
     }
@@ -255,11 +465,8 @@ const anchorFor = (
             .filter((which) => other[which]?.item === host.id)
             .filter(
                 (which) =>
-                    sideOf(
-                        other[which],
-                        host,
-                        otherEndOf(other, which, byId),
-                    ) === side,
+                    (sides?.get(other.id) ?? sidesOf(other, byId))[which] ===
+                    side,
             )
             .map((which) => ({
                 key: `${other.id}:${which}`,
@@ -268,7 +475,10 @@ const anchorFor = (
     );
 
     if (sharing.length < 2) {
-        return anchorAt(host, side);
+        return (
+            levelWith(item, end, host, side, byId, attached, sides) ??
+            anchorAt(host, side)
+        );
     }
 
     sharing.sort((a, b) => a.at - b.at || a.key.localeCompare(b.key));
@@ -352,7 +562,7 @@ export const isWire = (item: Item, byId: Map<string, Item>): boolean =>
         return !!host && isSymbol(host);
     });
 
-const STUB = 24;
+export const STUB = 24;
 
 const stubbed = (
     point: { x: number; y: number },
@@ -395,15 +605,17 @@ const ahead = (
 
 /**
  * The one corner a line needs when its ends leave at right angles to each
- * other and the corner lies ahead of both: out of the first, round it, and
- * into the second. Nothing when the ends face the same way, or the corner
- * would be behind one of them -- the elbow's two turns are needed then.
+ * other and the corner lies ahead of both, by at least `least`: out of the
+ * first, round it, and into the second. Nothing when the ends face the same
+ * way, or the corner would be behind one of them -- the elbow's two turns
+ * are needed then.
  */
 const cornerBetween = (
-    start: { x: number; y: number },
+    start: Point,
     fromSide: Side | null,
-    end: { x: number; y: number },
+    end: Point,
     toSide: Side | null,
+    least = 0,
 ) => {
     if (!fromSide || !toSide || upright(fromSide) === upright(toSide)) {
         return null;
@@ -412,8 +624,13 @@ const cornerBetween = (
     const corner = upright(fromSide)
         ? { x: start.x, y: end.y }
         : { x: end.x, y: start.y };
+    const far = (from: Point) =>
+        Math.abs(corner.x - from.x) + Math.abs(corner.y - from.y) >= least;
 
-    return ahead(start, fromSide, corner) && ahead(end, toSide, corner)
+    return ahead(start, fromSide, corner) &&
+        ahead(end, toSide, corner) &&
+        far(start) &&
+        far(end)
         ? corner
         : null;
 };
@@ -427,8 +644,8 @@ const cornerBetween = (
  */
 const turnBetween = (
     axis: 'x' | 'y',
-    out: { x: number; y: number },
-    back: { x: number; y: number },
+    out: Point,
+    back: Point,
     fromSide: Side | null,
     toSide: Side | null,
 ): number => {
@@ -464,108 +681,62 @@ const turnBetween = (
     return Math.min(Math.max(halfway, atLeast), atMost);
 };
 
-/**
- * A connector's path, in board coordinates: it leaves an anchor along that
- * side's normal, turns once in the middle and comes back in along the other
- * anchor's normal -- the elbow routing a diagram tool is expected to draw.
- * Ends that float take the straight line instead.
- */
-export const connectorPoints = (
-    item: Item,
-    byId: Map<string, Item>,
-    // Every connector's shapes (attachmentsOf), so ends sharing a side can be
-    // spread along it; without it each end takes its side's middle
-    attached?: Map<string, Item[]>,
-): number[] => {
-    if (!item.from || !item.to) {
-        return [];
-    }
+/** A path without the points that are no corner: repeats, and points on a straight run. */
+export const simplified = (path: Point[]): Point[] => {
+    const kept: Point[] = [];
 
-    const fromHost = item.from.item ? (byId.get(item.from.item) ?? null) : null;
-    const toHost = item.to.item ? (byId.get(item.to.item) ?? null) : null;
+    for (const point of path) {
+        const last = kept[kept.length - 1];
 
-    const fromFacing = toHost
-        ? centreOf(toHost)
-        : { x: item.to.x, y: item.to.y };
-    const toFacing = fromHost
-        ? centreOf(fromHost)
-        : { x: item.from.x, y: item.from.y };
-
-    // An end on a symbol is on one of its pins, and leaves the way the pin
-    // points; a junction's pin points nowhere, and is left towards the far end
-    // ...and one on a table's row or along a lifeline is held there the same way
-    const fromHeld = heldFor(item.from, fromHost, fromFacing);
-    const toHeld = heldFor(item.to, toHost, toFacing);
-    const fromPin = pinFor(item.from, fromHost, fromFacing) ?? fromHeld;
-    const toPin = pinFor(item.to, toHost, toFacing) ?? toHeld;
-
-    // An end with no side of its own turns to face wherever the other end is
-    // now, rather than where it was when the line was drawn: drag a shape to
-    // the far side and the line comes out of its other face, as it does in
-    // every diagram tool. An end somebody put on a particular face stays on it.
-    // (An end held on a row or along a lifeline leaves by the edge it is on.)
-    const fromSide = fromHeld
-        ? fromHeld.side
-        : fromPin
-          ? (item.from.side ??
-            fromPin.side ??
-            sideTowards(fromPin, toPin ?? fromFacing))
-          : sideOf(item.from, fromHost, fromFacing);
-    const toSide = toHeld
-        ? toHeld.side
-        : toPin
-          ? (item.to.side ??
-            toPin.side ??
-            sideTowards(toPin, fromPin ?? toFacing))
-          : sideOf(item.to, toHost, toFacing);
-
-    // The point and the side have to come from the same answer, or the line
-    // leaves one face while turning as though it left another
-    const start = fromPin
-        ? { x: fromPin.x, y: fromPin.y }
-        : fromHost && fromSide
-          ? anchorFor(item, 'from', fromHost, fromSide, byId, attached)
-          : { x: item.from.x, y: item.from.y };
-    const end = toPin
-        ? { x: toPin.x, y: toPin.y }
-        : toHost && toSide
-          ? anchorFor(item, 'to', toHost, toSide, byId, attached)
-          : { x: item.to.x, y: item.to.y };
-
-    if (item.routing === 'straight' || (!fromSide && !toSide)) {
-        return [start.x, start.y, end.x, end.y];
-    }
-
-    // A wire keeps to the grid its pins are on, and turns a corner once
-    // where once will do: out of a pin, round, and straight into the other
-    const wire = (!!fromPin && !fromHeld) || (!!toPin && !toHeld);
-    const stub = wire ? GRID : STUB;
-
-    if (wire && item.routing === 'elbow') {
-        const corner = cornerBetween(start, fromSide, end, toSide);
-
-        if (corner) {
-            return [start, corner, end].flatMap((point) => [point.x, point.y]);
+        if (
+            last &&
+            Math.abs(last.x - point.x) < 0.01 &&
+            Math.abs(last.y - point.y) < 0.01
+        ) {
+            continue;
         }
+
+        const before = kept[kept.length - 2];
+
+        if (
+            before &&
+            ((Math.abs(before.x - last.x) < 0.01 &&
+                Math.abs(last.x - point.x) < 0.01 &&
+                (last.y - before.y) * (point.y - last.y) > 0) ||
+                (Math.abs(before.y - last.y) < 0.01 &&
+                    Math.abs(last.y - point.y) < 0.01 &&
+                    (last.x - before.x) * (point.x - last.x) > 0))
+        ) {
+            kept[kept.length - 1] = point;
+            continue;
+        }
+
+        kept.push(point);
     }
 
-    // Curved: one cubic sweep -- start, two handles, end -- leaving and
-    // arriving along the anchors' normals, its handles reaching out further
-    // the further apart the ends are. A spline through the short stubs
-    // instead overshot them, looping where the line left and hooking where
-    // it arrived.
-    if (item.routing === 'curved') {
-        const reach = Math.max(
-            STUB,
-            Math.hypot(end.x - start.x, end.y - start.y) * 0.4,
-        );
+    return kept;
+};
 
-        return [
-            start,
-            stubbed(start, fromSide, reach),
-            stubbed(end, toSide, reach),
-            end,
-        ].flatMap((point) => [point.x, point.y]);
+/**
+ * The elbow between two anchors: once round a corner where once will do,
+ * otherwise out along the first anchor's normal, a turn in the middle, and
+ * back in along the other's -- the routing a diagram tool is expected to
+ * draw. It knows nothing of what lies on the way; connectorRoutes does.
+ */
+export const elbowPath = (
+    start: Point,
+    fromSide: Side | null,
+    end: Point,
+    toSide: Side | null,
+    stub: number,
+    // How far ahead of both ends a single corner has to be: none for a
+    // wire, which turns on its pins' grid; a stub for a line with a head
+    least = stub,
+): Point[] => {
+    const corner = cornerBetween(start, fromSide, end, toSide, least);
+
+    if (corner) {
+        return [start, corner, end];
     }
 
     const out = stubbed(start, fromSide, stub);
@@ -595,10 +766,163 @@ export const connectorPoints = (
                   },
               ];
 
-    return [start, out, ...midpoint, back, end].flatMap((point) => [
-        point.x,
-        point.y,
-    ]);
+    return simplified([start, out, ...midpoint, back, end]);
+};
+
+/** Where a connector's ends are, which faces they leave by, and what by. */
+export type Ends = {
+    start: Point;
+    end: Point;
+    fromSide: Side | null;
+    toSide: Side | null;
+    fromHost: Item | null;
+    toHost: Item | null;
+    // An end on a pin: the line is a wire, on the pins' grid
+    wire: boolean;
+    // An end along a lifeline: a message, drawn straight across
+    along: boolean;
+};
+
+/**
+ * Where a connector's ends meet their shapes and which way they leave them.
+ * Nothing for a connector missing an end.
+ */
+export const endsOf = (
+    item: Item,
+    byId: Map<string, Item>,
+    // Every connector's shapes (attachmentsOf), so ends sharing a side can be
+    // spread along it; without it each end takes its side's middle
+    attached?: Map<string, Item[]>,
+    // Every connector's faces (sidesById), worked out once for a whole board
+    sides?: SidesById,
+): Ends | null => {
+    if (!item.from || !item.to) {
+        return null;
+    }
+
+    const fromHost = hostOf(item.from, byId);
+    const toHost = hostOf(item.to, byId);
+
+    const fromFacing = toHost
+        ? centreOf(toHost)
+        : { x: item.to.x, y: item.to.y };
+    const toFacing = fromHost
+        ? centreOf(fromHost)
+        : { x: item.from.x, y: item.from.y };
+
+    // An end on a symbol is on one of its pins, and leaves the way the pin
+    // points; a junction's pin points nowhere, and is left towards the far end
+    // ...and one on a table's row or along a lifeline is held there the same way
+    const fromHeld = heldFor(item.from, fromHost, fromFacing);
+    const toHeld = heldFor(item.to, toHost, toFacing);
+    const fromPin = pinFor(item.from, fromHost, fromFacing) ?? fromHeld;
+    const toPin = pinFor(item.to, toHost, toFacing) ?? toHeld;
+
+    // An end with no side of its own turns to face wherever the other end is
+    // now, rather than where it was when the line was drawn: drag a shape to
+    // the far side and the line comes out of its other face, as it does in
+    // every diagram tool. An end somebody put on a particular face stays on it.
+    // (An end held on a row or along a lifeline leaves by the edge it is on.)
+    const faces = sides?.get(item.id) ?? sidesOf(item, byId);
+    const fromSide = fromHeld
+        ? fromHeld.side
+        : fromPin
+          ? (item.from.side ??
+            fromPin.side ??
+            sideTowards(fromPin, toPin ?? fromFacing))
+          : faces.from;
+    const toSide = toHeld
+        ? toHeld.side
+        : toPin
+          ? (item.to.side ??
+            toPin.side ??
+            sideTowards(toPin, fromPin ?? toFacing))
+          : faces.to;
+
+    // The point and the side have to come from the same answer, or the line
+    // leaves one face while turning as though it left another
+    const start = fromPin
+        ? { x: fromPin.x, y: fromPin.y }
+        : fromHost && fromSide
+          ? anchorFor(item, 'from', fromHost, fromSide, byId, attached, sides)
+          : { x: item.from.x, y: item.from.y };
+    const end = toPin
+        ? { x: toPin.x, y: toPin.y }
+        : toHost && toSide
+          ? anchorFor(item, 'to', toHost, toSide, byId, attached, sides)
+          : { x: item.to.x, y: item.to.y };
+
+    return {
+        start,
+        end,
+        fromSide,
+        toSide,
+        fromHost,
+        toHost,
+        wire: (!!fromPin && !fromHeld) || (!!toPin && !toHeld),
+        along:
+            typeof item.from.along === 'number' ||
+            typeof item.to.along === 'number',
+    };
+};
+
+/**
+ * A connector's path between its ends, on its own: straight, one curve, or
+ * the plain elbow. On a board, connectorRoutes takes elbows round the other
+ * items and keeps lines apart; this is the path it starts from.
+ */
+export const pathBetween = (item: Item, ends: Ends): number[] => {
+    const { start, end, fromSide, toSide, wire } = ends;
+
+    if (item.routing === 'straight' || (!fromSide && !toSide)) {
+        return [start.x, start.y, end.x, end.y];
+    }
+
+    // Curved: one cubic sweep -- start, two handles, end -- leaving and
+    // arriving along the anchors' normals, its handles reaching out further
+    // the further apart the ends are. A spline through the short stubs
+    // instead overshot them, looping where the line left and hooking where
+    // it arrived.
+    if (item.routing === 'curved') {
+        const reach = Math.max(
+            STUB,
+            Math.hypot(end.x - start.x, end.y - start.y) * 0.4,
+        );
+
+        return [
+            start,
+            stubbed(start, fromSide, reach),
+            stubbed(end, toSide, reach),
+            end,
+        ].flatMap((point) => [point.x, point.y]);
+    }
+
+    // A wire keeps to the grid its pins are on, and turns a corner once
+    // where once will do: out of a pin, round, and straight into the other
+    return elbowPath(
+        start,
+        fromSide,
+        end,
+        toSide,
+        wire ? GRID : STUB,
+        wire ? 0 : STUB,
+    ).flatMap((point) => [point.x, point.y]);
+};
+
+/**
+ * A connector's path, in board coordinates, worked out on its own: see
+ * pathBetween. Ends that float take the straight line instead.
+ */
+export const connectorPoints = (
+    item: Item,
+    byId: Map<string, Item>,
+    // Every connector's shapes (attachmentsOf), so ends sharing a side can be
+    // spread along it; without it each end takes its side's middle
+    attached?: Map<string, Item[]>,
+): number[] => {
+    const ends = endsOf(item, byId, attached);
+
+    return ends ? pathBetween(item, ends) : [];
 };
 
 /** Dash pattern for a connector's line style. */
@@ -619,6 +943,14 @@ export const dashFor = (style: LineStyle): number[] => {
  */
 export const isSwept = (item: Item, points: number[]) =>
     item.routing === 'curved' && points.length === 8;
+
+// Close enough for a label's backing chip: Konva would have to measure the
+// text to do better, and this only has to keep the line out of the words.
+export const labelWidth = (item: Item) =>
+    Math.max(28, item.text.length * 7 + 16);
+
+/** How tall a connector's label chip is. */
+export const LABEL_HEIGHT = 22;
 
 /** Halfway along a connector's path, where its label belongs. */
 export const midpointOf = (points: number[], swept = false) => {

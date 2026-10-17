@@ -34,6 +34,8 @@ const pieces = (context: Konva.Context, colour: string, extra = 0) => {
 };
 
 const config = computed(() => ({
+    // What a test, or a picture of the board, finds it by
+    name: 'pressed-ink',
     sceneFunc: (context: Konva.Context) =>
         pieces(
             context,

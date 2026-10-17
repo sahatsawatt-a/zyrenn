@@ -32,6 +32,8 @@ type Editing = {
     presenting: Ref<boolean>;
     /** The drawn path of a connector, for putting the editor on its middle. */
     connectorPath: (item: Item) => number[];
+    /** Where a connector's label is put, clear of the items about it. */
+    connectorLabel: (item: Item) => { x: number; y: number } | null;
 };
 
 /**
@@ -44,6 +46,7 @@ export function useLabelEditor({
     camera,
     presenting,
     connectorPath,
+    connectorLabel,
 }: Editing) {
     const editingId = ref<string | null>(null);
     const editorText = ref('');
@@ -82,10 +85,12 @@ export function useLabelEditor({
             };
         }
 
-        // A connector's label sits on the middle of the line
+        // A connector's label sits where it is drawn: on the middle of the
+        // line, unless an item is there
         if (isConnector(item)) {
             const path = connectorPath(item);
-            const middle = midpointOf(path, isSwept(item, path));
+            const middle =
+                connectorLabel(item) ?? midpointOf(path, isSwept(item, path));
 
             return {
                 left: `${(middle.x - 70) * scale + x}px`,

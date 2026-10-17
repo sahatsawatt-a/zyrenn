@@ -426,6 +426,33 @@ class McpBoardPartsTest extends TestCase
         $this->assertEquals(130, array_column($board->refresh()->content['items'], null, 'id')['notes']['height']);
     }
 
+    public function test_a_sticky_grows_to_hold_its_words_and_keeps_room_it_was_given()
+    {
+        $board = $this->board();
+        $long = str_repeat('Customers on a trial, with when it ends. ', 4);
+
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'add_items' => [
+                ['id' => 'short', 'kind' => 'sticky', 'text' => $long, 'width' => 220, 'height' => 160, 'fontSize' => 20, 'fontFamily' => 'hand'],
+                ['id' => 'roomy', 'kind' => 'sticky', 'text' => 'Idea', 'width' => 150, 'height' => 150],
+            ]])
+            ->assertOk()
+            ->assertStructuredContent(fn (AssertableJson $json) => $json->missing('overflowing')->etc());
+
+        $items = array_column($board->refresh()->content['items'], null, 'id');
+        $this->assertGreaterThan(160, $grown = $items['short']['height']);
+        $this->assertEquals(150, $items['roomy']['height']);
+
+        // More words later: taller again
+        UserServer::actingAs($this->user)
+            ->tool(UpdateBoard::class, ['ref_id' => $board->ref_id, 'update_items' => [
+                ['id' => 'short', 'text' => $long.$long],
+            ]])
+            ->assertOk();
+
+        $this->assertGreaterThan($grown, array_column($board->refresh()->content['items'], null, 'id')['short']['height']);
+    }
+
     public function test_the_check_lists_labels_that_run_over_and_things_lying_on_each_other()
     {
         $board = $this->board();

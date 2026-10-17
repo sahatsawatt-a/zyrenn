@@ -2,6 +2,7 @@
 import type Konva from 'konva';
 import { Shape, Text } from 'vue-konva';
 import type { Item } from '../../model/items';
+import { fontReady } from '../fonts';
 import { DIRECTION, useItemLook } from '../itemLook';
 import {
     drawRich,
@@ -45,9 +46,11 @@ const label = (item: Item) => {
 </script>
 
 <template>
-    <!-- Rich: headings, bullets and bold words, laid out line by line -->
+    <!-- Rich: headings, bullets and bold words, laid out line by line.
+         Words in a handwritten font wait for it: measured in a stand-in,
+         they would stay wrapped as that was -->
     <Shape
-        v-if="item.rich"
+        v-if="item.rich && fontReady(item.fontFamily)"
         :config="{
             name: 'rich-label',
             ...label(item),
@@ -59,7 +62,7 @@ const label = (item: Item) => {
         }"
     />
     <Text
-        v-else
+        v-else-if="fontReady(item.fontFamily)"
         :config="{
             direction: DIRECTION,
             text: shownText(item),

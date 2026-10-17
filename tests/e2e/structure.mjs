@@ -38,16 +38,18 @@ await runBoard('/demo/konva', async (b) => {
     check(
         'a table starts with columns of its own, each a row to edit',
         (await test('row-name-0').inputValue()) === 'id' &&
-            (await test('row-type-0').inputValue()) === 'int' &&
+            (await test('row-type-0').getAttribute('data-value')) === 'int' &&
             (await test('row-mark-0').innerText()).trim() === 'PK',
-        `${await test('row-name-0').inputValue()} ${await test('row-type-0').inputValue()}`,
+        `${await test('row-name-0').inputValue()} ${await test('row-type-0').getAttribute('data-value')}`,
     );
 
     await test('row-add').click();
     await test('row-name-2').fill('customer_id');
     await test('row-name-2').press('Enter');
-    await test('row-type-2').fill('int');
-    await test('row-type-2').press('Enter');
+    // The type is picked from those a column usually holds
+    await test('row-type-2').click();
+    await page.locator('[data-pick-or-add] [data-pick="int"]').click();
+    await page.locator('[data-pick-or-add]').waitFor({ state: 'hidden' });
     await test('row-mark-2').click();
     await test('row-mark-2-fk').click();
     await page.keyboard.press('Escape');

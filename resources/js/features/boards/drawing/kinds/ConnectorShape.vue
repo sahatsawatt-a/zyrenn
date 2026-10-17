@@ -9,15 +9,21 @@ import {
     headsOf,
     hopRadius,
     isSwept,
+    LABEL_HEIGHT,
+    labelWidth,
     midpointOf,
     trimmedPoints,
 } from '../../model/connectors';
 import type { HeadPart } from '../../model/connectors';
 import type { Item } from '../../model/items';
+import { FONT_FAMILIES } from '../../model/items';
+import { isSketched } from '../../model/sketch';
 import { bumpAt, runsOf, stillOn } from '@/lib/lineHops';
 import type { Hops } from '@/lib/lineHops';
 import { DIRECTION, LIVE, SELECTED, WORKED, useItemLook } from '../itemLook';
+import { fontReady } from '../fonts';
 import { strokePaint } from '../paint';
+import SketchShape from './SketchShape.vue';
 
 // A connector: drawn between two anchors the way its own routing, dash and
 // head settings say, hopping over the lines it crosses, with its label on a
@@ -34,7 +40,16 @@ const props = defineProps<{
     path: number[];
     // Where it hops over the lines it crosses, by the run of its path
     hops?: Hops;
+    // Where its label goes, clear of the items about it (connectorRoutes);
+    // halfway along it without one
+    labelAt?: { x: number; y: number } | null;
 }>();
+
+const labelCentre = computed(
+    () =>
+        props.labelAt ??
+        midpointOf(props.path, isSwept(props.item, props.path)),
+);
 
 const { theme, shown, effects } = useItemLook(props);
 
@@ -123,19 +138,17 @@ const lineStroke = (points: number[]) => {
             : undefined,
     );
 };
-
-// Close enough for a backing chip: Konva would have to measure the text to do
-// better, and this only has to keep the line out of the words.
-const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
 </script>
 
 <template>
     <!-- Where it crosses another line it hops over it. Both stay mounted,
          the one shown as it crosses or not: vue-konva puts a node mounted
          later on top, which would cover the caps -->
+    <!-- Drawn as by hand, it is drawn by SketchShape below: the line here
+         stays, unseen, to take the pointer -->
     <Shape
         :config="{
-            visible: !!hops?.size,
+            visible: !!hops?.size && !isSketched(item),
             sceneFunc: hopped(trimmedPoints(item, path), hops),
             ...lineStroke(trimmedPoints(item, path)),
             ...effects,
@@ -148,7 +161,8 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
     />
     <Line
         :config="{
-            visible: !hops?.size,
+            visible: !hops?.size || isSketched(item),
+            opacity: isSketched(item) ? 0 : 1,
             points: trimmedPoints(item, path),
             ...lineStroke(trimmedPoints(item, path)),
             ...effects,
@@ -159,6 +173,22 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
             lineJoin: 'round',
             hitStrokeWidth: 18,
         }"
+    />
+
+    <SketchShape
+        v-if="isSketched(item)"
+        :item="item"
+        :selected="selected"
+        :figure="{
+            type: 'line',
+            points: trimmedPoints(item, path),
+            curved: isSwept(item, path),
+        }"
+        :fill="null"
+        :stroke="level === 1 && !selected ? LIVE : lineInk"
+        :line-width="item.lineWidth"
+        :dash="dashFor(item.lineStyle)"
+        :listening="false"
     />
 
     <!-- Each end's cap, turned to follow the line: an arrow is one piece, a
@@ -206,10 +236,10 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
     <Rect
         v-if="item.text"
         :config="{
-            x: midpointOf(path, isSwept(item, path)).x - labelWidth(item) / 2,
-            y: midpointOf(path, isSwept(item, path)).y - 11,
+            x: labelCentre.x - labelWidth(item) / 2,
+            y: labelCentre.y - LABEL_HEIGHT / 2,
             width: labelWidth(item),
-            height: 22,
+            height: LABEL_HEIGHT,
             fill: theme.behind(item),
             cornerRadius: 4,
             listening: false,
@@ -217,12 +247,13 @@ const labelWidth = (item: Item) => Math.max(28, item.text.length * 7 + 16);
         }"
     />
     <Text
-        v-if="item.text"
+        v-if="item.text && fontReady(item.fontFamily)"
         :config="{
             direction: DIRECTION,
             text: item.text,
-            x: midpointOf(path, isSwept(item, path)).x - labelWidth(item) / 2,
-            y: midpointOf(path, isSwept(item, path)).y - 9,
+            fontFamily: FONT_FAMILIES[item.fontFamily] ?? 'Arial',
+            x: labelCentre.x - labelWidth(item) / 2,
+            y: labelCentre.y - 9,
             // As wide as the chip under it: narrower, a long label wrapped
             // onto a second line off the chip
             width: labelWidth(item),

@@ -81,7 +81,8 @@ await runBoard(
         );
 
         // --- its face, its size and the room round it
-        await page.locator('[data-test="prop-font"]').selectOption('serif');
+        await page.locator('[data-test="prop-font"]').click();
+        await page.locator('[data-test="font-serif"]').click();
         await page.locator('[data-test="prop-font-size"]').fill('20');
         await page.locator('[data-test="prop-font-size"]').press('Enter');
         await page.locator('[data-test="prop-padding"]').fill('28');

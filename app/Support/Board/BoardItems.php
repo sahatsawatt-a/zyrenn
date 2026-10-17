@@ -91,6 +91,12 @@ class BoardItems
         return [...self::KINDS, ...Shapes::kinds()];
     }
 
+    /** Whether a kind can be drawn as by hand ("sketch"). */
+    public static function sketchable(string $kind): bool
+    {
+        return in_array($kind, self::SKETCHABLE, true) || in_array($kind, Shapes::kinds(), true);
+    }
+
     /**
      * Every kind a connector may pin itself to.
      *
@@ -109,8 +115,29 @@ class BoardItems
     /** How a picture fills its box: stretched, whole inside it, or covering it. */
     public const FITS = ['fill', 'contain', 'cover'];
 
-    /** A label's typeface: Arial, Times New Roman or Courier New. */
-    public const FONTS = ['sans', 'serif', 'mono'];
+    /**
+     * A label's typeface: Arial, Times New Roman or Courier New; or written
+     * by hand -- Caveat, or Permanent Marker -- each with a Thai hand for the
+     * letters it lacks (drawing/fonts.ts).
+     */
+    public const FONTS = ['sans', 'serif', 'mono', 'hand', 'marker'];
+
+    /**
+     * How rough an item drawn as by hand is: 0 crisp, 1 a little unsteady,
+     * 2 a lot. Kinds drawn from lines take it (sketchable()); a picture, a
+     * formula, a part, words and ink do not (model/sketch.ts).
+     */
+    public const SKETCHES = [0, 1, 2];
+
+    /** What fills a shape drawn by hand: its colour, lines across, or crossed. */
+    public const HATCHES = ['solid', 'hachure', 'cross'];
+
+    /** Kinds drawn by hand when asked, besides the library's shapes. */
+    private const SKETCHABLE = [
+        'frame', 'sticky', 'rect', 'pill', 'ellipse', 'star', 'triangle',
+        'diamond', 'hexagon', 'cylinder', 'parallelogram', 'document',
+        'process', 'cloud', self::PATH, self::CONNECTOR,
+    ];
 
     /** Sticky notes are dealt out of this pack, as they are on the canvas. */
     private const STICKY_COLOURS = ['#fde68a', '#bbf7d0', '#bfdbfe', '#fbcfe8', '#ddd6fe'];
@@ -127,9 +154,10 @@ class BoardItems
      *
      * @param  list<array<string, mixed>>  $specs
      * @param  list<mixed>  $current  the board's items as they came out of the database
+     * @param  BoardTables|null  $tables  the tables a prototype may use, to check what its items name; none, unchecked
      * @return list<array<string, mixed>>
      */
-    public static function fromSpec(array $specs, array $current = []): array
+    public static function fromSpec(array $specs, array $current = [], ?BoardTables $tables = null): array
     {
         $existing = [];
 
@@ -142,6 +170,8 @@ class BoardItems
         $specs = self::withIds($specs, array_keys($existing));
         $items = [];
         $index = 0;
+        // Items given actions just now, by id: what those name must be there
+        $acted = [];
 
         foreach ($specs as $spec) {
             $kind = is_string($spec['kind'] ?? null) ? $spec['kind'] : 'sticky';
@@ -186,6 +216,23 @@ class BoardItems
 
             if (is_bool($spec['shadow'] ?? null)) {
                 $item['shadow'] = $spec['shadow'];
+            }
+
+            // Drawn as by hand: how rough (true is a little), and what fills it
+            if (self::sketchable($kind)) {
+                $sketch = ($spec['sketch'] ?? null) === true ? 1 : ($spec['sketch'] ?? null);
+
+                if (($spec['sketch'] ?? null) === false) {
+                    $sketch = 0;
+                }
+
+                if (is_numeric($sketch)) {
+                    $item['sketch'] = (int) max(0, min(2, round((float) $sketch)));
+                }
+
+                if (in_array($spec['hatch'] ?? null, self::HATCHES, true)) {
+                    $item['hatch'] = $spec['hatch'];
+                }
             }
 
             // How it is painted beyond its colours, a frame's notes and part
@@ -263,6 +310,18 @@ class BoardItems
                 }
             }
 
+            // In a prototype: what it does in Play (BoardActions) -- the tap,
+            // the other triggers, a screen's own after so many seconds -- and
+            // how it takes part: kept in place, hidden at first, typed into,
+            // one of a choice. Screens and items its actions name are found
+            // once every item is known; null takes any of them off
+            $acting = self::interactions($spec, $kind, $id, $existing[$id] ?? []);
+            $item = array_diff_key([...$item, ...$acting['set']], array_flip($acting['unset']));
+
+            if ($acting['new']) {
+                $acted[$id] = true;
+            }
+
             // A path's points: measured, moved to start at its corner, and the
             // item put where they were -- or, given x and y, where those say
             if ($kind === self::PATH && is_string($spec['d'] ?? null)) {
@@ -338,6 +397,11 @@ class BoardItems
 
             if ($hugged !== null) {
                 $item['height'] = $hugged;
+            } elseif ($kind === 'sticky' && trim((string) ($item['text'] ?? '')) !== '') {
+                // A sticky's paper grows to hold what is written on it, as on
+                // the canvas (labels.ts fittedHeight): no words left out on
+                // the board
+                $item['height'] = max((float) $item['height'], ceil(LabelFit::needed($item) + 2 * LabelFit::box($item)['y']));
             }
 
             // Coordinates are missing far more often than not: a client says
@@ -381,6 +445,12 @@ class BoardItems
             }
         }
 
+        $items = self::actionsResolved($items, $acted);
+
+        if ($tables !== null) {
+            $items = self::tablesResolved($items, $acted, $tables);
+        }
+
         // A slide's animations only of items still on the board
         $ids = array_fill_keys(array_column($items, 'id'), true);
 
@@ -394,6 +464,328 @@ class BoardItems
 
             return $item;
         }, $items));
+    }
+
+    /** Where an item may be kept while its screen scrolls. */
+    public const FIXED = ['top', 'bottom'];
+
+    /** A field's or a choice's name: words, digits, spaces, - and _. */
+    private const NAME = '/^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u';
+
+    /**
+     * What a spec says of an item in Play: the fields to set and those to
+     * take off, and whether its actions are new -- not the ones it had and
+     * was sent back with -- so that what they name must be found.
+     *
+     * @param  array<string, mixed>  $spec
+     * @param  array<string, mixed>  $was  the item as it was, if it was there
+     * @return array{set: array<string, mixed>, unset: list<string>, new: bool}
+     *
+     * @throws BoardItemProblem for actions on a frame or a connector
+     */
+    private static function interactions(array $spec, string $kind, string $id, array $was): array
+    {
+        $set = [];
+        $unset = [];
+        $new = false;
+        $acts = $kind !== 'frame' && $kind !== self::CONNECTOR;
+
+        if (array_key_exists('link', $spec)) {
+            $link = BoardActions::clean($spec['link']);
+
+            if ($link !== null && ! $acts) {
+                throw new BoardItemProblem("\"{$id}\" is a {$kind}: only what is on a screen can go somewhere.");
+            }
+
+            $link === null ? $unset[] = 'link' : $set['link'] = $link;
+            $new = $link !== null && $link !== BoardActions::clean($was['link'] ?? null);
+        }
+
+        if (array_key_exists('when', $spec)) {
+            $when = BoardActions::when($spec['when']);
+
+            if ($when !== [] && ! $acts) {
+                throw new BoardItemProblem("\"{$id}\" is a {$kind}: only what is on a screen has triggers.");
+            }
+
+            $when === [] ? $unset[] = 'when' : $set['when'] = $when;
+            $new = $new || ($when !== [] && $when !== BoardActions::when($was['when'] ?? null));
+        }
+
+        // A row card, repeated in Play for each row of a project table
+        if (array_key_exists('repeat', $spec)) {
+            $repeat = BoardActions::repeat($spec['repeat']);
+
+            if ($repeat !== null && ! $acts) {
+                throw new BoardItemProblem("\"{$id}\" is a {$kind}: only a card on a screen can repeat for each row.");
+            }
+
+            $repeat === null ? $unset[] = 'repeat' : $set['repeat'] = $repeat;
+            $new = $new || ($repeat !== null && $repeat !== BoardActions::repeat($was['repeat'] ?? null));
+        }
+
+        if ($kind === 'frame' && array_key_exists('screen', $spec)) {
+            $screen = BoardActions::screen($spec['screen']);
+
+            $screen === [] ? $unset[] = 'screen' : $set['screen'] = $screen;
+            $new = $new || ($screen !== [] && $screen !== BoardActions::screen($was['screen'] ?? null));
+        }
+
+        if (array_key_exists('fixed', $spec)) {
+            in_array($spec['fixed'], self::FIXED, true) ? $set['fixed'] = $spec['fixed'] : $unset[] = 'fixed';
+        }
+
+        if (array_key_exists('startsHidden', $spec)) {
+            $spec['startsHidden'] === true ? $set['startsHidden'] = true : $unset[] = 'startsHidden';
+        }
+
+        foreach (['field', 'choice'] as $name) {
+            if (! array_key_exists($name, $spec)) {
+                continue;
+            }
+
+            $value = is_string($spec[$name]) ? trim($spec[$name]) : '';
+
+            if ($value !== '' && ! preg_match(self::NAME, $value)) {
+                throw new BoardItemProblem("\"{$id}\": a {$name} is named in words, digits, spaces, - and _, up to 40 -- not \"{$value}\".");
+            }
+
+            $value === '' ? $unset[] = $name : $set[$name] = $value;
+        }
+
+        return ['set' => $set, 'unset' => $unset, 'new' => $new];
+    }
+
+    /**
+     * Every action's screens pointed at their ids, as the canvas keeps them
+     * -- one named by its title is found by it -- and every item it shows,
+     * hides or flips one on the board. Something just given that names what
+     * is not there is a mistake to say; an older action whose screen or item
+     * has gone since does without it, and goes when nothing is left of it --
+     * as the canvas does when something is deleted (model/links.ts).
+     *
+     * @param  list<array<string, mixed>>  $items
+     * @param  array<string, true>  $acted
+     * @return list<array<string, mixed>>
+     *
+     * @throws BoardItemProblem when one just given names what is not there
+     */
+    private static function actionsResolved(array $items, array $acted): array
+    {
+        $screens = [];
+        $present = [];
+
+        foreach ($items as $item) {
+            $present[(string) $item['id']] = true;
+
+            if ($item['kind'] === 'frame') {
+                $screens[(string) $item['id']] = (string) $item['id'];
+            }
+        }
+
+        foreach ($items as $item) {
+            $title = mb_strtolower(trim((string) ($item['text'] ?? '')));
+
+            if ($item['kind'] === 'frame' && $title !== '' && ! isset($screens[$title])) {
+                $screens[$title] = (string) $item['id'];
+            }
+        }
+
+        foreach ($items as $position => $item) {
+            $id = (string) $item['id'];
+            $rename = function (string $name, string $what) use ($screens, $present, $acted, $id): ?string {
+                $found = $what === 'screen'
+                    ? ($screens[$name] ?? $screens[mb_strtolower($name)] ?? null)
+                    : (isset($present[$name]) ? $name : null);
+
+                if ($found === null && isset($acted[$id])) {
+                    throw new BoardItemProblem($what === 'screen'
+                        ? "\"{$id}\" goes to \"{$name}\", but no frame (screen) has that id or title. get-board lists the frames."
+                        : "\"{$id}\" names \"{$name}\" to show, hide or flip, but no item has that id. get-board lists the items.");
+                }
+
+                return $found;
+            };
+
+            if (is_array($item['link'] ?? null)) {
+                $link = BoardActions::renamed($item['link'], $rename);
+                $link === null ? $item = array_diff_key($item, ['link' => true]) : $item['link'] = $link;
+            }
+
+            if (is_array($item['when'] ?? null)) {
+                $when = array_filter(array_map(fn (array $action) => BoardActions::renamed($action, $rename), $item['when']));
+                $when === [] ? $item = array_diff_key($item, ['when' => true]) : $item['when'] = $when;
+            }
+
+            if (is_array($item['screen']['after']['do'] ?? null)) {
+                $do = BoardActions::renamed($item['screen']['after']['do'], $rename);
+                $do === null ? $item = array_diff_key($item, ['screen' => true]) : $item['screen']['after']['do'] = $do;
+            }
+
+            $items[$position] = $item;
+        }
+
+        return $items;
+    }
+
+    /**
+     * Every table a row card repeats or an action saves to or deletes from,
+     * named by its ref_id, as Play reads it -- one named by its title found
+     * by it -- and every column it names by its label as the table has it.
+     * Something just given that names a table or a column that is not there
+     * is a mistake to say; an older one does without it, as with screens.
+     *
+     * @param  list<array<string, mixed>>  $items
+     * @param  array<string, true>  $acted
+     * @return list<array<string, mixed>>
+     *
+     * @throws BoardItemProblem when one just given names what is not there
+     */
+    private static function tablesResolved(array $items, array $acted, BoardTables $tables): array
+    {
+        foreach ($items as $position => $item) {
+            $id = (string) $item['id'];
+            $strict = isset($acted[$id]);
+
+            $table = function (string $name) use ($tables, $strict, $id): ?array {
+                $found = $tables->find($name);
+
+                if ($found === null && $strict) {
+                    throw new BoardItemProblem("\"{$id}\" uses the table \"{$name}\", but this project has no table with that ref_id or title. list-tables lists them.");
+                }
+
+                return $found;
+            };
+            $column = function (array $table, string $label) use ($strict, $id): ?string {
+                $found = BoardTables::column($table, $label);
+
+                if ($found === null && $strict) {
+                    throw new BoardItemProblem("\"{$id}\": the table \"{$table['title']}\" has no column \"{$label}\". Its columns are: ".implode(', ', $table['columns']).'.');
+                }
+
+                return $found;
+            };
+
+            if (is_array($item['repeat'] ?? null)) {
+                $repeat = self::repeatResolved($item['repeat'], $table, $column);
+                $repeat === null ? $item = array_diff_key($item, ['repeat' => true]) : $item['repeat'] = $repeat;
+            }
+
+            if (is_array($item['link'] ?? null)) {
+                $link = self::tableActionResolved($item['link'], $table, $column);
+                $link === null ? $item = array_diff_key($item, ['link' => true]) : $item['link'] = $link;
+            }
+
+            if (is_array($item['when'] ?? null)) {
+                $when = array_filter(array_map(fn (array $action) => self::tableActionResolved($action, $table, $column), $item['when']));
+                $when === [] ? $item = array_diff_key($item, ['when' => true]) : $item['when'] = $when;
+            }
+
+            if (is_array($item['screen']['after']['do'] ?? null)) {
+                $do = self::tableActionResolved($item['screen']['after']['do'], $table, $column);
+                $do === null ? $item = array_diff_key($item, ['screen' => true]) : $item['screen']['after']['do'] = $do;
+            }
+
+            $items[$position] = $item;
+        }
+
+        return $items;
+    }
+
+    /**
+     * A repeat with its table by ref_id and its columns by their labels; a
+     * filter or a sort on a column that is gone goes, and the repeat goes
+     * with its table.
+     *
+     * @param  array<string, mixed>  $repeat
+     * @param  callable(string): ?array{ref_id: string, title: string, columns: list<string>}  $table
+     * @param  callable(array{ref_id: string, title: string, columns: list<string>}, string): ?string  $column
+     * @return array<string, mixed>|null
+     */
+    private static function repeatResolved(array $repeat, callable $table, callable $column): ?array
+    {
+        $found = $table((string) $repeat['table']);
+
+        if ($found === null) {
+            return null;
+        }
+
+        $repeat['table'] = $found['ref_id'];
+
+        if (isset($repeat['where'])) {
+            $repeat['where'] = array_values(array_filter(array_map(function (array $each) use ($found, $column) {
+                $label = $column($found, (string) $each['column']);
+
+                return $label === null ? null : [...$each, 'column' => $label];
+            }, $repeat['where'])));
+
+            if ($repeat['where'] === []) {
+                unset($repeat['where']);
+            }
+        }
+
+        if (isset($repeat['sort'])) {
+            $label = $column($found, (string) $repeat['sort']['column']);
+            $label === null ? $repeat = array_diff_key($repeat, ['sort' => true]) : $repeat['sort']['column'] = $label;
+        }
+
+        return $repeat;
+    }
+
+    /**
+     * An action with every table it saves to or deletes from by ref_id, and
+     * every column it saves by its label; a step whose table is gone goes,
+     * and a column that is gone is left out of what is saved.
+     *
+     * @param  array<string, mixed>  $action
+     * @param  callable(string): ?array{ref_id: string, title: string, columns: list<string>}  $table
+     * @param  callable(array{ref_id: string, title: string, columns: list<string>}, string): ?string  $column
+     * @return array<string, mixed>|null
+     */
+    private static function tableActionResolved(array $action, callable $table, callable $column): ?array
+    {
+        if (isset($action['save']) || isset($action['remove'])) {
+            $key = isset($action['save']) ? 'save' : 'remove';
+            $found = $table((string) $action[$key]);
+
+            if ($found === null) {
+                return null;
+            }
+
+            $action[$key] = $found['ref_id'];
+
+            if (isset($action['values'])) {
+                $values = [];
+
+                foreach ($action['values'] as $label => $words) {
+                    $kept = $column($found, (string) $label);
+
+                    if ($kept !== null) {
+                        $values[$kept] = $words;
+                    }
+                }
+
+                $values === [] ? $action = array_diff_key($action, ['values' => true]) : $action['values'] = $values;
+            }
+
+            return $action;
+        }
+
+        if (isset($action['if'])) {
+            $then = self::tableActionResolved($action['then'], $table, $column);
+            $else = isset($action['else']) ? self::tableActionResolved($action['else'], $table, $column) : null;
+            unset($action['else']);
+
+            return $then === null ? null : [...$action, 'then' => $then, ...($else !== null ? ['else' => $else] : [])];
+        }
+
+        if (isset($action['all'])) {
+            $steps = array_values(array_filter(array_map(fn (array $step) => self::tableActionResolved($step, $table, $column), $action['all'])));
+
+            return $steps === [] ? null : ['all' => $steps];
+        }
+
+        return $action;
     }
 
     /**
@@ -563,6 +955,14 @@ class BoardItems
                 $spec['shadow'] = true;
             }
 
+            if (is_numeric($item['sketch'] ?? null) && (int) $item['sketch'] > 0) {
+                $spec['sketch'] = (int) $item['sketch'];
+
+                if (is_string($item['hatch'] ?? null) && $item['hatch'] !== 'solid') {
+                    $spec['hatch'] = $item['hatch'];
+                }
+            }
+
             // Kept to a fraction: opacity and a focus run from 0 to 1
             foreach (self::LOOKS as $look) {
                 if (is_numeric($item[$look] ?? null)) {
@@ -594,6 +994,43 @@ class BoardItems
 
             if (is_string($item['transition'] ?? null) && $item['transition'] !== 'glide') {
                 $spec['transition'] = $item['transition'];
+            }
+
+            // What it does in Play, and how it takes part
+            $link = BoardActions::clean($item['link'] ?? null);
+            $when = BoardActions::when($item['when'] ?? null);
+            $screen = BoardActions::screen($item['screen'] ?? null);
+
+            if ($link !== null) {
+                $spec['link'] = $link;
+            }
+
+            if ($when !== []) {
+                $spec['when'] = $when;
+            }
+
+            if ($screen !== []) {
+                $spec['screen'] = $screen;
+            }
+
+            $repeat = BoardActions::repeat($item['repeat'] ?? null);
+
+            if ($repeat !== null) {
+                $spec['repeat'] = $repeat;
+            }
+
+            if (in_array($item['fixed'] ?? null, self::FIXED, true)) {
+                $spec['fixed'] = $item['fixed'];
+            }
+
+            if (($item['startsHidden'] ?? false) === true) {
+                $spec['startsHidden'] = true;
+            }
+
+            foreach (['field', 'choice'] as $name) {
+                if (is_string($item[$name] ?? null) && $item[$name] !== '') {
+                    $spec[$name] = $item[$name];
+                }
             }
 
             foreach (['fill', 'stroke'] as $colour) {
@@ -682,7 +1119,7 @@ class BoardItems
      *
      * @throws BoardItemProblem when a change can't be made; then none are
      */
-    public static function change(array $current, array $add = [], array $update = [], array $delete = []): array
+    public static function change(array $current, array $add = [], array $update = [], array $delete = [], ?BoardTables $tables = null): array
     {
         $specs = [];
 
@@ -777,7 +1214,7 @@ class BoardItems
             throw new BoardItemProblem($unnamed);
         }
 
-        $items = self::fromSpec($specs, $current);
+        $items = self::fromSpec($specs, $current, $tables);
         $before = [];
 
         foreach ($current as $item) {

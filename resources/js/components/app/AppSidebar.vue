@@ -24,6 +24,7 @@ import {
     TestTubes,
     Ticket,
     Workflow,
+    MousePointerClick,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, onBeforeUnmount } from 'vue';
@@ -73,6 +74,7 @@ import { index as mapsIndex } from '@/routes/maps';
 import { index as projectMapsIndex } from '@/routes/projects/maps';
 import { index as projectTablesIndex } from '@/routes/projects/tables';
 import { index as projectTicketsIndex } from '@/routes/projects/tickets';
+import { index as projectPrototypes } from '@/routes/projects/prototypes';
 import { index as projectTripsIndex } from '@/routes/projects/trips';
 import { index as projectWorkflowsIndex } from '@/routes/projects/workflows';
 import { index as tablesIndex } from '@/routes/tables';
@@ -206,6 +208,16 @@ const mainNavItems = computed<NavItem[]>(() => {
                       title: 'Product',
                       href: projectProduct(project.ref_id),
                       icon: ListTree,
+                  },
+              ]
+            : []),
+        // Clickable screens to agree on before building: a project's alone
+        ...(project
+            ? [
+                  {
+                      title: 'Prototypes',
+                      href: projectPrototypes(project.ref_id),
+                      icon: MousePointerClick,
                   },
               ]
             : []),

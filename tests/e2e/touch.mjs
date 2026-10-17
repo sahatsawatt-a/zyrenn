@@ -50,14 +50,20 @@ await runBoard(
 
             await event('mouseReleased', along(from, by, steps), false);
         };
-        // The ink on the board: how many points each stroke has
+        // The ink on the board: how many points each stroke has -- or "pen"
+        // for a stylus's, drawn a piece at a time as heavy as it was pressed
         const strokes = () =>
-            page.evaluate(() =>
-                window.Konva.stages[0]
-                    .find('Line')
-                    .filter((line) => line.tension() === 0.4)
-                    .map((line) => line.points().length / 2),
-            );
+            page.evaluate(() => {
+                const stage = window.Konva.stages[0];
+
+                return [
+                    ...stage
+                        .find('Line')
+                        .filter((line) => line.tension() === 0.4)
+                        .map((line) => line.points().length / 2),
+                    ...stage.find('.pressed-ink').map(() => 'pen'),
+                ];
+            });
         const test = (name) => page.locator(`[data-test="${name}"]`);
 
         // ------------------------------------------- A phone: room to draw
@@ -173,7 +179,7 @@ await runBoard(
         await pen(at(0.3, 0.3), { x: 5, y: 2 });
         await soon(
             'a stylus writes stroke after stroke',
-            async () => (await strokes()).length === 4,
+            async () => (await inked()) === '21,21,pen,pen',
             inked,
         );
 
@@ -186,12 +192,12 @@ await runBoard(
             along(right, { x: 4, y: 4 }, 1),
         ]);
         await touch('touchEnd');
-        // Long enough for a stroke to have been kept, were it going to be
-        await page.waitForTimeout(150);
+        // Still, so a stroke that was going to be kept has been
+        const after = await steady(inked);
         check(
             'a stroke begun by one finger is dropped when a second comes down',
-            (await strokes()).length === 4,
-            (await strokes()).join(),
+            after === '21,21,pen,pen',
+            after,
         );
         await page.screenshot({ path: `${SHOTS}/touch-ink.png` });
     },

@@ -5,10 +5,13 @@ import type { Item } from '../../model/items';
 import { PATHS } from '../../model/items';
 import { hasHeader, headerDepth } from '../../model/rows';
 import { lookOf, shapeOf } from '../../model/shapes';
+import { isSketched } from '../../model/sketch';
 import { CARD_RADIUS, drawStructure } from '../../model/structure';
 import { iconPath } from '../../model/styles';
 import { SELECTED, boxHit, useItemLook } from '../itemLook';
 import { paint } from '../paint';
+import { figureOf } from '../sketch';
+import SketchShape from './SketchShape.vue';
 
 // A shape drawn from a path fitted to its box: the flowchart set, and
 // everything in the shape library -- in its kind's own drawing, or the design
@@ -24,6 +27,11 @@ const props = defineProps<{
 const { theme, shown, ink, edge } = useItemLook(props);
 
 const look = computed(() => lookOf(props.item));
+
+// Its outline drawn as by hand -- a lifeline stays as it is
+const sketched = computed(() =>
+    isSketched(props.item) ? figureOf(props.item) : null,
+);
 
 /** A colour a shade darker: a lid or a side, for depth. */
 const darker = (colour: string): string => {
@@ -68,6 +76,16 @@ const iconBox = computed(() => {
     };
 });
 
+// A shape's solid parts: its line's colour, unless it says otherwise -- a
+// toggle's knob is white, a list row's chevron its words' colour
+const solidFill = computed(() =>
+    props.selected
+        ? SELECTED
+        : look.value.solidColour === 'ink'
+          ? ink.value
+          : (look.value.solidColour ?? edge.value.stroke),
+);
+
 // The icon is drawn in the words' colour on a card or a badge, where it sits
 // on the fill; on its own it is the shape's line
 const iconColour = computed(() =>
@@ -80,9 +98,16 @@ const iconColour = computed(() =>
 </script>
 
 <template>
+    <SketchShape
+        v-if="sketched"
+        :item="item"
+        :selected="selected"
+        :figure="sketched"
+        :fill="look.noFill ? null : undefined"
+    />
     <!-- A lifeline: who it is in a box of its own depth, however long the
          dashed line under it is drawn -->
-    <template v-if="shapeOf(item.kind)?.slide">
+    <template v-else-if="shapeOf(item.kind)?.slide">
         <!-- (the whole of its box takes the pointer, and a message) -->
         <Rect
             :config="{
@@ -216,7 +241,7 @@ const iconColour = computed(() =>
             data: look.solid,
             scaleX: item.width / 100,
             scaleY: item.height / 100,
-            fill: edge.stroke,
+            fill: solidFill,
             listening: false,
         }"
     />

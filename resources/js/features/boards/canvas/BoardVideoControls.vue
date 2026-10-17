@@ -2,6 +2,8 @@
 import { Maximize2, Pause, Play, Volume2, VolumeX } from '@lucide/vue';
 import { useEventListener } from '@vueuse/core';
 import { ref, watch } from 'vue';
+import RangeField from '@/components/common/RangeField.vue';
+import Tip from '@/components/common/Tip.vue';
 
 // The controls under a selected video on a board. The video itself is drawn
 // on the canvas, which has no controls of its own to offer.
@@ -35,8 +37,8 @@ for (const event of [
     useEventListener(() => props.video, event, read);
 }
 
-const seek = (event: Event) => {
-    props.video.currentTime = Number((event.target as HTMLInputElement).value);
+const seek = (at: number) => {
+    props.video.currentTime = at;
 };
 
 const toggleMute = () => {
@@ -58,51 +60,57 @@ const clock = (seconds: number) => {
 
 <template>
     <div class="video-bar" data-test="video-controls" @pointerdown.stop>
-        <button
-            type="button"
-            class="video-btn"
-            :title="playing ? 'Pause' : 'Play'"
-            data-test="video-toggle"
-            @click="$emit('toggle')"
-        >
-            <Pause v-if="playing" class="size-4" />
-            <Play v-else class="size-4" />
-        </button>
+        <Tip :text="playing ? 'Pause' : 'Play'">
+            <button
+                type="button"
+                class="video-btn"
+                :aria-label="playing ? 'Pause' : 'Play'"
+                data-test="video-toggle"
+                @click="$emit('toggle')"
+            >
+                <Pause v-if="playing" class="size-4" />
+                <Play v-else class="size-4" />
+            </button>
+        </Tip>
 
         <span class="text-muted-foreground shrink-0 text-xs tabular-nums">
             {{ clock(time) }} / {{ clock(duration) }}
         </span>
 
-        <input
-            type="range"
-            class="video-seek"
-            min="0"
+        <RangeField
+            :model-value="time"
+            label="Seek"
+            :min="0"
             :max="duration || 0"
-            step="0.1"
-            :value="time"
-            aria-label="Seek"
+            :step="0.1"
+            :format="false"
+            class="video-seek"
             data-test="video-seek"
-            @input="seek"
+            @update:model-value="seek"
         />
 
-        <button
-            type="button"
-            class="video-btn"
-            :title="muted ? 'Unmute' : 'Mute'"
-            @click="toggleMute"
-        >
-            <VolumeX v-if="muted" class="size-4" />
-            <Volume2 v-else class="size-4" />
-        </button>
-        <button
-            type="button"
-            class="video-btn"
-            title="Watch full size"
-            data-test="video-expand"
-            @click="$emit('expand')"
-        >
-            <Maximize2 class="size-4" />
-        </button>
+        <Tip :text="muted ? 'Unmute' : 'Mute'">
+            <button
+                type="button"
+                class="video-btn"
+                :aria-label="muted ? 'Unmute' : 'Mute'"
+                @click="toggleMute"
+            >
+                <VolumeX v-if="muted" class="size-4" />
+                <Volume2 v-else class="size-4" />
+            </button>
+        </Tip>
+        <Tip text="Watch full size">
+            <button
+                type="button"
+                class="video-btn"
+                aria-label="Watch full size"
+                data-test="video-expand"
+                @click="$emit('expand')"
+            >
+                <Maximize2 class="size-4" />
+            </button>
+        </Tip>
     </div>
 </template>
 
@@ -137,6 +145,5 @@ const clock = (seconds: number) => {
 .video-seek {
     flex: 1;
     min-width: 4rem;
-    accent-color: #6366f1;
 }
 </style>

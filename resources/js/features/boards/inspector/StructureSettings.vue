@@ -21,6 +21,8 @@ import {
     rowsToText,
 } from '@/features/boards/model/rows';
 import type { Row } from '@/features/boards/model/rows';
+import PickOrAdd from '@/components/common/PickOrAdd.vue';
+import Tip from '@/components/common/Tip.vue';
 
 // What is inside a shape that has a structure: a table's columns, a class's
 // fields and methods, the side a lane's title runs along. Each row is edited
@@ -272,24 +274,28 @@ const hint = computed(() =>
                         </label>
 
                         <div class="structure-actions">
-                            <button
-                                type="button"
-                                title="Move up"
-                                :disabled="index === 0"
-                                :data-test="`row-up-${index}`"
-                                @click="move(row.id, -1)"
-                            >
-                                <ArrowUp class="size-3.5" />
-                            </button>
-                            <button
-                                type="button"
-                                title="Move down"
-                                :disabled="index === rows.length - 1"
-                                :data-test="`row-down-${index}`"
-                                @click="move(row.id, 1)"
-                            >
-                                <ArrowDown class="size-3.5" />
-                            </button>
+                            <Tip text="Move up">
+                                <button
+                                    type="button"
+                                    aria-label="Move up"
+                                    :disabled="index === 0"
+                                    :data-test="`row-up-${index}`"
+                                    @click="move(row.id, -1)"
+                                >
+                                    <ArrowUp class="size-3.5" />
+                                </button>
+                            </Tip>
+                            <Tip text="Move down">
+                                <button
+                                    type="button"
+                                    aria-label="Move down"
+                                    :disabled="index === rows.length - 1"
+                                    :data-test="`row-down-${index}`"
+                                    @click="move(row.id, 1)"
+                                >
+                                    <ArrowDown class="size-3.5" />
+                                </button>
+                            </Tip>
                             <button
                                 type="button"
                                 class="is-danger"
@@ -315,22 +321,36 @@ const hint = computed(() =>
                     @change="onText(row.id, 'name', $event)"
                     @keydown.enter="($event.target as HTMLInputElement).blur()"
                 />
+                <!-- A column's type: one of those a column usually holds,
+                     or one of its own -->
+                <PickOrAdd
+                    v-if="table"
+                    :model-value="row.type"
+                    :options="TYPES"
+                    :label="`${words.one} type`"
+                    :placeholder="words.type"
+                    add-label="Use"
+                    :max-length="40"
+                    mono
+                    class="h-7 min-w-0 px-2"
+                    :data-test="`row-type-${index}`"
+                    :data-value="row.type"
+                    @update:model-value="
+                        change(row.id, { type: $event.trim() })
+                    "
+                />
                 <input
+                    v-else
                     type="text"
                     class="structure-type"
                     :value="row.type"
                     :placeholder="words.type"
-                    :list="table ? 'board-column-types' : undefined"
                     :aria-label="`${words.one} type`"
                     :data-test="`row-type-${index}`"
                     @change="onText(row.id, 'type', $event)"
                     @keydown.enter="($event.target as HTMLInputElement).blur()"
                 />
             </div>
-
-            <datalist v-if="table" id="board-column-types">
-                <option v-for="type in TYPES" :key="type" :value="type" />
-            </datalist>
 
             <div class="structure-add">
                 <button type="button" data-test="row-add" @click="add()">

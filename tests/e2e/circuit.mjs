@@ -160,11 +160,15 @@ await runBoard('/demo/konva', async (b) => {
         'and is a wire, with no head',
         (
             await page
-                .locator('[data-test="ends-config"] summary span')
+                .locator(
+                    '[data-test="ends-config"] [data-fold-toggle] span:last-of-type',
+                )
                 .innerText()
         ).trim() === 'none → none',
         await page
-            .locator('[data-test="ends-config"] summary span')
+            .locator(
+                '[data-test="ends-config"] [data-fold-toggle] span:last-of-type',
+            )
             .innerText(),
     );
 

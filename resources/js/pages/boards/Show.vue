@@ -36,11 +36,16 @@ import {
 } from '@/routes/boards';
 import { presenterChannel } from '@/features/boards/deck/usePresenterLink';
 import PdfPreview from '@/components/media/PdfPreview.vue';
+import PrototypeBar from '@/features/prototypes/PrototypeBar.vue';
+import ScreenFeedback from '@/features/prototypes/ScreenFeedback.vue';
+import type { PrototypeSettings } from '@/features/prototypes/devices';
 import NoteBacklinks from '@/features/notes/components/NoteBacklinks.vue';
 import { fetchExport, nameFrom } from '@/lib/exporting';
 import { zip } from '@/lib/zip';
 import type { ZipEntry } from '@/lib/zip';
 import { index as projectIndex } from '@/routes/projects/boards';
+import { index as prototypesIndex } from '@/routes/projects/prototypes';
+import { show as prototypeShow } from '@/routes/prototypes';
 
 type Board = {
     ref_id: string;
@@ -53,7 +58,27 @@ const props = defineProps<{
     board: Board;
     // The folders the board sits in, top level first
     breadcrumbs: { ref_id: string; name: string }[];
+    // A prototype's own settings: a board drawn as clickable screens
+    prototype: PrototypeSettings | null;
+    // A prototype's project's tables, for its screens to list and save to
+    tables: {
+        ref_id: string;
+        title: string;
+        columns: { label: string; type: string }[];
+    }[];
 }>();
+
+// A prototype is drawn here as a board, but is called what it is, and its
+// way back is to its project's prototypes
+const noun = props.prototype ? 'prototype' : 'board';
+const untitled = `Untitled ${noun}`;
+const listOf = () =>
+    props.prototype && currentProject()
+        ? prototypesIndex(currentProject()!.ref_id)
+        : index();
+
+// The canvas, for the prototype's bar to go to and add screens
+const canvas = ref<InstanceType<typeof BoardCanvas> | null>(null);
 
 // A project's viewers see the whole board, drawn as it is, and change nothing
 const editable = canChange();
@@ -76,8 +101,8 @@ const { others } = usePresence(() => `boards.${props.board.ref_id}`, {
             return;
         }
 
-        toast.info('Someone deleted this board.');
-        router.visit(index());
+        toast.info(`Someone deleted this ${noun}.`);
+        router.visit(listOf());
     },
 });
 
@@ -127,14 +152,18 @@ const index = owned(ownIndex, projectIndex);
 watchEffect(() => {
     setLayoutProps({
         breadcrumbs: [
-            { title: 'Boards', href: index() },
+            props.prototype
+                ? { title: 'Prototypes', href: listOf() }
+                : { title: 'Boards', href: index() },
             ...props.breadcrumbs.map((crumb) => ({
                 title: crumb.name,
                 href: index({ query: { folder: crumb.ref_id } }),
             })),
             {
                 title: title.value || 'Untitled',
-                href: show(props.board.ref_id),
+                href: props.prototype
+                    ? prototypeShow(props.board.ref_id)
+                    : show(props.board.ref_id),
             },
         ],
     });
@@ -351,7 +380,7 @@ const bundle = computed(() =>
         : null,
 );
 
-const boardName = () => title.value.trim() || 'Untitled board';
+const boardName = () => title.value.trim() || untitled;
 
 /**
  * Anything still unsaved goes to the app first -- shared, whatever anyone
@@ -489,7 +518,7 @@ const statusLabel = computed(() => {
 </script>
 
 <template>
-    <Head :title="title || 'Untitled board'" />
+    <Head :title="title || untitled" />
 
     <div
         v-if="!editable"
@@ -498,7 +527,7 @@ const statusLabel = computed(() => {
     >
         <div class="flex items-center gap-3">
             <h1 class="truncate text-lg font-semibold">
-                {{ title || 'Untitled board' }}
+                {{ title || untitled }}
             </h1>
             <span class="text-muted-foreground text-xs whitespace-nowrap"
                 >View only</span
@@ -533,8 +562,9 @@ const statusLabel = computed(() => {
 
     <BoardCanvas
         v-else
+        ref="canvas"
         :items="props.board.content?.items ?? []"
-        :title="title || 'Untitled board'"
+        :title="title || untitled"
         :status="statusLabel"
         :shared="shared"
         :picture-of-frame="pictureOfFrame"
@@ -545,6 +575,8 @@ const statusLabel = computed(() => {
             channel: presenterChannel(props.board.ref_id),
         }"
         :my-shapes="myShapes"
+        :prototype="props.prototype"
+        :tables="props.tables"
         @change="onBoardChange"
         @deck="onDeckChange"
     >
@@ -552,15 +584,34 @@ const statusLabel = computed(() => {
             <input
                 v-model="title"
                 class="board-title"
-                placeholder="Untitled board"
+                :placeholder="untitled"
                 data-test="board-title"
                 :readonly="shared !== null && !shared.synced.value"
                 @input="onTitleInput"
             />
         </template>
 
+        <!-- A prototype's comments over its screens, and its plays' taps -->
+        <template v-if="props.prototype" #overlay="{ scale, position }">
+            <ScreenFeedback
+                :board="props.board.ref_id"
+                :frames="canvas?.board.frames.value ?? []"
+                :scale="scale"
+                :position="position"
+                :can-change="editable"
+            />
+        </template>
+
         <template #actions>
             <PresenceAvatars :others="others" class="mr-1" />
+
+            <PrototypeBar
+                v-if="props.prototype"
+                :board="props.board.ref_id"
+                :prototype="props.prototype"
+                :can-change="editable"
+                :canvas="canvas"
+            />
 
             <NoteBacklinks folded kind="board" :page="props.board.ref_id" />
 
@@ -591,7 +642,7 @@ const statusLabel = computed(() => {
                     <Button
                         variant="ghost"
                         size="sm"
-                        title="Delete this board"
+                        :title="`Delete this ${noun}`"
                         data-test="delete-board"
                     >
                         <Trash2 />
@@ -599,10 +650,10 @@ const statusLabel = computed(() => {
                 </DialogTrigger>
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>Delete this board?</DialogTitle>
+                        <DialogTitle>Delete this {{ noun }}?</DialogTitle>
                         <DialogDescription>
-                            “{{ title || 'Untitled board' }}” and everything on
-                            it will be deleted for good.
+                            “{{ title || untitled }}” and everything on it will
+                            be deleted for good.
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
@@ -615,7 +666,7 @@ const statusLabel = computed(() => {
                                 router.delete(destroy.url(props.board.ref_id))
                             "
                         >
-                            Delete board
+                            Delete {{ noun }}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

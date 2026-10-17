@@ -122,9 +122,10 @@ await runBoard('/demo/konva', async (b) => {
         () => JSON.stringify(seen),
     );
 
-    // Moved off to one side, the line no longer crosses, nor hops
-    const grab = await screenOf(right.x + right.w / 2, right.y + right.h / 2);
-    const to = await screenOf(right.x + right.w / 2, right.y - 260);
+    // Moved up past the top of the other line, the line no longer crosses,
+    // nor hops (it goes round the top shape rather than through it)
+    const grab = await screenOf(left.x + left.w / 2, left.y + left.h / 2);
+    const to = await screenOf(left.x + left.w / 2, top.y - 100);
     await page.mouse.move(grab.x, grab.y);
     await page.mouse.down();
     await page.mouse.move(to.x, to.y, { steps: 8 });

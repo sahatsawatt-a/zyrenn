@@ -1,6 +1,12 @@
 // The board's data model. Everything on the canvas is one flat list of items in
 // paint order, which keeps z-order, undo snapshots and hit-testing simple.
 import { symbolOf } from '@/features/boards/circuit/symbols';
+import type {
+    Action,
+    ItemOn,
+    Repeat,
+    ScreenSettings,
+} from '@/features/prototypes/interactions';
 import type { BuildStep, Transition } from '../deck/build';
 import { makeRow, rowsHeight } from './rows';
 import type { Row } from './rows';
@@ -123,15 +129,40 @@ export type Fit = 'fill' | 'contain' | 'cover';
 /**
  * The typeface a label is set in. Each is a font every system has, or one
  * drawn to the same widths (Liberation, on Linux), so a label wraps the same
- * everywhere -- and where the server works out whether it fits.
+ * everywhere -- and where the server works out whether it fits. The two
+ * written by hand come with the app (drawing/fonts.ts), each with a Thai
+ * hand after it for the letters it has none of.
  */
-export type FontFamily = 'sans' | 'serif' | 'mono';
+export type FontFamily = 'sans' | 'serif' | 'mono' | 'hand' | 'marker';
 
 export const FONT_FAMILIES: Record<FontFamily, string> = {
     sans: 'Arial',
     serif: 'Times New Roman',
     mono: 'Courier New',
+    hand: 'Caveat, Mali',
+    marker: '"Permanent Marker", Sriracha',
 };
+
+/** The typefaces, as a font picker lists them. */
+export const FONT_CHOICES: { value: FontFamily; label: string }[] = [
+    { value: 'sans', label: 'Sans' },
+    { value: 'serif', label: 'Serif' },
+    { value: 'mono', label: 'Mono' },
+    { value: 'hand', label: 'Handwriting' },
+    { value: 'marker', label: 'Marker' },
+];
+
+/** The typefaces that look written by hand, which load before they are drawn. */
+export const HAND_FONTS: FontFamily[] = ['hand', 'marker'];
+
+/**
+ * How rough a hand-drawn item is drawn: crisp (left out, or 0), a little
+ * unsteady, or a lot -- a wireframe that no one takes for the finished thing.
+ */
+export type Sketch = 0 | 1 | 2;
+
+/** What fills a hand-drawn shape: its colour, or lines across, or crossed. */
+export type Hatch = 'solid' | 'hachure' | 'cross';
 
 export const ALIGNS: Align[] = ['left', 'center', 'right'];
 
@@ -198,6 +229,27 @@ export type Item = {
     // Picked, moved and sized together with every item that shares it: a
     // group made by hand, or a shape of one's own put on the board
     group?: string;
+    // In a prototype: what tapping it does in Play -- another screen (a
+    // frame's id), back, an overlay, show or hide, set, if... (model/links.ts)
+    link?: Action | null;
+    // ...what it does for its other triggers: a long press, a swipe, hover
+    when?: ItemOn | null;
+    // A row card: drawn once, shown in Play for each row of a project table
+    repeat?: Repeat | null;
+    // A header or a tab bar kept in place while its screen scrolls
+    fixed?: 'top' | 'bottom' | null;
+    // Not shown in Play until something shows it
+    startsHidden?: boolean;
+    // A kit text field typed into in Play: what is typed is kept by this name
+    field?: string | null;
+    // Radios and tabs of one choice: on a screen, one of them is on
+    choice?: string | null;
+    // A frame only, in a prototype: what the screen does by itself
+    screen?: ScreenSettings | null;
+    // Drawn as by hand, with wobbly, doubled lines: how rough (Sketch), and
+    // what fills it then -- its colour, unless lines across it
+    sketch?: Sketch;
+    hatch?: Hatch;
     // The colour its words are written in; left out, whatever reads best
     // on its fill
     color?: string;
@@ -322,6 +374,16 @@ export const newId = (): string => `i${++counter}`;
 export const bumpIdsTo = (highest: number): void => {
     counter = Math.max(counter, highest);
 };
+
+/** Carry on numbering past every id these items have. */
+export const bumpIdsPast = (items: Item[]): void =>
+    bumpIdsTo(
+        items.reduce((top, item) => {
+            const number = Number(item.id.replace(/\D/g, ''));
+
+            return Number.isFinite(number) && number > top ? number : top;
+        }, 0),
+    );
 
 /**
  * Items that hold editable text: everything except ink, arrows and videos, so

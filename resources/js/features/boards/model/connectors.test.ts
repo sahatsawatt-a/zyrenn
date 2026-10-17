@@ -73,11 +73,13 @@ describe('connectors sharing a side', () => {
     const hub = box('hub', 400, 200);
     const high = box('high', 0, 0);
     const low = box('low', 0, 400);
+    // Both put on the hub's left face; each leaves its own by the face that
+    // suits it
     const line = (id: string, from: Item, to: Item): Item => ({
         ...makeItem('arrow', 0, 0),
         id,
         from: { item: from.id, side: null, x: 0, y: 0 },
-        to: { item: to.id, side: null, x: 0, y: 0 },
+        to: { item: to.id, side: 'left', x: 0, y: 0 },
     });
     const fromHigh = line('a', high, hub);
     const fromLow = line('b', low, hub);

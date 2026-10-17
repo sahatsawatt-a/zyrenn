@@ -99,11 +99,13 @@ final class Collab
 
     /**
      * Has the server hand an open document to the app now, so what is read
-     * next is what everyone has typed, not what was kept a moment ago.
+     * next is what everyone has typed, not what was kept a moment ago. Never
+     * throws: unanswered, what was kept is read. A page waiting on it gives
+     * it less time than the default.
      */
-    public static function flush(Note|Board $thing): void
+    public static function flush(Note|Board $thing, int $timeout = 5): void
     {
-        self::ask('flush', $thing);
+        self::ask('flush', $thing, timeout: $timeout);
     }
 
     /**
@@ -129,14 +131,14 @@ final class Collab
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>|null
      */
-    private static function ask(string $path, Note|Board $thing, array $payload = []): ?array
+    private static function ask(string $path, Note|Board $thing, array $payload = [], int $timeout = 5): ?array
     {
         if (! self::enabled()) {
             return null;
         }
 
         try {
-            return Http::timeout(5)
+            return Http::timeout($timeout)
                 ->withHeaders(['X-Collab-Secret' => config('services.collab.secret')])
                 ->post(rtrim(config('services.collab.url'), '/').'/'.$path, [
                     'document' => self::documentName($thing),

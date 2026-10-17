@@ -16,6 +16,7 @@ import { computed, ref } from 'vue';
 import { nameOf } from '@/features/boards/model/items';
 import type { Item } from '@/features/boards/model/items';
 import { groupItems } from '@/features/boards/model/layers';
+import Tip from '@/components/common/Tip.vue';
 
 // The stack, top first -- the order you see, not the order it is painted in --
 // in a panel of its own over the left of the canvas.
@@ -82,15 +83,17 @@ const onDrop = (target: Item) => {
                 Layers
                 <span class="layers-total">{{ items.length }}</span>
             </button>
-            <button
-                type="button"
-                class="layers-close"
-                title="Hide the layers"
-                data-test="layers-close"
-                @click="emit('close')"
-            >
-                <PanelLeftClose class="size-4" />
-            </button>
+            <Tip text="Hide the layers">
+                <button
+                    type="button"
+                    class="layers-close"
+                    aria-label="Hide the layers"
+                    data-test="layers-close"
+                    @click="emit('close')"
+                >
+                    <PanelLeftClose class="size-4" />
+                </button>
+            </Tip>
         </div>
 
         <div v-show="!folded" class="layers-list">
@@ -112,23 +115,31 @@ const onDrop = (target: Item) => {
                         })
                     "
                 >
-                    <button
-                        type="button"
-                        class="layers-fold"
-                        :title="
+                    <Tip
+                        :text="
                             collapsed.has(group.key)
                                 ? 'Show these'
                                 : 'Hide these'
                         "
-                        :data-test="`fold-${group.key}`"
-                        @click.stop="toggleGroup(group.key)"
                     >
-                        <ChevronRight
-                            v-if="collapsed.has(group.key)"
-                            class="size-3.5"
-                        />
-                        <ChevronDown v-else class="size-3.5" />
-                    </button>
+                        <button
+                            type="button"
+                            class="layers-fold"
+                            :aria-label="
+                                collapsed.has(group.key)
+                                    ? 'Show these'
+                                    : 'Hide these'
+                            "
+                            :data-test="`fold-${group.key}`"
+                            @click.stop="toggleGroup(group.key)"
+                        >
+                            <ChevronRight
+                                v-if="collapsed.has(group.key)"
+                                class="size-3.5"
+                            />
+                            <ChevronDown v-else class="size-3.5" />
+                        </button>
+                    </Tip>
 
                     <Frame v-if="group.frame" class="size-3.5 shrink-0" />
                     <span class="layers-name">{{
@@ -137,61 +148,80 @@ const onDrop = (target: Item) => {
                     <span class="layers-count">{{ group.items.length }}</span>
 
                     <template v-if="group.frame">
-                        <button
-                            type="button"
-                            :title="group.frame.locked ? 'Unlock' : 'Lock'"
-                            :class="{ 'is-on': group.frame.locked }"
-                            :data-test="`lock-${group.frame.id}`"
-                            @click.stop="
-                                emit('toggle', {
-                                    id: group.frame.id,
-                                    field: 'locked',
-                                })
-                            "
-                        >
-                            <Lock v-if="group.frame.locked" class="size-3.5" />
-                            <LockOpen v-else class="size-3.5" />
-                        </button>
-                        <button
-                            type="button"
-                            :title="group.frame.hidden ? 'Show' : 'Hide'"
-                            :class="{ 'is-on': group.frame.hidden }"
-                            :data-test="`hide-${group.frame.id}`"
-                            @click.stop="
-                                emit('toggle', {
-                                    id: group.frame.id,
-                                    field: 'hidden',
-                                })
-                            "
-                        >
-                            <EyeOff
-                                v-if="group.frame.hidden"
-                                class="size-3.5"
-                            />
-                            <Eye v-else class="size-3.5" />
-                        </button>
-                        <button
-                            type="button"
-                            :title="
+                        <Tip :text="group.frame.locked ? 'Unlock' : 'Lock'">
+                            <button
+                                type="button"
+                                :aria-label="
+                                    group.frame.locked ? 'Unlock' : 'Lock'
+                                "
+                                :class="{ 'is-on': group.frame.locked }"
+                                :data-test="`lock-${group.frame.id}`"
+                                @click.stop="
+                                    emit('toggle', {
+                                        id: group.frame.id,
+                                        field: 'locked',
+                                    })
+                                "
+                            >
+                                <Lock
+                                    v-if="group.frame.locked"
+                                    class="size-3.5"
+                                />
+                                <LockOpen v-else class="size-3.5" />
+                            </button>
+                        </Tip>
+                        <Tip :text="group.frame.hidden ? 'Show' : 'Hide'">
+                            <button
+                                type="button"
+                                :aria-label="
+                                    group.frame.hidden ? 'Show' : 'Hide'
+                                "
+                                :class="{ 'is-on': group.frame.hidden }"
+                                :data-test="`hide-${group.frame.id}`"
+                                @click.stop="
+                                    emit('toggle', {
+                                        id: group.frame.id,
+                                        field: 'hidden',
+                                    })
+                                "
+                            >
+                                <EyeOff
+                                    v-if="group.frame.hidden"
+                                    class="size-3.5"
+                                />
+                                <Eye v-else class="size-3.5" />
+                            </button>
+                        </Tip>
+                        <Tip
+                            :text="
                                 group.frame.pdfHidden
                                     ? 'Show in PDF'
                                     : 'Hide in PDF'
                             "
-                            :class="{ 'is-on': group.frame.pdfHidden }"
-                            :data-test="`pdf-${group.frame.id}`"
-                            @click.stop="
-                                emit('toggle', {
-                                    id: group.frame.id,
-                                    field: 'pdfHidden',
-                                })
-                            "
                         >
-                            <PrinterX
-                                v-if="group.frame.pdfHidden"
-                                class="size-3.5"
-                            />
-                            <Printer v-else class="size-3.5" />
-                        </button>
+                            <button
+                                type="button"
+                                :aria-label="
+                                    group.frame.pdfHidden
+                                        ? 'Show in PDF'
+                                        : 'Hide in PDF'
+                                "
+                                :class="{ 'is-on': group.frame.pdfHidden }"
+                                :data-test="`pdf-${group.frame.id}`"
+                                @click.stop="
+                                    emit('toggle', {
+                                        id: group.frame.id,
+                                        field: 'pdfHidden',
+                                    })
+                                "
+                            >
+                                <PrinterX
+                                    v-if="group.frame.pdfHidden"
+                                    class="size-3.5"
+                                />
+                                <Printer v-else class="size-3.5" />
+                            </button>
+                        </Tip>
                     </template>
                 </div>
 
@@ -229,30 +259,34 @@ const onDrop = (target: Item) => {
                     <GripVertical class="layers-grip size-3.5" />
                     <span class="layers-name">{{ nameOf(item) }}</span>
 
-                    <button
-                        type="button"
-                        :title="item.locked ? 'Unlock' : 'Lock'"
-                        :class="{ 'is-on': item.locked }"
-                        :data-test="`lock-${item.id}`"
-                        @click.stop="
-                            emit('toggle', { id: item.id, field: 'locked' })
-                        "
-                    >
-                        <Lock v-if="item.locked" class="size-3.5" />
-                        <LockOpen v-else class="size-3.5" />
-                    </button>
-                    <button
-                        type="button"
-                        :title="item.hidden ? 'Show' : 'Hide'"
-                        :class="{ 'is-on': item.hidden }"
-                        :data-test="`hide-${item.id}`"
-                        @click.stop="
-                            emit('toggle', { id: item.id, field: 'hidden' })
-                        "
-                    >
-                        <EyeOff v-if="item.hidden" class="size-3.5" />
-                        <Eye v-else class="size-3.5" />
-                    </button>
+                    <Tip :text="item.locked ? 'Unlock' : 'Lock'">
+                        <button
+                            type="button"
+                            :aria-label="item.locked ? 'Unlock' : 'Lock'"
+                            :class="{ 'is-on': item.locked }"
+                            :data-test="`lock-${item.id}`"
+                            @click.stop="
+                                emit('toggle', { id: item.id, field: 'locked' })
+                            "
+                        >
+                            <Lock v-if="item.locked" class="size-3.5" />
+                            <LockOpen v-else class="size-3.5" />
+                        </button>
+                    </Tip>
+                    <Tip :text="item.hidden ? 'Show' : 'Hide'">
+                        <button
+                            type="button"
+                            :aria-label="item.hidden ? 'Show' : 'Hide'"
+                            :class="{ 'is-on': item.hidden }"
+                            :data-test="`hide-${item.id}`"
+                            @click.stop="
+                                emit('toggle', { id: item.id, field: 'hidden' })
+                            "
+                        >
+                            <EyeOff v-if="item.hidden" class="size-3.5" />
+                            <Eye v-else class="size-3.5" />
+                        </button>
+                    </Tip>
                 </div>
             </template>
         </div>

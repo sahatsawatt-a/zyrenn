@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Paintbrush } from '@lucide/vue';
 import { computed } from 'vue';
+import RangeField from '@/components/common/RangeField.vue';
 import {
     Popover,
     PopoverContent,
@@ -152,21 +153,15 @@ const onStyle = ({ style, colour }: { style: string; colour: string }) =>
     <!-- A shape's edge: none at 0. A connector has its own below -->
     <label v-if="outlined && !line" class="inspector-slider">
         Line width
-        <input
-            type="range"
-            min="0"
-            max="12"
-            :value="outlined.lineWidth"
+        <RangeField
+            :model-value="outlined.lineWidth"
+            label="Line width"
+            :min="0"
+            :max="12"
+            class="flex-1"
             data-test="outline-width"
-            @input="
-                emit('update', {
-                    lineWidth: Number(
-                        ($event.target as HTMLInputElement).value,
-                    ),
-                })
-            "
+            @update:model-value="emit('update', { lineWidth: $event })"
         />
-        <span>{{ outlined.lineWidth }}</span>
     </label>
 </template>
 

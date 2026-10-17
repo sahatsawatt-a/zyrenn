@@ -57,7 +57,29 @@ trait OwnsContent
      */
     public function boards(): HasMany
     {
+        // A prototype is kept as a board, but is not one of its boards
+        return $this->hasMany(Board::class)->where('kind', Board::BOARD);
+    }
+
+    /**
+     * Its boards and its prototypes together: what an MCP client reaches with
+     * the board tools, a prototype's screens being frames on a board.
+     *
+     * @return HasMany<Board, $this>
+     */
+    public function boardsAndPrototypes(): HasMany
+    {
         return $this->hasMany(Board::class);
+    }
+
+    /**
+     * Its prototypes: clickable screens, kept as boards.
+     *
+     * @return HasMany<Board, $this>
+     */
+    public function prototypes(): HasMany
+    {
+        return $this->hasMany(Board::class)->where('kind', Board::PROTOTYPE);
     }
 
     /**

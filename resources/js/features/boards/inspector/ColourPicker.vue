@@ -6,6 +6,7 @@ import {
     MOST_COLOURS,
     usePalette,
 } from '@/features/boards/inspector/usePalette';
+import Tip from '@/components/common/Tip.vue';
 
 // A saturation/value square over a hue slider: the picker Figma, Miro and
 // friends use. Hand-built rather than pulled from a package -- the well-known
@@ -217,46 +218,56 @@ const pickFromScreen = async () => {
         <!-- Your own colours: the board's to begin with, then whatever is
              kept here with the plus and taken off again under Edit -->
         <div class="picker-presets" data-test="palette">
-            <button
-                v-if="!editing"
-                type="button"
-                class="picker-preset picker-none"
-                :class="{ 'is-on': none }"
-                :title="`No ${label.toLowerCase()}`"
-                data-test="palette-none"
-                @click="clear"
-            />
-            <button
+            <Tip v-if="!editing" :text="`No ${label.toLowerCase()}`">
+                <button
+                    type="button"
+                    class="picker-preset picker-none"
+                    :class="{ 'is-on': none }"
+                    :aria-label="`No ${label.toLowerCase()}`"
+                    data-test="palette-none"
+                    @click="clear"
+                />
+            </Tip>
+            <Tip
                 v-for="colour in palette.colours.value"
                 :key="colour"
-                type="button"
-                class="picker-preset"
-                :class="{
-                    'is-on':
-                        !editing && colour.toLowerCase() === hex.toLowerCase(),
-                    'is-editing': editing,
-                }"
-                :style="{ backgroundColor: colour }"
-                :title="editing ? `Take ${colour} off` : colour"
-                data-test="palette-swatch"
-                @click="onSwatch(colour)"
+                :text="editing ? `Take ${colour} off` : colour"
             >
-                <X v-if="editing" class="picker-preset-x" />
-            </button>
-            <button
+                <button
+                    type="button"
+                    class="picker-preset"
+                    :class="{
+                        'is-on':
+                            !editing &&
+                            colour.toLowerCase() === hex.toLowerCase(),
+                        'is-editing': editing,
+                    }"
+                    :style="{ backgroundColor: colour }"
+                    :aria-label="editing ? `Take ${colour} off` : colour"
+                    data-test="palette-swatch"
+                    @click="onSwatch(colour)"
+                >
+                    <X v-if="editing" class="picker-preset-x" />
+                </button>
+            </Tip>
+            <Tip
                 v-if="
                     !none &&
                     !palette.has(hex) &&
                     palette.colours.value.length < MOST_COLOURS
                 "
-                type="button"
-                class="picker-preset picker-keep"
-                :title="`Keep ${hex} with your colours`"
-                data-test="palette-keep"
-                @click="palette.keep(hex)"
+                :text="`Keep ${hex} with your colours`"
             >
-                <Plus class="size-3" />
-            </button>
+                <button
+                    type="button"
+                    class="picker-preset picker-keep"
+                    :aria-label="`Keep ${hex} with your colours`"
+                    data-test="palette-keep"
+                    @click="palette.keep(hex)"
+                >
+                    <Plus class="size-3" />
+                </button>
+            </Tip>
         </div>
 
         <div class="picker-row">
@@ -273,25 +284,30 @@ const pickFromScreen = async () => {
                 data-test="picker-hex"
                 @input="onHexInput"
             />
-            <button
-                v-if="canPick"
-                type="button"
-                class="picker-drop"
-                title="Pick a colour from the screen"
-                @click="pickFromScreen"
-            >
-                <Pipette class="size-4" />
-            </button>
-            <button
-                type="button"
-                class="picker-drop"
-                :class="{ 'is-on': custom }"
-                :title="custom ? 'Hide the colour square' : 'Any colour'"
-                data-test="picker-custom"
-                @click="custom = !custom"
-            >
-                <Palette class="size-4" />
-            </button>
+            <Tip v-if="canPick" text="Pick a colour from the screen">
+                <button
+                    type="button"
+                    class="picker-drop"
+                    aria-label="Pick a colour from the screen"
+                    @click="pickFromScreen"
+                >
+                    <Pipette class="size-4" />
+                </button>
+            </Tip>
+            <Tip :text="custom ? 'Hide the colour square' : 'Any colour'">
+                <button
+                    type="button"
+                    class="picker-drop"
+                    :class="{ 'is-on': custom }"
+                    :aria-label="
+                        custom ? 'Hide the colour square' : 'Any colour'
+                    "
+                    data-test="picker-custom"
+                    @click="custom = !custom"
+                >
+                    <Palette class="size-4" />
+                </button>
+            </Tip>
         </div>
 
         <!-- Any colour at all, folded away until it is wanted: the swatches

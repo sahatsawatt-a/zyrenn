@@ -5,7 +5,7 @@ namespace App\Support\Board;
 /**
  * How much room a label on a board takes, worked out the way the canvas lays
  * it out (resources/js/features/boards/drawing/labels.ts; keep the two in step):
- * Arial, Times New Roman or Courier New, wrapped at word breaks, lines 1.3
+ * Arial, Times New Roman, Courier New or a hand, wrapped at word breaks, lines 1.3
  * font sizes apart, in the box the item leaves for its label -- plain, or
  * read as light Markdown when the item is "rich".
  *
@@ -41,6 +41,14 @@ final class LabelFit
 
     /** Times New Roman sets this much narrower than Arial, near enough. */
     private const SERIF = 0.9;
+
+    /**
+     * The handwritten faces against Arial, measured in a browser: Caveat
+     * runs narrow, Permanent Marker a little wide.
+     */
+    private const HAND = 0.76;
+
+    private const MARKER = 1.1;
 
     /** Heading sizes, against the label's own, for "#", "##" and "###". */
     private const HEADINGS = [1 => 1.6, 2 => 1.3, 3 => 1.1];
@@ -303,6 +311,13 @@ final class LabelFit
             $total += self::WIDTHS[$character] ?? (strlen($character) >= 3 && preg_match('/\p{Han}|\p{Hangul}|\p{Hiragana}|\p{Katakana}/u', $character) ? 1000 : 600);
         }
 
-        return $total / 1000 * $size * ($bold ? self::BOLD : 1) * ($font === 'serif' ? self::SERIF : 1) + $spread;
+        $face = match ($font) {
+            'serif' => self::SERIF,
+            'hand' => self::HAND,
+            'marker' => self::MARKER,
+            default => 1,
+        };
+
+        return $total / 1000 * $size * ($bold ? self::BOLD : 1) * $face + $spread;
     }
 }

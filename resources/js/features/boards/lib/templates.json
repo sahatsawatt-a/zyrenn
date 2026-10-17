@@ -1561,6 +1561,274 @@
                     "fill": "#bfdbfe"
                 }
             ]
+        },
+        {
+            "id": "phone-screen",
+            "label": "Phone app screen",
+            "about": "A phone screen for a prototype: a top bar, search, a card, a list, a button and tabs, from the UI kit.",
+            "items": [
+                {
+                    "id": "screen",
+                    "kind": "frame",
+                    "text": "Home",
+                    "x": 0,
+                    "y": 0,
+                    "width": 390,
+                    "height": 844,
+                    "fill": "#ffffff",
+                    "stroke": "#e2e8f0"
+                },
+                {
+                    "id": "status",
+                    "kind": "status_bar",
+                    "x": 0,
+                    "y": 0,
+                    "width": 390,
+                    "height": 44
+                },
+                {
+                    "id": "bar",
+                    "kind": "top_bar",
+                    "text": "Home",
+                    "x": 0,
+                    "y": 44,
+                    "width": 390,
+                    "height": 56
+                },
+                {
+                    "id": "search",
+                    "kind": "search_field",
+                    "text": "Search",
+                    "x": 16,
+                    "y": 116,
+                    "width": 358,
+                    "height": 44
+                },
+                {
+                    "id": "today",
+                    "kind": "ui_card",
+                    "text": "Today's summary",
+                    "x": 16,
+                    "y": 176,
+                    "width": 358,
+                    "height": 150
+                },
+                {
+                    "id": "row1",
+                    "kind": "list_row",
+                    "text": "Messages",
+                    "x": 0,
+                    "y": 344,
+                    "width": 390,
+                    "height": 56
+                },
+                {
+                    "id": "row2",
+                    "kind": "list_row",
+                    "text": "Settings",
+                    "x": 0,
+                    "y": 400,
+                    "width": 390,
+                    "height": 56
+                },
+                {
+                    "id": "row3",
+                    "kind": "list_row",
+                    "text": "Help",
+                    "x": 0,
+                    "y": 456,
+                    "width": 390,
+                    "height": 56
+                },
+                {
+                    "id": "go",
+                    "kind": "button",
+                    "text": "Get started",
+                    "x": 16,
+                    "y": 672,
+                    "width": 358,
+                    "height": 48
+                },
+                {
+                    "id": "tabs",
+                    "kind": "tab_bar",
+                    "x": 0,
+                    "y": 760,
+                    "width": 390,
+                    "height": 84
+                }
+            ]
+        },
+        {
+            "id": "web-dashboard",
+            "label": "Web dashboard screen",
+            "about": "A desktop screen for a prototype: a menu down the side, figures, a chart and a list, from the UI kit.",
+            "items": [
+                {
+                    "id": "screen",
+                    "kind": "frame",
+                    "text": "Dashboard",
+                    "x": 0,
+                    "y": 0,
+                    "width": 1440,
+                    "height": 900,
+                    "fill": "#ffffff",
+                    "stroke": "#e2e8f0"
+                },
+                {
+                    "id": "side",
+                    "kind": "rect",
+                    "x": 0,
+                    "y": 0,
+                    "width": 240,
+                    "height": 900,
+                    "fill": "#f8fafc",
+                    "stroke": "#e5e7eb"
+                },
+                {
+                    "id": "brand",
+                    "kind": "text",
+                    "text": "Acme",
+                    "x": 24,
+                    "y": 24,
+                    "width": 192,
+                    "height": 32,
+                    "fontSize": 20
+                },
+                {
+                    "id": "nav1",
+                    "kind": "badge",
+                    "text": "Overview",
+                    "x": 16,
+                    "y": 84,
+                    "width": 208,
+                    "height": 40,
+                    "fill": "#eef2ff",
+                    "stroke": "#eef2ff",
+                    "color": "#4338ca",
+                    "fontSize": 14,
+                    "align": "left"
+                },
+                {
+                    "id": "nav2",
+                    "kind": "text",
+                    "text": "Customers",
+                    "x": 32,
+                    "y": 140,
+                    "width": 176,
+                    "height": 24,
+                    "fontSize": 14
+                },
+                {
+                    "id": "nav3",
+                    "kind": "text",
+                    "text": "Orders",
+                    "x": 32,
+                    "y": 180,
+                    "width": 176,
+                    "height": 24,
+                    "fontSize": 14
+                },
+                {
+                    "id": "nav4",
+                    "kind": "text",
+                    "text": "Settings",
+                    "x": 32,
+                    "y": 220,
+                    "width": 176,
+                    "height": 24,
+                    "fontSize": 14
+                },
+                {
+                    "id": "search",
+                    "kind": "search_field",
+                    "text": "Search",
+                    "x": 264,
+                    "y": 20,
+                    "width": 420,
+                    "height": 44
+                },
+                {
+                    "id": "me",
+                    "kind": "avatar",
+                    "x": 1376,
+                    "y": 22,
+                    "width": 40,
+                    "height": 40
+                },
+                {
+                    "id": "kpi1",
+                    "kind": "ui_card",
+                    "text": "Revenue\n$48,200",
+                    "x": 264,
+                    "y": 88,
+                    "width": 368,
+                    "height": 128
+                },
+                {
+                    "id": "kpi2",
+                    "kind": "ui_card",
+                    "text": "Customers\n1,284",
+                    "x": 652,
+                    "y": 88,
+                    "width": 368,
+                    "height": 128
+                },
+                {
+                    "id": "kpi3",
+                    "kind": "ui_card",
+                    "text": "Orders\n312",
+                    "x": 1040,
+                    "y": 88,
+                    "width": 368,
+                    "height": 128
+                },
+                {
+                    "id": "sales",
+                    "kind": "chart",
+                    "text": "Sales this month",
+                    "x": 264,
+                    "y": 240,
+                    "width": 756,
+                    "height": 420
+                },
+                {
+                    "id": "recent",
+                    "kind": "ui_card",
+                    "text": "Recent orders",
+                    "x": 1040,
+                    "y": 240,
+                    "width": 368,
+                    "height": 420
+                },
+                {
+                    "id": "o1",
+                    "kind": "list_row",
+                    "text": "Order #1042",
+                    "x": 1056,
+                    "y": 300,
+                    "width": 336,
+                    "height": 52
+                },
+                {
+                    "id": "o2",
+                    "kind": "list_row",
+                    "text": "Order #1041",
+                    "x": 1056,
+                    "y": 352,
+                    "width": 336,
+                    "height": 52
+                },
+                {
+                    "id": "o3",
+                    "kind": "list_row",
+                    "text": "Order #1040",
+                    "x": 1056,
+                    "y": 404,
+                    "width": 336,
+                    "height": 52
+                }
+            ]
         }
     ]
 }

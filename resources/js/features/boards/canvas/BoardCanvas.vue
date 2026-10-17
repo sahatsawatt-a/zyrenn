@@ -6,6 +6,10 @@ import type Konva from 'konva';
 import type { Ref } from 'vue';
 import type * as Y from 'yjs';
 import { computed, onMounted, provide, ref, useTemplateRef, watch } from 'vue';
+import { toast } from 'vue-sonner';
+import Tip from '@/components/common/Tip.vue';
+import type { PrototypeSettings } from '@/features/prototypes/devices';
+import type { ProjectTable } from '../inspector/play/tables';
 // Imported into the page rather than installed with app.use(VueKonva): the
 // plugin would put every Konva shape in the main bundle for one demo.
 import { Layer, Stage, Transformer } from 'vue-konva';
@@ -30,10 +34,13 @@ import {
     connectorPoints,
 } from '../model/connectors';
 import { boundsOf, boundsOfAll, overlaps } from '../model/geometry';
+import { connectorRoutes } from '../model/routing';
 import { groupKeys } from '../model/layers';
 import type { Item, Tool } from '../model/items';
 import { isTable } from '../model/schema';
+import { isSketched, sketchLook } from '../model/sketch';
 import { restyled } from '../model/styles';
+import { loadHandFonts } from '../drawing/fonts';
 import { itemsOfShape } from '../model/myShapes';
 import type { MyShape } from '../model/myShapes';
 import PenOverlay from '../pen/PenOverlay.vue';
@@ -41,6 +48,7 @@ import { usePen } from '../pen/usePen';
 import BoardBar from './BoardBar.vue';
 import BoardOverlay from './BoardOverlay.vue';
 import BoardPointers from './BoardPointers.vue';
+import LinkBadges from './LinkBadges.vue';
 import BoardVideoControls from './BoardVideoControls.vue';
 import FrameMenu from './FrameMenu.vue';
 import LayersPanel from './LayersPanel.vue';
@@ -62,6 +70,7 @@ import { usePanels } from './usePanels';
 import { usePictures } from './usePictures';
 import { usePlacing } from './usePlacing';
 import { useShapeSaving } from './useShapeSaving';
+import { useRightPan } from './useRightPan';
 import { useShortcuts } from './useShortcuts';
 import { useTransformer } from './useTransformer';
 import { useVideoControls } from './useVideoControls';
@@ -98,6 +107,11 @@ const props = withDefaults(
         // it; and the project it is in, when its people may share one. The
         // demo board is kept nowhere and has none.
         myShapes?: { board: string; project: string | null } | null;
+        // A prototype's settings, when the board is one: its screens are its
+        // frames, and what is on them can go to another in Play
+        prototype?: PrototypeSettings | null;
+        // ...and its project's tables, its database in Play
+        tables?: ProjectTable[];
     }>(),
     {
         items: null,
@@ -109,6 +123,8 @@ const props = withDefaults(
         deckReady: true,
         presenter: null,
         myShapes: null,
+        prototype: null,
+        tables: () => [],
     },
 );
 
@@ -346,6 +362,7 @@ const {
     presenting,
     // Wrapped, so the path can be worked out later rather than read now
     connectorPath: (item) => connectorPath(item),
+    connectorLabel: (item) => connectorLabel(item),
 });
 
 // --------------------------------------------------------------- Selection
@@ -454,13 +471,17 @@ const onDouble = (event: Konva.KonvaEventObject<MouseEvent>) => {
 };
 
 // --------------------------------------------------- A frame, right-clicked
-const { frameMenu, onContextMenu } = useFrameMenu({
+const { frameMenu, onContextMenu, openAt } = useFrameMenu({
     board,
     camera,
     stage,
     presenting,
     offered: () => !!props.pictureOfFrame,
 });
+
+// The right button held and dragged moves the board, as Space does; let go
+// where it was pressed, it opens a frame's menu
+const rightPan = useRightPan({ surface: canvas, camera, click: openAt });
 
 // ------------------------------------------------------------------ Pictures
 const {
@@ -533,7 +554,19 @@ const pickLayer = ({ id, add }: { id: string; add: boolean }) => {
     }
 };
 
-const removeSelection = () => board.remove([...board.selection.value]);
+const removeSelection = () => {
+    const cleared = board.remove([...board.selection.value]);
+
+    // A screen or a thing taken away takes with it what Play did with it --
+    // going there, showing it: say how many lost something
+    if (cleared) {
+        toast(
+            cleared === 1
+                ? 'One thing in Play used what was deleted: that part of it is gone'
+                : `${cleared} things in Play used what was deleted: those parts are gone`,
+        );
+    }
+};
 
 // Typing a number in the inspector edits the one selected item
 const resizeSelection = (change: {
@@ -728,14 +761,41 @@ const drawn = computed(() =>
 const isSelected = (item: Item) =>
     board.selection.value.includes(item.id) && editingId.value !== item.id;
 
+/**
+ * The hand-drawn look put on, or taken off: what is selected, or the whole
+ * board. The handwritten font is fetched first, so each label is measured
+ * -- and a box hugging its words sized -- in the font it is drawn in.
+ */
+const sketchBoard = async (on: boolean, whole: boolean) => {
+    const chosen = whole ? null : [...board.selected.value];
+
+    if (on) {
+        await loadHandFonts();
+    }
+
+    board.updateEach(sketchLook(board.items.value, chosen, on));
+};
+
 // Which connectors hang off each shape: only connectors coming and going
 // change it, so moving shapes about leaves it be
 const attached = computed(() => attachmentsOf(board.items.value));
+// Every line's route, worked out together: round the items in its way and
+// out of the lanes of the others
+const routes = computed(() =>
+    connectorRoutes(board.items.value, board.byId.value, attached.value),
+);
 // Where lines cross, which hops over which
 const hops = computed(() => connectorHops(board.items.value, connectorPath));
 
+// A line not on the board yet -- one being drawn -- is routed on its own
 const connectorPath = (item: Item) =>
+    routes.value.get(item.id)?.points ??
     connectorPoints(item, board.byId.value, attached.value);
+const connectorLabel = (item: Item) => routes.value.get(item.id)?.label ?? null;
+
+// For what the page puts beside it -- a prototype's screens bar goes to a
+// screen and adds one -- the board and its camera
+defineExpose({ board, camera });
 </script>
 
 <template>
@@ -758,6 +818,7 @@ const connectorPath = (item: Item) =>
             :has-circuit="hasCircuit"
             :has-schema="hasSchema"
             :frame-count="board.frames.value.length"
+            :prototype="!!props.prototype"
             @templates="choosingTemplate = true"
             @add-slide="addSlide"
             @present="startPresenting"
@@ -788,6 +849,7 @@ const connectorPath = (item: Item) =>
             :style="{ backgroundColor: theme.paper }"
             :class="{
                 'cursor-grab': panning,
+                'cursor-grabbing': rightPan.dragging.value,
                 'board-erasing': tool === 'eraser' && !panning,
             }"
             :data-tool="tool"
@@ -840,6 +902,7 @@ const connectorPath = (item: Item) =>
                             worked?.wires.get(item.id)
                         "
                         :path-of="connectorPath"
+                        :label-of="connectorLabel"
                         :hops="hops.get(item.id)"
                         :snap="snapWhileDragging"
                     />
@@ -862,6 +925,14 @@ const connectorPath = (item: Item) =>
 
                     <PenOverlay
                         :preview="pen.preview.value"
+                        :scale="camera.scale.value"
+                    />
+
+                    <!-- In a prototype: what goes somewhere in Play -->
+                    <LinkBadges
+                        v-if="props.prototype && !presenting"
+                        :items="board.items.value"
+                        :by-id="board.byId.value"
                         :scale="camera.scale.value"
                     />
 
@@ -888,6 +959,14 @@ const connectorPath = (item: Item) =>
             <BoardPointers
                 v-if="pointers"
                 :pointers="pointers.pointers.value"
+                :scale="camera.scale.value"
+                :position="camera.position.value"
+            />
+
+            <!-- What the page lays over the board, placed as the camera has
+                 it: a prototype's comment pins and missed taps -->
+            <slot
+                name="overlay"
                 :scale="camera.scale.value"
                 :position="camera.position.value"
             />
@@ -940,6 +1019,7 @@ const connectorPath = (item: Item) =>
                     @add-video="startImport('video')"
                     :compact="compact"
                     :has-schema="hasSchema"
+                    :kit-first="!!props.prototype"
                     @circuit-text="writingCircuit = true"
                     @templates="choosingTemplate = true"
                     :my-shapes="props.myShapes ? myShapes.shapes.value : null"
@@ -970,16 +1050,18 @@ const connectorPath = (item: Item) =>
                 />
             </div>
 
-            <button
-                v-show="!presenting && !layersOpen"
-                type="button"
-                class="board-pill board-corner top-3 left-3"
-                title="Show the layers"
-                data-test="layers-open"
-                @click="layersOpen = true"
-            >
-                <PanelLeftOpen class="size-4" />
-            </button>
+            <Tip text="Show the layers">
+                <button
+                    v-show="!presenting && !layersOpen"
+                    type="button"
+                    class="board-pill board-corner top-3 left-3"
+                    aria-label="Show the layers"
+                    data-test="layers-open"
+                    @click="layersOpen = true"
+                >
+                    <PanelLeftOpen class="size-4" />
+                </button>
+            </Tip>
 
             <!-- What is selected, and everything about it, down the right -->
             <div
@@ -993,6 +1075,9 @@ const connectorPath = (item: Item) =>
                     :stroke="board.selected.value[0]?.stroke ?? strokeColour"
                     :item-count="board.items.value.length"
                     :frame-count="board.frames.value.length"
+                    :prototype="props.prototype"
+                    :items="board.items.value"
+                    :tables="props.tables"
                     :link="connectorLink"
                     :deck="deck"
                     :deck-ready="deckReady"
@@ -1033,21 +1118,25 @@ const connectorPath = (item: Item) =>
                             ),
                         )
                     "
+                    :sketched="board.items.value.some(isSketched)"
+                    @sketch="sketchBoard"
                     @turn="turnSelection"
                     @close="panelOpen = false"
                 />
             </div>
 
-            <button
-                v-show="!presenting && !panelOpen"
-                type="button"
-                class="board-pill board-corner top-3 right-3"
-                title="Show the panel"
-                data-test="panel-open"
-                @click="panelOpen = true"
-            >
-                <PanelRightOpen class="size-4" />
-            </button>
+            <Tip text="Show the panel">
+                <button
+                    v-show="!presenting && !panelOpen"
+                    type="button"
+                    class="board-pill board-corner top-3 right-3"
+                    aria-label="Show the panel"
+                    data-test="panel-open"
+                    @click="panelOpen = true"
+                >
+                    <PanelRightOpen class="size-4" />
+                </button>
+            </Tip>
 
             <!-- How close in, and the way back to everything -->
             <ZoomPill

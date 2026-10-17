@@ -1,3 +1,5 @@
+// First, so it hears the browser's Back before Inertia does (lib/pageSteps)
+import './lib/pageSteps';
 import { createInertiaApp } from '@inertiajs/vue3';
 import { initializeTheme } from './composables/useAppearance';
 import AppLayout from './layouts/AppLayout.vue';
@@ -36,6 +38,8 @@ void createInertiaApp({
             case name === 'Welcome' ||
                 name === 'boards/Render' ||
                 name === 'boards/Presenter' ||
+                // A prototype played: the screen and its own bar, nothing else
+                name === 'prototypes/Play' ||
                 name.startsWith('legal/'):
                 return null;
             case name.startsWith('auth/'):

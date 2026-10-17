@@ -6,6 +6,7 @@
 import library from '@/features/boards/lib/templates.json';
 import type { Endpoint, Item, Side } from './items';
 import { hydrate, newId } from './items';
+import { relinked } from './links';
 import { makeRow, rowsHeight, rowsKind } from './rows';
 
 /**
@@ -99,7 +100,8 @@ export const itemsOfTemplate = (template: BoardTemplate): Item[] => {
         const kind = rowsKind(spec);
 
         const made = hydrate({
-            ...rest,
+            // A link to one of the template's screens goes to its copy
+            ...relinked(rest, ids),
             id: (spec.id && ids.get(spec.id)) || newId(),
             ...(spec.kind === 'arrow'
                 ? { from: endOf(from), to: endOf(to) }

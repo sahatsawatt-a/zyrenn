@@ -2,6 +2,13 @@
 import { computed, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import {
     Dialog,
     DialogContent,
     DialogDescription,
@@ -61,20 +68,25 @@ const insert = () => {
 
             <div class="grid gap-3 sm:grid-cols-2">
                 <div class="flex min-w-0 flex-col gap-2">
-                    <select
-                        v-model="example"
-                        class="border-border bg-background h-8 rounded-md border px-2 text-xs"
-                        aria-label="Start from an example"
-                        data-test="circuit-example"
-                    >
-                        <option
-                            v-for="each in circuitExamples"
-                            :key="each.id"
-                            :value="each.id"
+                    <Select v-model="example">
+                        <SelectTrigger
+                            size="sm"
+                            class="w-full text-xs"
+                            aria-label="Start from an example"
+                            data-test="circuit-example"
                         >
-                            {{ each.label }}
-                        </option>
-                    </select>
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem
+                                v-for="each in circuitExamples"
+                                :key="each.id"
+                                :value="each.id"
+                                class="text-xs"
+                                >{{ each.label }}</SelectItem
+                            >
+                        </SelectContent>
+                    </Select>
                     <textarea
                         v-model="source"
                         class="border-border bg-background h-64 w-full resize-none rounded-lg border p-3 font-mono text-xs"

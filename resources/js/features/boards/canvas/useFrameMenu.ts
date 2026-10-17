@@ -18,7 +18,7 @@ type FrameMenu = {
 /**
  * A frame, right-clicked: where on the canvas, so its menu (FrameMenu) opens
  * there. Anywhere on a frame -- its title, its empty middle, or something
- * sitting on it -- is the frame; anywhere else, the browser's own menu.
+ * sitting on it -- is the frame; anywhere else, nothing.
  */
 export function useFrameMenu({
     board,
@@ -46,22 +46,33 @@ export function useFrameMenu({
         return null;
     };
 
-    const onContextMenu = (event: Konva.KonvaEventObject<PointerEvent>) => {
-        const point = stage()?.getPointerPosition();
-
-        if (!offered() || presenting.value || !point) {
-            return;
+    /**
+     * The menu of the frame under a point on the canvas, opened there.
+     * Answers whether there was one to open.
+     */
+    const openAt = (point: { x: number; y: number }): boolean => {
+        if (!offered() || presenting.value) {
+            return false;
         }
 
         const frame = frameAt(camera.toBoard(point));
 
-        if (!frame) {
-            return;
+        if (frame) {
+            frameMenu.value = { frame, x: point.x, y: point.y };
         }
 
-        event.evt.preventDefault();
-        frameMenu.value = { frame, x: point.x, y: point.y };
+        return !!frame;
     };
 
-    return { frameMenu, onContextMenu };
+    // A finger's long press; a mouse's or a pen's right click comes by way
+    // of useRightPan, which can tell it from a drag
+    const onContextMenu = (event: Konva.KonvaEventObject<PointerEvent>) => {
+        const point = stage()?.getPointerPosition();
+
+        if (point && openAt(point)) {
+            event.evt.preventDefault();
+        }
+    };
+
+    return { frameMenu, onContextMenu, openAt };
 }

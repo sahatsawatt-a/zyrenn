@@ -8,6 +8,8 @@ use App\Models\Note\Note;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request as SentRequest;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -262,5 +264,49 @@ class CollabTest extends TestCase
 
         config(['services.collab.url' => null]);
         $this->actingAs($user)->get(route('notes.index'))->assertInertia(fn (Assert $page) => $page->where('collab', false));
+    }
+
+    public function test_a_board_page_shows_it_as_everyone_has_it_now()
+    {
+        $user = User::factory()->create();
+        $board = (new Board(['title' => 'Map', 'content' => ['items' => [['id' => 'gone', 'kind' => 'sticky', 'text' => 'Taken away']]]]))->ownedBy($user, $user);
+        $board->save();
+
+        // The live copy, handed to the app when asked: the sticky was taken away
+        Http::swap(new Factory);
+        Http::fake(['collab.test/flush' => function () use ($board) {
+            Board::query()->whereKey($board->id)->update(['content' => json_encode(['items' => [['id' => 'new', 'kind' => 'sticky', 'text' => 'Added']]])]);
+
+            return Http::response(['live' => true]);
+        }]);
+
+        $this->actingAs($user)->get(route('boards.show', $board))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('board.content.items.0.id', 'new')->has('board.content.items', 1));
+
+        Http::assertSent(fn (SentRequest $request) => $request->url() === 'http://collab.test/flush'
+            && $request['document'] === "boards.{$board->ref_id}");
+    }
+
+    public function test_a_board_page_opens_from_what_was_kept_when_the_live_copy_does_not_answer()
+    {
+        $user = User::factory()->create();
+        $board = (new Board(['title' => 'Map', 'content' => ['items' => [['id' => 'kept', 'kind' => 'sticky', 'text' => 'Kept']]]]))->ownedBy($user, $user);
+        $board->save();
+
+        Http::swap(new Factory);
+        Http::fake(['collab.test/*' => fn () => throw new ConnectionException('Connection refused')]);
+
+        $this->actingAs($user)->get(route('boards.show', $board))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('board.content.items.0.id', 'kept'));
+
+        // ...and with live editing off, it is not asked at all
+        Http::swap(new Factory);
+        Http::fake();
+        config(['services.collab.url' => null]);
+
+        $this->actingAs($user)->get(route('boards.show', $board))->assertOk();
+        Http::assertNothingSent();
     }
 }

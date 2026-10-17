@@ -6,6 +6,7 @@ await runBoard('/demo/konva', async (b) => {
     const {
         page,
         check,
+        soon,
         draw,
         join,
         screenOf,
@@ -116,14 +117,12 @@ await runBoard('/demo/konva', async (b) => {
     await page.screenshot({ path: `${SHOTS}/connectors-pinned.png` });
 
     // --- and the inspector can pin or free an end after the fact
-    await page
-        .locator('[data-test="side-from"]')
-        .selectOption({ label: 'Auto' });
-    await page.waitForTimeout(300);
-    check(
+    await page.locator('[data-test="side-from"]').click();
+    await page.getByRole('option', { name: 'Auto' }).click();
+    await soon(
         'the inspector can set an end back to auto',
-        (await pinnedSide('from')) === 'auto',
-        await pinnedSide('from'),
+        async () => (await pinnedSide('from')) === 'auto',
+        () => pinnedSide('from'),
     );
 
     // --- every other setting
@@ -152,7 +151,7 @@ await runBoard('/demo/konva', async (b) => {
         'the heads stay folded away until wanted',
         !(await page.locator('[data-test="head-end-arrow"]').isVisible()),
     );
-    await page.locator('[data-test="ends-config"] summary').click();
+    await page.locator('[data-test="ends-config"] [data-fold-toggle]').click();
     await page.waitForTimeout(250);
 
     for (const head of ['open', 'circle', 'diamond', 'bar', 'none', 'arrow']) {

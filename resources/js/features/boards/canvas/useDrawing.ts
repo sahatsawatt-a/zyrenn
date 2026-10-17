@@ -1,5 +1,5 @@
 import type Konva from 'konva';
-import { huggedHeight } from '../drawing/labels';
+import { fittedHeight } from '../drawing/labels';
 import type { ComputedRef, Ref } from 'vue';
 import { nextTick, ref, watch } from 'vue';
 import { strokesTouched } from '../model/erase';
@@ -752,10 +752,12 @@ export function useDrawing({
                 );
             } else {
                 item.width = Math.max(12, item.width * scaleX);
-                // One that hugs its words is as tall as they are at its new width
-                item.height =
-                    huggedHeight({ ...item, width: item.width }) ??
-                    Math.max(12, item.height * scaleY);
+                // One that hugs its words is as tall as they are at its new
+                // width, and a sticky no shorter
+                item.height = fittedHeight({
+                    ...item,
+                    height: Math.max(12, item.height * scaleY),
+                });
             }
 
             node.scaleX(1);

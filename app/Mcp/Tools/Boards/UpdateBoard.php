@@ -7,6 +7,7 @@ use App\Models\Board\Board;
 use App\Support\Board\BoardItemProblem;
 use App\Support\Board\BoardItems;
 use App\Support\Board\BoardParts;
+use App\Support\Board\BoardTables;
 use App\Support\Board\CircuitLayout;
 use App\Support\Board\Deck;
 use App\Support\Live\Collab;
@@ -161,6 +162,7 @@ class UpdateBoard extends BoardTool
                     $add,
                     $this->specs($validated, 'update_items'),
                     $delete,
+                    BoardTables::of($board->owner()),
                 );
 
                 if (isset($validated['frame_order'])) {
@@ -211,7 +213,11 @@ class UpdateBoard extends BoardTool
                 return Response::error($problem);
             }
 
-            $board->content = Deck::content(BoardItems::fromSpec($specs, $current), $deck);
+            try {
+                $board->content = Deck::content(BoardItems::fromSpec($specs, $current, BoardTables::of($board->owner())), $deck);
+            } catch (BoardItemProblem $problem) {
+                return Response::error($problem->getMessage());
+            }
             $also = $this->overflow($board->content['items']);
         }
 

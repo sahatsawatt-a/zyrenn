@@ -6,8 +6,12 @@ import type { SlideDecor } from '../../deck/deck';
 import { useSlideDecor } from '../../deck/deck';
 import type { Item } from '../../model/items';
 import { FONT_FAMILIES } from '../../model/items';
+import { isSketched } from '../../model/sketch';
+import { fontReady } from '../fonts';
 import { DIRECTION, SELECTED, pictured, useItemLook } from '../itemLook';
 import { paint } from '../paint';
+import { figureOf } from '../sketch';
+import SketchShape from './SketchShape.vue';
 
 // A frame is the slide: a plain board-coloured card, with its own picture
 // behind everything on it, what the deck writes on every slide, and its
@@ -20,6 +24,11 @@ const props = defineProps<{
 }>();
 
 const { shown } = useItemLook(props);
+
+// A slide drawn as by hand keeps its card plain and has its edge sketched
+const sketched = computed(() =>
+    isSketched(props.item) ? figureOf(props.item) : null,
+);
 
 // The slide's header, footer and number, as the deck writes them on it
 const slideDecor = useSlideDecor();
@@ -62,13 +71,23 @@ const decorLine = (
             height: item.height,
             ...paint(item, item.width, item.height),
             stroke: selected ? SELECTED : shown(item.stroke),
-            strokeWidth: 1,
+            strokeWidth: sketched ? 0 : 1,
             cornerRadius: item.radius ?? 0,
             shadowColor: 'black',
             shadowOpacity: 0.06,
             shadowBlur: 18,
             shadowForStrokeEnabled: false,
         }"
+    />
+    <SketchShape
+        v-if="sketched"
+        :item="item"
+        :selected="selected"
+        :figure="sketched"
+        :fill="null"
+        :stroke="selected ? SELECTED : shown(item.stroke)"
+        :line-width="selected ? 2 : 1.5"
+        :listening="false"
     />
     <!-- A slide's own background picture, filling it unless told to fit -->
     <KonvaImage
@@ -108,6 +127,10 @@ const decorLine = (
             y: -28,
             width: item.width,
             fontSize: 18,
+            // In its own font once it has come: Arial unless set otherwise
+            fontFamily: fontReady(item.fontFamily)
+                ? FONT_FAMILIES[item.fontFamily]
+                : FONT_FAMILIES.sans,
             fontStyle: '600',
             fill: selected ? SELECTED : '#64748b',
             opacity: editing ? 0 : 1,

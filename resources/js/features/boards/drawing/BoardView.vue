@@ -15,6 +15,8 @@ import { boundsOf, boundsOfAll } from '@/features/boards/model/geometry';
 import type { Item } from '@/features/boards/model/items';
 import { hydrate, isConnector } from '@/features/boards/model/items';
 import { groupKeys } from '@/features/boards/model/layers';
+import { connectorRoutes } from '@/features/boards/model/routing';
+import { inItsState } from '@/features/boards/model/shapes';
 import { provideBoardTheme } from '@/features/boards/drawing/useBoardTheme';
 import { useImageCache } from '@/features/boards/drawing/useImageCache';
 import { useVideos } from '@/features/boards/drawing/useVideos';
@@ -184,7 +186,13 @@ watch(
 );
 const empty = computed(() => shown.value.length === 0);
 const attached = computed(() => attachmentsOf(drawn.value));
-const path = (item: Item) => connectorPoints(item, byId.value, attached.value);
+// Every line's route, worked out together, as on the canvas
+const routes = computed(() =>
+    connectorRoutes(drawn.value, byId.value, attached.value),
+);
+const path = (item: Item) =>
+    routes.value.get(item.id)?.points ??
+    connectorPoints(item, byId.value, attached.value);
 // Where lines cross, which hops over which
 const hops = computed(() => connectorHops(shown.value, path));
 </script>
@@ -228,13 +236,14 @@ const hops = computed(() => connectorHops(shown.value, path));
                     <!-- Afresh in another design, as on the canvas (BoardNode) -->
                     <BoardItem
                         :key="item.variant ?? ''"
-                        :item="item"
+                        :item="inItsState(item)"
                         :selected="false"
                         :editing="false"
                         :image="imageFor(item)"
                         :video="videos.videoFor(item)"
                         :playing="videos.isPlaying(item.id)"
                         :path="path(item)"
+                        :label-at="routes.get(item.id)?.label"
                         :hops="hops.get(item.id)"
                     />
                 </Group>

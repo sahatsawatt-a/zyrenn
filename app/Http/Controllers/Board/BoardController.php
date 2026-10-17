@@ -6,6 +6,9 @@ use App\Http\Controllers\Concerns\BrowsesFolders;
 use App\Http\Controllers\Controller;
 use App\Models\Board\Board;
 use App\Models\Board\BoardFolder;
+use App\Models\Table\Table;
+use App\Models\Table\TableColumn;
+use App\Support\Live\Collab;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,6 +19,9 @@ use Inertia\Response;
 class BoardController extends Controller
 {
     use BrowsesFolders;
+
+    /** How long a board's page waits for the live copy before opening from what was kept. */
+    private const FLUSH_SECONDS = 2;
 
     /**
      * Browse a folder of the user's or the project's boards (the top level
@@ -58,14 +64,66 @@ class BoardController extends Controller
     /**
      * Show the board.
      */
-    public function show(Board $board): Response
+    public function show(Board $board): Response|RedirectResponse
     {
         Gate::authorize('view', $board);
+
+        // A prototype is drawn on here too, but lives at its own address
+        if ($board->isPrototype()) {
+            return to_route('prototypes.show', $board);
+        }
+
+        return self::page($board);
+    }
+
+    /**
+     * The page a board -- or a prototype -- is drawn on.
+     */
+    public static function page(Board $board): Response
+    {
+        // Open and being drawn on: shown as everyone has it now, not as it was
+        // last kept -- so a page loaded again doesn't show, for a moment,
+        // what was just taken away. Unanswered, it opens from what was kept.
+        Collab::flush($board, timeout: self::FLUSH_SECONDS);
+        $board->refresh();
 
         return Inertia::render('boards/Show', [
             'board' => $board->only(['ref_id', 'title', 'content', 'updated_at']),
             'breadcrumbs' => self::crumbs($board->folder),
+            // A prototype's own settings, for its screens bar; none on a board
+            'prototype' => $board->isPrototype() ? ($board->prototype ?? ['device' => 'phone', 'start' => null]) : null,
+            // Its project's tables, for its screens to list, open and save to
+            'tables' => $board->isPrototype() ? self::tablesFor($board) : [],
         ]);
+    }
+
+    /**
+     * A prototype's project's tables, each with its columns as the grid shows
+     * them -- in order, hidden ones left out.
+     *
+     * @return array<int, array{ref_id: string, title: string, columns: array<int, array{label: string, type: string}>}>
+     */
+    private static function tablesFor(Board $board): array
+    {
+        if ($board->project === null) {
+            return [];
+        }
+
+        return $board->project->tables()
+            ->with('columns')
+            ->orderBy('title')
+            ->get()
+            ->map(fn (Table $table) => [
+                'ref_id' => $table->ref_id,
+                'title' => $table->title,
+                'columns' => $table->columns
+                    ->reject(fn (TableColumn $column) => (bool) $column->getAttribute('hidden'))
+                    ->map(fn (TableColumn $column) => ['label' => $column->label, 'type' => $column->type])
+                    ->values()
+                    ->all(),
+            ])
+            ->values()
+            ->all();
     }
 
     /**
@@ -125,6 +183,13 @@ class BoardController extends Controller
         $owner = $board->owner();
         $folder = $board->folder;
         $board->delete();
+
+        // A prototype goes back to its project's prototypes
+        if ($board->isPrototype() && $board->project) {
+            Inertia::flash('toast', ['type' => 'success', 'message' => __('Prototype deleted.')]);
+
+            return to_route('projects.prototypes.index', $board->project);
+        }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Board deleted.')]);
 

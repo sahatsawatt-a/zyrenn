@@ -154,7 +154,17 @@ abstract class FiledTool extends ScopedTool
             'folder' => $this->folderPath($thing, $paths),
             ...$this->details($thing),
             'updated_at' => $thing->getAttribute('updated_at')?->toIso8601String(),
-            'url' => route("{$this->plural()}.show", $thing),
+            'url' => $this->urlOf($thing),
         ];
+    }
+
+    /**
+     * Where the thing is opened in the app.
+     *
+     * @param  TThing  $thing
+     */
+    protected function urlOf(Model $thing): string
+    {
+        return route("{$this->plural()}.show", $thing);
     }
 }

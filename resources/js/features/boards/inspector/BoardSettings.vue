@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Paintbrush } from '@lucide/vue';
+import { Paintbrush, PenTool } from '@lucide/vue';
 import {
     Popover,
     PopoverContent,
@@ -10,19 +10,22 @@ import type { Deck } from '../deck/deck';
 import StylePicker from './StylePicker.vue';
 
 // The panel with nothing selected: how to start, and what goes for the whole
-// board -- every shape in one colour set and style, and the deck its frames
-// make.
+// board -- every shape in one colour set and style, the hand-drawn look, and
+// the deck its frames make.
 defineProps<{
     itemCount: number;
     frameCount: number;
     deck?: Deck | null;
     deckReady?: boolean;
     beside: 'top' | 'left';
+    // Whether anything on it is drawn as by hand
+    sketched?: boolean;
 }>();
 const emit = defineEmits<{
     'restyle-board': [choice: { set: string; style: string }];
     deck: [deck: Deck | null];
     'restyle-deck': [];
+    sketch: [on: boolean];
 }>();
 </script>
 
@@ -63,6 +66,23 @@ const emit = defineEmits<{
                 />
             </PopoverContent>
         </Popover>
+
+        <!-- Everything drawn as by hand and written in a hand, or crisp -->
+        <button
+            v-if="itemCount"
+            type="button"
+            class="inspector-wide"
+            :title="
+                sketched
+                    ? 'Crisp lines and plain type across the board'
+                    : 'Sketchy lines and handwriting across the board, as a rough wireframe'
+            "
+            data-test="sketch-board"
+            @click="emit('sketch', !sketched)"
+        >
+            <PenTool class="size-3.5" />
+            {{ sketched ? 'Crisp look for the board' : 'Sketch the board' }}
+        </button>
 
         <!-- The slides' look, and what is written on each -->
         <DeckSettings

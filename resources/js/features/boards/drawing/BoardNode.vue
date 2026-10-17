@@ -7,6 +7,7 @@ import { useBuildHidden } from '@/features/boards/deck/useBuild';
 import { blending, cacheBlur } from '@/features/boards/drawing/blur';
 import type { Item } from '@/features/boards/model/items';
 import { isConnector } from '@/features/boards/model/items';
+import { inItsState } from '@/features/boards/model/shapes';
 import type { Hops } from '@/lib/lineHops';
 import BoardItem from './BoardItem.vue';
 
@@ -31,6 +32,8 @@ const props = defineProps<{
     // What was worked out for it, when that is asked to be shown
     worked?: string;
     pathOf: (item: Item) => number[];
+    // Where a connector's label goes, clear of the items about it
+    labelOf?: (item: Item) => { x: number; y: number } | null;
     // Where it hops over the lines it crosses
     hops?: Hops;
     snap: (item: Item) => (position: { x: number; y: number }) => {
@@ -79,12 +82,13 @@ watch(
 
 <template>
     <Group ref="group" :config="config">
-        <!-- Drawn afresh in another design: the canvas puts a part that
-             comes and goes on top of the rest, wherever it is written here,
-             so a badge's disc would cover its icon -->
+        <!-- Drawn afresh in another design, or by hand: the canvas puts a
+             part that comes and goes on top of the rest, wherever it is
+             written here, so a badge's disc would cover its icon and a
+             sketched fill its label -->
         <BoardItem
-            :key="item.variant ?? ''"
-            :item="item"
+            :key="`${item.variant ?? ''}|${item.sketch ? 1 : 0}`"
+            :item="inItsState(item)"
             :selected="selected"
             :editing="editing"
             :image="image"
@@ -95,6 +99,7 @@ watch(
             :worked="worked"
             :path="path"
             :hops="hops"
+            :label-at="labelOf?.(item)"
         />
     </Group>
 </template>

@@ -2,6 +2,7 @@
 import { Play } from '@lucide/vue';
 import { useLocalStorage } from '@vueuse/core';
 import { computed } from 'vue';
+import FoldSection from '@/components/common/FoldSection.vue';
 import type { Item } from '../model/items';
 import type { BuildKind, BuildStep } from './build';
 import { KINDS, stepFor } from './build';
@@ -45,18 +46,19 @@ const remove = (index: number) =>
 </script>
 
 <template>
-    <details
-        class="inspector-fold"
+    <FoldSection
         :open="open || own.length > 0"
+        title="Animate"
+        :hint="
+            own.length === 0
+                ? undefined
+                : own.length === 1
+                  ? '1 animation'
+                  : `${own.length} animations`
+        "
         data-test="item-animation"
-        @toggle="open = ($event.target as HTMLDetailsElement).open"
+        @update:open="open = $event"
     >
-        <summary>
-            Animate
-            <span v-if="own.length">{{
-                own.length === 1 ? '1 animation' : `${own.length} animations`
-            }}</span>
-        </summary>
         <div class="space-y-2">
             <StepRow
                 v-for="{ step, index } in own"
@@ -91,5 +93,5 @@ const remove = (index: number) =>
                 </button>
             </p>
         </div>
-    </details>
+    </FoldSection>
 </template>

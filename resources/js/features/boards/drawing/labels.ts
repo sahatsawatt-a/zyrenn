@@ -414,6 +414,15 @@ const layOut = (item: Item, width: number): Laid => {
 let probe: Konva.Text | null = null;
 const heights = new Map<string, number>();
 
+/**
+ * Forget every label laid out and measured so far: a font they were measured
+ * in has only now come (drawing/fonts.ts).
+ */
+export const forgetLayouts = () => {
+    layouts.clear();
+    heights.clear();
+};
+
 /** How tall the label's words are once wrapped to the width of its box. */
 export const labelHeight = (item: Item): number => {
     if (!item.text) {
@@ -549,3 +558,24 @@ export const huggedHeight = (item: Item): number | null =>
     item.hug && HUGGING.includes(item.kind) && item.text
         ? Math.ceil(labelHeight(item) + item.padding * 2)
         : null;
+
+/**
+ * The height an item should have for its words: as tall as they are for one
+ * that hugs them; a sticky at least as tall -- its paper grows to hold what
+ * is written on it, never leaving words out on the board, and keeps any room
+ * below them it was given; anything else, the height it has.
+ */
+export const fittedHeight = (item: Item): number => {
+    const hugged = huggedHeight(item);
+
+    if (hugged !== null) {
+        return hugged;
+    }
+
+    return item.kind === 'sticky' && item.text
+        ? Math.max(
+              item.height,
+              Math.ceil(labelHeight(item) + labelBox(item).y * 2),
+          )
+        : item.height;
+};

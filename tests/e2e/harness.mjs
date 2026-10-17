@@ -10,7 +10,7 @@
 //                                                # and up for LINGER (5) seconds at the end
 //     FULL=1 SLOWMO=800 READ=2 node ...          # and each check written on the page, held 2s to read
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
@@ -134,7 +134,26 @@ export const mounted = (page) =>
  * quiet, which is half a second of nothing after every page.
  */
 export async function open(page, url) {
-    await page.goto(url, { waitUntil: 'load' });
+    for (let tries = 1; ; tries++) {
+        try {
+            await page.goto(url, { waitUntil: 'load' });
+            break;
+        } catch (error) {
+            // The page it was on went somewhere of its own just then -- the
+            // dashboard reloads itself when the lists it shows change, as
+            // making a project or a board behind the scenes does -- and took
+            // the visit with it: ask for it again
+            if (
+                tries < 3 &&
+                /interrupted by another navigation/.test(error.message)
+            ) {
+                continue;
+            }
+
+            throw error;
+        }
+    }
+
     await mounted(page);
 }
 
@@ -595,6 +614,10 @@ export function boardOn(page) {
     /** A point on the board, in screen coordinates. */
     const screenOf = async (boardX, boardY) => {
         const at = await camera();
+        // Measured again: bringing a control into view in a long panel can
+        // scroll the page under the canvas by a few pixels
+        view.box =
+            (await page.locator('[data-zoom]').boundingBox()) ?? view.box;
 
         return {
             x: view.box.x + boardX * at.scale + at.x,
@@ -649,8 +672,8 @@ export function boardOn(page) {
     const setField = async (name, value) => {
         const fold = page.locator('[data-test="geometry"]');
 
-        if (!(await fold.evaluate((details) => details.open))) {
-            await fold.locator('summary').click();
+        if ((await fold.getAttribute('data-state')) !== 'open') {
+            await fold.locator('[data-fold-toggle]').click();
             // The panel is drawn again once it has opened, and what was
             // typed before that would be drawn over
             await page.evaluate(
@@ -817,8 +840,9 @@ export function boardOn(page) {
 
     /** Which face a connector end is pinned to, as the inspector shows it. */
     const pinnedSide = async (end) =>
-        (await page.locator(`[data-test="side-${end}"]`).inputValue()) ||
-        'auto';
+        (await page
+            .locator(`[data-test="side-${end}"]`)
+            .getAttribute('data-value')) || 'auto';
 
     return {
         view,
@@ -922,6 +946,44 @@ export async function removeAt(page, path) {
             redirect: 'manual',
         });
     }, path);
+}
+
+/**
+ * Six seconds of moving colour bars and a tone, as an MP4: enough to seek
+ * about in. Made once with ffmpeg, kept in SHOTS for the runs after, and
+ * answered with as its path.
+ */
+export function clip() {
+    const path = `${SHOTS}/clip.mp4`;
+
+    if (!existsSync(path)) {
+        mkdirSync(SHOTS, { recursive: true });
+        execFileSync('ffmpeg', [
+            '-loglevel',
+            'error',
+            '-y',
+            '-f',
+            'lavfi',
+            '-i',
+            'testsrc2=size=640x360:rate=25:duration=6',
+            '-f',
+            'lavfi',
+            '-i',
+            'sine=frequency=440:duration=6',
+            '-c:v',
+            'libx264',
+            '-pix_fmt',
+            'yuv420p',
+            '-c:a',
+            'aac',
+            '-shortest',
+            '-movflags',
+            '+faststart',
+            path,
+        ]);
+    }
+
+    return path;
 }
 
 const APP_CONTAINER = process.env.E2E_APP_CONTAINER ?? 'zyrenn-app-1';

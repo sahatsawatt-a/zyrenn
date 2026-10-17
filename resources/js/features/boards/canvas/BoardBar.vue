@@ -10,7 +10,8 @@ import BoardShortcuts from './BoardShortcuts.vue';
 
 // The slim bar over the board: what it is, where it stands, and what to do
 // with it -- the page's own title and actions, and the board's: a circuit's
-// values, its schema as SQL, a template, a new slide, presenting.
+// values, its schema as SQL, a template, a new slide, presenting (the last
+// two left out on a prototype).
 defineProps<{
     title: string;
     status: string;
@@ -20,6 +21,9 @@ defineProps<{
     hasCircuit: boolean;
     hasSchema: boolean;
     frameCount: number;
+    // A prototype: its screens are added in its own bar and played in Play,
+    // so there is no slide to add and nothing to present
+    prototype?: boolean;
 }>();
 const showValues = defineModel<boolean>('showValues', { required: true });
 const readingSchema = defineModel<boolean>('readingSchema', {
@@ -104,9 +108,14 @@ const emit = defineEmits<{
             <!-- Nothing to press on a phone -->
             <BoardShortcuts v-if="!compact" />
 
-            <SlideMenu :compact="compact" @add="emit('addSlide', $event)" />
+            <SlideMenu
+                v-if="!prototype"
+                :compact="compact"
+                @add="emit('addSlide', $event)"
+            />
 
             <button
+                v-if="!prototype"
                 type="button"
                 class="board-present"
                 :disabled="!frameCount"

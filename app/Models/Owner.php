@@ -59,6 +59,13 @@ interface Owner
     public function boards(): HasMany;
 
     /**
+     * Boards and prototypes together, as the MCP board tools reach them.
+     *
+     * @return HasMany<Board, covariant Model&Owner>
+     */
+    public function boardsAndPrototypes(): HasMany;
+
+    /**
      * @return HasMany<BoardFolder, covariant Model&Owner>
      */
     public function boardFolders(): HasMany;

@@ -3,6 +3,7 @@
 // the canvas and by the server (App\Support\Board\Shapes), so a shape is the
 // same shape wherever it is named. Add one there and both have it.
 import library from '@/features/boards/lib/shapes.json';
+import { kitDrawing } from './uikit';
 
 type Side = 'top' | 'right' | 'bottom' | 'left';
 
@@ -40,6 +41,14 @@ export type ShapeDef = {
     slide?: boolean;
     // What a new one starts with, where that is not what any shape does
     defaults?: Record<string, unknown>;
+    // A part of the UI kit: drawn for the size it is rather than stretched
+    // (model/uikit.ts), by this name
+    kit?: string;
+    // What its solid parts are filled with: a colour of their own -- a
+    // toggle's white knob -- or "ink", its words' colour. Left out, its line's
+    solidColour?: string;
+    // A kit part with an on and an off: the colours it is drawn in when off
+    off?: Partial<Record<'fill' | 'stroke' | 'color', string>>;
 };
 
 const SHAPES = new Map<string, ShapeDef>(
@@ -177,14 +186,61 @@ export const designOf = (item: {
         : undefined;
 
 /**
+ * A kit part as it looks just now: off, the colours its off state is drawn
+ * in (a grey track, an empty box, a word not underlined); on, or anything
+ * else, the item as it is.
+ */
+export const inItsState = <T extends { kind: string; on?: boolean }>(
+    item: T,
+): T => {
+    const off = shapeOf(item.kind)?.off;
+
+    return off && item.on === false ? { ...item, ...off } : item;
+};
+
+/**
  * What an item is drawn from: its kind's library entry, with whatever its
  * design draws differently laid over it.
  */
-export const lookOf = (item: { kind: string; variant?: string }) => {
+export const lookOf = (item: {
+    kind: string;
+    variant?: string;
+    // A kit part is drawn for its size; without one, at its own
+    width?: number;
+    height?: number;
+    // ...and on or off, a switch, a box, a radio or a tab
+    on?: boolean;
+}) => {
     const shape = shapeOf(item.kind);
     const design = designOf(item);
+    const kit =
+        shape?.kit && item.width && item.height
+            ? kitDrawing(
+                  shape.kit,
+                  item.width,
+                  item.height,
+                  !shape.off || item.on !== false,
+              )
+            : null;
+
+    if (kit) {
+        return {
+            solid: kit.solid,
+            shade: undefined,
+            noFill: shape?.noFill,
+            frame: undefined,
+            icon: undefined,
+            text: shape?.text,
+            insets: shape?.insets,
+            flat: shape?.flat,
+            hit: shape?.hit,
+            path: kit.path as string | undefined,
+            solidColour: shape?.solidColour,
+        };
+    }
 
     return {
+        solidColour: shape?.solidColour,
         solid: design ? design.solid : shape?.solid,
         shade: design?.shade,
         noFill: design?.noFill ?? shape?.noFill,

@@ -44,6 +44,7 @@ Route::prefix('internal/collab')
 require __DIR__.'/features/notes.php';
 require __DIR__.'/features/drive.php';
 require __DIR__.'/features/boards.php';
+require __DIR__.'/features/prototypes.php';
 require __DIR__.'/features/tables.php';
 require __DIR__.'/features/maps.php';
 require __DIR__.'/features/chats.php';

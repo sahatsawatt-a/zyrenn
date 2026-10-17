@@ -1,16 +1,46 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { ShapeDef } from '@/features/boards/model/shapes';
+import { kitDrawing } from '@/features/boards/model/uikit';
 
 // A shape from the library small, as its own button: the library's drawing of
 // it at the proportions it lands on the board with, so what is picked is what
 // is drawn.
 const props = defineProps<{ shape: ShapeDef }>();
 
+// A part of the UI kit is drawn for the size it is shown at: no wider than a
+// small screen's part, nor so thin its knobs and chevrons are lost
+const kitBox = computed(() => {
+    if (!props.shape.kit) {
+        return null;
+    }
+
+    const wide = Number(props.shape.defaults?.width ?? 160);
+    const tall = Number(props.shape.defaults?.height ?? 60);
+    const width = Math.min(wide, 160);
+
+    return {
+        width,
+        height: Math.min(width, Math.max(tall, width * 0.35)),
+    };
+});
+
+const drawing = computed(() =>
+    kitBox.value
+        ? (kitDrawing(
+              props.shape.kit!,
+              kitBox.value.width,
+              kitBox.value.height,
+          ) ?? props.shape)
+        : props.shape,
+);
+
 // As wide and tall as a new one is, held to a square it is centred in
 const size = computed(() => {
-    const width = Number(props.shape.defaults?.width ?? 200);
-    const height = Number(props.shape.defaults?.height ?? 140);
+    const width =
+        kitBox.value?.width ?? Number(props.shape.defaults?.width ?? 200);
+    const height =
+        kitBox.value?.height ?? Number(props.shape.defaults?.height ?? 140);
     const side = Math.max(width, height);
 
     // Nothing so thin that it is only a line: a brace, a lifeline
@@ -30,7 +60,7 @@ const fit = computed(
     <svg viewBox="-4 -4 108 108" aria-hidden="true">
         <g :transform="fit">
             <path
-                :d="shape.path"
+                :d="drawing.path"
                 fill="none"
                 stroke="currentColor"
                 stroke-width="1.4"
@@ -38,7 +68,7 @@ const fit = computed(
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"
             />
-            <path v-if="shape.solid" :d="shape.solid" fill="currentColor" />
+            <path v-if="drawing.solid" :d="drawing.solid" fill="currentColor" />
         </g>
     </svg>
 </template>

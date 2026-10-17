@@ -6,6 +6,7 @@ use App\Mcp\Tools\BoardTool;
 use App\Models\Board\Board;
 use App\Support\Board\BoardItemProblem;
 use App\Support\Board\BoardItems;
+use App\Support\Board\BoardTables;
 use App\Support\Board\CircuitLayout;
 use App\Support\Board\Deck;
 use App\Support\Board\Templates;
@@ -110,9 +111,15 @@ class CreateBoard extends BoardTool
             return Response::error($problem);
         }
 
+        try {
+            $content = $specs === [] && $deck === null ? null : Deck::content($specs === [] ? [] : BoardItems::fromSpec($specs, [], BoardTables::of($owner)), $deck);
+        } catch (BoardItemProblem $problem) {
+            return Response::error($problem->getMessage());
+        }
+
         $board = (new Board([
             'title' => $validated['title'],
-            'content' => $specs === [] && $deck === null ? null : Deck::content($specs === [] ? [] : BoardItems::fromSpec($specs), $deck),
+            'content' => $content,
         ]))->ownedBy($owner, $user);
         $board->folder_id = $this->ensureFolderAt($owner, $validated['folder'] ?? '', $user)?->id;
         $board->save();

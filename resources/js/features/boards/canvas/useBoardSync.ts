@@ -2,7 +2,7 @@ import type { HocuspocusProvider } from '@hocuspocus/provider';
 import { onBeforeUnmount, ref, watch } from 'vue';
 import type { Ref } from 'vue';
 import * as Y from 'yjs';
-import { hydrate } from '../model/items';
+import { bumpIdsPast, hydrate, newId } from '../model/items';
 import type { Item } from '../model/items';
 import type { useBoard } from './useBoard';
 
@@ -61,6 +61,12 @@ export function useBoardSync(
     let known = new Map<string, string>();
     let knownOrder: string[] = [];
     let ready = false;
+
+    // What the page was given, id => JSON: what is done here before the
+    // shared board arrives is told apart from it, and kept
+    const given = new Map(
+        board.items.value.map((item) => [item.id, JSON.stringify(item)]),
+    );
 
     // ------------------------------------------------ this board → everyone
     const push = () => {
@@ -168,7 +174,9 @@ export function useBoardSync(
     let pulling = false;
 
     const heard = (_event: unknown, transaction: Y.Transaction) => {
-        if (transaction.origin === local || pulling) {
+        // Before the shared board has wholly come, what comes of it waits:
+        // it is all read in at once then, with what was done here kept
+        if (transaction.origin === local || pulling || !ready) {
             return;
         }
 
@@ -184,18 +192,86 @@ export function useBoardSync(
 
     watch(board.revision, pushSoon);
 
+    /**
+     * What was done here before the shared board arrived, put back on top of
+     * it: what was added (under a new id if someone else has since used its
+     * one), what was changed, and what was taken away. Anything of the page's
+     * own that was not touched here is the shared board's as it now is.
+     */
+    const keepWhatWasDoneHere = (before: Item[]) => {
+        const present = new Set(before.map((item) => item.id));
+        const added = before.filter((item) => !given.has(item.id));
+        const changed = new Map(
+            before
+                .filter(
+                    (item) =>
+                        given.has(item.id) &&
+                        given.get(item.id) !== JSON.stringify(item),
+                )
+                .map((item) => [item.id, item]),
+        );
+        const removed = [...given.keys()].filter((id) => !present.has(id));
+
+        if (!added.length && !changed.size && !removed.length) {
+            return;
+        }
+
+        // Numbered past everything on the shared board as well
+        bumpIdsPast(board.items.value);
+
+        const taken = new Set(board.items.value.map((item) => item.id));
+        const renamed = new Map<string, string>();
+
+        for (const item of added) {
+            if (taken.has(item.id)) {
+                renamed.set(item.id, newId());
+            }
+        }
+
+        const named = (id: string | null) => (id && renamed.get(id)) ?? id;
+        const gone = new Set(removed);
+
+        board.items.value = [
+            ...board.items.value
+                .filter((item) => !gone.has(item.id))
+                .map((item) => {
+                    const mine = changed.get(item.id);
+
+                    return mine ? Object.assign(item, mine) : item;
+                }),
+            ...added.map((item) =>
+                Object.assign(item, {
+                    id: named(item.id)!,
+                    from: item.from && {
+                        ...item.from,
+                        item: named(item.from.item),
+                    },
+                    to: item.to && { ...item.to, item: named(item.to.item) },
+                }),
+            ),
+        ];
+    };
+
     // The board shows what the page was given until the shared one arrives,
-    // and then is the shared one: what the page was given can be older than
-    // what everyone has drawn since, so it is never written over it. (Pulled
-    // before writing is allowed: the board is taken as it is, and nothing of
-    // the page's own goes out with it -- which mattered when this started up
-    // against a document already open, as a remounted canvas does.)
+    // and then is the shared one -- what the page was given can be older than
+    // what everyone has drawn since, so it is never written over it -- with
+    // whatever was done here meanwhile put back on top, and sent. (When this
+    // starts up against a document already open, as a remounted canvas does,
+    // nothing has been done here yet, and the board is taken as it is.)
     watch(
         synced,
         (isSynced) => {
             if (isSynced && !ready) {
+                // Copied: pulling puts the shared board into these same objects
+                const before = board.items.value.map(
+                    (item) => JSON.parse(JSON.stringify(item)) as Item,
+                );
+
                 pull();
+                keepWhatWasDoneHere(before);
+                bumpIdsPast(board.items.value);
                 ready = true;
+                push();
             }
         },
         { immediate: true },

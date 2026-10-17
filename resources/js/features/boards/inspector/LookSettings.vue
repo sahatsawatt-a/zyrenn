@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { Plus, Sparkles, X } from '@lucide/vue';
 import { computed } from 'vue';
+import NumberField from '@/components/common/NumberField.vue';
+import RangeField from '@/components/common/RangeField.vue';
+import Tip from '@/components/common/Tip.vue';
 import {
     Popover,
     PopoverContent,
@@ -112,9 +115,6 @@ const BLENDS: { value: Blend; label: string }[] = [
 // The nine points of a picture to keep in view
 const SPOTS = [0, 0.5, 1].flatMap((y) => [0, 0.5, 1].map((x) => ({ x, y })));
 
-const number = (event: Event) =>
-    Number((event.target as HTMLInputElement).value);
-
 // ------------------------------------------------------------- a fill's fade
 const fades = computed(
     () =>
@@ -174,28 +174,29 @@ const dropStop = (at: number) =>
     <div class="space-y-2" data-test="look-settings">
         <label v-if="rounded" class="inspector-slider">
             Corners
-            <input
-                type="range"
-                min="0"
-                max="80"
-                :value="radius"
+            <RangeField
+                :model-value="radius"
+                label="Corners"
+                :min="0"
+                :max="80"
+                class="flex-1"
                 data-test="look-radius"
-                @input="emit('update', { radius: number($event) })"
+                @update:model-value="emit('update', { radius: $event })"
             />
-            <span>{{ radius }}</span>
         </label>
 
         <label class="inspector-slider">
             Opacity
-            <input
-                type="range"
-                min="0"
-                max="100"
-                :value="percent(first.opacity)"
+            <RangeField
+                :model-value="percent(first.opacity)"
+                label="Opacity"
+                :min="0"
+                :max="100"
+                unit="%"
+                class="flex-1"
                 data-test="look-opacity"
-                @input="emit('update', { opacity: number($event) / 100 })"
+                @update:model-value="emit('update', { opacity: $event / 100 })"
             />
-            <span>{{ percent(first.opacity) }}%</span>
         </label>
 
         <!-- A fill that fades: straight or out from the middle, through two
@@ -246,30 +247,38 @@ const dropStop = (at: number) =>
                             :swatch="stop.color"
                             @pick="recolour(at, $event)"
                         />
-                        <button
+                        <Tip
                             v-if="
                                 stops.length > 2 &&
                                 at > 0 &&
                                 at < stops.length - 1
                             "
-                            type="button"
-                            class="bg-background absolute -top-1.5 -right-1.5 rounded-full p-0.5"
-                            title="Take this colour out"
-                            @click="dropStop(at)"
+                            text="Take this colour out"
                         >
-                            <X :size="9" />
-                        </button>
+                            <button
+                                type="button"
+                                class="bg-background absolute -top-1.5 -right-1.5 rounded-full p-0.5"
+                                aria-label="Take this colour out"
+                                @click="dropStop(at)"
+                            >
+                                <X :size="9" />
+                            </button>
+                        </Tip>
                     </span>
-                    <button
+                    <Tip
                         v-if="stops.length < 6"
-                        type="button"
-                        class="hover:bg-muted rounded-md border p-1"
-                        title="Another colour in the fade"
-                        data-test="look-add-stop"
-                        @click="addStop"
+                        text="Another colour in the fade"
                     >
-                        <Plus :size="13" />
-                    </button>
+                        <button
+                            type="button"
+                            class="hover:bg-muted rounded-md border p-1"
+                            aria-label="Another colour in the fade"
+                            data-test="look-add-stop"
+                            @click="addStop"
+                        >
+                            <Plus :size="13" />
+                        </button>
+                    </Tip>
                     <span
                         class="inspector-chip ml-auto w-12"
                         :style="{ background: cssPaint(first) }"
@@ -279,23 +288,29 @@ const dropStop = (at: number) =>
                     v-if="first.gradientType !== 'radial'"
                     class="inspector-segments"
                 >
-                    <button
+                    <Tip
                         v-for="direction in DIRECTIONS"
                         :key="direction.angle"
-                        type="button"
-                        :title="direction.title"
-                        :class="{
-                            'is-on':
-                                (first.gradientAngle ?? 180) ===
-                                direction.angle,
-                        }"
-                        :data-test="`look-angle-${direction.angle}`"
-                        @click="
-                            emit('update', { gradientAngle: direction.angle })
-                        "
+                        :text="direction.title"
                     >
-                        {{ direction.label }}
-                    </button>
+                        <button
+                            type="button"
+                            :aria-label="direction.title"
+                            :class="{
+                                'is-on':
+                                    (first.gradientAngle ?? 180) ===
+                                    direction.angle,
+                            }"
+                            :data-test="`look-angle-${direction.angle}`"
+                            @click="
+                                emit('update', {
+                                    gradientAngle: direction.angle,
+                                })
+                            "
+                        >
+                            {{ direction.label }}
+                        </button>
+                    </Tip>
                 </div>
             </template>
         </div>
@@ -343,16 +358,18 @@ const dropStop = (at: number) =>
         <template v-if="worded">
             <label class="inspector-slider">
                 Letter spacing
-                <input
-                    type="range"
-                    min="0"
-                    max="20"
-                    step="0.5"
-                    :value="first.letterSpacing ?? 0"
+                <RangeField
+                    :model-value="first.letterSpacing ?? 0"
+                    label="Letter spacing"
+                    :min="0"
+                    :max="20"
+                    :step="0.5"
+                    class="flex-1"
                     data-test="look-letter-spacing"
-                    @input="emit('update', { letterSpacing: number($event) })"
+                    @update:model-value="
+                        emit('update', { letterSpacing: $event })
+                    "
                 />
-                <span>{{ first.letterSpacing ?? 0 }}</span>
             </label>
             <label class="inspector-switch">
                 Capitals
@@ -425,61 +442,61 @@ const dropStop = (at: number) =>
                     />
                     <label class="inspector-slider flex-1">
                         Size
-                        <input
-                            type="range"
-                            min="4"
-                            max="120"
-                            :value="first.glowSize ?? 24"
+                        <RangeField
+                            :model-value="first.glowSize ?? 24"
+                            label="Glow size"
+                            :min="4"
+                            :max="120"
+                            :format="false"
+                            class="flex-1"
                             data-test="look-glow-size"
-                            @input="
-                                emit('update', { glowSize: number($event) })
+                            @update:model-value="
+                                emit('update', { glowSize: $event })
                             "
                         />
                     </label>
                 </div>
                 <label class="inspector-slider">
                     Blur
-                    <input
-                        type="range"
-                        min="0"
-                        max="60"
-                        :value="first.blur ?? 0"
+                    <RangeField
+                        :model-value="first.blur ?? 0"
+                        label="Blur"
+                        :min="0"
+                        :max="60"
+                        class="flex-1"
                         data-test="look-blur"
-                        @input="emit('update', { blur: number($event) })"
+                        @update:model-value="emit('update', { blur: $event })"
                     />
-                    <span>{{ first.blur ?? 0 }}</span>
                 </label>
                 <label class="inspector-slider">
                     Fill
-                    <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        :value="percent(first.fillOpacity)"
+                    <RangeField
+                        :model-value="percent(first.fillOpacity)"
+                        label="Fill opacity"
+                        :min="0"
+                        :max="100"
+                        unit="%"
+                        class="flex-1"
                         data-test="look-fill-opacity"
-                        @input="
-                            emit('update', {
-                                fillOpacity: number($event) / 100,
-                            })
+                        @update:model-value="
+                            emit('update', { fillOpacity: $event / 100 })
                         "
                     />
-                    <span>{{ percent(first.fillOpacity) }}%</span>
                 </label>
                 <label class="inspector-slider">
                     Line
-                    <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        :value="percent(first.strokeOpacity)"
+                    <RangeField
+                        :model-value="percent(first.strokeOpacity)"
+                        label="Line opacity"
+                        :min="0"
+                        :max="100"
+                        unit="%"
+                        class="flex-1"
                         data-test="look-line-opacity"
-                        @input="
-                            emit('update', {
-                                strokeOpacity: number($event) / 100,
-                            })
+                        @update:model-value="
+                            emit('update', { strokeOpacity: $event / 100 })
                         "
                     />
-                    <span>{{ percent(first.strokeOpacity) }}%</span>
                 </label>
                 <div class="space-y-1">
                     <p class="inspector-label">Blend</p>
@@ -513,20 +530,26 @@ const dropStop = (at: number) =>
         <div v-if="focused" class="inspector-align">
             <p class="inspector-label">Keep in view</p>
             <div class="grid w-fit grid-cols-3 gap-1" data-test="look-focus">
-                <button
+                <Tip
                     v-for="spot in SPOTS"
                     :key="`${spot.x}-${spot.y}`"
-                    type="button"
-                    class="size-5 rounded border"
-                    :class="
-                        (focused.focusX ?? 0.5) === spot.x &&
-                        (focused.focusY ?? 0.5) === spot.y
-                            ? 'border-primary bg-primary'
-                            : 'border-border hover:bg-muted'
-                    "
-                    :title="`Keep the ${['top', 'middle', 'bottom'][spot.y * 2]} ${['left', 'centre', 'right'][spot.x * 2]} in view`"
-                    @click="emit('update', { focusX: spot.x, focusY: spot.y })"
-                />
+                    :text="`Keep the ${['top', 'middle', 'bottom'][spot.y * 2]} ${['left', 'centre', 'right'][spot.x * 2]} in view`"
+                >
+                    <button
+                        type="button"
+                        class="size-5 rounded border"
+                        :class="
+                            (focused.focusX ?? 0.5) === spot.x &&
+                            (focused.focusY ?? 0.5) === spot.y
+                                ? 'border-primary bg-primary'
+                                : 'border-border hover:bg-muted'
+                        "
+                        :aria-label="`Keep the ${['top', 'middle', 'bottom'][spot.y * 2]} ${['left', 'centre', 'right'][spot.x * 2]} in view`"
+                        @click="
+                            emit('update', { focusX: spot.x, focusY: spot.y })
+                        "
+                    />
+                </Tip>
             </div>
         </div>
 
@@ -534,16 +557,16 @@ const dropStop = (at: number) =>
              PDFs of the board too -->
         <label v-if="video" class="inspector-slider">
             Still at
-            <input
-                type="number"
-                min="0"
-                step="0.5"
-                class="w-16 rounded border bg-transparent px-1 text-right"
-                :value="video.posterAt ?? 0"
+            <NumberField
+                :model-value="video.posterAt ?? 0"
+                label="Still at, in seconds"
+                :min="0"
+                :step="0.5"
+                unit="s"
+                compact
                 data-test="look-poster-at"
-                @change="emit('update', { posterAt: number($event) })"
+                @change="emit('update', { posterAt: $event ?? 0 })"
             />
-            <span>s</span>
         </label>
     </div>
 </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { Ellipse, Line, Path, Rect, Star } from 'vue-konva';
 import type { Hops } from '@/lib/lineHops';
 import { polygonPoints } from '../model/geometry';
@@ -6,6 +7,8 @@ import { pressed } from '../model/ink';
 import type { Item } from '../model/items';
 import { POLYGONS, hasText, isConnector, isPath } from '../model/items';
 import { hasHeader, headerSide } from '../model/rows';
+import { isSketched } from '../model/sketch';
+import { fontReady } from './fonts';
 import { SELECTED, useItemLook } from './itemLook';
 import ConnectorShape from './kinds/ConnectorShape.vue';
 import FrameShape from './kinds/FrameShape.vue';
@@ -13,9 +16,12 @@ import InkShape from './kinds/InkShape.vue';
 import ItemLabel from './kinds/ItemLabel.vue';
 import LibraryShape from './kinds/LibraryShape.vue';
 import PictureShape from './kinds/PictureShape.vue';
+import SketchShape from './kinds/SketchShape.vue';
 import SymbolShape from './kinds/SymbolShape.vue';
 import VideoShape from './kinds/VideoShape.vue';
+import { fittedHeight } from './labels';
 import { paint, strokePaint } from './paint';
+import { figureOf } from './sketch';
 
 // How one thing on the board is drawn. The canvas decides where it sits and
 // what may be done to it; this decides what it looks like. A kind with much
@@ -42,9 +48,37 @@ const props = defineProps<{
     path: number[];
     // Where it hops over the lines it crosses, by the run of its path
     hops?: Hops;
+    // Where a connector's label goes, clear of the items about it
+    labelAt?: { x: number; y: number } | null;
 }>();
 
 const { shown, edge } = useItemLook(props);
+
+// A sticky is drawn as tall as its words, should it be kept shorter -- one
+// written before its paper grew to hold them, or sent too short -- so none
+// are left out on the board. (Once its font has come, to be measured in.)
+const paper = computed(() => {
+    const item = props.item;
+
+    if (item.kind !== 'sticky' || !fontReady(item.fontFamily)) {
+        return item;
+    }
+
+    const height = fittedHeight(item);
+
+    return height === item.height ? item : { ...item, height };
+});
+
+// Drawn as by hand: the plain shapes here, the library's in LibraryShape,
+// a frame's edge in FrameShape and a connector's line in ConnectorShape
+const sketched = computed(() =>
+    isSketched(props.item) &&
+    !isPath(props.item.kind) &&
+    props.item.kind !== 'frame' &&
+    props.item.kind !== 'arrow'
+        ? figureOf(paper.value)
+        : null,
+);
 </script>
 
 <template>
@@ -56,12 +90,23 @@ const { shown, edge } = useItemLook(props);
         :image="image"
     />
 
+    <SketchShape
+        v-else-if="sketched"
+        :item="item"
+        :selected="selected"
+        :figure="sketched"
+        :stroke="
+            item.kind === 'sticky' && !selected ? 'transparent' : undefined
+        "
+        :line-width="item.kind === 'sticky' ? (selected ? 2 : 0) : undefined"
+    />
+
     <Rect
         v-else-if="item.kind === 'sticky'"
         :config="{
             width: item.width,
-            height: item.height,
-            ...paint(item, item.width, item.height),
+            height: paper.height,
+            ...paint(item, item.width, paper.height),
             cornerRadius: item.radius ?? 4,
             shadowColor: 'black',
             shadowOpacity: 0.12,
@@ -243,6 +288,7 @@ const { shown, edge } = useItemLook(props);
         :worked="worked"
         :path="path"
         :hops="hops"
+        :label-at="labelAt"
     />
 
     <!-- A label sits inside every shape except plain text, which is the
@@ -255,7 +301,7 @@ const { shown, edge } = useItemLook(props);
             item.kind !== 'symbol' &&
             !(hasHeader(item) && headerSide(item) === 'left')
         "
-        :item="item"
+        :item="paper"
         :selected="selected"
         :editing="editing"
     />

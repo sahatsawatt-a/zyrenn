@@ -1,11 +1,21 @@
 <script setup lang="ts">
 import { ChevronDown } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import FoldSection from '@/components/common/FoldSection.vue';
+import RangeField from '@/components/common/RangeField.vue';
+import Tip from '@/components/common/Tip.vue';
 import {
     Popover,
     PopoverContent,
     PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import type {
     Item,
     LineStyle,
@@ -57,6 +67,11 @@ const styles: LineStyle[] = ['solid', 'dashed', 'dotted'];
 
 const pinnedSide = (end: 'from' | 'to'): Side | null =>
     props.line[end]?.side ?? null;
+
+// A list cannot hold an empty choice, so "auto" stands for no side
+const AUTO = 'auto';
+
+const endsOpen = ref(false);
 
 // The end keeps whatever it is pinned to; only its face changes
 const pinSide = (end: 'from' | 'to', side: Side | null) => {
@@ -121,137 +136,138 @@ const pinSide = (end: 'from' | 'to', side: Side | null) => {
 
         <p class="inspector-label">Routing</p>
         <div class="inspector-segments">
-            <button
-                v-for="option in routings"
-                :key="option"
-                type="button"
-                :title="option"
-                :class="{ 'is-on': line.routing === option }"
-                :data-test="`routing-${option}`"
-                @click="emit('update', { routing: option })"
-            >
-                <ConnectorIcon :kind="option" />
-            </button>
+            <Tip v-for="option in routings" :key="option" :text="option">
+                <button
+                    type="button"
+                    :aria-label="option"
+                    :class="{ 'is-on': line.routing === option }"
+                    :data-test="`routing-${option}`"
+                    @click="emit('update', { routing: option })"
+                >
+                    <ConnectorIcon :kind="option" />
+                </button>
+            </Tip>
         </div>
 
         <p class="inspector-label">Line</p>
         <div class="inspector-segments">
-            <button
-                v-for="option in styles"
-                :key="option"
-                type="button"
-                :title="option"
-                :class="{ 'is-on': line.lineStyle === option }"
-                :data-test="`style-${option}`"
-                @click="emit('update', { lineStyle: option })"
-            >
-                <ConnectorIcon :kind="option" />
-            </button>
+            <Tip v-for="option in styles" :key="option" :text="option">
+                <button
+                    type="button"
+                    :aria-label="option"
+                    :class="{ 'is-on': line.lineStyle === option }"
+                    :data-test="`style-${option}`"
+                    @click="emit('update', { lineStyle: option })"
+                >
+                    <ConnectorIcon :kind="option" />
+                </button>
+            </Tip>
         </div>
 
         <label class="inspector-slider">
             Thickness
-            <input
-                type="range"
-                min="1"
-                max="8"
-                :value="line.lineWidth"
+            <RangeField
+                :model-value="line.lineWidth"
+                label="Thickness"
+                :min="1"
+                :max="8"
+                class="flex-1"
                 data-test="line-width"
-                @input="
-                    emit('update', {
-                        lineWidth: Number(
-                            ($event.target as HTMLInputElement).value,
-                        ),
-                    })
-                "
+                @update:model-value="emit('update', { lineWidth: $event })"
             />
-            <span>{{ line.lineWidth }}</span>
         </label>
 
         <div class="inspector-fields">
-            <label
-                v-for="end in ['from', 'to'] as const"
-                :key="end"
-                :title="'Auto keeps this end facing whatever is at the other; a face keeps it there'"
-            >
+            <div v-for="end in ['from', 'to'] as const" :key="end">
                 {{ end === 'from' ? 'Start on' : 'End on' }}
-                <select
-                    :value="pinnedSide(end) ?? ''"
-                    :data-test="`side-${end}`"
-                    @change="
+                <Select
+                    :model-value="pinnedSide(end) ?? AUTO"
+                    @update:model-value="
                         pinSide(
                             end,
-                            (($event.target as HTMLSelectElement).value ||
-                                null) as Side | null,
+                            ($event === AUTO ? null : $event) as Side | null,
                         )
                     "
                 >
-                    <option value="">Auto</option>
-                    <option v-for="side in SIDES" :key="side" :value="side">
-                        {{ side }}
-                    </option>
-                </select>
-            </label>
+                    <SelectTrigger
+                        size="sm"
+                        class="h-7 w-full px-2 text-xs capitalize"
+                        :aria-label="end === 'from' ? 'Start on' : 'End on'"
+                        :data-test="`side-${end}`"
+                        :data-value="pinnedSide(end) ?? ''"
+                    >
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem :value="AUTO" class="text-xs"
+                            >Auto</SelectItem
+                        >
+                        <SelectItem
+                            v-for="side in SIDES"
+                            :key="side"
+                            :value="side"
+                            class="text-xs capitalize"
+                            >{{ side }}</SelectItem
+                        >
+                    </SelectContent>
+                </Select>
+            </div>
         </div>
 
-        <details class="inspector-fold" data-test="ends-config">
-            <summary>
-                Ends
-                <span
-                    >{{ headLabel(line.startHead) }} →
-                    {{ headLabel(line.endHead) }}</span
-                >
-            </summary>
+        <FoldSection
+            v-model:open="endsOpen"
+            title="Ends"
+            :hint="`${headLabel(line.startHead)} → ${headLabel(line.endHead)}`"
+            data-test="ends-config"
+        >
             <div
                 v-for="side in ['start', 'end'] as const"
                 :key="side"
                 class="inspector-heads"
             >
                 <span>{{ side }}</span>
-                <button
+                <Tip
                     v-for="head in HEAD_TYPES"
                     :key="head.value"
-                    type="button"
-                    :title="`${side}: ${head.label}`"
-                    :class="{
-                        'is-on':
-                            (side === 'start'
-                                ? line.startHead
-                                : line.endHead) === head.value,
-                    }"
-                    :data-test="`head-${side}-${head.value}`"
-                    @click="
-                        emit(
-                            'update',
-                            side === 'start'
-                                ? { startHead: head.value }
-                                : { endHead: head.value },
-                        )
-                    "
+                    :text="head.label"
                 >
-                    <ConnectorIcon :kind="{ head: head.value, side }" />
-                </button>
+                    <button
+                        type="button"
+                        :aria-label="`${side}: ${head.label}`"
+                        :class="{
+                            'is-on':
+                                (side === 'start'
+                                    ? line.startHead
+                                    : line.endHead) === head.value,
+                        }"
+                        :data-test="`head-${side}-${head.value}`"
+                        @click="
+                            emit(
+                                'update',
+                                side === 'start'
+                                    ? { startHead: head.value }
+                                    : { endHead: head.value },
+                            )
+                        "
+                    >
+                        <ConnectorIcon :kind="{ head: head.value, side }" />
+                    </button>
+                </Tip>
             </div>
 
             <label class="inspector-slider">
                 Head size
-                <input
-                    type="range"
-                    min="6"
-                    max="24"
-                    :value="line.headSize"
+                <RangeField
+                    :model-value="line.headSize"
+                    label="Head size"
+                    :min="6"
+                    :max="24"
+                    class="flex-1"
                     data-test="head-size"
-                    @input="
-                        emit('update', {
-                            headSize: Number(
-                                ($event.target as HTMLInputElement).value,
-                            ),
-                        })
-                    "
+                    @update:model-value="emit('update', { headSize: $event })"
                 />
-                <span>{{ line.headSize }}</span>
             </label>
-        </details>
+        </FoldSection>
     </div>
 </template>
 
@@ -412,38 +428,14 @@ const pinSide = (end: 'from' | 'to', side: Side | null) => {
     background-color: color-mix(in oklab, var(--primary) 10%, transparent);
 }
 
-/* A fold keeps the fiddly settings out of the way until they are wanted */
-.inspector-fold > summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.25rem 0;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--muted-foreground);
-    cursor: pointer;
-}
-
-.inspector-fold > summary span {
-    font-weight: 400;
-    letter-spacing: 0;
-    text-transform: none;
-}
-
-.inspector-fold[open] > summary {
-    margin-bottom: 0.25rem;
-}
-
 /* Two short pickers, where ten buttons used to be */
 .inspector-fields {
     display: flex;
     gap: 0.375rem;
 }
 
-.inspector-fields label {
+.inspector-fields > div {
+    min-width: 0;
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -452,35 +444,12 @@ const pinSide = (end: 'from' | 'to', side: Side | null) => {
     color: var(--muted-foreground);
 }
 
-.inspector-fields select {
-    height: 1.75rem;
-    padding: 0 0.25rem;
-    font-size: 0.75rem;
-    color: var(--foreground);
-    background-color: var(--background);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    text-transform: capitalize;
-    cursor: pointer;
-}
-
 .inspector-slider {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     font-size: 0.6875rem;
     color: var(--muted-foreground);
-}
-
-.inspector-slider input {
-    flex: 1;
-    min-width: 0;
-}
-
-.inspector-slider span {
-    width: 1.25rem;
-    text-align: right;
-    color: var(--foreground);
 }
 
 .inspector-label {

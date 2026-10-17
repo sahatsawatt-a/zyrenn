@@ -20,7 +20,6 @@ import {
     Pencil,
     RectangleHorizontal,
     Redo2,
-    Search,
     Shapes,
     Sigma,
     Square,
@@ -33,6 +32,7 @@ import {
 import { useLocalStorage } from '@vueuse/core';
 import type { Component, Ref } from 'vue';
 import { computed, ref, watch } from 'vue';
+import SearchField from '@/components/common/SearchField.vue';
 import {
     Popover,
     PopoverContent,
@@ -47,6 +47,7 @@ import ShapeIcon from '../inspector/ShapeIcon.vue';
 import type { MyShape } from '../model/myShapes';
 import MyShapesSection from './MyShapesSection.vue';
 import SymbolIcon from '../circuit/SymbolIcon.vue';
+import Tip from '@/components/common/Tip.vue';
 
 // The tools along the bottom middle of the canvas: the everyday ones a click
 // away, and the many shapes in a flyout of their own, so the bar stays one
@@ -63,6 +64,8 @@ const props = defineProps<{
     // Shapes of one's own to put on the board; null where there are none to
     // have, as on the demo board
     myShapes?: MyShape[] | null;
+    // A prototype's board: the UI kit comes first, and open
+    kitFirst?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -93,7 +96,7 @@ type Entry = {
 };
 
 // A set of shapes for one kind of diagram, kept to a single row until wanted
-type Fold = 'Software' | 'Architecture' | 'Electrical';
+type Fold = 'UI kit' | 'Software' | 'Architecture' | 'Electrical';
 
 type Group = { name: string; fold?: Fold; entries: Entry[] };
 
@@ -192,6 +195,7 @@ const groups: Group[] = [
             ...fromLibrary('Flowchart'),
         ],
     },
+    { name: 'UI kit', fold: 'UI kit', entries: fromLibrary('UI kit') },
     { name: 'Software', fold: 'Software', entries: fromLibrary('Software') },
     {
         name: 'Architecture',
@@ -232,14 +236,24 @@ const placeShape = (shape: MyShape) => {
     search.value = '';
 };
 
+// On a prototype's board the UI kit is what is wanted most: first
+const ordered = computed(() =>
+    props.kitFirst
+        ? [
+              ...groups.filter((group) => group.fold === 'UI kit'),
+              ...groups.filter((group) => group.fold !== 'UI kit'),
+          ]
+        : groups,
+);
+
 const shown = computed(() => {
     const term = search.value.trim().toLowerCase();
 
     if (!term) {
-        return groups;
+        return ordered.value;
     }
 
-    return groups
+    return ordered.value
         .map((group) => ({
             ...group,
             entries: group.entries.filter(
@@ -273,6 +287,10 @@ const firstOf = computed(() => {
 // a row until somebody wants them, and then stay open for whoever does. A
 // search looks through them either way.
 const folds: Record<Fold, { open: Ref<boolean>; title: string }> = {
+    'UI kit': {
+        open: useLocalStorage('board.fold.uikit', false),
+        title: 'Bars, buttons, fields, lists and cards, for the screens of a prototype',
+    },
     Software: {
         open: useLocalStorage('board.fold.software', false),
         title: 'Tables, classes, actors, packages, notes and lifelines',
@@ -288,7 +306,9 @@ const folds: Record<Fold, { open: Ref<boolean>; title: string }> = {
 };
 
 const unfolded = (fold: Fold) =>
-    folds[fold].open.value || search.value.trim() !== '';
+    folds[fold].open.value ||
+    search.value.trim() !== '' ||
+    (fold === 'UI kit' && !!props.kitFirst);
 
 const circuitFromText = () => {
     emit('circuit-text');
@@ -303,305 +323,347 @@ const pickShape = (entry: Entry) => {
 </script>
 
 <template>
-    <aside class="rail" data-test="shape-library">
-        <button
+    <aside
+        class="rail"
+        :class="{ 'is-compact': compact }"
+        data-test="shape-library"
+    >
+        <Tip
             v-for="entry in before"
             :key="entry.tool"
-            type="button"
-            class="rail-button"
-            :class="{ 'is-active': tool === entry.tool }"
-            :title="`${entry.label} (${entry.key})`"
-            :aria-label="entry.label"
-            :data-test="`tool-${entry.tool}`"
-            @click="emit('update:tool', entry.tool)"
+            :text="`${entry.label} (${entry.key})`"
         >
-            <component :is="entry.icon" class="size-[18px]" />
-        </button>
-
-        <Popover v-model:open="open">
-            <PopoverTrigger as-child>
-                <button
-                    type="button"
-                    class="rail-button has-more"
-                    :class="{ 'is-active': shapeActive || open }"
-                    title="Shapes and flowchart"
-                    aria-label="Shapes"
-                    data-test="tool-shapes"
-                >
-                    <SymbolIcon
-                        v-if="lastShape.symbol"
-                        :symbol="lastShape.symbol"
-                        class="size-[22px]"
-                    />
-                    <ShapeIcon
-                        v-else-if="lastShape.shape"
-                        :shape="lastShape.shape"
-                        class="size-[20px]"
-                    />
-                    <component
-                        :is="lastShape.icon"
-                        v-else
-                        class="size-[18px]"
-                    />
-                </button>
-            </PopoverTrigger>
-            <PopoverContent
-                side="top"
-                align="center"
-                :side-offset="12"
-                class="max-h-[min(30rem,70svh)] w-64 overflow-y-auto p-2.5 data-[state=closed]:animate-none"
-                data-test="shape-flyout"
+            <button
+                type="button"
+                class="rail-button"
+                :class="{ 'is-active': tool === entry.tool }"
+                :aria-label="entry.label"
+                :data-test="`tool-${entry.tool}`"
+                @click="emit('update:tool', entry.tool)"
             >
-                <label class="library-search">
-                    <Search class="text-muted-foreground size-3.5 shrink-0" />
-                    <input
-                        v-model="search"
-                        type="search"
-                        placeholder="Search shapes"
-                        data-test="shape-search"
-                    />
-                </label>
+                <component :is="entry.icon" class="size-[18px]" />
+            </button>
+        </Tip>
 
-                <MyShapesSection
-                    v-if="myShapes"
-                    :shapes="myShapes"
-                    :search="search"
-                    @place="placeShape"
-                    @rename="(shape, name) => emit('rename-shape', shape, name)"
-                    @remove="emit('remove-shape', $event)"
-                />
-
-                <template v-for="group in shown" :key="group.name">
-                    <!-- Above the first of a folded set: the row that unfolds
-                         it -- and, for circuits, the other way to put one on -->
-                    <div
-                        v-if="firstOf.get(group.name)"
-                        class="library-electrical"
-                    >
+        <!-- The tip is round the whole popover: inside it, the tip's own
+             anchor would be taken for the popover's -->
+        <Tip text="Shapes and flowchart">
+            <span class="inline-flex">
+                <Popover v-model:open="open">
+                    <PopoverTrigger as-child>
                         <button
                             type="button"
-                            class="library-fold"
-                            :aria-expanded="unfolded(group.fold!)"
-                            :title="folds[group.fold!].title"
-                            :data-test="`${group.fold!.toLowerCase()}-toggle`"
-                            @click="
-                                folds[group.fold!].open.value =
-                                    !folds[group.fold!].open.value
-                            "
+                            class="rail-button has-more"
+                            :class="{ 'is-active': shapeActive || open }"
+                            aria-label="Shapes"
+                            data-test="tool-shapes"
                         >
-                            <ChevronRight
-                                class="size-3.5 transition-transform"
-                                :class="{
-                                    'rotate-90': unfolded(group.fold!),
-                                }"
+                            <SymbolIcon
+                                v-if="lastShape.symbol"
+                                :symbol="lastShape.symbol"
+                                class="size-[22px]"
                             />
-                            {{ group.fold }}
+                            <ShapeIcon
+                                v-else-if="lastShape.shape"
+                                :shape="lastShape.shape"
+                                class="size-[20px]"
+                            />
+                            <component
+                                :is="lastShape.icon"
+                                v-else
+                                class="size-[18px]"
+                            />
                         </button>
-                        <button
-                            v-if="
-                                group.fold === 'Electrical' &&
-                                unfolded(group.fold)
-                            "
-                            type="button"
-                            class="library-link"
-                            title="Write a circuit as text and have it laid out"
-                            data-test="circuit-from-text"
-                            @click="circuitFromText"
-                        >
-                            From text…
-                        </button>
-                    </div>
-                    <section
-                        v-if="!group.fold || unfolded(group.fold)"
-                        :class="group.fold === group.name ? 'mt-1.5' : 'mt-2.5'"
+                    </PopoverTrigger>
+                    <PopoverContent
+                        side="top"
+                        align="center"
+                        :side-offset="12"
+                        class="max-h-[min(30rem,70svh)] w-64 overflow-y-auto p-2.5 data-[state=closed]:animate-none"
+                        data-test="shape-flyout"
                     >
-                        <!-- A set of one group is named by its row already -->
-                        <p
-                            v-if="group.fold !== group.name"
-                            class="library-heading"
-                        >
-                            {{ group.name }}
-                        </p>
-                        <div class="library-grid">
-                            <button
-                                v-for="entry in group.entries"
-                                :key="entry.tool"
-                                type="button"
-                                class="library-item"
-                                :class="{ 'is-active': tool === entry.tool }"
-                                :title="titleOf(entry)"
-                                :data-test="`tool-${entry.tool}`"
-                                @click="pickShape(entry)"
+                        <SearchField
+                            v-model="search"
+                            placeholder="Search shapes"
+                            compact
+                            data-test="shape-search"
+                        />
+
+                        <MyShapesSection
+                            v-if="myShapes"
+                            :shapes="myShapes"
+                            :search="search"
+                            @place="placeShape"
+                            @rename="
+                                (shape, name) =>
+                                    emit('rename-shape', shape, name)
+                            "
+                            @remove="emit('remove-shape', $event)"
+                        />
+
+                        <template v-for="group in shown" :key="group.name">
+                            <!-- Above the first of a folded set: the row that unfolds
+                                 it -- and, for circuits, the other way to put one on -->
+                            <div
+                                v-if="firstOf.get(group.name)"
+                                class="library-electrical"
                             >
-                                <SymbolIcon
-                                    v-if="entry.symbol"
-                                    :symbol="entry.symbol"
-                                    class="size-7"
-                                />
-                                <ShapeIcon
-                                    v-else-if="entry.shape"
-                                    :shape="entry.shape"
-                                    class="size-6"
-                                />
-                                <component
-                                    :is="entry.icon"
-                                    v-else
-                                    class="size-5"
-                                />
-                                <span>{{ entry.label }}</span>
-                            </button>
-                        </div>
-                    </section>
-                </template>
+                                <button
+                                    type="button"
+                                    class="library-fold"
+                                    :aria-expanded="unfolded(group.fold!)"
+                                    :title="folds[group.fold!].title"
+                                    :data-test="`${group.fold!.toLowerCase()}-toggle`"
+                                    @click="
+                                        folds[group.fold!].open.value =
+                                            !folds[group.fold!].open.value
+                                    "
+                                >
+                                    <ChevronRight
+                                        class="size-3.5 transition-transform"
+                                        :class="{
+                                            'rotate-90': unfolded(group.fold!),
+                                        }"
+                                    />
+                                    {{ group.fold }}
+                                </button>
+                                <button
+                                    v-if="
+                                        group.fold === 'Electrical' &&
+                                        unfolded(group.fold)
+                                    "
+                                    type="button"
+                                    class="library-link"
+                                    title="Write a circuit as text and have it laid out"
+                                    data-test="circuit-from-text"
+                                    @click="circuitFromText"
+                                >
+                                    From text…
+                                </button>
+                            </div>
+                            <section
+                                v-if="!group.fold || unfolded(group.fold)"
+                                :class="
+                                    group.fold === group.name
+                                        ? 'mt-1.5'
+                                        : 'mt-2.5'
+                                "
+                            >
+                                <!-- A set of one group is named by its row already -->
+                                <p
+                                    v-if="group.fold !== group.name"
+                                    class="library-heading"
+                                >
+                                    {{ group.name }}
+                                </p>
+                                <div class="library-grid">
+                                    <Tip
+                                        v-for="entry in group.entries"
+                                        :key="entry.tool"
+                                        :text="titleOf(entry)"
+                                    >
+                                        <button
+                                            type="button"
+                                            class="library-item"
+                                            :class="{
+                                                'is-active':
+                                                    tool === entry.tool,
+                                            }"
+                                            :data-test="`tool-${entry.tool}`"
+                                            @click="pickShape(entry)"
+                                        >
+                                            <SymbolIcon
+                                                v-if="entry.symbol"
+                                                :symbol="entry.symbol"
+                                                class="size-7"
+                                            />
+                                            <ShapeIcon
+                                                v-else-if="entry.shape"
+                                                :shape="entry.shape"
+                                                class="size-6"
+                                            />
+                                            <component
+                                                :is="entry.icon"
+                                                v-else
+                                                class="size-5"
+                                            />
+                                            <span>{{ entry.label }}</span>
+                                        </button>
+                                    </Tip>
+                                </div>
+                            </section>
+                        </template>
 
-                <p v-if="!shown.length" class="library-empty">
-                    Nothing matches “{{ search }}”.
-                </p>
-            </PopoverContent>
-        </Popover>
+                        <p v-if="!shown.length" class="library-empty">
+                            Nothing matches “{{ search }}”.
+                        </p>
+                    </PopoverContent>
+                </Popover>
+            </span>
+        </Tip>
 
-        <button
+        <Tip
             v-for="entry in afterShown"
             :key="entry.tool"
-            type="button"
-            class="rail-button"
-            :class="{ 'is-active': tool === entry.tool }"
-            :title="`${entry.label} (${entry.key})`"
-            :aria-label="entry.label"
-            :data-test="`tool-${entry.tool}`"
-            @click="emit('update:tool', entry.tool)"
+            :text="`${entry.label} (${entry.key})`"
         >
-            <component :is="entry.icon" class="size-[18px]" />
-        </button>
+            <button
+                type="button"
+                class="rail-button"
+                :class="{ 'is-active': tool === entry.tool }"
+                :aria-label="entry.label"
+                :data-test="`tool-${entry.tool}`"
+                @click="emit('update:tool', entry.tool)"
+            >
+                <component :is="entry.icon" class="size-[18px]" />
+            </button>
+        </Tip>
 
         <!-- On a phone: the tools drawn with less often, pictures and
              videos, and what the bar above would have no room for -->
-        <Popover v-if="compact" v-model:open="more">
-            <PopoverTrigger as-child>
-                <button
-                    type="button"
-                    class="rail-button"
-                    :class="{
-                        'is-active':
-                            more ||
-                            afterFolded.some((entry) => entry.tool === tool),
-                    }"
-                    title="More to add"
-                    aria-label="More"
-                    data-test="tool-more"
-                >
-                    <Ellipsis class="size-[18px]" />
-                </button>
-            </PopoverTrigger>
-            <PopoverContent
-                side="top"
-                align="center"
-                :side-offset="12"
-                class="w-56 p-1.5"
-                data-test="more-flyout"
-            >
-                <button
-                    v-for="entry in afterFolded"
-                    :key="entry.tool"
-                    type="button"
-                    class="more-item"
-                    :class="{ 'is-active': tool === entry.tool }"
-                    :data-test="`tool-${entry.tool}`"
-                    @click="fromMore(() => emit('update:tool', entry.tool))"
-                >
-                    <component :is="entry.icon" class="size-[18px]" />
-                    {{ entry.label }}
-                </button>
-                <button
-                    type="button"
-                    class="more-item"
-                    data-test="open-image-picker"
-                    @click="fromMore(() => emit('add-picture'))"
-                >
-                    <ImagePlus class="size-[18px]" />
-                    Picture
-                </button>
-                <button
-                    type="button"
-                    class="more-item"
-                    data-test="open-video-picker"
-                    @click="fromMore(() => emit('add-video'))"
-                >
-                    <Clapperboard class="size-[18px]" />
-                    Video
-                </button>
-                <span class="more-rule" />
-                <button
-                    type="button"
-                    class="more-item"
-                    data-test="board-templates"
-                    @click="fromMore(() => emit('templates'))"
-                >
-                    <LayoutTemplate class="size-[18px]" />
-                    Start from a template
-                </button>
-                <button
-                    v-if="hasSchema"
-                    type="button"
-                    class="more-item"
-                    data-test="board-schema"
-                    @click="fromMore(() => emit('schema'))"
-                >
-                    <Database class="size-[18px]" />
-                    Tables as SQL
-                </button>
-            </PopoverContent>
-        </Popover>
+        <!-- The tip is round the whole popover: inside it, the tip's own
+             anchor would be taken for the popover's -->
+        <Tip v-if="compact" text="More to add">
+            <span class="inline-flex">
+                <Popover v-model:open="more">
+                    <PopoverTrigger as-child>
+                        <button
+                            type="button"
+                            class="rail-button"
+                            :class="{
+                                'is-active':
+                                    more ||
+                                    afterFolded.some(
+                                        (entry) => entry.tool === tool,
+                                    ),
+                            }"
+                            aria-label="More"
+                            data-test="tool-more"
+                        >
+                            <Ellipsis class="size-[18px]" />
+                        </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                        side="top"
+                        align="center"
+                        :side-offset="12"
+                        class="w-56 p-1.5"
+                        data-test="more-flyout"
+                    >
+                        <button
+                            v-for="entry in afterFolded"
+                            :key="entry.tool"
+                            type="button"
+                            class="more-item"
+                            :class="{ 'is-active': tool === entry.tool }"
+                            :data-test="`tool-${entry.tool}`"
+                            @click="
+                                fromMore(() => emit('update:tool', entry.tool))
+                            "
+                        >
+                            <component :is="entry.icon" class="size-[18px]" />
+                            {{ entry.label }}
+                        </button>
+                        <button
+                            type="button"
+                            class="more-item"
+                            data-test="open-image-picker"
+                            @click="fromMore(() => emit('add-picture'))"
+                        >
+                            <ImagePlus class="size-[18px]" />
+                            Picture
+                        </button>
+                        <button
+                            type="button"
+                            class="more-item"
+                            data-test="open-video-picker"
+                            @click="fromMore(() => emit('add-video'))"
+                        >
+                            <Clapperboard class="size-[18px]" />
+                            Video
+                        </button>
+                        <span class="more-rule" />
+                        <button
+                            type="button"
+                            class="more-item"
+                            data-test="board-templates"
+                            @click="fromMore(() => emit('templates'))"
+                        >
+                            <LayoutTemplate class="size-[18px]" />
+                            Start from a template
+                        </button>
+                        <button
+                            v-if="hasSchema"
+                            type="button"
+                            class="more-item"
+                            data-test="board-schema"
+                            @click="fromMore(() => emit('schema'))"
+                        >
+                            <Database class="size-[18px]" />
+                            Tables as SQL
+                        </button>
+                    </PopoverContent>
+                </Popover>
+            </span>
+        </Tip>
 
         <span class="rail-divider" />
 
-        <button
+        <Tip
             v-if="!compact"
-            type="button"
-            class="rail-button"
-            title="Add a picture: from this computer, your Drive, a link, or SVG markup"
-            aria-label="Add picture"
-            data-test="open-image-picker"
-            @click="emit('add-picture')"
+            text="Add a picture: from this computer, your Drive, a link, or SVG markup"
         >
-            <ImagePlus class="size-[18px]" />
-        </button>
-        <button
+            <button
+                type="button"
+                class="rail-button"
+                aria-label="Add picture"
+                data-test="open-image-picker"
+                @click="emit('add-picture')"
+            >
+                <ImagePlus class="size-[18px]" />
+            </button>
+        </Tip>
+        <Tip
             v-if="!compact"
-            type="button"
-            class="rail-button"
-            title="Add a video: from this computer, your Drive, or a link. It plays on the board."
-            aria-label="Add video"
-            data-test="open-video-picker"
-            @click="emit('add-video')"
+            text="Add a video: from this computer, your Drive, or a link. It plays on the board."
         >
-            <Clapperboard class="size-[18px]" />
-        </button>
+            <button
+                type="button"
+                class="rail-button"
+                aria-label="Add video"
+                data-test="open-video-picker"
+                @click="emit('add-video')"
+            >
+                <Clapperboard class="size-[18px]" />
+            </button>
+        </Tip>
 
         <span v-if="!compact" class="rail-divider" />
 
-        <button
-            type="button"
-            class="rail-button"
-            title="Undo (Ctrl+Z)"
-            aria-label="Undo"
-            data-test="undo"
-            :disabled="!canUndo"
-            @click="emit('undo')"
-        >
-            <Undo2 class="size-[18px]" />
-        </button>
-        <button
-            type="button"
-            class="rail-button"
-            title="Redo (Ctrl+Shift+Z)"
-            aria-label="Redo"
-            data-test="redo"
-            :disabled="!canRedo"
-            @click="emit('redo')"
-        >
-            <Redo2 class="size-[18px]" />
-        </button>
+        <Tip text="Undo (Ctrl+Z)">
+            <button
+                type="button"
+                class="rail-button"
+                aria-label="Undo"
+                data-test="undo"
+                :disabled="!canUndo"
+                @click="emit('undo')"
+            >
+                <Undo2 class="size-[18px]" />
+            </button>
+        </Tip>
+        <Tip text="Redo (Ctrl+Shift+Z)">
+            <button
+                type="button"
+                class="rail-button"
+                aria-label="Redo"
+                data-test="redo"
+                :disabled="!canRedo"
+                @click="emit('redo')"
+            >
+                <Redo2 class="size-[18px]" />
+            </button>
+        </Tip>
     </aside>
 </template>
 
@@ -689,22 +751,18 @@ const pickShape = (entry: Entry) => {
     background-color: var(--border);
 }
 
-.library-search {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    height: 2rem;
-    padding: 0 0.5rem;
-    background-color: var(--muted);
-    border-radius: var(--radius-md);
+/* On a phone the whole bar fits across it -- Undo and Redo too -- rather
+   than running off its end */
+.rail.is-compact {
+    gap: 1px;
+    padding: 0.1875rem;
 }
-.library-search input {
-    width: 100%;
-    min-width: 0;
-    font-size: 0.8125rem;
-    background: transparent;
-    border: none;
-    outline: none;
+.rail.is-compact .rail-button {
+    width: 2rem;
+    height: 2rem;
+}
+.rail.is-compact .rail-divider {
+    margin: 0 0.125rem;
 }
 
 .library-electrical {

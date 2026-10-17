@@ -14,8 +14,9 @@ import {
     makeItem,
     newId,
 } from '../model/items';
-import { huggedHeight, labelHeight } from '../drawing/labels';
+import { fittedHeight, labelHeight } from '../drawing/labels';
 import { groupKeys, keepOnFrames } from '../model/layers';
+import { relinked, unlinkedFrom } from '../model/links';
 import type { Item, ItemKind } from '../model/items';
 
 /**
@@ -258,13 +259,21 @@ export function useBoard(initial: Item[] | null = null) {
             .map((item) => item.id);
     };
 
-    const remove = (ids: string[]) => {
+    /**
+     * Takes things off the board, with any line left hanging off them and any
+     * link to a screen among them. Answers how many links went, to say so.
+     */
+    const remove = (ids: string[]): number => {
         if (!ids.length) {
-            return;
+            return 0;
         }
 
         commit();
-        items.value = items.value.filter(
+        const { items: unlinked, cleared } = unlinkedFrom(
+            items.value,
+            new Set(ids),
+        );
+        items.value = unlinked.filter(
             (item) =>
                 !ids.includes(item.id) &&
                 // A connector with nothing left to hang off goes too
@@ -275,6 +284,8 @@ export function useBoard(initial: Item[] | null = null) {
                 ),
         );
         selection.value = [];
+
+        return cleared;
     };
 
     const duplicate = () => {
@@ -298,6 +309,9 @@ export function useBoard(initial: Item[] | null = null) {
         );
 
         for (const made of copies) {
+            // A link to a screen copied too goes to that screen's copy
+            made.link = relinked(made, copyOf).link;
+
             for (const end of [made.from, made.to]) {
                 if (end?.item && copyOf.has(end.item)) {
                     end.item = copyOf.get(end.item)!;
@@ -446,11 +460,12 @@ export function useBoard(initial: Item[] | null = null) {
         hug(item);
     };
 
-    // An item that hugs its words is as tall as they are, whatever changed
+    // An item that hugs its words is as tall as they are, whatever changed,
+    // and a sticky grows to hold them
     const hug = (item: Item) => {
-        const height = huggedHeight(item);
+        const height = fittedHeight(item);
 
-        if (height !== null && height !== item.height) {
+        if (height !== item.height) {
             item.height = height;
         }
     };

@@ -6,6 +6,7 @@ use App\Models\Board\Board;
 use App\Models\Board\BoardFolder;
 use App\Models\Owner;
 use App\Support\Board\Animations;
+use App\Support\Board\BoardActions;
 use App\Support\Board\BoardItems;
 use App\Support\Board\BoardRows;
 use App\Support\Board\Shapes;
@@ -14,6 +15,7 @@ use App\Support\Board\Symbols;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\JsonSchema\Types\ObjectType;
 use Illuminate\JsonSchema\Types\Type;
 
 /**
@@ -48,7 +50,8 @@ abstract class BoardTool extends FiledTool
      */
     protected function things(Owner $owner): HasMany
     {
-        return $owner->boards();
+        // A prototype's screens are a board's frames: the same tools edit them
+        return $owner->boardsAndPrototypes();
     }
 
     protected function searchIn(): array
@@ -61,7 +64,52 @@ abstract class BoardTool extends FiledTool
      */
     protected function details(Model $thing): array
     {
-        return ['item_count' => $thing->itemCount()];
+        return [
+            'item_count' => $thing->itemCount(),
+            // A prototype says so, and what its screens are sized for
+            ...($thing->kind === Board::PROTOTYPE
+                ? ['kind' => Board::PROTOTYPE, 'device' => $thing->prototype['device'] ?? null]
+                : []),
+        ];
+    }
+
+    /**
+     * A prototype is opened among its project's prototypes, not as a board.
+     *
+     * @param  Board  $thing
+     */
+    protected function urlOf(Model $thing): string
+    {
+        return $thing->kind === Board::PROTOTYPE ? route('prototypes.show', $thing) : parent::urlOf($thing);
+    }
+
+    /**
+     * Schema for one action in a prototype's Play. Steps inside an "if" or
+     * "all" are actions too; BoardActions reads them, whatever their depth.
+     */
+    protected function actionArgument(JsonSchema $schema): ObjectType
+    {
+        return $schema->object([
+            'to' => $schema->string()->max(255)->description('Go to a screen: a frame\'s id or title.'),
+            'overlay' => $schema->string()->enum(BoardActions::OVERLAY_PLACES)->description('With "to": open that screen over this one instead, placed here (center, bottom, top, left, right), dimmed behind.'),
+            'transition' => $schema->string()->enum(BoardActions::TRANSITIONS)->description('With "to" or "back": how the move looks. Left out, slide.'),
+            'back' => $schema->boolean()->description('true: back to the screen before.'),
+            'close' => $schema->boolean()->description('true: close the overlay on top.'),
+            'toggle' => $schema->array()->items($schema->string())->description('Items on this screen, by id, to show if hidden and hide if shown.'),
+            'show' => $schema->array()->items($schema->string())->description('Items to show, by id.'),
+            'hide' => $schema->array()->items($schema->string())->description('Items to hide, by id.'),
+            'set' => $schema->string()->max(40)->description('A value\'s name to set, with "value".'),
+            'value' => $schema->string()->description('With "set": a word, or true or false.'),
+            'if' => $schema->string()->max(40)->description('A value\'s name: do "then" when it is set (or, with "equals", equal to that), else "else".'),
+            'equals' => $schema->string()->description('With "if": what the value has to be.'),
+            'then' => $schema->object()->description('With "if": an action.'),
+            'else' => $schema->object()->description('With "if": an action, when the condition fails.'),
+            'all' => $schema->array()->items($schema->object())->description('Several actions, in order -- a move, if any, last.'),
+            'save' => $schema->string()->max(255)->description('A table of this project (ref_id or title) to save a row to: a new one, or with "row": "current" the current one.'),
+            'row' => $schema->string()->enum(['new', 'current'])->description('With "save": add a row (the default) or change the current one.'),
+            'values' => $schema->object()->description('With "save": column label => words, which may say {name}; columns left out take the fields named like them.'),
+            'remove' => $schema->string()->max(255)->description('A table of this project (ref_id or title): its current row deleted.'),
+        ])->description('One of: {"to": screen, "transition"?, "overlay"?} · {"back": true} · {"close": true} · {"toggle"|"show"|"hide": [item ids]} · {"set": name, "value": text or true/false} · {"if": name, "equals"?, "then": action, "else"?: action} · {"all": [actions]} · {"save": table, "row"?: "new"|"current", "values"?: {column: words}} · {"remove": table}.');
     }
 
     /**
@@ -149,6 +197,12 @@ abstract class BoardTool extends FiledTool
             }],
             "{$key}.*.color" => ['nullable', 'string', 'max:32'],
             "{$key}.*.shadow" => ['nullable', 'boolean'],
+            "{$key}.*.sketch" => ['nullable', function (string $attribute, mixed $value, \Closure $fail) {
+                if (! is_bool($value) && ! in_array($value, BoardItems::SKETCHES, false)) {
+                    $fail('"sketch" is 0 (crisp), 1 (a little rough) or 2 (a lot), or true for 1.');
+                }
+            }],
+            "{$key}.*.hatch" => ['nullable', 'string', 'in:'.implode(',', BoardItems::HATCHES)],
             "{$key}.*.d" => ['nullable', 'string', 'max:20000'],
             "{$key}.*.points" => ['nullable', 'array', 'max:'.BoardItems::MOST_POINTS],
             "{$key}.*.rough" => ['nullable'],
@@ -207,6 +261,29 @@ abstract class BoardTool extends FiledTool
             "{$key}.*.rows.*.visibility" => ['nullable', 'string', 'in:'.implode(',', BoardRows::VISIBILITIES)],
             "{$key}.*.rows.*.nullable" => ['nullable', 'boolean'],
             "{$key}.*.rows.*.method" => ['nullable', 'boolean'],
+            // What it does in Play: each an action, read by BoardActions
+            "{$key}.*.link" => ['nullable', 'array'],
+            "{$key}.*.when" => ['nullable', 'array'],
+            "{$key}.*.when.*" => ['nullable', 'array'],
+            "{$key}.*.screen" => ['nullable', 'array'],
+            "{$key}.*.screen.after" => ['nullable', 'array'],
+            "{$key}.*.screen.after.seconds" => ['required_with:'."{$key}.*.screen.after", 'numeric', 'between:0.5,30'],
+            "{$key}.*.screen.after.do" => ['required_with:'."{$key}.*.screen.after", 'array'],
+            "{$key}.*.repeat" => ['nullable', 'array'],
+            "{$key}.*.repeat.table" => ['required_with:'."{$key}.*.repeat", 'string', 'max:255'],
+            "{$key}.*.repeat.where" => ['nullable', 'array', 'max:10'],
+            "{$key}.*.repeat.where.*.column" => ['required', 'string', 'max:255'],
+            "{$key}.*.repeat.where.*.is" => ['present', 'nullable', 'string', 'max:255'],
+            "{$key}.*.repeat.sort" => ['nullable', 'array'],
+            "{$key}.*.repeat.sort.column" => ['required_with:'."{$key}.*.repeat.sort", 'string', 'max:255'],
+            "{$key}.*.repeat.sort.desc" => ['nullable', 'boolean'],
+            "{$key}.*.repeat.limit" => ['nullable', 'integer', 'between:'.BoardActions::ROWS[0].','.BoardActions::ROWS[1]],
+            "{$key}.*.repeat.gap" => ['nullable', 'numeric', 'between:0,400'],
+            "{$key}.*.repeat.across" => ['nullable', 'boolean'],
+            "{$key}.*.fixed" => ['nullable', 'string', 'in:'.implode(',', BoardItems::FIXED)],
+            "{$key}.*.startsHidden" => ['nullable', 'boolean'],
+            "{$key}.*.field" => ['nullable', 'string', 'max:40'],
+            "{$key}.*.choice" => ['nullable', 'string', 'max:40'],
             "{$key}.*.from" => ['nullable'],
             "{$key}.*.to" => ['nullable'],
             "{$key}.*.from.item" => ['nullable', 'string', 'max:64'],
@@ -311,7 +388,7 @@ abstract class BoardTool extends FiledTool
             'fill' => $schema->string()->max(32)->description('Fill colour as hex, e.g. "#fde68a", or "transparent" for a shape with nothing behind its words.'),
             'stroke' => $schema->string()->max(32)->description('Outline (or, for a connector, line) colour as hex.'),
             'fontSize' => $schema->number()->description('Label size in board units (16 on shapes, 28 on text).'),
-            'fontFamily' => $schema->string()->enum(BoardItems::FONTS)->description('The label\'s typeface: "sans" (Arial, the default), "serif" (Times New Roman) or "mono" (Courier New).'),
+            'fontFamily' => $schema->string()->enum(BoardItems::FONTS)->description('The label\'s typeface: "sans" (Arial, the default), "serif" (Times New Roman), "mono" (Courier New), or written by hand -- "hand" (Caveat, an easy handwriting) or "marker" (Permanent Marker, bold felt-tip). Thai is written in a Thai hand in both.'),
             'padding' => $schema->number()->description('Room between the item\'s edge and its label, in board units: 12 on shapes, 0 on text.'),
             'rich' => $schema->boolean()->description('true: the label is light Markdown, a line at a time -- "# " / "## " / "### " headings, "- " bullets, "1. " numbered items, **bold** and *italic*, and a line of "---" for a rule across the item -- so one card can hold a heading and its points. A text item\'s words are then regular weight, not bold.'),
             'align' => $schema->string()->enum(BoardItems::ALIGNS)->description('Where the label sits across the item: left, center or right. Shapes centre it, a text item starts at the left.'),
@@ -333,6 +410,8 @@ abstract class BoardTool extends FiledTool
             'style' => $schema->string()->max(40)->description('A ready-made look, as "style:colour": style one of '.implode(', ', Styles::styleIds()).' -- soft (a pale fill, a coloured line, dark words), solid (a strong fill, white words), outline, bold (a dark fill), light -- and colour one of '.implode(', ', Styles::colourNames()).'. It sets fill, stroke, the words\' "color" and the line width the way the board\'s Style picker does; any of those sent as well wins. Keep to a few colours across a board and one style for things of a kind: "solid:indigo" for services, "soft:emerald" for stores, "soft:slate" for the rest.'),
             'color' => $schema->string()->max(32)->description('The colour the label is written in, as hex. Left out, it is whatever reads best on the fill.'),
             'shadow' => $schema->boolean()->description('true: a soft shadow under it, lifting it off the board.'),
+            'sketch' => $schema->integer()->min(0)->max(2)->description('Drawn as by hand, with wobbly, doubled lines, as a whiteboard sketch or a rough wireframe that no one takes for the finished design: 1 a little rough, 2 a lot, 0 crisp again (the default). On shapes, stickies, frames (their edge), paths and connectors. With "fontFamily": "hand" on everything it is the board\'s "Sketch look".'),
+            'hatch' => $schema->string()->enum(BoardItems::HATCHES)->description('On a shape with "sketch": what fills it -- "solid" (its fill colour, the default), "hachure" (lines across in its fill colour, as if shaded with a pencil) or "cross" (lines both ways).'),
             'points' => $schema->array()->items($schema->number())->description('For kind "draw" (pencil ink, which the eraser takes): the stroke as [x, y, x, y, ...] in board units, drawn smooth as a hand\'s -- from x and y when given, else where they say. Or give "d".'),
             'pressures' => $schema->array()->items($schema->number())->description('For kind "draw" with "points": how hard each point was pressed, 0 to 1, one for each -- the ink heavier where pressed (0.5 is as heavy as plain ink), as a stylus draws.'),
             'rough' => $schema->number()->min(0)->max(3)->description('For kind "draw": how unsteady the hand, 0 (exact) to 3 -- a sketched look for lines drawn by "d".'),
@@ -387,11 +466,37 @@ abstract class BoardTool extends FiledTool
             'hidden' => $schema->boolean()->description('Keep it off the board without deleting it.'),
             'locked' => $schema->boolean()->description('Stop it being picked up on the canvas.'),
             'pdfHidden' => $schema->boolean()->description('For kind "frame": keep it on the board but leave it out of the PDF export, which otherwise has a page for every frame.'),
+            'link' => $this->actionArgument($schema)->description('In a prototype (its screens are frames): what tapping this item does in Play -- an action. null takes it off. Not for a frame or a connector.'),
+            'when' => $schema->object(array_fill_keys(BoardActions::TRIGGERS, $schema->object()))->description('In a prototype: what this item does for triggers other than a tap, an action each -- long-press, hover, swipe-left, swipe-right, swipe-up, swipe-down. null takes them all off.'),
+            'screen' => $schema->object([
+                'after' => $schema->object([
+                    'seconds' => $schema->number()->description('0.5 to 30.'),
+                    'do' => $schema->object()->description('An action, as in "link".'),
+                ]),
+            ])->description('For a frame in a prototype: what the screen does by itself -- {"after": {"seconds": 2, "do": {"to": "Home"}}}, a splash screen moving on. null takes it off.'),
+            'repeat' => $schema->object([
+                'table' => $schema->string()->max(255)->description('A table of this project, by ref_id or title.'),
+                'where' => $schema->array()->items($schema->object([
+                    'column' => $schema->string()->description('A column, by its label.'),
+                    'is' => $schema->string()->description('What it has to be: words, which may say {name}.'),
+                ]))->description('Only the rows matching all of these.'),
+                'sort' => $schema->object([
+                    'column' => $schema->string(),
+                    'desc' => $schema->boolean(),
+                ])->description('Which column the rows are in the order of.'),
+                'limit' => $schema->integer()->description('At most so many rows, 1 to 200; left out, 50.'),
+                'gap' => $schema->number()->description('Room between the rows, 0 to 400.'),
+                'across' => $schema->boolean()->description('true: the rows side by side; left out, one under another.'),
+            ])->description('In a prototype: this card (a rect or a ui_card) with everything inside its box is one row, shown in Play once for each row of a project table -- its words\' {Column} (a column\'s label) are that row\'s. Tapping one makes it the table\'s current row. null takes it off.'),
+            'fixed' => $schema->string()->enum(BoardItems::FIXED)->description('In a prototype: kept at the top or the bottom while its screen (a frame taller than the device) scrolls -- a header, a tab bar. null to scroll with the rest.'),
+            'startsHidden' => $schema->boolean()->description('In a prototype: not shown in Play until an action shows or flips it.'),
+            'field' => $schema->string()->max(40)->description('In a prototype: a text_field or search_field typed into in Play, what is typed kept by this name. Any item\'s words may say {name} to show it.'),
+            'choice' => $schema->string()->max(40)->description('In a prototype: radios or tabs on a screen with the same choice are one choice -- one of them on. Their "on" says which starts on.'),
             'from' => $schema->object([
                 'item' => $schema->string()->max(64)->description('The id of the item this end is pinned to; it follows that shape around.'),
                 'pin' => $schema->string()->max(120)->description('When the item is a symbol: which of its pins the wire is on, e.g. "1", "2", "a", "k", "b", "+". Left out, the pin nearest the other end is taken. When it is a table or a class: which of its rows the line holds on to, by the row\'s name or id ("customer_id") -- left out, the line is to the table as a whole.'),
                 'along' => $schema->number()->description('When the item is a lifeline: how far down it this end is, 0 (its top) to 1 (its foot). A message between two lifelines has the same "along" at both ends, and messages lower down come later.'),
-                'side' => $schema->string()->enum(BoardItems::SIDES)->description('Keep this end on that edge, whatever moves. Left out, it follows the shapes and always leaves by the face pointing at the other end.'),
+                'side' => $schema->string()->enum(BoardItems::SIDES)->description('Keep this end on that edge, whatever moves. Left out, it follows the shapes and always leaves by the face pointing at the other end -- usually best: an elbow line finds its own way round the items between, and lines sharing a face spread along it and keep apart.'),
                 'x' => $schema->number()->description('A loose point on the board, instead of an item.'),
                 'y' => $schema->number(),
             ])->description('For kind "arrow": where the connector starts. Either {"item": "<id>"} or a loose {"x", "y"}.'),

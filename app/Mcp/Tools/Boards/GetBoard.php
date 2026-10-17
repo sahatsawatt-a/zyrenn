@@ -4,6 +4,7 @@ namespace App\Mcp\Tools\Boards;
 
 use App\Mcp\Tools\BoardTool;
 use App\Models\Board\Board;
+use App\Models\Prototype\PrototypeComment;
 use App\Support\Board\BoardItems;
 use App\Support\Board\BoardParts;
 use App\Support\Board\BoardRender;
@@ -30,6 +31,10 @@ are on it, to be read a frame at a time. "frame" (an id or title) reads just tha
 on it; "frame": "board" reads what sits on no frame. "outline" true or false asks for one form or
 the other; "items": false leaves the items out, for when only the frames, the check or the picture
 is wanted.
+
+A prototype (its frames are its screens) also comes with its open comments: each pinned to a screen
+at "x" and "y" (0 to 1 across and down it), with who said it and the ticket made of it, if any --
+only the asked-for frame's when "frame" is given -- and how many are resolved.
 
 "image" true also sends a picture of it, drawn as the app draws it -- of the frame asked for with
 "frame", which comes out as the slide would show it, or of the whole board -- so you can see how it
@@ -130,6 +135,7 @@ class GetBoard extends BoardTool
             ...($listed && $outline && ! isset($validated['outline'])
                 ? ['more' => 'The board is big, so its items are in outline. Read one frame in full with "frame", or everything with "outline": false.']
                 : []),
+            ...($board->isPrototype() ? $this->comments($board, $frame['id'] ?? null) : []),
         ];
 
         if (! ($validated['image'] ?? false)) {
@@ -148,5 +154,33 @@ class GetBoard extends BoardTool
             Response::text(($frame ? "Frame \"{$frame['text']}\" of " : '')."\"{$board->title}\", as the app draws it."),
             $picture,
         ])->withStructuredContent($answer);
+    }
+
+    /**
+     * A prototype's open comments, lean: where each is and what it says --
+     * of one screen when a frame was asked for -- and how many are resolved.
+     *
+     * @return array{comments: list<array<string, mixed>>, resolved_comments: int}
+     */
+    private function comments(Board $board, ?string $screen): array
+    {
+        $all = $board->prototypeComments()
+            ->with(['user:id,name', 'ticket:id,number,status'])
+            ->when($screen !== null, fn ($query) => $query->where('frame_id', $screen))
+            ->oldest()
+            ->get();
+
+        return [
+            'comments' => array_values($all->whereNull('resolved_at')->map(fn (PrototypeComment $comment) => array_filter([
+                'id' => $comment->ref_id,
+                'screen' => $comment->frame_id,
+                'x' => round($comment->x, 3),
+                'y' => round($comment->y, 3),
+                'body' => $comment->body,
+                'by' => $comment->user?->name,
+                'ticket' => $comment->ticket?->number,
+            ], fn ($value) => $value !== null))->all()),
+            'resolved_comments' => $all->whereNotNull('resolved_at')->count(),
+        ];
     }
 }

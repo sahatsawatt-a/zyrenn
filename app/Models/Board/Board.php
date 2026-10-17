@@ -7,6 +7,8 @@ use App\Models\Concerns\BelongsToOwner;
 use App\Models\Concerns\HasRefId;
 use App\Models\Concerns\RecordsEditor;
 use App\Models\Concerns\TellsLists;
+use App\Models\Prototype\PrototypeComment;
+use App\Models\Prototype\PrototypePlay;
 use App\Support\Live\Collab;
 use App\Support\Live\Live;
 use Database\Factories\Board\BoardFactory;
@@ -15,6 +17,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -24,6 +27,8 @@ use Illuminate\Support\Carbon;
  * @property string $ref_id
  * @property int|null $folder_id
  * @property string $title
+ * @property string $kind a board, or a prototype: screens at a device's size
+ * @property array{device: string, start: string|null, data?: string}|null $prototype a prototype's own settings: its device, the screen Play opens on, and where Play's saves go
  * @property array<string, mixed>|null $content
  * @property string|null $plain_text
  * @property string|null $ydoc the collaboration server's shared state, base64
@@ -34,6 +39,20 @@ use Illuminate\Support\Carbon;
 #[Hidden(['ydoc'])]
 class Board extends Model
 {
+    public const BOARD = 'board';
+
+    /** Clickable screens to show someone before anything is built: frames at a device's size. */
+    public const PROTOTYPE = 'prototype';
+
+    /** What a prototype may be made for. */
+    public const DEVICES = ['phone', 'tablet', 'desktop'];
+
+    /**
+     * What Play's saves and deletes change: each play's own copy of the
+     * tables (the default), or the project's tables themselves.
+     */
+    public const PROTOTYPE_DATA = ['play', 'tables'];
+
     /** What its lists show of it: other saves, made while it is edited, aren't told. */
     public const LISTED_BY = ['title', 'folder_id'];
 
@@ -50,6 +69,7 @@ class Board extends Model
      */
     protected $attributes = [
         'title' => '',
+        'kind' => self::BOARD,
     ];
 
     /**
@@ -142,7 +162,33 @@ class Board extends Model
     {
         return [
             'content' => 'array',
+            'prototype' => 'array',
         ];
+    }
+
+    public function isPrototype(): bool
+    {
+        return $this->kind === self::PROTOTYPE;
+    }
+
+    /**
+     * A prototype's comments, pinned to its screens.
+     *
+     * @return HasMany<PrototypeComment, $this>
+     */
+    public function prototypeComments(): HasMany
+    {
+        return $this->hasMany(PrototypeComment::class);
+    }
+
+    /**
+     * Each time a prototype was played.
+     *
+     * @return HasMany<PrototypePlay, $this>
+     */
+    public function prototypePlays(): HasMany
+    {
+        return $this->hasMany(PrototypePlay::class);
     }
 
     /**

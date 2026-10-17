@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Paintbrush, Presentation } from '@lucide/vue';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import FoldSection from '@/components/common/FoldSection.vue';
 import {
     Popover,
     PopoverContent,
@@ -17,7 +18,7 @@ import { Switch } from '@/components/ui/switch';
 import type { Deck, DeckTheme } from '@/features/boards/deck/deck';
 import { DECK_THEMES, deckLook } from '@/features/boards/deck/deck';
 import type { FontFamily } from '@/features/boards/model/items';
-import { FONT_FAMILIES } from '@/features/boards/model/items';
+import { FONT_CHOICES, FONT_FAMILIES } from '@/features/boards/model/items';
 import ColourChip from '../inspector/ColourChip.vue';
 
 // The deck the board's frames make, behind a button in the panel: one look
@@ -28,6 +29,9 @@ const props = defineProps<{ deck: Deck | null; side: 'top' | 'left' }>();
 const emit = defineEmits<{ update: [deck: Deck | null]; restyle: [] }>();
 
 const look = computed(() => deckLook(props.deck));
+
+// The theme's colours, one at a time: seldom changed, so folded away
+const coloursOpen = ref(false);
 
 /** The deck with these said over it; anything emptied is taken away. */
 const change = (patch: Partial<Deck>) => {
@@ -55,11 +59,7 @@ const pickTheme = (theme: DeckTheme) =>
         headingFont: undefined,
     });
 
-const FONTS: { value: FontFamily; label: string }[] = [
-    { value: 'sans', label: 'Sans' },
-    { value: 'serif', label: 'Serif' },
-    { value: 'mono', label: 'Mono' },
-];
+const FONTS = FONT_CHOICES;
 
 const COLOURS = [
     { key: 'background', label: 'Background' },
@@ -181,9 +181,8 @@ const text = (event: Event) => (event.target as HTMLInputElement).value;
                 </div>
 
                 <!-- The theme's colours, one at a time: seldom changed -->
-                <details class="deck-fold">
-                    <summary class="inspector-label">Colours</summary>
-                    <div class="mt-1 grid grid-cols-2 gap-x-2">
+                <FoldSection v-model:open="coloursOpen" title="Colours">
+                    <div class="grid grid-cols-2 gap-x-2">
                         <label
                             v-for="colour in COLOURS"
                             :key="colour.key"
@@ -198,7 +197,7 @@ const text = (event: Event) => (event.target as HTMLInputElement).value;
                             {{ colour.label }}
                         </label>
                     </div>
-                </details>
+                </FoldSection>
 
                 <label class="block space-y-1">
                     <span class="inspector-label">Header</span>
@@ -276,9 +275,5 @@ const text = (event: Event) => (event.target as HTMLInputElement).value;
     width: 0.875rem;
     height: 0.1875rem;
     border-radius: 999px;
-}
-.deck-fold > summary {
-    cursor: pointer;
-    list-style: revert;
 }
 </style>

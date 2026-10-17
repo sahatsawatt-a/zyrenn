@@ -4,6 +4,7 @@
 // and does the same sums when MCP places one.
 import type { Item } from './items';
 import { hydrate, isConnector, newId } from './items';
+import { relinked } from './links';
 
 export type MyShape = {
     ref_id: string;
@@ -55,7 +56,8 @@ export const itemsOfShape = (shape: MyShape): Item[] => {
 
     return shape.items.map((item) =>
         hydrate({
-            ...item,
+            // A link to a screen in the shape goes to that screen's copy
+            ...relinked(item, ids),
             id: ids.get(item.id) ?? newId(),
             group,
             ...(isConnector(item)

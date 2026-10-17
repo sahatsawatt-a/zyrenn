@@ -138,7 +138,7 @@ await runBoard('/demo/konva', async (b) => {
         async () => JSON.stringify(await caps()),
     );
 
-    await test('ends-config').locator('summary').click();
+    await test('ends-config').locator('[data-fold-toggle]').click();
     await test('head-start-diamond_open').click();
     await soon(
         'an end set by hand makes it a line of no named kind',

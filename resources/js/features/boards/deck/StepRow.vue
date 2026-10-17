@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/select';
 import type { BuildFrom, BuildStart, BuildStep } from './build';
 import { EFFECTS, FROMS, hasFrom, KINDS, SPEEDS, STARTS } from './build';
+import Tip from '@/components/common/Tip.vue';
 
 // One animation of a slide's: what it does, how it starts, how fast, and
 // where from -- as a row of the slide's list or of an item's own.
@@ -66,34 +67,38 @@ const speed = computed(
                 }}</span>
                 {{ name }}
             </span>
-            <button
-                v-if="movable"
-                type="button"
-                title="Earlier"
-                :disabled="!canUp"
-                data-test="animation-up"
-                @click="emit('up')"
-            >
-                <ChevronUp :size="13" />
-            </button>
-            <button
-                v-if="movable"
-                type="button"
-                title="Later"
-                :disabled="!canDown"
-                data-test="animation-down"
-                @click="emit('down')"
-            >
-                <ChevronDown :size="13" />
-            </button>
-            <button
-                type="button"
-                title="Take this animation off"
-                data-test="animation-remove"
-                @click="emit('remove')"
-            >
-                <X :size="13" />
-            </button>
+            <Tip v-if="movable" text="Earlier">
+                <button
+                    type="button"
+                    aria-label="Earlier"
+                    :disabled="!canUp"
+                    data-test="animation-up"
+                    @click="emit('up')"
+                >
+                    <ChevronUp :size="13" />
+                </button>
+            </Tip>
+            <Tip v-if="movable" text="Later">
+                <button
+                    type="button"
+                    aria-label="Later"
+                    :disabled="!canDown"
+                    data-test="animation-down"
+                    @click="emit('down')"
+                >
+                    <ChevronDown :size="13" />
+                </button>
+            </Tip>
+            <Tip text="Take this animation off">
+                <button
+                    type="button"
+                    aria-label="Take this animation off"
+                    data-test="animation-remove"
+                    @click="emit('remove')"
+                >
+                    <X :size="13" />
+                </button>
+            </Tip>
         </div>
 
         <div

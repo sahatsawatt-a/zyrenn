@@ -4,6 +4,7 @@ import { ref } from 'vue';
 import DriveFileDialog from '@/features/chat/components/DriveFileDialog.vue';
 import type { Item } from '@/features/boards/model/items';
 import type { DriveFile } from '@/lib/drive';
+import Tip from '@/components/common/Tip.vue';
 
 // A slide's own: a picture behind everything on it, the part of the deck it
 // begins (what a footer's {section} says), and the presenter's notes.
@@ -33,15 +34,16 @@ const text = (event: Event) =>
                     <ImageIcon :size="13" />
                     {{ props.frame.src ? 'Change' : 'Choose from the Drive' }}
                 </button>
-                <button
-                    v-if="props.frame.src"
-                    type="button"
-                    title="Take the picture away"
-                    data-test="slide-background-remove"
-                    @click="emit('update', { src: '' })"
-                >
-                    <X :size="13" />
-                </button>
+                <Tip v-if="props.frame.src" text="Take the picture away">
+                    <button
+                        type="button"
+                        aria-label="Take the picture away"
+                        data-test="slide-background-remove"
+                        @click="emit('update', { src: '' })"
+                    >
+                        <X :size="13" />
+                    </button>
+                </Tip>
             </div>
         </div>
 

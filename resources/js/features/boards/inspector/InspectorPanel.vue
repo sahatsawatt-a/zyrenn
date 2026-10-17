@@ -10,8 +10,9 @@ import type { BuildStep } from '../deck/build';
 import ItemAnimation from '../deck/ItemAnimation.vue';
 import SlideAnimations from '../deck/SlideAnimations.vue';
 import SlideSettings from '../deck/SlideSettings.vue';
+import type { PrototypeSettings } from '@/features/prototypes/devices';
 import type { Item } from '../model/items';
-import { hasText } from '../model/items';
+import { hasText, isConnector } from '../model/items';
 import { hasHeader } from '../model/rows';
 import { designsOf, shapeOf } from '../model/shapes';
 import BoardSettings from './BoardSettings.vue';
@@ -19,12 +20,17 @@ import ColourChips from './ColourChips.vue';
 import ConnectorSettings from './ConnectorSettings.vue';
 import DesignPicker from './DesignPicker.vue';
 import GeometryFold from './GeometryFold.vue';
+import PlaySettings from './play/PlaySettings.vue';
+import ScreenPlaySettings from './play/ScreenPlaySettings.vue';
+import type { ProjectTable } from './play/tables';
 import ItemActions from './ItemActions.vue';
 import LabelSettings from './LabelSettings.vue';
 import LookSettings from './LookSettings.vue';
 import PartSettings from './PartSettings.vue';
 import PictureSettings from './PictureSettings.vue';
+import SketchSettings from './SketchSettings.vue';
 import StructureSettings from './StructureSettings.vue';
+import Tip from '@/components/common/Tip.vue';
 
 // The panel over the right of the canvas: what is selected, and every property
 // of it in one place instead of hidden behind a toolbar popover -- colour
@@ -50,6 +56,14 @@ const props = defineProps<{
     // animating it, and for a slide's list of animations
     slide?: Item | null;
     nameOf?: (id: string) => string;
+    // Whether anything on the board is drawn as by hand
+    sketched?: boolean;
+    // A prototype's settings, when the board is one, and everything on it:
+    // its screens are its frames, and what is selected does things in Play
+    prototype?: PrototypeSettings | null;
+    items?: Item[];
+    // A prototype's project's tables, to repeat a card for and save rows to
+    tables?: ProjectTable[];
 }>();
 
 const emit = defineEmits<{
@@ -69,6 +83,9 @@ const emit = defineEmits<{
     restyle: [Map<string, Partial<Item>>];
     // The whole board put in one colour set and style
     'restyle-board': [{ set: string; style: string }];
+    // The hand-drawn look put on, or taken off: what is selected (and what
+    // is on a frame selected), or the whole board
+    sketch: [on: boolean, board: boolean];
     // The deck changed, and every slide put in its look
     deck: [Deck | null];
     'restyle-deck': [];
@@ -92,6 +109,16 @@ const designed = computed(() => {
         ? first
         : null;
 });
+
+// In a prototype: what is selected, when it is things on a screen rather
+// than a screen itself or a line, can be given somewhere to go
+const linkable = computed(() =>
+    props.prototype &&
+    props.selection.length &&
+    props.selection.every((item) => item.kind !== 'frame' && !isConnector(item))
+        ? props.selection
+        : null,
+);
 
 const one = computed(() =>
     props.selection.length === 1 ? props.selection[0] : null,
@@ -178,15 +205,17 @@ const summary = computed(() => {
                     {{ link }}
                 </p>
             </div>
-            <button
-                type="button"
-                class="inspector-close"
-                title="Hide this panel"
-                data-test="inspector-close"
-                @click="emit('close')"
-            >
-                <PanelRightClose class="size-4" />
-            </button>
+            <Tip text="Hide this panel">
+                <button
+                    type="button"
+                    class="inspector-close"
+                    aria-label="Hide this panel"
+                    data-test="inspector-close"
+                    @click="emit('close')"
+                >
+                    <PanelRightClose class="size-4" />
+                </button>
+            </Tip>
         </div>
 
         <div v-if="selection.length" class="inspector-body">
@@ -242,6 +271,23 @@ const summary = computed(() => {
                 @restyle="emit('restyle', $event)"
             />
 
+            <!-- In a prototype: what it does in Play -- or, for a screen,
+                 what the screen does by itself -->
+            <PlaySettings
+                v-if="linkable"
+                :selection="linkable"
+                :items="items ?? []"
+                :tables="tables ?? []"
+                @update="emit('update', $event)"
+            />
+            <ScreenPlaySettings
+                v-else-if="prototype && one?.kind === 'frame'"
+                :screen="one"
+                :items="items ?? []"
+                :tables="tables ?? []"
+                @update="emit('update', $event)"
+            />
+
             <!-- Corners, how see-through, a fading fill, a box as tall as its
                  words, a picture's point in view, a video's still -->
             <LookSettings
@@ -249,6 +295,13 @@ const summary = computed(() => {
                 :selection="selection"
                 :beside="beside"
                 @update="emit('update', $event)"
+            />
+
+            <!-- Lines drawn as by hand, and the whole look in a click -->
+            <SketchSettings
+                :selection="selection"
+                @update="emit('update', $event)"
+                @sketch="emit('sketch', $event, false)"
             />
 
             <!-- Where the label sits, its type and size, the room round it -->
@@ -331,7 +384,9 @@ const summary = computed(() => {
             :deck="deck"
             :deck-ready="deckReady"
             :beside="beside"
+            :sketched="sketched"
             @restyle-board="emit('restyle-board', $event)"
+            @sketch="emit('sketch', $event, true)"
             @deck="emit('deck', $event)"
             @restyle-deck="emit('restyle-deck')"
         />
@@ -343,7 +398,6 @@ const summary = computed(() => {
     display: flex;
     flex-direction: column;
     width: 16rem;
-    flex-shrink: 0;
     min-height: 0;
     max-height: 100%;
     gap: 0.75rem;
@@ -411,27 +465,9 @@ const summary = computed(() => {
      (LookSettings, LabelSettings, SlideSettings and the rest), which a scoped
      style would not reach -->
 <style>
-/* A fold keeps the fiddly settings out of the way until they are wanted */
-.inspector-fold > summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.25rem 0;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--muted-foreground);
-    cursor: pointer;
-}
-.inspector-fold > summary span {
-    font-weight: 400;
-    letter-spacing: 0;
-    text-transform: none;
-}
-.inspector-fold[open] > summary {
-    margin-bottom: 0.25rem;
+/* A fold (FoldSection) is set as small as the panel's other headings */
+.inspector [data-fold-toggle] {
+    font-size: 0.75rem;
 }
 
 /* A word on how to use what is above it */
@@ -531,17 +567,5 @@ const summary = computed(() => {
     gap: 0.5rem;
     font-size: 0.6875rem;
     color: var(--muted-foreground);
-}
-.inspector-slider input {
-    flex: 1;
-    min-width: 0;
-}
-.inspector-slider input {
-    accent-color: var(--primary);
-}
-.inspector-slider span {
-    width: 1.25rem;
-    text-align: right;
-    color: var(--foreground);
 }
 </style>
