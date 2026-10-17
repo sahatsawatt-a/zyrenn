@@ -8,7 +8,11 @@ use App\Models\Drive\DriveFile;
 use App\Models\Note\Note;
 use App\Models\Project;
 use App\Models\Table\Table;
+use App\Models\Ticket\Ticket;
 use App\Models\User;
+use App\Models\Workflow\Workflow;
+use App\Models\Workflow\WorkflowVersion;
+use App\Support\Workflow\Engine;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -90,7 +94,8 @@ class DashboardTest extends TestCase
                 ->where('recent.3.title', 'Older')
                 ->missing('recent.0.edited_by')
                 ->missing('members')
-                ->has('yourProjects', 0));
+                ->has('glance', 0)
+                ->has('waiting', 0));
     }
 
     public function test_open_todos_are_gathered_from_the_notes_unticked_ones_only()
@@ -143,7 +148,8 @@ class DashboardTest extends TestCase
                 ->where('todos.items.0.text', 'Check the deck')
                 ->where('members.0', ['name' => 'Ada', 'role' => Project::OWNER, 'is_me' => false])
                 ->where('members.1', ['name' => 'Grace', 'role' => Project::VIEWER, 'is_me' => true])
-                ->missing('yourProjects'));
+                ->has('glance.activity')
+                ->has('glance.tickets.counts'));
     }
 
     public function test_only_members_see_a_projects_dashboard_and_a_project_opens_on_it()
@@ -161,7 +167,7 @@ class DashboardTest extends TestCase
             ->assertRedirect(route('projects.dashboard', $project));
     }
 
-    public function test_ones_own_dashboard_lists_projects_and_what_others_changed_in_them()
+    public function test_ones_own_dashboard_has_each_project_at_a_glance_and_what_waits_on_one()
     {
         $user = User::factory()->create();
         $other = User::factory()->create(['name' => 'Grace']);
@@ -170,23 +176,72 @@ class DashboardTest extends TestCase
         $project->members()->attach($other, ['role' => Project::OWNER]);
 
         $theirs = ['user_id' => null, 'project_id' => $project->id];
-        Note::factory()->create([...$theirs, 'title' => 'By Grace', 'updated_by' => $other->id]);
-        Board::factory()->create([...$theirs, 'title' => 'By me', 'updated_by' => $user->id]);
+        Note::factory()->create([...$theirs, 'title' => 'By Grace', 'updated_by' => $other->id, 'updated_at' => now()->subHour()]);
         Note::factory()->create(['title' => 'Elsewhere', 'updated_by' => $other->id]);
+        $mine = Ticket::file($project, $other, ['type' => 'bug', 'title' => 'Export breaks', 'priority' => 'high', 'assigned_to' => $user->id]);
+        Ticket::file($project, $other, ['type' => 'feature', 'title' => 'Waits on design', 'status' => Ticket::ON_HOLD, 'reason' => 'The mockup first']);
+        Ticket::file($project, $other, ['type' => 'feature', 'title' => 'Someone else\'s', 'assigned_to' => $other->id]);
 
         $this->actingAs($user)
             ->get(route('dashboard'))
             ->assertInertia(fn (Assert $page) => $page
-                ->has('yourProjects', 1)
-                ->where('yourProjects.0.name', 'Lakeshore')
-                ->where('yourProjects.0.role', Project::EDITOR)
-                ->where('yourProjects.0.members', 2)
-                // In UTC, said so, like every other date the page is sent
-                ->where('yourProjects.0.changed_at', fn (string $at) => str_ends_with($at, 'Z'))
-                ->has('fromProjects', 1)
-                ->where('fromProjects.0.title', 'By Grace')
-                ->where('fromProjects.0.edited_by', 'Grace')
-                ->where('fromProjects.0.project.name', 'Lakeshore'));
+                // Only what is theirs to do: the ticket given to them
+                ->has('waiting', 1)
+                ->where('waiting.0.kind', 'ticket')
+                ->where('waiting.0.title', "#{$mine->number} Export breaks")
+                ->where('waiting.0.priority', 'high')
+                ->where('waiting.0.context', fn (string $context) => str_starts_with($context, 'Lakeshore'))
+                // Each project at a glance
+                ->has('glance', 1)
+                ->where('glance.0.name', 'Lakeshore')
+                ->where('glance.0.role', Project::EDITOR)
+                ->where('glance.0.tickets', ['open' => 2, 'in_progress' => 0, 'on_hold' => 1])
+                // The latest that happened in it: Grace's tickets, filed together
+                ->where('glance.0.last.who', 'Grace')
+                ->missing('yourProjects'));
+
+        // On the project's own: its tickets in full, and what happened in it
+        $this->actingAs($user)
+            ->get(route('projects.dashboard', $project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('waiting', 1)
+                ->where('waiting.0.context', fn (string $context) => ! str_contains($context, 'Lakeshore'))
+                ->where('glance.tickets.on_hold.0.reason', 'The mockup first')
+                ->where('glance.activity', fn ($lines) => collect($lines)->contains(fn (array $line) => str_contains($line['text'], 'edited the note “By Grace”') && $line['who'] === 'Grace')));
+    }
+
+    public function test_a_step_asking_for_approval_waits_on_whoever_may_change_the_workflow_until_answered()
+    {
+        config(['queue.default' => 'database']);
+        $user = User::factory()->create();
+        $workflow = Workflow::factory()->for($user)->steps([
+            ['id' => 'start', 'key' => 'start', 'type' => 'trigger.manual', 'position' => ['x' => 0, 'y' => 0], 'config' => ['payload' => '{}']],
+            ['id' => 'ask', 'key' => 'ask', 'type' => 'logic.approval', 'position' => ['x' => 0, 'y' => 0], 'config' => ['message' => 'Publish the notes?', 'expires' => 'never']],
+        ], [['id' => 'e', 'source' => 'start', 'sourceHandle' => 'out', 'target' => 'ask']])->create(['title' => 'Release notes']);
+        $run = Engine::start($workflow, $workflow->freeze(WorkflowVersion::TEST, $user), $user);
+        $this->work();
+
+        $answer = route('workflow-runs.answer', [$run, 'ask']);
+        $this->actingAs($user)
+            ->get(route('dashboard'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('waiting.0.kind', 'approval')
+                ->where('waiting.0.title', 'Publish the notes?')
+                ->where('waiting.0.context', 'Release notes')
+                ->where('waiting.0.href', fn (string $href) => str_ends_with($href, '?run='.$run->ref_id))
+                ->where('waiting.0.answer', $answer));
+
+        // Answered from the dashboard's question, it waits no more
+        $this->actingAs($user)->postJson($answer, ['approved' => true])->assertOk();
+        $this->work();
+        $this->actingAs($user)
+            ->get(route('dashboard'))
+            ->assertInertia(fn (Assert $page) => $page->has('waiting', 0));
+
+        // Someone who may not change the workflow is not asked
+        $this->actingAs(User::factory()->create())
+            ->get(route('dashboard'))
+            ->assertInertia(fn (Assert $page) => $page->has('waiting', 0));
     }
 
     public function test_conversations_waiting_are_listed_with_what_is_unread()

@@ -10,14 +10,15 @@ use App\Models\Owner;
 use App\Models\Project;
 use App\Models\Table\Table;
 use App\Models\User;
-use Carbon\CarbonImmutable;
+use App\Support\Dashboard\Glance;
+use App\Support\Dashboard\Previews;
+use App\Support\Dashboard\Waiting;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Date;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -26,7 +27,7 @@ use Inertia\Response;
  * /p/{project}/dashboard -- what is in it, what changed lately and by whom,
  * the to-dos still open in its notes, and the conversations waiting.
  *
- * @phpstan-type Recent array{kind: string, ref_id: mixed, title: mixed, updated_at: mixed, edited_by?: mixed, project?: mixed}
+ * @phpstan-type Recent array{kind: string, ref_id: string, title: mixed, updated_at: mixed, edited_by?: mixed, project?: mixed}
  */
 class DashboardController extends Controller
 {
@@ -44,7 +45,15 @@ class DashboardController extends Controller
         $owner = $this->owner($request);
         $shared = $owner instanceof Project;
 
+        $recent = $this->recent([$owner->notes(), $owner->boards(), $owner->tables()], $shared);
+
         return Inertia::render('dashboard/Index', [
+            // What waits on them, most pressing first, here or everywhere
+            'waiting' => Waiting::for($user, $shared ? $owner : null),
+            // Each of their projects at a glance; on a project's, that one in full
+            'glance' => $shared ? Glance::project($owner) : Glance::projects($user),
+            // A small picture of each recent note, board and table
+            'previews' => Previews::of($recent->map(fn (array $item) => ['kind' => $item['kind'], 'ref_id' => $item['ref_id']])),
             'counts' => [
                 'notes' => $owner->notes()->count(),
                 'boards' => $owner->boards()->count(),
@@ -52,15 +61,10 @@ class DashboardController extends Controller
                 'files' => $owner->driveFiles()->count(),
                 'bytes' => (int) $owner->driveFiles()->sum('size'),
             ],
-            'recent' => $this->recent([$owner->notes(), $owner->boards(), $owner->tables()], $shared),
+            'recent' => $recent,
             'todos' => $this->todos($owner->notes()),
             'chats' => $this->chats($user, $shared ? $owner : null),
-            ...($shared
-                ? ['members' => $this->members($owner, $user)]
-                : [
-                    'yourProjects' => $this->projects($user),
-                    'fromProjects' => $this->fromProjects($user),
-                ]),
+            ...($shared ? ['members' => $this->members($owner, $user)] : []),
         ]);
     }
 
@@ -91,7 +95,7 @@ class DashboardController extends Controller
                     $thing instanceof Board => 'board',
                     default => 'table',
                 },
-                'ref_id' => $thing->getAttribute('ref_id'),
+                'ref_id' => (string) $thing->getAttribute('ref_id'),
                 'title' => $thing->getAttribute('title'),
                 'updated_at' => $thing->getAttribute('updated_at'),
                 ...($withEditor ? ['edited_by' => $thing->getRelationValue('editor')?->getAttribute('name')] : []),
@@ -215,55 +219,5 @@ class DashboardController extends Controller
                 'role' => $member->getRelationValue('pivot')?->getAttribute('role'),
                 'is_me' => $member->is($user),
             ]);
-    }
-
-    /**
-     * The user's projects, with their role, who is in each and when
-     * something in it last changed.
-     *
-     * @return Collection<int, array{ref_id: string, name: string, role: mixed, members: int<0, max>, changed_at: CarbonImmutable|null}>
-     */
-    private function projects(User $user): Collection
-    {
-        $projects = $user->projects()->withCount('members')->get();
-        $ids = $projects->modelKeys();
-
-        // Each kind's latest change per project; the latest of those is the project's
-        $changed = collect([Note::query(), Board::query(), Table::query()])
-            ->flatMap(fn (Builder $kind) => $kind
-                ->whereIn('project_id', $ids)
-                ->groupBy('project_id')
-                ->selectRaw('project_id, max(updated_at) as changed_at')
-                ->toBase()
-                ->get())
-            ->groupBy('project_id')
-            // Read raw, so without the zone a model's dates are sent with
-            ->map(fn (Collection $latest) => Date::parse($latest->max('changed_at')));
-
-        return $projects
-            ->map(fn (Project $project) => [
-                'ref_id' => $project->ref_id,
-                'name' => $project->name,
-                'role' => $project->getRelationValue('pivot')?->getAttribute('role'),
-                'members' => $project->members_count,
-                'changed_at' => $changed->get($project->id),
-            ])
-            ->sortByDesc(fn (array $project) => $project['changed_at']?->getTimestamp() ?? 0)
-            ->values();
-    }
-
-    /**
-     * What others changed lately in the user's projects.
-     *
-     * @return Collection<int, Recent>
-     */
-    private function fromProjects(User $user): Collection
-    {
-        $others = fn (string $kind) => $kind::query()
-            ->whereIn('project_id', $user->projects()->select('projects.id'))
-            ->whereNotNull('updated_by')
-            ->where('updated_by', '!=', $user->id);
-
-        return $this->recent([$others(Note::class), $others(Board::class), $others(Table::class)], true, true);
     }
 }

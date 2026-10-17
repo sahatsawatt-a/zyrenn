@@ -25,7 +25,8 @@ await runBoard(
             `- [ ] Personal task ${RUN}\n- [x] Done task ${RUN}\n`,
         );
         await open(page, page.url());
-        const todos = await page.locator('[data-test="todos"]').innerText();
+        // The to-dos still open in one's notes are among what waits on one
+        const todos = await page.locator('[data-test="waiting"]').innerText();
         check(
             'own to-do listed (Postgres)',
             todos.includes(`Personal task ${RUN}`) &&
@@ -61,6 +62,7 @@ await runBoard(
             sidebarDash,
         );
 
+        await page.locator('[data-test="new-menu"]').click();
         await page.locator('[data-test="new-note"]').click();
         await page.waitForURL(/\/notes\/\w+$/);
         await page.waitForSelector('.ProseMirror');
@@ -79,7 +81,9 @@ await runBoard(
         await until(
             async () => {
                 await open(page, `${base}/p/${project}/dashboard`);
-                ptodos = await page.locator('[data-test="todos"]').innerText();
+                ptodos = await page
+                    .locator('[data-test="waiting"]')
+                    .innerText();
 
                 return ptodos.includes(`Project task ${RUN}`);
             },

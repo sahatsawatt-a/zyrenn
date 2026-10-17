@@ -3,7 +3,7 @@ import { Head, router, setLayoutProps } from '@inertiajs/vue3';
 import { History, Loader2, Play, Rocket } from '@lucide/vue';
 import { useVueFlow } from '@vue-flow/core';
 import type { NodeChange } from '@vue-flow/core';
-import { computed, nextTick, ref, watch, watchEffect } from 'vue';
+import { computed, nextTick, onMounted, ref, watch, watchEffect } from 'vue';
 import { toast } from 'vue-sonner';
 import PresenceAvatars from '@/components/common/PresenceAvatars.vue';
 import { Button } from '@/components/ui/button';
@@ -42,6 +42,7 @@ import type {
 import { owned } from '@/lib/projects';
 import { index as projectIndex } from '@/routes/projects/workflows';
 import { index as ownIndex, show } from '@/routes/workflows';
+import Tip from '@/components/common/Tip.vue';
 
 // A workflow's draft on a canvas: steps from the palette, joined by dragging
 // from a dot on one to the next -- or added already joined, from a step's
@@ -314,6 +315,18 @@ const { live } = useSocketState(() => {
 
 const runs = useWorkflowRuns(props.workflow.ref_id, live);
 
+// A run named in the address -- from the dashboard, waiting for approval or
+// failed -- opened in the panel as the page opens
+onMounted(() => {
+    const asked = new URLSearchParams(window.location.search).get('run');
+
+    if (asked) {
+        panelOpen.value = true;
+        panelTab.value = 'run';
+        void runs.load(asked);
+    }
+});
+
 // The draft as saved now, in place of this one -- when nothing is unsaved here
 function reloadDraft(theirs?: number) {
     if (theirs !== undefined && !saving.canCatchUp(theirs)) {
@@ -514,23 +527,23 @@ function takeTheirs() {
                 <template v-if="!compact">Runs</template>
             </Button>
 
-            <label
+            <Tip
                 v-if="editable && hasOwnTrigger"
-                class="flex items-center gap-2 text-xs"
-                :title="
+                :text="
                     publishing.published
                         ? 'Its triggers start runs by themselves, as published'
                         : 'Publish it first: what is switched on is what is published'
                 "
-                data-enabled
             >
-                <Switch
-                    :model-value="enabled"
-                    :disabled="!publishing.published || switching"
-                    @update:model-value="switchOn"
-                />
-                {{ enabled ? 'On' : 'Off' }}
-            </label>
+                <label class="flex items-center gap-2 text-xs" data-enabled>
+                    <Switch
+                        :model-value="enabled"
+                        :disabled="!publishing.published || switching"
+                        @update:model-value="switchOn"
+                    />
+                    {{ enabled ? 'On' : 'Off' }}
+                </label>
+            </Tip>
 
             <Button
                 v-if="editable && hasManual"
