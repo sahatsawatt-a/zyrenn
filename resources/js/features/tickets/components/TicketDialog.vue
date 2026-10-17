@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { ImagePlus, MessagesSquare, Trash2, X } from '@lucide/vue';
+import { ImagePlus, MessagesSquare, Play, Trash2, Video, X } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import InputError from '@/components/common/InputError.vue';
+import PickOrAdd from '@/components/common/PickOrAdd.vue';
+import Tip from '@/components/common/Tip.vue';
 import MediaPickerDialog from '@/components/media/MediaPickerDialog.vue';
 import type { PickedMedia } from '@/components/media/MediaPickerDialog.vue';
+import type { MediaKind } from '@/lib/drive';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -24,20 +27,24 @@ import {
     TYPES,
     blankDraft,
     draftOf,
+    isVideo,
 } from '@/features/tickets/tickets';
 import type {
     Ticket,
     TicketDraft,
     TicketPerson,
     TicketStatus,
+    TicketSuite,
     TicketType,
 } from '@/features/tickets/tickets';
 import { formatRelativeTime } from '@/lib/utils';
 import { show as showChat } from '@/routes/chats';
 import TicketPick from './TicketPick.vue';
+import TicketRepro from './TicketRepro.vue';
 
-// One form for a ticket, new or already filed: what it is about, how far
-// along it is, who has it, and pictures of it. Somebody who can only look
+// One form for a ticket, new or already filed: what it is about, how to make
+// a bug happen again, how far along it is, who has it, and pictures and
+// videos of it. Somebody who can only look
 // reads the same form, with nothing in it to change.
 const open = defineModel<boolean>('open', { required: true });
 
@@ -49,6 +56,8 @@ const props = defineProps<{
     people: TicketPerson[];
     // The units already in use here, offered as the form is typed in
     units: string[];
+    // The project's browser checks, one of which may make a bug happen
+    suites: TicketSuite[];
     canChange: boolean;
     errors: Record<string, string>;
     busy: boolean;
@@ -87,24 +96,38 @@ const assignees = computed(() => [
     })),
 ]);
 
-// ------------------------------------------------------------------ Pictures
+// ------------------------------------------------------- Pictures and videos
 const picking = ref(false);
+const pickKind = ref<MediaKind>('image');
 const viewer = useMediaViewer();
+
+const pick = (kind: MediaKind) => {
+    pickKind.value = kind;
+    picking.value = true;
+};
 
 const addPictures = (picked: PickedMedia[]) => {
     draft.value.pictures = [
         ...draft.value.pictures,
-        ...picked.map(({ src, name }) => ({ src, name })),
+        ...picked.map(({ src, name, kind }) => ({ src, name, kind })),
     ].slice(0, 12);
 };
 
 const show = (index: number) =>
     viewer.open(
-        draft.value.pictures.map((picture) => ({
-            type: 'image' as const,
-            src: picture.src,
-            alt: picture.name,
-        })),
+        draft.value.pictures.map((picture) =>
+            isVideo(picture)
+                ? {
+                      type: 'video' as const,
+                      src: picture.src,
+                      title: picture.name,
+                  }
+                : {
+                      type: 'image' as const,
+                      src: picture.src,
+                      alt: picture.name,
+                  },
+        ),
         index,
     );
 </script>
@@ -144,6 +167,7 @@ const show = (index: number) =>
 
             <form
                 id="ticket-form"
+                novalidate
                 class="min-h-0 flex-1 overflow-y-auto px-6 py-6"
                 @submit.prevent="emit('save', draft)"
             >
@@ -201,25 +225,31 @@ const show = (index: number) =>
                         <InputError :message="errors.body" />
                     </div>
 
+                    <TicketRepro
+                        v-if="draft.type === 'bug'"
+                        v-model:repro="draft.repro"
+                        v-model:check="draft.check"
+                        :ticket="ticket"
+                        :suites="suites"
+                        :can-change="canChange"
+                        :errors="errors"
+                    />
+
                     <div class="grid gap-x-5 gap-y-6 sm:grid-cols-2">
                         <div class="grid gap-2">
                             <Label for="ticket-unit">Part</Label>
-                            <Input
+                            <PickOrAdd
                                 id="ticket-unit"
                                 v-model="draft.unit"
-                                maxlength="64"
-                                list="ticket-units"
-                                autocomplete="off"
+                                :options="units"
+                                label="Part"
                                 placeholder="Which part it is about"
+                                add-label="New part"
+                                :max-length="64"
+                                clearable
+                                :disabled="!canChange"
                                 data-test="ticket-unit"
                             />
-                            <datalist id="ticket-units">
-                                <option
-                                    v-for="unit in units"
-                                    :key="unit"
-                                    :value="unit"
-                                />
-                            </datalist>
                             <InputError :message="errors.unit" />
                         </div>
 
@@ -300,47 +330,105 @@ const show = (index: number) =>
                     </div>
 
                     <div class="grid gap-2">
-                        <Label>Pictures</Label>
+                        <Label>Pictures and videos</Label>
                         <div class="flex flex-wrap gap-2">
                             <div
                                 v-for="(picture, index) in draft.pictures"
                                 :key="`${picture.src}-${index}`"
                                 class="group relative"
                             >
-                                <button
-                                    type="button"
-                                    class="block overflow-hidden rounded-md border"
-                                    :title="picture.name || 'Picture'"
-                                    data-test="ticket-picture"
-                                    @click="show(index)"
+                                <Tip
+                                    :text="
+                                        picture.name ||
+                                        (isVideo(picture) ? 'Video' : 'Picture')
+                                    "
                                 >
-                                    <img
-                                        :src="picture.src"
-                                        :alt="picture.name"
-                                        class="size-20 object-cover"
-                                        loading="lazy"
-                                    />
-                                </button>
-                                <button
+                                    <button
+                                        type="button"
+                                        class="relative block overflow-hidden rounded-md border"
+                                        :aria-label="
+                                            picture.name ||
+                                            (isVideo(picture)
+                                                ? 'Video'
+                                                : 'Picture')
+                                        "
+                                        :data-test="
+                                            isVideo(picture)
+                                                ? 'ticket-video'
+                                                : 'ticket-picture'
+                                        "
+                                        @click="show(index)"
+                                    >
+                                        <template v-if="isVideo(picture)">
+                                            <!-- Its first moment, to know it by -->
+                                            <video
+                                                :src="`${picture.src}#t=0.1`"
+                                                class="bg-muted size-20 object-cover"
+                                                preload="metadata"
+                                                muted
+                                                playsinline
+                                            />
+                                            <span
+                                                class="absolute inset-0 flex items-center justify-center bg-black/25 text-white"
+                                            >
+                                                <Play
+                                                    class="size-5 fill-current"
+                                                />
+                                            </span>
+                                        </template>
+                                        <img
+                                            v-else
+                                            :src="picture.src"
+                                            :alt="picture.name"
+                                            class="size-20 object-cover"
+                                            loading="lazy"
+                                        />
+                                    </button>
+                                </Tip>
+                                <Tip
                                     v-if="canChange"
-                                    type="button"
-                                    class="bg-background absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border shadow-sm"
-                                    title="Take this picture off"
-                                    @click="draft.pictures.splice(index, 1)"
+                                    :text="
+                                        isVideo(picture)
+                                            ? 'Take this video off'
+                                            : 'Take this picture off'
+                                    "
                                 >
-                                    <X class="size-3" />
-                                </button>
+                                    <button
+                                        type="button"
+                                        class="bg-background absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border shadow-sm"
+                                        :aria-label="
+                                            isVideo(picture)
+                                                ? 'Take this video off'
+                                                : 'Take this picture off'
+                                        "
+                                        @click="draft.pictures.splice(index, 1)"
+                                    >
+                                        <X class="size-3" />
+                                    </button>
+                                </Tip>
                             </div>
-                            <button
+                            <template
                                 v-if="canChange && draft.pictures.length < 12"
-                                type="button"
-                                class="text-muted-foreground hover:text-foreground hover:border-foreground/40 flex size-20 flex-col items-center justify-center gap-1 rounded-md border border-dashed text-xs"
-                                data-test="ticket-add-picture"
-                                @click="picking = true"
                             >
-                                <ImagePlus class="size-4" />
-                                Add
-                            </button>
+                                <button
+                                    type="button"
+                                    class="text-muted-foreground hover:text-foreground hover:border-foreground/40 flex size-20 flex-col items-center justify-center gap-1 rounded-md border border-dashed text-xs"
+                                    data-test="ticket-add-picture"
+                                    @click="pick('image')"
+                                >
+                                    <ImagePlus class="size-4" />
+                                    Picture
+                                </button>
+                                <button
+                                    type="button"
+                                    class="text-muted-foreground hover:text-foreground hover:border-foreground/40 flex size-20 flex-col items-center justify-center gap-1 rounded-md border border-dashed text-xs"
+                                    data-test="ticket-add-video"
+                                    @click="pick('video')"
+                                >
+                                    <Video class="size-4" />
+                                    Video
+                                </button>
+                            </template>
                             <p
                                 v-if="!canChange && !draft.pictures.length"
                                 class="text-muted-foreground text-sm"
@@ -356,35 +444,44 @@ const show = (index: number) =>
             <DialogFooter
                 class="flex-row flex-wrap items-center gap-2 border-t px-6 py-4 sm:justify-start"
             >
-                <Button
+                <Tip
                     v-if="ticket"
-                    type="button"
-                    variant="outline"
-                    :title="
+                    :text="
                         ticket.chat
                             ? 'Open the chat about this ticket'
                             : 'Start a chat about this ticket'
                     "
-                    data-test="ticket-discuss"
-                    @click="emit('discuss')"
                 >
-                    <MessagesSquare />
-                    <!-- On a phone the picture says it: the row is short -->
-                    <span class="hidden sm:inline">{{
-                        ticket.chat ? 'Open chat' : 'Discuss'
-                    }}</span>
-                </Button>
-                <Button
-                    v-if="ticket && canChange"
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    title="Delete this ticket"
-                    data-test="ticket-delete"
-                    @click="emit('remove')"
-                >
-                    <Trash2 />
-                </Button>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        :aria-label="
+                            ticket.chat
+                                ? 'Open the chat about this ticket'
+                                : 'Start a chat about this ticket'
+                        "
+                        data-test="ticket-discuss"
+                        @click="emit('discuss')"
+                    >
+                        <MessagesSquare />
+                        <!-- On a phone the picture says it: the row is short -->
+                        <span class="hidden sm:inline">{{
+                            ticket.chat ? 'Open chat' : 'Discuss'
+                        }}</span>
+                    </Button>
+                </Tip>
+                <Tip v-if="ticket && canChange" text="Delete this ticket">
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Delete this ticket"
+                        data-test="ticket-delete"
+                        @click="emit('remove')"
+                    >
+                        <Trash2 />
+                    </Button>
+                </Tip>
                 <span class="flex-1" />
                 <Button type="button" variant="secondary" @click="open = false">
                     {{ canChange ? 'Cancel' : 'Close' }}
@@ -404,6 +501,7 @@ const show = (index: number) =>
 
     <MediaPickerDialog
         v-model:open="picking"
+        :kind="pickKind"
         destination="the ticket"
         @insert="addPictures"
     />

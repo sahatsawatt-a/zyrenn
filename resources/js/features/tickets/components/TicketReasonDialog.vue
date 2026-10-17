@@ -30,17 +30,30 @@ const emit = defineEmits<{ confirm: [string] }>();
 const reason = ref('');
 const asking = computed(() => REASONS[props.status]);
 
+// Sent with nothing said, it says so under the field
+const missing = ref('');
+
 watch(open, (now) => {
     if (now) {
         // Back on hold, what it waited on before is a fair start
         reason.value = props.ticket?.reason ?? '';
+        missing.value = '';
     }
 });
+
+watch(reason, () => (missing.value = ''));
 
 const send = () => {
     if (reason.value.trim()) {
         emit('confirm', reason.value.trim());
+
+        return;
     }
+
+    missing.value =
+        props.status === 'on_hold'
+            ? 'Say what it is waiting on.'
+            : 'Say why it will not be done.';
 };
 </script>
 
@@ -55,6 +68,7 @@ const send = () => {
             </DialogHeader>
             <form
                 id="ticket-reason-form"
+                novalidate
                 class="grid gap-2"
                 @submit.prevent="send"
             >
@@ -70,7 +84,7 @@ const send = () => {
                     data-test="ticket-move-reason"
                     @keydown.enter.exact.prevent="send"
                 />
-                <InputError :message="error" />
+                <InputError :message="missing || error" />
             </form>
             <DialogFooter>
                 <Button type="button" variant="secondary" @click="open = false"

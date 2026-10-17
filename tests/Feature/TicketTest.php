@@ -2,11 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Models\Browser\BrowserRun;
 use App\Models\Chat\ChatRoom;
+use App\Models\Drive\DriveFile;
 use App\Models\Project;
 use App\Models\Ticket\Ticket;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
@@ -104,22 +108,28 @@ class TicketTest extends TestCase
         $this->assertNull($ticket->refresh()->closed_at);
     }
 
-    public function test_it_takes_pictures_from_the_drive_or_the_web_and_nothing_else()
+    public function test_it_takes_pictures_and_videos_from_the_drive_or_the_web_and_nothing_else()
     {
         $ticket = Ticket::file($this->project, $this->owner, ['type' => Ticket::BUG, 'title' => 'Resize shakes']);
+        $film = DriveFile::factory()->create(['name' => 'shakes.mp4', 'mime' => 'video/mp4', 'ext' => 'mp4', 'kind' => 'video']);
 
         $this->actingAs($this->owner)
             ->patch(route('projects.tickets.update', [$this->project, $ticket]), [
                 'pictures' => [
                     ['src' => '/drive/files/e3agxrzz0a', 'name' => 'image.png'],
                     ['src' => 'https://example.com/shot.png'],
+                    // Said to be a picture: what it is goes by the Drive
+                    ['src' => "/drive/files/{$film->ref_id}", 'name' => 'shakes.mp4', 'kind' => 'image'],
+                    ['src' => 'https://example.com/clip.webm?x=1'],
                 ],
             ])
             ->assertSessionHasNoErrors();
 
         $this->assertSame([
-            ['src' => '/drive/files/e3agxrzz0a', 'name' => 'image.png'],
-            ['src' => 'https://example.com/shot.png', 'name' => ''],
+            ['src' => '/drive/files/e3agxrzz0a', 'name' => 'image.png', 'kind' => 'image'],
+            ['src' => 'https://example.com/shot.png', 'name' => '', 'kind' => 'image'],
+            ['src' => "/drive/files/{$film->ref_id}", 'name' => 'shakes.mp4', 'kind' => 'video'],
+            ['src' => 'https://example.com/clip.webm?x=1', 'name' => '', 'kind' => 'video'],
         ], $ticket->refresh()->pictures);
 
         $this->actingAs($this->owner)
@@ -218,5 +228,113 @@ class TicketTest extends TestCase
         $this->project->delete();
 
         $this->assertSame(0, Ticket::query()->count());
+    }
+
+    public function test_a_bug_says_how_to_make_it_happen_again_and_which_check_does()
+    {
+        $suite = $this->browserSuite($this->project, $this->owner);
+        $elsewhere = $this->browserSuite(Project::factory()->withMember($this->owner)->create(), $this->owner);
+
+        $this->actingAs($this->owner)
+            ->post(route('projects.tickets.store', $this->project), [
+                'type' => Ticket::BUG,
+                'title' => 'Logging in fails',
+                'repro' => ['steps' => [' Open the shop ', '', 'Click "Log in"'], 'expected' => 'Signed in', 'happens' => ''],
+                'check' => ['suite' => $suite->ref_id, 'check' => 'login'],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $ticket = Ticket::sole();
+        // Blank steps left out, the rest kept in order
+        $this->assertSame(['steps' => ['Open the shop', 'Click "Log in"'], 'expected' => 'Signed in', 'happens' => ''], $ticket->repro);
+        $this->assertSame($suite->id, $ticket->browser_suite_id);
+        $this->assertSame('login', $ticket->browser_check);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.tickets.index', $this->project))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('tickets.0.check.title', 'Logging in')
+                ->where('tickets.0.check.run', null)
+                ->where('suites.0.checks.0.id', 'login')
+            );
+
+        // Only the project's own checks, and only ones its suite has
+        foreach ([['suite' => $elsewhere->ref_id, 'check' => 'login'], ['suite' => $suite->ref_id, 'check' => 'gone']] as $check) {
+            $this->actingAs($this->owner)
+                ->patch(route('projects.tickets.update', [$this->project, $ticket]), ['check' => $check])
+                ->assertSessionHasErrors('check');
+        }
+
+        // Nothing said is nothing kept
+        $this->actingAs($this->owner)
+            ->patch(route('projects.tickets.update', [$this->project, $ticket]), ['check' => null, 'repro' => ['steps' => [''], 'expected' => ' ']])
+            ->assertSessionHasNoErrors();
+
+        $ticket->refresh();
+        $this->assertNull($ticket->repro);
+        $this->assertNull($ticket->browser_suite_id);
+    }
+
+    public function test_run_it_says_whether_the_bug_still_happens_and_files_nothing_new()
+    {
+        Storage::fake(DriveFile::DISK);
+        $suite = $this->browserSuite($this->project, $this->owner);
+        // Failures of its checks are filed as tickets: not when a ticket asked
+        $suite->settings = ['tickets' => true];
+        $suite->save();
+        $ticket = Ticket::file($this->project, $this->owner, ['type' => Ticket::BUG, 'title' => 'Logging in fails', 'browser_suite_id' => $suite->id, 'browser_check' => 'login']);
+
+        $this->actingAs($this->member(Project::VIEWER))
+            ->post(route('projects.tickets.replay', [$this->project, $ticket]))
+            ->assertForbidden();
+
+        // The bug happens the first time, and is gone the second
+        $answer = fn (bool $passes) => [
+            'steps' => [['ok' => true, 'took' => 300], ['ok' => $passes, 'took' => 50, 'error' => $passes ? null : 'Nothing showing "Log in" turned up.']],
+            'url' => 'https://shop.example.com/',
+            'title' => 'Shop',
+            'refused' => [],
+            'video' => null,
+        ];
+        Http::fake(['chrome:3000/check' => Http::sequence()->push($answer(false))->push($answer(true))]);
+
+        foreach ([false, true] as $passes) {
+            $this->actingAs($this->owner)
+                ->post(route('projects.tickets.replay', [$this->project, $ticket]))
+                ->assertSessionHasNoErrors();
+
+            $run = BrowserRun::query()->latest('id')->firstOrFail();
+            // Only its check, filmed, and said to be the ticket's
+            $this->assertSame(['login'], $run->settings['checks']);
+            $this->assertTrue($run->settings['record']);
+            $this->assertSame($ticket->number, $run->settings['ticket']);
+
+            $this->work();
+
+            $this->actingAs($this->owner)
+                ->get(route('projects.tickets.index', $this->project))
+                ->assertInertia(fn (AssertableInertia $page) => $page
+                    ->where('tickets.0.check.run.ref_id', $run->ref_id)
+                    ->where('tickets.0.check.run.ok', $passes)
+                );
+        }
+
+        $this->assertSame(1, Ticket::query()->count());
+    }
+
+    public function test_run_it_needs_a_check_whose_suite_still_has_it()
+    {
+        $suite = $this->browserSuite($this->project, $this->owner);
+        $ticket = Ticket::file($this->project, $this->owner, ['type' => Ticket::BUG, 'title' => 'Logging in fails']);
+
+        $this->actingAs($this->owner)
+            ->post(route('projects.tickets.replay', [$this->project, $ticket]))
+            ->assertSessionHasErrors('check');
+
+        $ticket->update(['browser_suite_id' => $suite->id, 'browser_check' => 'login']);
+        $suite->delete();
+
+        $this->assertSame(['gone' => true, 'suite' => null, 'check' => 'login'], $ticket->refresh()->summary()['check']);
+        $this->assertSame(0, BrowserRun::query()->count());
     }
 }

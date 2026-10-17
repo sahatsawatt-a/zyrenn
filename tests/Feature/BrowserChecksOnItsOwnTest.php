@@ -163,6 +163,8 @@ class BrowserChecksOnItsOwnTest extends TestCase
         $this->assertSame('Browser check fails: Logging in (Shop)', $ticket->title);
         $this->assertStringContainsString('Failed at step 3, Click "Log in"', (string) $ticket->body);
         $this->assertStringStartsWith('/drive/files/', $ticket->pictures[0]['src']);
+        // The check is how to make it happen again
+        $this->assertSame([$suite->id, 'login'], [$ticket->browser_suite_id, $ticket->browser_check]);
         $this->assertTrue($first->tickets[0]['new']);
         $this->assertFalse($second->tickets[0]['new']);
 

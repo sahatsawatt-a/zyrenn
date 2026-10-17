@@ -20,7 +20,54 @@ export type TicketStatus =
 
 export type TicketPriority = 'low' | 'normal' | 'high';
 
-export type TicketPicture = { src: string; name: string };
+// A picture or a video: older ones, kept before videos were, say nothing and are pictures
+export type TicketPicture = {
+    src: string;
+    name: string;
+    kind?: 'image' | 'video';
+};
+
+/** How to make a bug happen again. */
+export type TicketRepro = {
+    steps: string[];
+    expected: string;
+    happens: string;
+};
+
+/** A run of a bug's browser check: passed, it no longer happens. */
+export type TicketReplayRun = {
+    ref_id: string;
+    state: 'waiting' | 'running' | 'passed' | 'failed' | 'stopped';
+    // Whether the check passed, once the run has ended
+    ok: boolean | null;
+    verdict: string | null;
+    video: { url: string; name: string } | null;
+    at: string;
+    // The run as JSON, followed while it goes; and on the checks page
+    url: string;
+    page: string;
+};
+
+/** The browser check that makes a bug happen (Replay::described). */
+export type TicketCheck =
+    | { gone: true; suite: string | null; check: string | null }
+    | {
+          gone: false;
+          suite: string;
+          suite_title: string;
+          check: string;
+          title: string;
+          steps: number;
+          url: string;
+          run: TicketReplayRun | null;
+      };
+
+/** A suite of the project's browser checks, offered to link one from. */
+export type TicketSuite = {
+    ref_id: string;
+    title: string;
+    checks: { id: string; title: string }[];
+};
 
 export type TicketPerson = { id: number; name: string };
 
@@ -36,6 +83,8 @@ export type Ticket = {
     title: string;
     unit: string;
     body: string;
+    repro: TicketRepro | null;
+    check: TicketCheck | null;
     pictures: TicketPicture[];
     created_by: TicketPerson | null;
     assigned_to: TicketPerson | null;
@@ -58,6 +107,9 @@ export type TicketDraft = {
     status: TicketStatus;
     reason: string;
     assigned_to: number | null;
+    repro: TicketRepro;
+    // The suite and check that makes it happen; null for none
+    check: { suite: string; check: string } | null;
     pictures: TicketPicture[];
 };
 
@@ -164,6 +216,8 @@ export const blankDraft = (type: TicketType = 'bug'): TicketDraft => ({
     status: 'open',
     reason: '',
     assigned_to: null,
+    repro: { steps: [], expected: '', happens: '' },
+    check: null,
     pictures: [],
 });
 
@@ -176,5 +230,23 @@ export const draftOf = (ticket: Ticket): TicketDraft => ({
     status: ticket.status,
     reason: ticket.reason ?? '',
     assigned_to: ticket.assigned_to?.id ?? null,
+    repro: {
+        steps: [...(ticket.repro?.steps ?? [])],
+        expected: ticket.repro?.expected ?? '',
+        happens: ticket.repro?.happens ?? '',
+    },
+    check:
+        ticket.check && !ticket.check.gone
+            ? { suite: ticket.check.suite, check: ticket.check.check }
+            : null,
     pictures: ticket.pictures.map((picture) => ({ ...picture })),
 });
+
+/** Whether a bug says anything of how to make it happen again. */
+export const saysRepro = (repro: TicketRepro | null | undefined) =>
+    !!repro &&
+    (repro.steps.some((step) => step.trim()) ||
+        !!repro.expected.trim() ||
+        !!repro.happens.trim());
+
+export const isVideo = (picture: TicketPicture) => picture.kind === 'video';

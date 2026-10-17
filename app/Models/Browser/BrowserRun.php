@@ -20,7 +20,7 @@ use Illuminate\Support\Carbon;
  * @property string $ref_id
  * @property int $suite_id
  * @property int|null $created_by
- * @property array{pace: array{glide: int, typing: int, pause: int}, speed: string, captions: bool, record: bool, keep: bool, checks: list<string>, one_film?: bool, cut_waits?: bool} $settings
+ * @property array{pace: array{glide: int, typing: int, pause: int}, speed: string, captions: bool, record: bool, keep: bool, checks: list<string>, one_film?: bool, cut_waits?: bool, ticket?: int} $settings
  * @property string $state
  * @property bool $trial only a try: kept nowhere, and taken away soon after it ends
  * @property list<array<string, mixed>>|null $results

@@ -11,7 +11,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[IsReadOnly]
-#[Description('Read one ticket of a project in full: what it asks for, its status, who has it, and its pictures -- each a Drive file\'s URL (get-file reads it, by the ref_id at its end) or a link.')]
+#[Description('Read one ticket of a project in full: what it asks for, its status, who has it, its pictures and its videos -- each a Drive file\'s URL (get-file reads it, by the ref_id at its end) or a link -- and, for a bug, how to make it happen again: "repro" steps, and "check", the browser check that does them, with whether its last run found it still happens.')]
 class GetTicket extends TicketTool
 {
     protected function arguments(JsonSchema $schema): array

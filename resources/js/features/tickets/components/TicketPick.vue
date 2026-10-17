@@ -56,6 +56,7 @@ const chosen = computed(() =>
             :id="id"
             :size="compact ? 'sm' : 'default'"
             :aria-label="label"
+            :data-value="modelValue"
             :class="
                 cn(compact ? 'gap-1.5 px-2 text-xs' : 'w-full', props.class)
             "

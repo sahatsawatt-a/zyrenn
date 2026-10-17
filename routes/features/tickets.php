@@ -12,6 +12,8 @@ Route::middleware(['auth', 'verified'])->prefix('p/{project}')->name('projects.'
     Route::scopeBindings()->group(function () {
         Route::patch('tickets/{ticket}', [TicketController::class, 'update'])->name('tickets.update');
         Route::delete('tickets/{ticket}', [TicketController::class, 'destroy'])->name('tickets.destroy');
+        // Run the bug's browser check: does it still happen?
+        Route::post('tickets/{ticket}/replay', [TicketController::class, 'replay'])->middleware('throttle:20,1')->name('tickets.replay');
         Route::post('tickets/{ticket}/chat', [TicketController::class, 'discuss'])->name('tickets.chat');
     });
 });

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SearchField from '@/components/common/SearchField.vue';
 import { Head, router, setLayoutProps, usePage } from '@inertiajs/vue3';
 import {
     Columns3,
@@ -28,6 +29,7 @@ import type {
     TicketDraft,
     TicketPerson,
     TicketStatus,
+    TicketSuite,
     TicketType,
 } from '@/features/tickets/tickets';
 import { canChange } from '@/lib/projects';
@@ -38,6 +40,8 @@ const props = defineProps<{
     tickets: Ticket[];
     // Everyone in the project: who a ticket can be given to
     people: TicketPerson[];
+    // The project's browser checks, for a bug to name the one that makes it happen
+    suites: TicketSuite[];
 }>();
 
 const page = usePage();
@@ -315,18 +319,12 @@ const remove = () => {
                     @update:model-value="unit = $event === EVERY ? '' : $event"
                 />
 
-                <div class="relative min-w-32 flex-1">
-                    <Search
-                        class="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
-                    />
-                    <Input
-                        v-model="search"
-                        type="search"
-                        class="pl-8"
-                        placeholder="Search tickets"
-                        data-test="tickets-search"
-                    />
-                </div>
+                <SearchField
+                    v-model="search"
+                    class="min-w-32 flex-1"
+                    placeholder="Search tickets"
+                    data-test="tickets-search"
+                />
 
                 <SegmentTabs v-model="view" :options="VIEWS" label="View" />
             </div>
@@ -366,6 +364,7 @@ const remove = () => {
             :type="kind === 'all' ? 'bug' : kind"
             :people="people"
             :units="[...new Set([...unitsUsed, ...UNITS])]"
+            :suites="suites"
             :can-change="changes"
             :errors="errors"
             :busy="busy"

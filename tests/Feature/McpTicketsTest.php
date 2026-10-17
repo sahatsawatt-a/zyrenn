@@ -8,6 +8,7 @@ use App\Mcp\Tools\Tickets\CreateTicket;
 use App\Mcp\Tools\Tickets\GetTicket;
 use App\Mcp\Tools\Tickets\ListTickets;
 use App\Mcp\Tools\Tickets\UpdateTicket;
+use App\Models\Drive\DriveFile;
 use App\Models\Project;
 use App\Models\Ticket\Ticket;
 use App\Models\User;
@@ -217,5 +218,53 @@ class McpTicketsTest extends TestCase
         ])->assertOk();
 
         $this->assertSame($this->owner->id, $this->project->tickets()->sole()->created_by);
+    }
+
+    public function test_a_bug_says_how_to_make_it_happen_again_and_holds_videos()
+    {
+        $suite = $this->browserSuite($this->project, $this->owner, 'Shop');
+        $film = DriveFile::factory()->create(['mime' => 'video/mp4', 'ext' => 'mp4', 'kind' => 'video']);
+
+        UserServer::actingAs($this->owner)
+            ->tool(CreateTicket::class, [
+                'project' => 'Lakeshore',
+                'type' => 'bug',
+                'title' => 'Logging in fails',
+                'steps' => ['Open the shop', 'Click "Log in"'],
+                'expected' => 'Signed in',
+                // By title, as a person says them
+                'check' => ['suite' => 'shop', 'check' => 'Logging in'],
+                'pictures' => ['/drive/files/e3agxrzz0a', "/drive/files/{$film->ref_id}"],
+            ])
+            ->assertOk()
+            ->assertStructuredContent(fn (AssertableJson $json) => $json
+                ->where('repro', ['steps' => ['Open the shop', 'Click "Log in"'], 'expected' => 'Signed in', 'happens' => ''])
+                ->where('check.suite', $suite->ref_id)
+                ->where('check.check', 'login')
+                ->where('check.last_run', null)
+                ->where('pictures', ['/drive/files/e3agxrzz0a'])
+                ->where('videos', ["/drive/files/{$film->ref_id}"])
+                ->etc()
+            );
+
+        // One part said alone keeps the others
+        UserServer::actingAs($this->owner)
+            ->tool(UpdateTicket::class, ['project' => 'Lakeshore', 'number' => 1, 'happens' => 'Nothing'])
+            ->assertOk();
+
+        $this->assertSame(['steps' => ['Open the shop', 'Click "Log in"'], 'expected' => 'Signed in', 'happens' => 'Nothing'], Ticket::sole()->repro);
+
+        UserServer::actingAs($this->owner)
+            ->tool(ListTickets::class, ['project' => 'Lakeshore'])
+            ->assertStructuredContent(fn (AssertableJson $json) => $json
+                ->where('tickets.0.pictures', 1)
+                ->where('tickets.0.videos', 1)
+                ->where('tickets.0.replayable', true)
+                ->etc()
+            );
+
+        UserServer::actingAs($this->owner)
+            ->tool(UpdateTicket::class, ['project' => 'Lakeshore', 'number' => 1, 'check' => ['suite' => 'shop', 'check' => 'Paying']])
+            ->assertHasErrors(['The suite "Shop" has no check "Paying".']);
     }
 }

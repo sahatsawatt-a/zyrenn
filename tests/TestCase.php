@@ -2,6 +2,9 @@
 
 namespace Tests;
 
+use App\Models\Browser\BrowserSuite;
+use App\Models\Project;
+use App\Models\User;
 use App\Support\Outside\RemoteDownload;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\Storage;
@@ -49,6 +52,23 @@ abstract class TestCase extends BaseTestCase
     protected function withoutStepIds(array $steps): array
     {
         return array_map(fn (array $step) => array_diff_key($step, ['id' => true]), $steps);
+    }
+
+    /**
+     * A suite of one browser check, "Logging in" (id "login"), kept by $owner.
+     */
+    protected function browserSuite(User|Project $owner, User $by, string $title = 'Shop'): BrowserSuite
+    {
+        $suite = (new BrowserSuite([
+            'title' => $title,
+            'checks' => [['id' => 'login', 'title' => 'Logging in', 'steps' => [
+                ['do' => 'open', 'url' => 'https://shop.example.com'],
+                ['do' => 'click', 'target' => 'Log in'],
+            ]]],
+        ]))->ownedBy($owner, $by);
+        $suite->save();
+
+        return $suite;
     }
 
     protected function work(): void

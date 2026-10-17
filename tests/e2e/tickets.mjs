@@ -45,7 +45,10 @@ await runBoard(
             await test(`ticket-type-${type}`).click();
             await test('ticket-title').fill(title);
             await test('ticket-body').fill(body);
-            await test('ticket-unit').fill(unit);
+            // The app's own pick-or-add: opened, narrowed by typing, Enter takes it
+            await test('ticket-unit').click();
+            await page.locator('[data-pick-search]').fill(unit);
+            await page.locator('[data-pick-search]').press('Enter');
 
             if (high) {
                 await test('ticket-priority-high').click();
@@ -76,6 +79,22 @@ await runBoard(
         });
 
         await soon('three are filed', async () => (await rows().count()) === 3);
+
+        // A part nobody has used yet is offered as a new one
+        await test('new-ticket').click();
+        await test('ticket-unit').click();
+        await page.locator('[data-pick-search]').fill('Payments');
+        await page.locator('[data-pick-new="Payments"]').waitFor();
+        await page.locator('[data-pick-new="Payments"]').click();
+        check(
+            'a part typed that nobody has used is added as itself',
+            (await test('ticket-unit').innerText()).includes('Payments'),
+        );
+        await page.screenshot({ path: `${SHOTS}/tickets-part.png` });
+        // The list is gone before Escape, or Escape only closes the list
+        await page.locator('[data-pick-search]').waitFor({ state: 'detached' });
+        await page.keyboard.press('Escape');
+        await dialogGone();
         check(
             'numbered as they came, newest first',
             /#3/.test(await rows().first().innerText()) &&

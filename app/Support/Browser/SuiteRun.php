@@ -400,8 +400,9 @@ final class SuiteRun
         // How long each step took and waited, for how long it usually needs
         StepTimings::keep($run);
 
-        // A run someone stopped proves nothing broke, and a try is kept nowhere: no tickets
-        if (! $passed && ! $stopped && ! $run->trial && $owner instanceof Project && ($suite->settings['tickets'] ?? false)) {
+        // A run someone stopped proves nothing broke, and a try is kept nowhere: no tickets.
+        // Nor for a run a ticket asked for: what it found is that ticket's bug
+        if (! $passed && ! $stopped && ! $run->trial && ! isset($run->settings['ticket']) && $owner instanceof Project && ($suite->settings['tickets'] ?? false)) {
             self::fileTickets($run, $owner);
         }
 
@@ -739,7 +740,9 @@ final class SuiteRun
             $steps = $check['steps'];
             $pictures = collect($steps)
                 ->filter(fn (array $step) => is_array($step['shot'] ?? null))
-                ->map(fn (array $step) => ['src' => $step['shot']['url'], 'name' => $step['shot']['name']])
+                ->map(fn (array $step) => ['src' => $step['shot']['url'], 'name' => $step['shot']['name'], 'kind' => 'image'])
+                ->when($check['video'] ?? null, fn ($media, array $video) => $media->prepend(['src' => $video['url'], 'name' => $video['name'], 'kind' => 'video']))
+                ->take(Ticket::MEDIA)
                 ->values()
                 ->all();
 
@@ -754,6 +757,9 @@ final class SuiteRun
                     'From a run of the suite "'.$suite->title.'" on '.$run->created_at?->format('j M Y, H:i').'.',
                 ])),
                 'pictures' => $pictures,
+                // The check is the way to make it happen again
+                'browser_suite_id' => $suite->id,
+                'browser_check' => $check['id'],
             ]);
             $filed[] = ['number' => $ticket->number, 'title' => $title, 'new' => true];
         }

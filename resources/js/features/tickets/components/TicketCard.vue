@@ -1,16 +1,25 @@
 <script setup lang="ts">
-import { ChevronsUp, Image as ImageIcon, MessagesSquare } from '@lucide/vue';
+import {
+    ChevronsUp,
+    Image as ImageIcon,
+    MessagesSquare,
+    Video,
+} from '@lucide/vue';
 import { computed } from 'vue';
-import { TYPES } from '@/features/tickets/tickets';
+import Tip from '@/components/common/Tip.vue';
+import { TYPES, isVideo } from '@/features/tickets/tickets';
 import type { Ticket } from '@/features/tickets/tickets';
 import { getInitials } from '@/composables/useInitials';
 
 // A ticket at a glance, the same in the list and on the board: what kind,
 // its number and title, and under them only what there is to say -- the part
-// it is about, that it is pressing, its pictures, who has it.
+// it is about, that it is pressing, its pictures and videos, who has it.
 const props = defineProps<{ ticket: Ticket }>();
 
 const kind = computed(() => TYPES[props.ticket.type]);
+
+const videos = computed(() => props.ticket.pictures.filter(isVideo).length);
+const pictures = computed(() => props.ticket.pictures.length - videos.value);
 </script>
 
 <template>
@@ -62,12 +71,13 @@ const kind = computed(() => TYPES[props.ticket.type]);
                 >
                     <ChevronsUp class="size-3.5" /> High
                 </span>
-                <span
-                    v-if="ticket.pictures.length"
-                    class="inline-flex items-center gap-1"
-                >
-                    <ImageIcon class="size-3.5" />
-                    {{ ticket.pictures.length }}
+                <span v-if="pictures" class="inline-flex items-center gap-1">
+                    <ImageIcon class="size-3.5" aria-label="Pictures" />
+                    {{ pictures }}
+                </span>
+                <span v-if="videos" class="inline-flex items-center gap-1">
+                    <Video class="size-3.5" aria-label="Videos" />
+                    {{ videos }}
                 </span>
                 <MessagesSquare
                     v-if="ticket.chat"
@@ -76,12 +86,16 @@ const kind = computed(() => TYPES[props.ticket.type]);
                 />
             </div>
         </div>
-        <span
+        <Tip
             v-if="ticket.assigned_to"
-            class="bg-primary/10 text-primary flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold"
-            :title="`Given to ${ticket.assigned_to.name}`"
+            :text="`Given to ${ticket.assigned_to.name}`"
         >
-            {{ getInitials(ticket.assigned_to.name) }}
-        </span>
+            <span
+                class="bg-primary/10 text-primary flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold"
+                :aria-label="`Given to ${ticket.assigned_to.name}`"
+            >
+                {{ getInitials(ticket.assigned_to.name) }}
+            </span>
+        </Tip>
     </div>
 </template>
