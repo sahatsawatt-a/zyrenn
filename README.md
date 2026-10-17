@@ -1,17 +1,25 @@
 # ZyrenN
 
-A personal workspace: notes, boards, tables, maps and trips, and a private
-Drive behind them -- on your own, or shared in projects.
+A workspace for a person or a team: notes, boards, tables, maps and trips,
+and a private Drive behind them; workflows that run by themselves; and, in a
+project, what it takes to build a product -- its parts, tickets, prototypes
+and browser checks.
 
 - **Notes** — a rich editor (Tiptap) filed in folders, saved as you type and
   edited together live. Markdown in and out, with callouts, tables, code,
-  Mermaid diagrams (an ER diagram turns into SQL), KaTeX, live values from a
-  table or a trip, and a board or a trip shown in place. Versions to go back
-  to, and a PDF export.
-- **Boards** — an endless canvas (Konva): sticky notes, shapes, flowchart
-  symbols, connectors that stay joined to what they link, pictures, videos,
-  formulae, and 16:9 frames that play as slides or export as a PDF. Edited
-  together live.
+  Mermaid diagrams (an ER diagram turns into SQL), KaTeX, circuits, live
+  values from a table or a trip, links between pages, and a board or a trip
+  shown in place. Versions to go back to, PDF and Markdown-zip exports.
+- **Boards** — an endless canvas (Konva): sticky notes, shapes and a shape
+  library, connectors routed round what is in their way, pictures, videos,
+  pencil and pen, circuits, formulae, and frames that play as an animated
+  deck or export as a PDF. A hand-drawn look and handwritten fonts when a
+  sketch fits better. Edited together live; right-drag or Space pans.
+- **Prototypes** — a project's clickable screens to agree on before building:
+  screens at a phone's, tablet's or desktop's size from a UI kit, items that
+  go to screens, open pop-ups, react to swipes and long presses, take typing
+  and choose by values, and a project table as their database. Played as the
+  app would be, with comments pinned on screens and a record of each play.
 - **Tables** — rows and columns of your own, each column of a kind (text,
   numbers, dates, choices, ratings, a place…), with formulas that can read a
   trip or another table, named parameters, search, filters, sort, CSV export,
@@ -25,9 +33,22 @@ Drive behind them -- on your own, or shared in projects.
   kept as a new file beside the original.
 - **Projects** — a shared space with its own notes, boards, tables, trips and
   Drive, whose members are owners, editors or viewers.
-- **Chat and messages** — an AI chat on a model of your choosing, apart from
-  messages between people: one to one, or a project's group.
-- **Dashboard** — what changed lately, open to-dos, and conversations.
+- **Product and tickets** — a project's product tree (components and what each
+  can do), requests kept word for word, requirements, and tickets for bugs
+  and features: a list and a board, a reason to put one on hold, and a bug's
+  steps, videos and the browser check that shows it.
+- **Workflows** — steps that run by themselves, n8n-like: triggers (a
+  schedule, a webhook, a chat message, GitHub, Stripe…), steps for tables,
+  notes, tickets, AI, messages and the services connected, code in
+  JavaScript or Python, and approvals that wait for a person.
+- **Browser checks** — steps a real browser does on a site, built by
+  clicking, run on a timetable, filmed, and filed as a bug when they fail.
+- **Chat, messages and the inbox** — an AI chat on a model of your choosing,
+  agents with their own knowledge, messages between people, and a project's
+  inbox of customer chats from LINE, Telegram, WhatsApp and Instagram.
+- **Dashboard** — what waits on you first (approvals, tickets, unread chats,
+  failed checks and runs, to-dos), then each project at a glance and what
+  changed lately.
 - **MCP** — an AI client can read and write all of it. See [Agent access](#agent-access).
 
 ## Running ZyrenN locally
@@ -205,7 +226,10 @@ Windsurf, Antigravity, Gemini CLI, Codex and others) in
 
 Ordinary Laravel and Inertia, grouped by feature: `Models/Note/`,
 `Controllers/Board/`, `Support/Board/` on the server, `features/boards/` in the
-page. A few parts are worth a map.
+page. [`docs/CODE-MAP.md`](docs/CODE-MAP.md) maps each part of the product to
+its folders, lists the shared parts and the logic kept in both PHP and
+TypeScript, and says where a new workflow step or MCP tool goes. A few parts
+are worth a word here.
 
 **Where page code lives** (`resources/js/`). The rule: code one feature uses
 lives with that feature; code two or more use lives outside every feature.
@@ -220,9 +244,10 @@ lives with that feature; code two or more use lives outside every feature.
 | `lib/`               | shared helpers: `drive`, `maps`, `projects`, `live`, `photo`, `icons`, `exporting`, `utils`                                     |
 | `layouts/`, `types/` | page layouts, and types every part uses                                                                                         |
 
-The features are `boards`, `notes` (the editor, its nodes and slash commands),
-`tables`, `maps` (the Maps page and trips), `chat`, `drive`, `dashboard` and
-`account` (sign-in security). A note showing a board or a trip imports the
+Among the features are `boards`, `prototypes`, `notes` (the editor, its nodes
+and slash commands), `tables`, `maps` (the Maps page and trips), `workflow`,
+`browser` (checks), `tickets`, `product`, `chat`, `drive`, `dashboard` and
+`account` (sign-in security); CODE-MAP lists them all. A note showing a board or a trip imports the
 board's or trip's own view from that feature; the map pieces a table's map
 view also needs (`useMap`, `PlaceSearch`, the basemaps) are in `components/map/`.
 
@@ -238,20 +263,24 @@ are called and what they count. The MCP tools share the same way:
 `app/Mcp/Tools/FiledTool.php`, and the list, get and delete tools in `Concerns/`.
 
 **The board** is one flat list of items in paint order, which keeps z-order,
-undo and hit-testing simple. Its logic is in `resources/js/features/boards/composables/`,
-its components in `resources/js/features/boards/components/`.
+undo and hit-testing simple. `resources/js/features/boards/` is in folders by
+what each part does:
 
-|                                                                             |                                                                            |
-| --------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `items.ts`                                                                  | what an item is, and what each kind starts as                              |
-| `geometry.ts`, `connectors.ts`, `guides.ts`                                 | boxes and anchors, the path a line takes, the ruler things line up against |
-| `useBoard.ts`                                                               | the items, the selection, and undo as whole-board snapshots                |
-| `useDrawing.ts`                                                             | everything the pointer does: drawing, dragging, snapping, the marquee      |
-| `useConnectorEnds.ts`                                                       | the dots a line can hold on to, and dropping an end on one                 |
-| `useLabelEditor.ts`, `useFormulae.ts`, `usePictures.ts`, `usePresenting.ts` | writing on things, KaTeX, pictures, playing the frames                     |
-| `BoardCanvas.vue`                                                           | the page: panels, the stage, and what is bound to what                     |
-| `BoardItem.vue`, `BoardOverlay.vue`                                         | what one thing looks like, and what is drawn over the board                |
-| `FrameMenu.vue`, `useVideoControls.ts`                                      | a frame right-clicked, as a picture; a video played, paused and watched    |
+|                             |                                                                                                                  |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `model/`                    | what an item is and the rules about it: geometry, layers, connectors and their routes, links in Play, the UI kit |
+| `drawing/`                  | how items are painted wherever a board is drawn: the editor, server pictures, note embeds                        |
+| `canvas/`                   | the editor: BoardCanvas, the camera, the pointer, shortcuts, live sync, the panels                               |
+| `inspector/`                | the side panel, one component per section (In Play for a prototype's items)                                      |
+| `deck/`, `pen/`, `circuit/` | slides and their animations; the vector pen; circuits                                                            |
+
+**A prototype** is a board with `kind` = prototype (`boards.prototype` holds its
+device and first screen), drawn with the same page and served at
+`/prototypes/{ref}`. Its frames are its screens. What items do in Play is
+kept on them (`link`, `when`, `repeat`…), as `features/prototypes/interactions.ts`
+says; `features/prototypes/play/` plays it, and `PrototypeController` and its
+neighbours in `Controllers/Board/` list, make and serve it, its tables, its
+comments and its plays.
 
 **A table** keeps its rows in a database table of its own,
 `user_table_<ref_id>`, with one real column per column of the grid;
