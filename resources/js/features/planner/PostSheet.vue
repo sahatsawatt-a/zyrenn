@@ -11,6 +11,7 @@ import {
     X,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import DateTimeField from '@/components/common/DateTimeField.vue';
 import SegmentTabs from '@/components/common/SegmentTabs.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -72,7 +73,7 @@ const when = computed({
     },
 });
 
-// The date input wants the time as it is here, not in UTC
+// The date field wants the time as it is here, not in UTC
 const local = computed(() => {
     const at = new Date(props.post.at);
     const pad = (n: number) => String(n).padStart(2, '0');
@@ -301,12 +302,14 @@ const setStatus = (status: Post['status']) => {
                 <!-- When, and who has said yes -->
                 <section class="grid gap-2">
                     <Label for="planner-when">When it goes</Label>
-                    <Input
+                    <DateTimeField
                         id="planner-when"
-                        type="datetime-local"
+                        kind="datetime"
+                        label="When it goes"
+                        :minute-step="15"
                         :model-value="local"
                         data-test="planner-when"
-                        @update:model-value="when = String($event)"
+                        @update:model-value="when = $event"
                     />
                     <div class="flex flex-wrap gap-2 pt-1">
                         <Button

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Plus, Target, Unlink } from '@lucide/vue';
+import { Minus, Plus, Target, Unlink } from '@lucide/vue';
 import { Background } from '@vue-flow/background';
-import { Controls } from '@vue-flow/controls';
+import { ControlButton, Controls } from '@vue-flow/controls';
 import { MarkerType, VueFlow, useVueFlow } from '@vue-flow/core';
 import type { Connection, Edge, Node, NodeChange } from '@vue-flow/core';
 import { MiniMap } from '@vue-flow/minimap';
@@ -10,6 +10,7 @@ import '@vue-flow/core/dist/theme-default.css';
 import '@vue-flow/controls/dist/style.css';
 import '@vue-flow/minimap/dist/style.css';
 import { ref } from 'vue';
+import Tip from '@/components/common/Tip.vue';
 import { Button } from '@/components/ui/button';
 import type { StepData } from '@/features/workflow/canvas';
 import type { NodeType, StepStatus } from '@/features/workflow/types';
@@ -48,7 +49,7 @@ const emit = defineEmits<{
     unlink: [];
 }>();
 
-const { fitView, getSelectedEdges } = useVueFlow();
+const { fitView, getSelectedEdges, zoomIn, zoomOut } = useVueFlow();
 
 // What holds it, to find what is in view
 const el = ref<HTMLElement | null>(null);
@@ -93,7 +94,24 @@ defineExpose({ el });
         >
             <Background :gap="20" :size="1.2" />
             <!-- Fingers zoom by pinching -->
-            <Controls v-if="!compact" :show-interactive="false" />
+            <!-- The app's own zoom buttons, each with its word on it -->
+            <Controls
+                v-if="!compact"
+                :show-zoom="false"
+                :show-fit-view="false"
+                :show-interactive="false"
+            >
+                <Tip text="Zoom in" side="right">
+                    <ControlButton aria-label="Zoom in" @click="zoomIn()">
+                        <Plus />
+                    </ControlButton>
+                </Tip>
+                <Tip text="Zoom out" side="right">
+                    <ControlButton aria-label="Zoom out" @click="zoomOut()">
+                        <Minus />
+                    </ControlButton>
+                </Tip>
+            </Controls>
             <!-- Over the run panel the canvas is short: it would cover the steps -->
             <MiniMap v-if="!panelOpen && !compact" pannable zoomable />
 
@@ -140,15 +158,17 @@ defineExpose({ el });
             <Unlink /> Remove connection
         </Button>
 
-        <Button
-            size="icon-sm"
-            variant="outline"
-            class="bg-background/90 absolute top-3 right-3 z-10"
-            aria-label="Fit the workflow in view"
-            @click="fitView({ padding: 0.2, duration: 400 })"
-        >
-            <Target />
-        </Button>
+        <Tip text="Fit the workflow in view" side="left">
+            <Button
+                size="icon-sm"
+                variant="outline"
+                class="bg-background/90 absolute top-3 right-3 z-10"
+                aria-label="Fit the workflow in view"
+                @click="fitView({ padding: 0.2, duration: 400 })"
+            >
+                <Target />
+            </Button>
+        </Tip>
     </div>
 </template>
 
@@ -169,6 +189,16 @@ defineExpose({ el });
     background: var(--card);
     border-bottom: 1px solid var(--border);
     fill: var(--foreground);
+}
+
+/* The app's own icons: drawn with a line, not filled */
+.workflow-canvas .vue-flow__controls-button svg {
+    width: 14px;
+    height: 14px;
+    max-width: none;
+    max-height: none;
+    fill: none;
+    stroke: var(--foreground);
 }
 
 .workflow-canvas .vue-flow__edge-path {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Trash2 } from '@lucide/vue';
 import { ref } from 'vue';
+import NumberField from '@/components/common/NumberField.vue';
 import { Button } from '@/components/ui/button';
 import type { Weekday } from '@/lib/maps';
 import { readHours } from '@/features/maps/lib/hours';
@@ -64,31 +65,35 @@ const field =
     <form class="space-y-3" data-test="stop-form" @submit.prevent="done">
         <div class="truncate text-sm font-medium">{{ stop.name }}</div>
         <div class="grid grid-cols-2 gap-2">
-            <label class="text-muted-foreground space-y-1 text-xs">
-                Stay (min)
-                <input
-                    v-model.number="stop.minutes"
-                    type="number"
-                    min="0"
-                    step="15"
-                    :class="field"
+            <div class="text-muted-foreground space-y-1 text-xs">
+                <span class="block">Stay (min)</span>
+                <NumberField
+                    :model-value="stop.minutes"
+                    label="Stay in minutes"
+                    :min="0"
+                    :step="15"
+                    compact
+                    class="w-full"
                     data-test="stop-minutes"
+                    @update:model-value="stop.minutes = $event ?? 0"
                 />
-            </label>
-            <label
+            </div>
+            <div
                 v-if="!stop.rest"
                 class="text-muted-foreground space-y-1 text-xs"
             >
-                Cost ({{ currency }})
-                <input
-                    v-model.number="stop.cost"
-                    type="number"
-                    min="0"
-                    step="any"
-                    :class="field"
+                <span class="block">Cost ({{ currency }})</span>
+                <NumberField
+                    :model-value="stop.cost"
+                    label="Cost"
+                    :min="0"
+                    :step="0.01"
+                    compact
+                    class="w-full"
                     data-test="stop-cost"
+                    @update:model-value="stop.cost = $event ?? 0"
                 />
-            </label>
+            </div>
         </div>
         <label
             v-if="!stop.rest && weekday"

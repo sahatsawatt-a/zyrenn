@@ -23,6 +23,7 @@ import {
     turnedSize,
     UNEDITED,
 } from '@/lib/photo';
+import Tip from '@/components/common/Tip.vue';
 
 // The picture being edited, drawn by the same arithmetic that makes the saved
 // one -- so what is seen is what is kept -- with the crop box over it and a
@@ -434,28 +435,34 @@ const handleAt = (handle: Handle) => ({
                             @pointerdown.stop="grab(index, handle, $event)"
                         />
                         <div class="photo-hidden-tools" @pointerdown.stop>
-                            <button
+                            <Tip
                                 v-for="each in AREA_SHAPES"
                                 :key="each.shape"
-                                type="button"
-                                :class="area.shape === each.shape && 'is-on'"
-                                :title="each.label"
-                                :aria-label="each.label"
-                                :aria-pressed="area.shape === each.shape"
-                                :data-test="`hidden-shape-${each.shape}`"
-                                @click.stop="reshape(index, each.shape)"
+                                :text="each.label"
                             >
-                                <component :is="each.icon" class="size-3" />
-                            </button>
-                            <button
-                                type="button"
-                                :aria-label="`Take the ${STYLES[area.style].toLowerCase()} away`"
-                                title="Take it away"
-                                data-test="hidden-remove"
-                                @click.stop="remove(index)"
-                            >
-                                <X class="size-3" />
-                            </button>
+                                <button
+                                    type="button"
+                                    :class="
+                                        area.shape === each.shape && 'is-on'
+                                    "
+                                    :aria-label="each.label"
+                                    :aria-pressed="area.shape === each.shape"
+                                    :data-test="`hidden-shape-${each.shape}`"
+                                    @click.stop="reshape(index, each.shape)"
+                                >
+                                    <component :is="each.icon" class="size-3" />
+                                </button>
+                            </Tip>
+                            <Tip text="Take it away">
+                                <button
+                                    type="button"
+                                    :aria-label="`Take the ${STYLES[area.style].toLowerCase()} away`"
+                                    data-test="hidden-remove"
+                                    @click.stop="remove(index)"
+                                >
+                                    <X class="size-3" />
+                                </button>
+                            </Tip>
                         </div>
                     </template>
                 </div>

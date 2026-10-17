@@ -84,6 +84,7 @@ import type {
     Suite,
     SuiteSummary,
 } from './steps';
+import Tip from '@/components/common/Tip.vue';
 
 // Browser checks, kept as suites -- a customer's site, say, in that customer's
 // project -- each check a few steps done in a real browser on the server. A
@@ -117,7 +118,7 @@ const shownSuites = computed(() =>
 // load must not take back a tab moved to meanwhile
 let choosing = 0;
 
-async function choose(summary: SuiteSummary) {
+async function choose(summary: SuiteSummary, runRef: string | null = null) {
     const mine = ++choosing;
     tab.value = 'checks';
     await saveNow();
@@ -132,8 +133,19 @@ async function choose(summary: SuiteSummary) {
     openChecks.value = new Set();
     run.value = null;
 
-    if (suite.value.runs[0]) {
-        await showRun(suite.value.runs[0].url);
+    // A run asked for by the page's address (a ticket's "see the run")
+    const asked = runRef
+        ? suite.value.runs.find((one) => one.ref_id === runRef)
+        : undefined;
+
+    if (asked) {
+        tab.value = 'runs';
+    }
+
+    const shown = asked ?? suite.value.runs[0];
+
+    if (shown) {
+        await showRun(shown.url);
     }
 }
 
@@ -727,8 +739,14 @@ const TABS = computed(() => [
     },
 ]);
 
-if (summaries.value[0]) {
-    void choose(summaries.value[0]);
+// The page's address may name the suite, and a run of it, to open at
+const linked = new URL(window.location.href).searchParams;
+const opening =
+    summaries.value.find((one) => one.ref_id === linked.get('suite')) ??
+    summaries.value[0];
+
+if (opening) {
+    void choose(opening, linked.get('run'));
 }
 </script>
 
@@ -894,115 +912,131 @@ if (summaries.value[0]) {
                             v-if="canChange"
                             class="flex w-full items-center gap-2 sm:w-auto"
                         >
-                            <Button
-                                class="flex-1 sm:flex-none"
-                                :disabled="
-                                    !!starting || going || !suite.checks.length
-                                "
-                                title="Every check, as fast as the browser goes. A picture where one fails."
-                                data-test="run-test"
-                                @click="runAs('test')"
+                            <Tip
+                                text="Every check, as fast as the browser goes. A picture where one fails."
                             >
-                                <Loader2
-                                    v-if="
-                                        starting === 'test' ||
-                                        (going &&
-                                            run?.settings.speed === 'quick')
+                                <Button
+                                    class="flex-1 sm:flex-none"
+                                    :disabled="
+                                        !!starting ||
+                                        going ||
+                                        !suite.checks.length
                                     "
-                                    class="animate-spin"
-                                />
-                                <Play v-else />
-                                Test it
-                            </Button>
-                            <Button
-                                variant="outline"
-                                class="flex-1 sm:flex-none"
-                                :disabled="
-                                    !!starting || going || !suite.checks.length
-                                "
-                                title="The pointer glides and types, each step captioned. A film of each check goes to the Drive."
-                                data-test="run-demo"
-                                @click="runAs('demo')"
-                            >
-                                <Loader2
-                                    v-if="
-                                        starting === 'demo' ||
-                                        (going &&
-                                            run?.settings.speed !== 'quick')
-                                    "
-                                    class="animate-spin"
-                                />
-                                <Clapperboard v-else />
-                                Demo video
-                            </Button>
-                            <!-- Where its films and pictures are kept -->
-                            <Button
-                                v-if="suite.folder"
-                                variant="ghost"
-                                size="icon"
-                                as-child
-                            >
-                                <Link
-                                    :href="suite.folder"
-                                    aria-label="Open its folder in the Drive"
-                                    title="Open its folder in the Drive: every run's films and pictures"
-                                    data-test="suite-folder"
+                                    data-test="run-test"
+                                    @click="runAs('test')"
                                 >
-                                    <FolderOpen />
-                                </Link>
-                            </Button>
-                            <DropdownMenu>
-                                <DropdownMenuTrigger as-child>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        aria-label="More for this suite"
-                                        data-test="suite-menu"
-                                    >
-                                        <EllipsisVertical />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuItem
-                                        :disabled="
-                                            !!starting ||
-                                            going ||
-                                            !suite.checks.length
+                                    <Loader2
+                                        v-if="
+                                            starting === 'test' ||
+                                            (going &&
+                                                run?.settings.speed === 'quick')
                                         "
-                                        data-test="run-more"
-                                        @select="optionsOpen = true"
-                                        ><SlidersHorizontal /> Run with
-                                        options…</DropdownMenuItem
+                                        class="animate-spin"
+                                    />
+                                    <Play v-else />
+                                    Test it
+                                </Button>
+                            </Tip>
+                            <Tip
+                                text="The pointer glides and types, each step captioned. A film of each check goes to the Drive."
+                            >
+                                <Button
+                                    variant="outline"
+                                    class="flex-1 sm:flex-none"
+                                    :disabled="
+                                        !!starting ||
+                                        going ||
+                                        !suite.checks.length
+                                    "
+                                    data-test="run-demo"
+                                    @click="runAs('demo')"
+                                >
+                                    <Loader2
+                                        v-if="
+                                            starting === 'demo' ||
+                                            (going &&
+                                                run?.settings.speed !== 'quick')
+                                        "
+                                        class="animate-spin"
+                                    />
+                                    <Clapperboard v-else />
+                                    Demo video
+                                </Button>
+                            </Tip>
+                            <!-- Where its films and pictures are kept -->
+                            <Tip
+                                v-if="suite.folder"
+                                text="Open its folder in the Drive: every run's films and pictures"
+                            >
+                                <Button variant="ghost" size="icon" as-child>
+                                    <Link
+                                        :href="suite.folder"
+                                        aria-label="Open its folder in the Drive"
+                                        data-test="suite-folder"
                                     >
-                                    <DropdownMenuItem
-                                        v-if="suite.checks.length > 1"
-                                        :disabled="!!starting || going"
-                                        title="Every check one after another in one browser -- what one leaves, the next finds -- as one demo video"
-                                        data-test="run-one-film"
-                                        @select="runAs('demo', null, true)"
-                                        ><Film /> Demo video, all in one
-                                        film</DropdownMenuItem
-                                    >
-                                    <DropdownMenuItem @select="tab = 'settings'"
-                                        ><Settings2 />
-                                        Settings</DropdownMenuItem
-                                    >
-                                    <DropdownMenuItem
-                                        data-test="suite-versions"
-                                        @select="versionsOpen = true"
-                                        ><History /> Earlier
-                                        versions</DropdownMenuItem
-                                    >
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                        variant="destructive"
-                                        data-test="suite-delete"
-                                        @select="deleting = true"
-                                        ><Trash2 /> Delete the
-                                        suite</DropdownMenuItem
-                                    >
-                                </DropdownMenuContent>
-                            </DropdownMenu>
+                                        <FolderOpen />
+                                    </Link>
+                                </Button>
+                            </Tip>
+                            <Tip text="More for this suite">
+                                <span class="inline-flex">
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger as-child>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                aria-label="More for this suite"
+                                                data-test="suite-menu"
+                                            >
+                                                <EllipsisVertical />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                            <DropdownMenuItem
+                                                :disabled="
+                                                    !!starting ||
+                                                    going ||
+                                                    !suite.checks.length
+                                                "
+                                                data-test="run-more"
+                                                @select="optionsOpen = true"
+                                                ><SlidersHorizontal /> Run with
+                                                options…</DropdownMenuItem
+                                            >
+                                            <DropdownMenuItem
+                                                v-if="suite.checks.length > 1"
+                                                :disabled="!!starting || going"
+                                                title="Every check one after another in one browser -- what one leaves, the next finds -- as one demo video"
+                                                data-test="run-one-film"
+                                                @select="
+                                                    runAs('demo', null, true)
+                                                "
+                                                ><Film /> Demo video, all in one
+                                                film</DropdownMenuItem
+                                            >
+                                            <DropdownMenuItem
+                                                @select="tab = 'settings'"
+                                                ><Settings2 />
+                                                Settings</DropdownMenuItem
+                                            >
+                                            <DropdownMenuItem
+                                                data-test="suite-versions"
+                                                @select="versionsOpen = true"
+                                                ><History /> Earlier
+                                                versions</DropdownMenuItem
+                                            >
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem
+                                                variant="destructive"
+                                                data-test="suite-delete"
+                                                @select="deleting = true"
+                                                ><Trash2 /> Delete the
+                                                suite</DropdownMenuItem
+                                            >
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </span>
+                            </Tip>
                         </div>
                     </div>
 
@@ -1118,9 +1152,8 @@ if (summaries.value[0]) {
                                 data-test="check"
                             >
                                 <div class="flex items-center gap-2 px-3 py-2">
-                                    <span
-                                        class="shrink-0"
-                                        :title="
+                                    <Tip
+                                        :text="
                                             suite.latest[check.id]
                                                 ? suite.latest[check.id].ok
                                                     ? 'Passed last time'
@@ -1128,19 +1161,34 @@ if (summaries.value[0]) {
                                                 : 'Not run yet'
                                         "
                                     >
-                                        <CircleCheck
-                                            v-if="suite.latest[check.id]?.ok"
-                                            class="size-4 text-emerald-600"
-                                        />
-                                        <CircleX
-                                            v-else-if="suite.latest[check.id]"
-                                            class="size-4 text-red-600"
-                                        />
-                                        <CircleDashed
-                                            v-else
-                                            class="text-muted-foreground size-4"
-                                        />
-                                    </span>
+                                        <span
+                                            class="shrink-0"
+                                            :aria-label="
+                                                suite.latest[check.id]
+                                                    ? suite.latest[check.id].ok
+                                                        ? 'Passed last time'
+                                                        : 'Failed last time'
+                                                    : 'Not run yet'
+                                            "
+                                        >
+                                            <CircleCheck
+                                                v-if="
+                                                    suite.latest[check.id]?.ok
+                                                "
+                                                class="size-4 text-emerald-600"
+                                            />
+                                            <CircleX
+                                                v-else-if="
+                                                    suite.latest[check.id]
+                                                "
+                                                class="size-4 text-red-600"
+                                            />
+                                            <CircleDashed
+                                                v-else
+                                                class="text-muted-foreground size-4"
+                                            />
+                                        </span>
+                                    </Tip>
                                     <button
                                         type="button"
                                         class="min-w-0 flex-1 text-left"
@@ -1185,85 +1233,115 @@ if (summaries.value[0]) {
                                             >
                                         </span>
                                     </button>
-                                    <Button
+                                    <Tip
                                         v-if="canChange"
-                                        variant="ghost"
-                                        size="icon-sm"
-                                        class="hidden sm:inline-flex"
-                                        aria-label="Add steps by clicking on the page"
-                                        title="Add steps by clicking on the page"
-                                        data-test="check-build"
-                                        @click="build(check)"
+                                        text="Add steps by clicking on the page"
                                     >
-                                        <MousePointerClick />
-                                    </Button>
-                                    <Button
+                                        <Button
+                                            variant="ghost"
+                                            size="icon-sm"
+                                            class="hidden sm:inline-flex"
+                                            aria-label="Add steps by clicking on the page"
+                                            data-test="check-build"
+                                            @click="build(check)"
+                                        >
+                                            <MousePointerClick />
+                                        </Button>
+                                    </Tip>
+                                    <Tip
                                         v-if="canChange"
-                                        variant="ghost"
-                                        size="icon-sm"
-                                        aria-label="Test only this check"
-                                        title="Test only this check"
-                                        :disabled="!!starting || going"
-                                        data-test="check-run-one"
-                                        @click="runAs('test', check.id)"
+                                        text="Test only this check"
                                     >
-                                        <Play />
-                                    </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon-sm"
+                                            aria-label="Test only this check"
+                                            :disabled="!!starting || going"
+                                            data-test="check-run-one"
+                                            @click="runAs('test', check.id)"
+                                        >
+                                            <Play />
+                                        </Button>
+                                    </Tip>
                                     <!-- While it is being written: tried, and kept nowhere -->
-                                    <Button
+                                    <Tip
                                         v-if="canChange"
-                                        variant="ghost"
-                                        size="icon-sm"
-                                        aria-label="Try this check, keeping nothing"
-                                        title="Try this check, keeping nothing: not in the runs or health, no tickets, nothing in the Drive"
-                                        :disabled="!!starting || going"
-                                        data-test="check-try"
-                                        @click="
-                                            runAs('test', check.id, false, true)
-                                        "
+                                        text="Try this check, keeping nothing: not in the runs or health, no tickets, nothing in the Drive"
                                     >
-                                        <FlaskConical />
-                                    </Button>
-                                    <DropdownMenu v-if="canChange">
-                                        <DropdownMenuTrigger as-child>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon-sm"
-                                                aria-label="More for this check"
-                                                data-test="check-menu"
-                                            >
-                                                <EllipsisVertical />
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end">
-                                            <DropdownMenuItem
-                                                class="sm:hidden"
-                                                @select="build(check)"
-                                                ><MousePointerClick /> Add steps
-                                                by clicking</DropdownMenuItem
-                                            >
-                                            <DropdownMenuItem
-                                                @select="
-                                                    runAs('demo', check.id)
-                                                "
-                                                ><Clapperboard /> Demo video of
-                                                this one</DropdownMenuItem
-                                            >
-                                            <DropdownMenuItem
-                                                @select="copyCheck(at)"
-                                                ><Copy />
-                                                Duplicate</DropdownMenuItem
-                                            >
-                                            <DropdownMenuSeparator />
-                                            <DropdownMenuItem
-                                                variant="destructive"
-                                                data-test="check-remove"
-                                                @select="removeCheck(at)"
-                                                ><Trash2 />
-                                                Remove</DropdownMenuItem
-                                            >
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon-sm"
+                                            aria-label="Try this check, keeping nothing"
+                                            :disabled="!!starting || going"
+                                            data-test="check-try"
+                                            @click="
+                                                runAs(
+                                                    'test',
+                                                    check.id,
+                                                    false,
+                                                    true,
+                                                )
+                                            "
+                                        >
+                                            <FlaskConical />
+                                        </Button>
+                                    </Tip>
+                                    <Tip
+                                        v-if="canChange"
+                                        text="More for this check"
+                                    >
+                                        <span class="inline-flex">
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger as-child>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon-sm"
+                                                        aria-label="More for this check"
+                                                        data-test="check-menu"
+                                                    >
+                                                        <EllipsisVertical />
+                                                    </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent
+                                                    align="end"
+                                                >
+                                                    <DropdownMenuItem
+                                                        class="sm:hidden"
+                                                        @select="build(check)"
+                                                        ><MousePointerClick />
+                                                        Add steps by
+                                                        clicking</DropdownMenuItem
+                                                    >
+                                                    <DropdownMenuItem
+                                                        @select="
+                                                            runAs(
+                                                                'demo',
+                                                                check.id,
+                                                            )
+                                                        "
+                                                        ><Clapperboard /> Demo
+                                                        video of this
+                                                        one</DropdownMenuItem
+                                                    >
+                                                    <DropdownMenuItem
+                                                        @select="copyCheck(at)"
+                                                        ><Copy />
+                                                        Duplicate</DropdownMenuItem
+                                                    >
+                                                    <DropdownMenuSeparator />
+                                                    <DropdownMenuItem
+                                                        variant="destructive"
+                                                        data-test="check-remove"
+                                                        @select="
+                                                            removeCheck(at)
+                                                        "
+                                                        ><Trash2 />
+                                                        Remove</DropdownMenuItem
+                                                    >
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        </span>
+                                    </Tip>
                                     <ChevronDown
                                         class="text-muted-foreground hidden size-4 shrink-0 cursor-pointer transition-transform sm:block"
                                         :class="{

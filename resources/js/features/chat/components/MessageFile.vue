@@ -3,6 +3,7 @@ import { Paperclip } from '@lucide/vue';
 import { onBeforeUnmount, ref } from 'vue';
 import PictureDialog from '@/features/chat/components/PictureDialog.vue';
 import VideoPlayer from '@/components/media/VideoPlayer.vue';
+import Tip from '@/components/common/Tip.vue';
 
 // A file under a chat message, from the Drive: a picture shown small and
 // opened larger over the chat; a sticker small and bare, as a sticker is --
@@ -69,31 +70,32 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <img
-        v-if="file.is_image && sticker"
-        :src="playing ?? file.url"
-        :alt="file.name"
-        title="Click to play it again"
-        loading="lazy"
-        class="mt-1 size-28 cursor-pointer object-contain"
-        data-chat-file
-        data-chat-sticker
-        @click="replay"
-    />
+    <Tip v-if="file.is_image && sticker" text="Click to play it again">
+        <img
+            :src="playing ?? file.url"
+            :alt="file.name"
+            loading="lazy"
+            class="mt-1 size-28 cursor-pointer object-contain"
+            data-chat-file
+            data-chat-sticker
+            @click="replay"
+        />
+    </Tip>
     <!-- A sticker that is a short film: played over and over, with nothing to press -->
-    <video
-        v-else-if="file.is_video && sticker"
-        :src="file.url"
-        autoplay
-        loop
-        muted
-        playsinline
-        title="Click to play it again"
-        class="mt-1 size-28 cursor-pointer object-contain"
-        data-chat-file
-        data-chat-sticker
-        @click="restart"
-    />
+    <Tip v-else-if="file.is_video && sticker" text="Click to play it again">
+        <video
+            :src="file.url"
+            autoplay
+            loop
+            muted
+            playsinline
+            aria-label="Click to play it again"
+            class="mt-1 size-28 cursor-pointer object-contain"
+            data-chat-file
+            data-chat-sticker
+            @click="restart"
+        />
+    </Tip>
     <template v-else-if="file.is_image">
         <button
             type="button"

@@ -9,6 +9,7 @@ import {
     Settings2,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import DateTimeField from '@/components/common/DateTimeField.vue';
 import {
     Popover,
     PopoverContent,
@@ -170,20 +171,21 @@ const field =
                 </PopoverTrigger>
                 <PopoverContent align="start" class="w-64 space-y-3">
                     <fieldset :disabled="!editable" class="space-y-3">
-                        <label
+                        <div
                             class="text-muted-foreground block space-y-1 text-xs"
                         >
-                            First day
-                            <input
+                            <span class="block">First day</span>
+                            <DateTimeField
                                 v-model="plan.trip.startDate"
-                                type="date"
-                                :class="field"
+                                label="First day"
+                                :disabled="!editable"
+                                compact
                                 data-test="start-date"
                             />
                             <span class="block"
                                 >Hotels and flights move with it.</span
                             >
-                        </label>
+                        </div>
                         <label
                             class="text-muted-foreground block space-y-1 text-xs"
                         >

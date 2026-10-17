@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import Tip from '@/components/common/Tip.vue';
 
 // A chat message's words, with a picture where some of them stand for one:
 // an outside chat's own emoji, which come as their names in the text.
@@ -75,16 +76,16 @@ const large = computed(
 
 <template>
     <template v-for="(part, at) in parts" :key="at">
-        <img
-            v-if="part.url"
-            :src="part.url"
-            :alt="part.text"
-            :title="part.text"
-            loading="lazy"
-            class="inline-block align-text-bottom"
-            :class="large ? 'size-12' : 'size-[1.4em]'"
-            data-chat-emoji
-        /><a
+        <Tip v-if="part.url" :text="part.text">
+            <img
+                :src="part.url"
+                :alt="part.text"
+                loading="lazy"
+                class="inline-block align-text-bottom"
+                :class="large ? 'size-12' : 'size-[1.4em]'"
+                data-chat-emoji
+            /> </Tip
+        ><a
             v-else-if="part.href"
             :href="part.href"
             target="_blank"

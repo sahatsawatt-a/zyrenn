@@ -15,6 +15,7 @@ import type {
 import type { Root } from './DataTree.vue';
 import StepSettings from './StepSettings.vue';
 import TestData from './TestData.vue';
+import Tip from '@/components/common/Tip.vue';
 
 // One step, set up: its settings, with the test data from a run beside them
 // to drag or click into a setting -- beside the canvas, or over it in two
@@ -103,15 +104,17 @@ function insertData(path: string) {
                     {{ text }}
                 </button>
             </div>
-            <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Back to the canvas"
-                data-step-panels-close
-                @click="emit('close')"
-            >
-                <X />
-            </Button>
+            <Tip text="Back to the canvas">
+                <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label="Back to the canvas"
+                    data-step-panels-close
+                    @click="emit('close')"
+                >
+                    <X />
+                </Button>
+            </Tip>
         </div>
 
         <TestData

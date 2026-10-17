@@ -25,6 +25,7 @@ import type { ListKind } from '@/composables/useSpaceChanges';
 import { deliver, fetchExport } from '@/lib/exporting';
 import { canChange, owned } from '@/lib/projects';
 import type { OwnRoute, ProjectRoute } from '@/lib/projects';
+import Tip from '@/components/common/Tip.vue';
 
 // A note, board or table as its list shows it; each kind adds what it counts
 export type ListItem = {
@@ -248,16 +249,19 @@ const plural = computed(() => props.rootLabel.toLowerCase());
         >
             <!-- Ways of making one that only some kinds have -->
             <slot name="actions" :editable="editable" />
-            <Button
+            <Tip
                 v-if="exports && !isEmpty"
-                variant="outline"
-                :disabled="exporting"
-                :title="`${exports.label}: ${folder?.name ?? rootLabel}`"
-                @click="exportFolder(folder)"
+                :text="`${exports.label}: ${folder?.name ?? rootLabel}`"
             >
-                <Download />
-                <span class="max-sm:sr-only">Export</span>
-            </Button>
+                <Button
+                    variant="outline"
+                    :disabled="exporting"
+                    @click="exportFolder(folder)"
+                >
+                    <Download />
+                    <span class="max-sm:sr-only">Export</span>
+                </Button>
+            </Tip>
             <Button v-if="editable" variant="outline" @click="newFolder">
                 <FolderPlus />
                 New folder

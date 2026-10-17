@@ -696,7 +696,8 @@ try {
         (await byTest('trip-block').count()) === 1,
     );
 
-    await byTest('trip-choose').selectOption(tripRef);
+    await byTest('trip-choose').click();
+    await page.locator(`[role="option"][data-pick="${tripRef}"]`).click();
     await byTest('trip-embed-days')
         .waitFor({ timeout: 10000 })
         .catch(() => {});
@@ -713,7 +714,8 @@ try {
             .catch(() => 'no total'),
     );
 
-    await byTest('day-choose').selectOption({ index: 1 });
+    await byTest('day-choose').click();
+    await page.getByRole('option').nth(1).click();
     await page
         .waitForFunction(
             () =>
@@ -754,7 +756,7 @@ try {
     await page.screenshot({ path: `${SHOTS}/trip-in-note.png` });
 
     // Kept as two lines in the note, so it is there after a reload
-    const chosenDay = await byTest('day-choose').inputValue();
+    const chosenDay = await byTest('day-choose').getAttribute('data-value');
     await pageSaved(page);
     await open(page, `${base}${notePath}`);
     await byTest('trip-block')
@@ -763,13 +765,16 @@ try {
     // (the block reads its trip, then says which day it was left on)
     await until(
         async () =>
-            (await byTest('trip-choose').inputValue()) === tripRef &&
-            (await byTest('day-choose').inputValue()) === chosenDay,
+            (await byTest('trip-choose').getAttribute('data-value')) ===
+                tripRef &&
+            (await byTest('day-choose').getAttribute('data-value')) ===
+                chosenDay,
     );
     check(
         'it comes back after a reload, on the same trip and day',
-        (await byTest('trip-choose').inputValue()) === tripRef &&
-            (await byTest('day-choose').inputValue()) === chosenDay,
+        (await byTest('trip-choose').getAttribute('data-value')) === tripRef &&
+            (await byTest('day-choose').getAttribute('data-value')) ===
+                chosenDay,
     );
 
     // ---- a saved place, kept in step wherever it is used ----

@@ -8,6 +8,7 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from '@/components/ui/popover';
+import Tip from '@/components/common/Tip.vue';
 
 // Emoji to put in a message: the ones used lately first, then the usual ones
 // by kind. It stays open while several are chosen; what is chosen goes where
@@ -95,62 +96,71 @@ function opened(open: boolean) {
 </script>
 
 <template>
-    <Popover @update:open="opened">
-        <PopoverTrigger as-child>
-            <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Add an emoji"
-                title="Add an emoji"
-                :disabled="disabled"
-                data-chat-emoji
-            >
-                <Smile />
-            </Button>
-        </PopoverTrigger>
-        <PopoverContent
-            align="start"
-            side="top"
-            class="w-[min(19rem,calc(100vw-2rem))] p-2"
-            data-chat-emoji-picker
-        >
-            <div class="mb-1.5 flex gap-0.5 border-b pb-1.5" role="tablist">
-                <button
-                    v-for="one in tabs"
-                    :key="one.name"
-                    type="button"
-                    role="tab"
-                    class="flex h-8 min-w-0 flex-1 items-center justify-center rounded-md text-lg leading-none transition-colors"
-                    :class="
-                        kind === one.name
-                            ? 'bg-muted'
-                            : 'opacity-60 hover:opacity-100'
-                    "
-                    :aria-selected="kind === one.name"
-                    :aria-label="one.name"
-                    :title="one.name"
-                    @click="kind = one.name"
+    <Tip text="Add an emoji">
+        <span class="inline-flex">
+            <Popover @update:open="opened">
+                <PopoverTrigger as-child>
+                    <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Add an emoji"
+                        :disabled="disabled"
+                        data-chat-emoji
+                    >
+                        <Smile />
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                    align="start"
+                    side="top"
+                    class="w-[min(19rem,calc(100vw-2rem))] p-2"
+                    data-chat-emoji-picker
                 >
-                    {{ one.tab }}
-                </button>
-            </div>
-            <div
-                class="grid max-h-52 grid-cols-8 gap-0.5 overflow-y-auto"
-                role="tabpanel"
-                :aria-label="kind"
-            >
-                <button
-                    v-for="emoji in shown"
-                    :key="emoji"
-                    type="button"
-                    class="hover:bg-muted flex aspect-square items-center justify-center rounded-md text-xl leading-none"
-                    :data-emoji="emoji"
-                    @click="pick(emoji)"
-                >
-                    {{ emoji }}
-                </button>
-            </div>
-        </PopoverContent>
-    </Popover>
+                    <div
+                        class="mb-1.5 flex gap-0.5 border-b pb-1.5"
+                        role="tablist"
+                    >
+                        <Tip
+                            v-for="one in tabs"
+                            :key="one.name"
+                            :text="one.name"
+                        >
+                            <button
+                                type="button"
+                                role="tab"
+                                class="flex h-8 min-w-0 flex-1 items-center justify-center rounded-md text-lg leading-none transition-colors"
+                                :class="
+                                    kind === one.name
+                                        ? 'bg-muted'
+                                        : 'opacity-60 hover:opacity-100'
+                                "
+                                :aria-selected="kind === one.name"
+                                :aria-label="one.name"
+                                @click="kind = one.name"
+                            >
+                                {{ one.tab }}
+                            </button>
+                        </Tip>
+                    </div>
+                    <div
+                        class="grid max-h-52 grid-cols-8 gap-0.5 overflow-y-auto"
+                        role="tabpanel"
+                        :aria-label="kind"
+                    >
+                        <button
+                            v-for="emoji in shown"
+                            :key="emoji"
+                            type="button"
+                            class="hover:bg-muted flex aspect-square items-center justify-center rounded-md text-xl leading-none"
+                            :data-emoji="emoji"
+                            @click="pick(emoji)"
+                        >
+                            {{ emoji }}
+                        </button>
+                    </div>
+                </PopoverContent>
+            </Popover>
+        </span>
+    </Tip>
 </template>

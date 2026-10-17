@@ -12,6 +12,7 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { uploadToDrive } from '@/lib/drive';
 import { deliver } from '@/lib/exporting';
+import Tip from '@/components/common/Tip.vue';
 
 /**
  * The way a PDF is had: printed by the server, shown in the browser's own PDF
@@ -222,38 +223,44 @@ async function hand(
                     role="radiogroup"
                     :aria-label="stylesLabel"
                 >
-                    <button
+                    <Tip
                         v-for="option in styles"
                         :key="option.id"
-                        type="button"
-                        role="radio"
-                        :aria-checked="chosen === option.id"
-                        :title="option.hint"
-                        :data-test="`pdf-preview-style-${option.id}`"
-                        class="rounded-md px-3 py-1 text-sm transition-colors"
-                        :class="
-                            chosen === option.id
-                                ? 'bg-background shadow-sm'
-                                : 'text-muted-foreground hover:text-foreground'
-                        "
-                        @click="choose(option.id)"
+                        :text="option.hint"
                     >
-                        {{ option.label }}
-                    </button>
+                        <button
+                            type="button"
+                            role="radio"
+                            :aria-checked="chosen === option.id"
+                            :data-test="`pdf-preview-style-${option.id}`"
+                            class="rounded-md px-3 py-1 text-sm transition-colors"
+                            :class="
+                                chosen === option.id
+                                    ? 'bg-background shadow-sm'
+                                    : 'text-muted-foreground hover:text-foreground'
+                            "
+                            @click="choose(option.id)"
+                        >
+                            {{ option.label }}
+                        </button>
+                    </Tip>
                 </div>
 
                 <div class="ml-auto flex gap-2">
-                    <Button
+                    <Tip
                         v-if="!choosing"
-                        variant="ghost"
-                        size="sm"
-                        :disabled="printing"
-                        title="Print it again with the latest changes"
-                        @click="reprint"
+                        text="Print it again with the latest changes"
                     >
-                        <RefreshCw />
-                        Refresh
-                    </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            :disabled="printing"
+                            @click="reprint"
+                        >
+                            <RefreshCw />
+                            Refresh
+                        </Button>
+                    </Tip>
                     <Button
                         variant="outline"
                         size="sm"
@@ -333,25 +340,31 @@ async function hand(
                             <span class="min-w-0 flex-1 truncate text-sm">
                                 {{ caption(file) }}
                             </span>
-                            <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                :disabled="delivering"
-                                :title="`Save “${caption(file)}” to your Drive`"
-                                @click="hand('drive', [file])"
+                            <Tip
+                                :text="`Save “${caption(file)}” to your Drive`"
                             >
-                                <HardDrive />
-                            </Button>
-                            <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                :disabled="delivering"
-                                :title="`Download “${caption(file)}”`"
-                                data-test="pdf-preview-download-one"
-                                @click="hand('download', [file])"
-                            >
-                                <Download />
-                            </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    :disabled="delivering"
+                                    :aria-label="`Save “${caption(file)}” to your Drive`"
+                                    @click="hand('drive', [file])"
+                                >
+                                    <HardDrive />
+                                </Button>
+                            </Tip>
+                            <Tip :text="`Download “${caption(file)}”`">
+                                <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    :disabled="delivering"
+                                    :aria-label="`Download “${caption(file)}”`"
+                                    data-test="pdf-preview-download-one"
+                                    @click="hand('download', [file])"
+                                >
+                                    <Download />
+                                </Button>
+                            </Tip>
                         </figcaption>
                     </figure>
                 </div>

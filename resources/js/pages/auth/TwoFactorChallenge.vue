@@ -53,6 +53,7 @@ const toggleRecoveryMode = (clearErrors: () => void): void => {
     <div class="space-y-6">
         <template v-if="!showRecoveryInput">
             <Form
+                novalidate
                 v-bind="store.form()"
                 class="space-y-4"
                 reset-on-error
@@ -100,6 +101,7 @@ const toggleRecoveryMode = (clearErrors: () => void): void => {
 
         <template v-else>
             <Form
+                novalidate
                 v-bind="store.form()"
                 class="space-y-4"
                 reset-on-error

@@ -14,6 +14,7 @@ import { xsrfToken } from '@/lib/utils';
 import { workOut } from '@/routes/product/requests';
 import { store as keepRequirements } from '@/routes/product/requests/requirements';
 import { index as projectAgents } from '@/routes/projects/agents';
+import Tip from '@/components/common/Tip.vue';
 
 // A request worked out by one of the project's agents into requirements: a
 // draft to read and change here, kept only when someone keeps it -- and then
@@ -322,18 +323,20 @@ const agentOptions = computed(() =>
                                     >{{ code }}</span
                                 >
                                 {{ nameOf(code) }}
-                                <button
-                                    type="button"
-                                    class="text-muted-foreground"
-                                    :aria-label="`Not about ${code}`"
-                                    @click="
-                                        one.parts = one.parts.filter(
-                                            (c) => c !== code,
-                                        )
-                                    "
-                                >
-                                    <X class="size-3" />
-                                </button>
+                                <Tip :text="`Not about ${code}`">
+                                    <button
+                                        type="button"
+                                        class="text-muted-foreground"
+                                        :aria-label="`Not about ${code}`"
+                                        @click="
+                                            one.parts = one.parts.filter(
+                                                (c) => c !== code,
+                                            )
+                                        "
+                                    >
+                                        <X class="size-3" />
+                                    </button>
+                                </Tip>
                             </span>
                         </div>
                     </div>

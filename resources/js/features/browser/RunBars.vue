@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { RunState } from './steps';
+import Tip from '@/components/common/Tip.vue';
 
 // How a suite's last runs went, oldest first, as a row of small bars: green
 // for one that passed, red for one that failed, blue for one still going.
@@ -33,12 +34,16 @@ const empty = () => Math.max(0, props.places - props.states.length);
             class="bg-muted w-1.5 rounded-sm"
             :class="tall ? 'h-6' : 'h-3'"
         />
-        <span
+        <Tip
             v-for="(state, at) in states.slice(-places)"
             :key="at"
-            class="w-1.5 rounded-sm"
-            :class="[TONE[state], tall ? 'h-6' : 'h-3']"
-            :title="state"
-        />
+            :text="state"
+        >
+            <span
+                class="w-1.5 rounded-sm"
+                :class="[TONE[state], tall ? 'h-6' : 'h-3']"
+                :aria-label="state"
+            />
+        </Tip>
     </div>
 </template>

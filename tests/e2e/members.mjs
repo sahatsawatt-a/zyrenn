@@ -55,11 +55,22 @@ await runBoard(
         await page.waitForURL(/\/boards\/\w+$/);
         const boardUrl = page.url();
 
+        // The app's own dropdown: opened, then the role clicked by its name
+        const choose = async (trigger, label) => {
+            await trigger.click();
+            await page
+                .getByRole('option', { name: label, exact: true })
+                .click();
+        };
+
         // ------------------------------------------------- Add a viewer
         await page.goto(`${base}/p/${project}/settings`);
         const addForm = page.locator('[data-test="add-member"]');
         await addForm.getByPlaceholder('Their email address').fill(MEMBER);
-        await addForm.locator('select').selectOption('viewer');
+        await choose(
+            addForm.locator('[data-test="member-new-role"]'),
+            'Viewer',
+        );
         await addForm.getByRole('button', { name: 'Add' }).click();
         await page
             .getByText(MEMBER)
@@ -146,7 +157,7 @@ await runBoard(
         const theirRole = page
             .locator('li', { hasText: MEMBER })
             .locator('[data-test="member-role"]');
-        await sent(() => theirRole.selectOption('editor'));
+        await sent(() => choose(theirRole, 'Editor'));
 
         await open(other, `${base}/p/${project}/notes`);
         await other
@@ -174,7 +185,7 @@ await runBoard(
         await page
             .locator('[data-test="confirm-remove"]')
             .waitFor({ state: 'hidden' });
-        await sent(() => theirRole.selectOption('owner'));
+        await sent(() => choose(theirRole, 'Owner'));
         await page.locator('[data-test="leave-project"]').click();
         await page.locator('[data-test="confirm-remove"]').click();
         await page.waitForURL(at('/notes'));

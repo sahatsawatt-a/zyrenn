@@ -35,6 +35,7 @@ defineOptions({
     />
 
     <Form
+        novalidate
         v-bind="store.form()"
         reset-on-success
         v-slot="{ errors, processing }"

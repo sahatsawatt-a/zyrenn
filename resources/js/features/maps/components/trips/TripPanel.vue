@@ -10,6 +10,7 @@ import {
     Wand2,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import DateTimeField from '@/components/common/DateTimeField.vue';
 import { Button } from '@/components/ui/button';
 import type { Candidate } from '@/lib/maps';
 import { placeInfo } from '@/lib/maps';
@@ -243,19 +244,22 @@ const rest = (where: 'here' | 'hotel') => {
                     >
                         <Clock class="size-3" /> lands {{ timeline.lands }}
                     </span>
-                    <label
+                    <div
                         v-else
                         class="text-muted-foreground flex items-center gap-1 text-xs"
                     >
                         <Clock class="size-3" /> from
-                        <input
+                        <DateTimeField
                             v-model="day.start"
-                            type="time"
-                            :readonly="!editable"
-                            class="bg-background dark:bg-input/30 h-7 rounded-md border px-1.5 text-xs dark:[color-scheme:dark]"
+                            kind="time"
+                            label="Day starts at"
+                            :minute-step="15"
+                            :disabled="!editable"
+                            compact
+                            class="w-24"
                             data-test="day-start"
                         />
-                    </label>
+                    </div>
                     <div
                         class="ml-auto flex rounded-md border p-0.5"
                         role="radiogroup"

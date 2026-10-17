@@ -37,6 +37,7 @@ import {
 } from '@/routes/product/elements';
 import { destroy as unlink } from '@/routes/product/links';
 import { store as storeRequirement } from '@/routes/projects/product/requirements';
+import Tip from '@/components/common/Tip.vue';
 
 // One part of the product, opened beside the tree: what it is and how it
 // stands, what it uses or depends on (kept apart from where it sits), what
@@ -366,15 +367,19 @@ const changed = ({ from, to }: ElementDetail['history'][number]) =>
                                 >
                                 {{ one.name }}
                             </button>
-                            <button
+                            <Tip
                                 v-if="canChange"
-                                type="button"
-                                class="text-muted-foreground hover:text-foreground"
-                                :aria-label="`Take away the link to ${one.name}`"
-                                @click="dropLink(one.id)"
+                                :text="`Take away the link to ${one.name}`"
                             >
-                                <X class="size-3.5" />
-                            </button>
+                                <button
+                                    type="button"
+                                    class="text-muted-foreground hover:text-foreground"
+                                    :aria-label="`Take away the link to ${one.name}`"
+                                    @click="dropLink(one.id)"
+                                >
+                                    <X class="size-3.5" />
+                                </button>
+                            </Tip>
                         </li>
                     </ul>
                     <div
@@ -553,15 +558,19 @@ const changed = ({ from, to }: ElementDetail['history'][number]) =>
                                 >{{ one.type }} ·
                                 {{ one.status.replace('_', ' ') }}</span
                             >
-                            <button
+                            <Tip
                                 v-if="canChange"
-                                type="button"
-                                class="text-muted-foreground hover:text-foreground"
-                                :aria-label="`Not about this: #${one.number}`"
-                                @click="setTicket(one.number, false)"
+                                :text="`Not about this: #${one.number}`"
                             >
-                                <X class="size-3.5" />
-                            </button>
+                                <button
+                                    type="button"
+                                    class="text-muted-foreground hover:text-foreground"
+                                    :aria-label="`Not about this: #${one.number}`"
+                                    @click="setTicket(one.number, false)"
+                                >
+                                    <X class="size-3.5" />
+                                </button>
+                            </Tip>
                         </li>
                     </ul>
                     <p

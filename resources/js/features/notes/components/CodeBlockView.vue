@@ -1,20 +1,27 @@
 <template>
     <node-view-wrapper class="code-block-wrapper">
         <div class="code-block-header" contenteditable="false">
-            <select :value="selectedLanguage" @change="changeLanguage">
-                <option value="plaintext">Plain Text</option>
-                <option value="javascript">JavaScript</option>
-                <option value="typescript">TypeScript</option>
-                <option value="html">HTML / XML</option>
-                <option value="css">CSS</option>
-                <option value="php">PHP</option>
-                <option value="python">Python</option>
-                <option value="sql">SQL Database</option>
-                <option value="json">JSON</option>
-                <option value="markdown">Markdown</option>
-                <option value="bash">Bash / Shell</option>
-                <option value="rust">Rust</option>
-            </select>
+            <Select
+                :model-value="selectedLanguage"
+                @update:model-value="changeLanguage(String($event))"
+            >
+                <SelectTrigger
+                    class="h-7 gap-1 border-0 bg-transparent px-1 text-[13px] font-medium text-[#a0a0a5] shadow-none hover:text-white dark:bg-transparent dark:hover:bg-transparent [&_svg:not([class*='text-'])]:text-[#a0a0a5]"
+                    aria-label="Language"
+                    size="sm"
+                >
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem
+                        v-for="language in LANGUAGES"
+                        :key="language.value"
+                        :value="language.value"
+                    >
+                        {{ language.label }}
+                    </SelectItem>
+                </SelectContent>
+            </Select>
 
             <button class="copy-btn" @click="copyCode">
                 {{ copied ? 'Copied!' : 'Copy' }}
@@ -28,6 +35,13 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { NodeViewWrapper, NodeViewContent, nodeViewProps } from '@tiptap/vue-3';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { copyToClipboard } from '@/lib/utils';
 
 const props = defineProps(nodeViewProps);
@@ -37,10 +51,23 @@ const selectedLanguage = computed(
     () => props.node.attrs.language || 'plaintext',
 );
 
-const changeLanguage = (event: Event) => {
-    const target = event.target as HTMLSelectElement;
-    props.updateAttributes({ language: target.value });
-};
+const LANGUAGES = [
+    { value: 'plaintext', label: 'Plain Text' },
+    { value: 'javascript', label: 'JavaScript' },
+    { value: 'typescript', label: 'TypeScript' },
+    { value: 'html', label: 'HTML / XML' },
+    { value: 'css', label: 'CSS' },
+    { value: 'php', label: 'PHP' },
+    { value: 'python', label: 'Python' },
+    { value: 'sql', label: 'SQL Database' },
+    { value: 'json', label: 'JSON' },
+    { value: 'markdown', label: 'Markdown' },
+    { value: 'bash', label: 'Bash / Shell' },
+    { value: 'rust', label: 'Rust' },
+];
+
+const changeLanguage = (language: string) =>
+    props.updateAttributes({ language });
 
 const copyCode = async () => {
     const textContent = props.node.textContent;
@@ -75,23 +102,6 @@ const copyCode = async () => {
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
     font-family: var(--font-sans);
     user-select: none;
-}
-
-select {
-    background: transparent;
-    border: none;
-    font-size: 13px;
-    color: #a0a0a5;
-    cursor: pointer;
-    outline: none;
-    font-weight: 500;
-}
-select:hover {
-    color: #ffffff;
-}
-select option {
-    background: #111114;
-    color: #a0a0a5;
 }
 
 .copy-btn {

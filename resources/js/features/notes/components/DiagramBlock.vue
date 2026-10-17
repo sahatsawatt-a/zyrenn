@@ -5,29 +5,33 @@
             :class="['diagram-toolbar', `${kind.name}-toolbar`]"
             contenteditable="false"
         >
-            <select
-                class="diagram-type-select"
-                aria-label="Diagram type"
-                :value="detected?.id ?? ''"
-                @change="onTypeChange"
+            <Select
+                :model-value="detected?.id ?? ''"
+                @update:model-value="onTypeChange(String($event))"
             >
-                <option v-if="!detected" value="" disabled>
-                    {{ kind.custom }}
-                </option>
-                <optgroup
-                    v-for="group in kind.groups"
-                    :key="group.name"
-                    :label="group.name"
+                <SelectTrigger
+                    class="diagram-type-select text-muted-foreground hover:text-foreground h-7 min-w-0 gap-1 border-0 bg-transparent px-1 text-[13px] font-medium shadow-none dark:bg-transparent dark:hover:bg-transparent"
+                    aria-label="Diagram type"
+                    size="sm"
                 >
-                    <option
-                        v-for="template in group.templates"
-                        :key="template.id"
-                        :value="template.id"
-                    >
-                        {{ template.label }}
-                    </option>
-                </optgroup>
-            </select>
+                    <SelectValue :placeholder="kind.custom">
+                        {{ detected?.label ?? kind.custom }}
+                    </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectGroup v-for="group in kind.groups" :key="group.name">
+                        <SelectLabel>{{ group.name }}</SelectLabel>
+                        <SelectItem
+                            v-for="template in group.templates"
+                            :key="template.id"
+                            :value="template.id"
+                            :data-value="template.id"
+                        >
+                            {{ template.label }}
+                        </SelectItem>
+                    </SelectGroup>
+                </SelectContent>
+            </Select>
 
             <div class="diagram-actions">
                 <slot name="actions" />
@@ -130,6 +134,15 @@ import { Selection } from '@tiptap/pm/state';
 import { useDebounceFn, useMutationObserver } from '@vueuse/core';
 import { toast } from 'vue-sonner';
 import { Button } from '@/components/ui/button';
+import {
+    Select,
+    SelectContent,
+    SelectGroup,
+    SelectItem,
+    SelectLabel,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import {
     Dialog,
     DialogContent,
@@ -331,9 +344,8 @@ const applyTemplate = (template: DiagramTemplate) => {
     props.editor.view.dispatch(tr);
 };
 
-const onTypeChange = (event: Event) => {
-    const select = event.target as HTMLSelectElement;
-    const template = templates.value.find((item) => item.id === select.value);
+const onTypeChange = (id: string) => {
+    const template = templates.value.find((item) => item.id === id);
     if (!template) return;
 
     // Only ask before replacing something the user actually wrote
@@ -346,8 +358,7 @@ const onTypeChange = (event: Event) => {
         return;
     }
 
-    // The picker goes back to what the block is until the answer is yes
-    select.value = detected.value?.id ?? '';
+    // The picker keeps saying what the block is until the answer is yes
     replacing.value = template;
 };
 
@@ -381,25 +392,6 @@ const copySource = async () => {
     background: var(--muted);
     font-family: var(--font-sans);
     user-select: none;
-}
-
-.diagram-type-select {
-    min-width: 0;
-    background: transparent;
-    border: none;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--muted-foreground);
-    cursor: pointer;
-    outline: none;
-}
-.diagram-type-select:hover {
-    color: var(--foreground);
-}
-.diagram-type-select option,
-.diagram-type-select optgroup {
-    background: var(--card);
-    color: var(--foreground);
 }
 
 .diagram-actions {

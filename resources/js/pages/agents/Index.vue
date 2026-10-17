@@ -19,6 +19,7 @@ import { destroy } from '@/routes/agents';
 import { index as ownAgents } from '@/routes/agents';
 import { index as projectAgents } from '@/routes/projects/agents';
 import { owned } from '@/lib/projects';
+import Tip from '@/components/common/Tip.vue';
 
 const props = defineProps<{
     agents: Agent[];
@@ -135,15 +136,16 @@ function remove() {
                             >
                         </p>
                     </div>
-                    <Button
-                        v-if="can.manage"
-                        variant="ghost"
-                        size="icon-sm"
-                        :aria-label="`Delete ${agent.name}`"
-                        @click="removing = agent"
-                    >
-                        <Trash2 />
-                    </Button>
+                    <Tip v-if="can.manage" :text="`Delete ${agent.name}`">
+                        <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            :aria-label="`Delete ${agent.name}`"
+                            @click="removing = agent"
+                        >
+                            <Trash2 />
+                        </Button>
+                    </Tip>
                 </div>
                 <p
                     v-if="knowledgeOf(agent)"

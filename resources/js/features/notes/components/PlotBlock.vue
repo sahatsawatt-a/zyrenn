@@ -19,19 +19,17 @@
                     class="plot-slider"
                 >
                     <span class="plot-slider-name">{{ each.name }}</span>
-                    <input
-                        type="range"
+                    <RangeField
+                        class="flex-1"
                         :min="each.min"
                         :max="each.max"
                         :step="each.step"
-                        :value="values[each.name] ?? each.value"
-                        :aria-label="each.name"
+                        :model-value="values[each.name] ?? each.value"
+                        :label="each.name"
+                        :format="short"
                         :data-test="`plot-slider-${each.name}`"
-                        @input="slide(each.name, $event)"
+                        @update:model-value="slide(each.name, $event)"
                     />
-                    <output class="plot-slider-value">{{
-                        short(values[each.name] ?? each.value)
-                    }}</output>
                 </label>
                 <button
                     v-if="moved"
@@ -50,6 +48,7 @@
 
 <script setup lang="ts">
 import { nodeViewProps } from '@tiptap/vue-3';
+import RangeField from '@/components/common/RangeField.vue';
 import { computed, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 import type { DiagramKind } from '@/features/notes/lib/diagramKind';
@@ -99,11 +98,8 @@ watch(source, () => {
     }
 });
 
-const slide = (name: string, event: Event) => {
-    values.value = {
-        ...values.value,
-        [name]: Number((event.target as HTMLInputElement).value),
-    };
+const slide = (name: string, value: number) => {
+    values.value = { ...values.value, [name]: value };
     turn.value += 1;
 };
 
@@ -300,20 +296,8 @@ const onMove = (event: PointerEvent) => {
     min-width: 0;
     font-size: 0.8125rem;
 }
-.plot-slider input {
-    flex: 1;
-    min-width: 0;
-    accent-color: var(--primary);
-    cursor: pointer;
-}
 .plot-slider-name {
     font-weight: 600;
-}
-.plot-slider-value {
-    min-width: 2.75rem;
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-    color: var(--muted-foreground);
 }
 
 .plot-reset {

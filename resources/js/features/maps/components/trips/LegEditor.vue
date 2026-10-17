@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { reactive } from 'vue';
+import NumberField from '@/components/common/NumberField.vue';
 import { Button } from '@/components/ui/button';
 import { legModes } from '@/features/maps/lib/format';
 import type { LegOverride } from '@/features/maps/lib/trip';
@@ -52,29 +53,32 @@ const field =
             </button>
         </div>
         <div class="grid grid-cols-2 gap-2">
-            <label class="text-muted-foreground space-y-1 text-xs">
-                Minutes
-                <input
-                    v-model.number="draft.minutes"
-                    type="number"
-                    min="0"
-                    :class="field"
+            <div class="text-muted-foreground space-y-1 text-xs">
+                <span class="block">Minutes</span>
+                <NumberField
+                    :model-value="draft.minutes"
+                    label="Minutes"
+                    :min="0"
+                    :step="5"
+                    compact
                     class="w-full"
                     data-test="leg-minutes"
+                    @update:model-value="draft.minutes = $event ?? 0"
                 />
-            </label>
-            <label class="text-muted-foreground space-y-1 text-xs">
-                Fare ({{ currency }})
-                <input
-                    v-model.number="draft.cost"
-                    type="number"
-                    min="0"
-                    step="any"
-                    :class="field"
+            </div>
+            <div class="text-muted-foreground space-y-1 text-xs">
+                <span class="block">Fare ({{ currency }})</span>
+                <NumberField
+                    :model-value="draft.cost"
+                    label="Fare"
+                    :min="0"
+                    :step="0.01"
+                    compact
                     class="w-full"
                     data-test="leg-cost"
+                    @update:model-value="draft.cost = $event ?? 0"
                 />
-            </label>
+            </div>
         </div>
         <label class="text-muted-foreground block space-y-1 text-xs">
             Note

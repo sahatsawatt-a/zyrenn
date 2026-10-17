@@ -35,9 +35,28 @@ const startEdit = async () => {
     input.value?.select();
 };
 
+/**
+ * What was typed, as a number: thousands' commas, a currency sign or a
+ * percent sign left out. Anything that is not a number puts the cell back
+ * as it was.
+ */
 const save = (event: Event) => {
-    const value = (event.target as HTMLInputElement).value;
-    emit('update:modelValue', value === '' ? null : Number(value));
+    const box = event.target as HTMLInputElement;
+    const typed = box.value.replace(/[,\s%]/g, '').replace(/^[^\d.-]+/, '');
+    const value = typed === '' ? null : Number(typed);
+
+    if (value !== null && !Number.isFinite(value)) {
+        box.value = String(props.modelValue ?? '');
+
+        return;
+    }
+
+    emit(
+        'update:modelValue',
+        value !== null && props.column.type === 'integer'
+            ? Math.round(value)
+            : value,
+    );
 };
 
 const rate = (star: number) =>
@@ -49,8 +68,9 @@ const percent = () => Math.min(100, Math.max(0, Number(props.modelValue) || 0));
 <template>
     <input
         v-if="column.type === 'integer' || column.type === 'numeric'"
-        type="number"
-        :step="column.type === 'numeric' ? 'any' : 1"
+        type="text"
+        :inputmode="column.type === 'integer' ? 'numeric' : 'decimal'"
+        autocomplete="off"
         :value="modelValue ?? ''"
         :class="[CELL_INPUT, 'text-right tabular-nums']"
         @change="save"
@@ -120,8 +140,9 @@ const percent = () => Math.min(100, Math.max(0, Number(props.modelValue) || 0));
             </span>
             <input
                 ref="input"
-                type="number"
-                step="any"
+                type="text"
+                inputmode="decimal"
+                autocomplete="off"
                 :value="modelValue ?? ''"
                 :class="[CELL_INPUT, 'text-right tabular-nums']"
                 @change="save"
@@ -137,16 +158,3 @@ const percent = () => Math.min(100, Math.max(0, Number(props.modelValue) || 0));
         </template>
     </div>
 </template>
-
-<style scoped>
-/* A number cell has no spinner arrows; the cell is too small for them */
-input[type='number']::-webkit-outer-spin-button,
-input[type='number']::-webkit-inner-spin-button {
-    appearance: none;
-    margin: 0;
-}
-
-input[type='number'] {
-    appearance: textfield;
-}
-</style>

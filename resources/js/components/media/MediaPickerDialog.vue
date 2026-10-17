@@ -33,6 +33,7 @@ import {
 } from '@/lib/drive';
 import type { DriveFile, MediaKind } from '@/lib/drive';
 import { cn } from '@/lib/utils';
+import Tip from '@/components/common/Tip.vue';
 
 // What was chosen, whichever way: by then it is just where it lives and its name
 export type PickedMedia = { kind: MediaKind; src: string; name: string };
@@ -423,53 +424,57 @@ watch(tab, (current) => {
                     </div>
 
                     <div v-else class="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                        <button
+                        <Tip
                             v-for="file in driveFiles"
                             :key="file.ref_id"
-                            type="button"
-                            :title="file.name"
-                            :class="
-                                cn(
-                                    'bg-muted group ring-offset-background relative aspect-square overflow-hidden rounded-md ring-2 ring-offset-2 transition',
-                                    selected.includes(file.ref_id)
-                                        ? 'ring-primary'
-                                        : 'hover:ring-border ring-transparent',
-                                )
-                            "
-                            @click="toggle(file)"
-                            @dblclick="finish([pickedFrom(file)])"
+                            :text="file.name"
                         >
-                            <!-- A video's first moments stand in for a thumbnail -->
-                            <template v-if="video">
-                                <video
-                                    :src="`${file.url}#t=0.5`"
-                                    preload="metadata"
-                                    muted
+                            <button
+                                type="button"
+                                :class="
+                                    cn(
+                                        'bg-muted group ring-offset-background relative aspect-square overflow-hidden rounded-md ring-2 ring-offset-2 transition',
+                                        selected.includes(file.ref_id)
+                                            ? 'ring-primary'
+                                            : 'hover:ring-border ring-transparent',
+                                    )
+                                "
+                                :aria-label="file.name"
+                                @click="toggle(file)"
+                                @dblclick="finish([pickedFrom(file)])"
+                            >
+                                <!-- A video's first moments stand in for a thumbnail -->
+                                <template v-if="video">
+                                    <video
+                                        :src="`${file.url}#t=0.5`"
+                                        preload="metadata"
+                                        muted
+                                        class="size-full object-cover"
+                                    />
+                                    <Play
+                                        class="absolute top-1/2 left-1/2 size-7 -translate-x-1/2 -translate-y-1/2 fill-white/90 text-white/90 drop-shadow"
+                                    />
+                                </template>
+                                <img
+                                    v-else
+                                    :src="file.url"
+                                    :alt="file.name"
+                                    loading="lazy"
                                     class="size-full object-cover"
                                 />
-                                <Play
-                                    class="absolute top-1/2 left-1/2 size-7 -translate-x-1/2 -translate-y-1/2 fill-white/90 text-white/90 drop-shadow"
-                                />
-                            </template>
-                            <img
-                                v-else
-                                :src="file.url"
-                                :alt="file.name"
-                                loading="lazy"
-                                class="size-full object-cover"
-                            />
-                            <span
-                                v-if="selected.includes(file.ref_id)"
-                                class="bg-primary text-primary-foreground absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full text-xs font-semibold"
-                            >
-                                {{ selected.indexOf(file.ref_id) + 1 }}
-                            </span>
-                            <span
-                                class="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1.5 py-0.5 text-left text-[11px] text-white opacity-0 transition-opacity group-hover:opacity-100"
-                            >
-                                {{ file.name }}
-                            </span>
-                        </button>
+                                <span
+                                    v-if="selected.includes(file.ref_id)"
+                                    class="bg-primary text-primary-foreground absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full text-xs font-semibold"
+                                >
+                                    {{ selected.indexOf(file.ref_id) + 1 }}
+                                </span>
+                                <span
+                                    class="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1.5 py-0.5 text-left text-[11px] text-white opacity-0 transition-opacity group-hover:opacity-100"
+                                >
+                                    {{ file.name }}
+                                </span>
+                            </button>
+                        </Tip>
                     </div>
                 </div>
 

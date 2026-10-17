@@ -86,13 +86,12 @@ await runBoard(
         // Unfolded: clicked again while the run is still being drawn afresh
         await soon('unfolded', async () => {
             if (
-                !(await test('check-run-log')
-                    .getAttribute('open')
-                    .then((open) => open !== null)
-                    .catch(() => false))
+                (await test('check-run-log')
+                    .getAttribute('data-state')
+                    .catch(() => null)) !== 'open'
             ) {
                 await test('check-run-log')
-                    .locator('summary')
+                    .locator('[data-fold-toggle]')
                     .click({ timeout: 2000 })
                     .catch(() => {});
             }

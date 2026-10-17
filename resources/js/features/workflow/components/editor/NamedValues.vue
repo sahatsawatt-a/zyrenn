@@ -8,6 +8,7 @@ import PickOne from '@/features/workflow/components/editor/PickOne.vue';
 import { readDoes, textBox, writeDoes } from '@/features/workflow/steps';
 import type { Field, Setting } from '@/features/workflow/types';
 import { show as driveFile } from '@/routes/drive/files';
+import Tip from '@/components/common/Tip.vue';
 
 // A step's named values: each a name and, under it, its value across the
 // whole panel. Buttons say what tapping them does from a list, not by how
@@ -145,50 +146,53 @@ const spare = computed(() =>
                 class="block w-full"
                 @error="pictureFailed = true"
             />
-            <button
+            <Tip
                 v-for="([x, y, wide, high], place) in places"
                 :key="place"
-                type="button"
-                class="absolute flex flex-col items-center justify-center gap-0.5 overflow-hidden border px-1 text-center text-[11px] leading-tight font-medium transition-colors"
-                :class="[
-                    place === at && place < fields.length
-                        ? 'border-primary bg-background/85 text-primary ring-primary z-10 ring-2 ring-inset'
-                        : 'border-border bg-background/60',
-                    place > fields.length ||
-                    (place === fields.length && !editable)
-                        ? 'text-muted-foreground/50 cursor-default'
-                        : 'hover:bg-primary/10',
-                ]"
-                :style="{
-                    left: `${(x / 6) * 100}%`,
-                    top: `${(y / 2) * 100}%`,
-                    width: `${(wide / 6) * 100}%`,
-                    height: `${(high / 2) * 100}%`,
-                }"
-                :disabled="
-                    place > fields.length ||
-                    (place === fields.length && !editable)
-                "
-                :title="
+                :text="
                     place > fields.length
                         ? 'Set up the places before it first'
                         : undefined
                 "
-                :aria-pressed="place === at && place < fields.length"
-                :data-place="place"
-                @click="choose(place)"
             >
-                <template v-if="place < fields.length">
-                    <span class="text-muted-foreground text-[10px]">{{
-                        place + 1
-                    }}</span>
-                    <span class="line-clamp-2 break-words">{{
-                        fields[place].name || 'No name yet'
-                    }}</span>
-                </template>
-                <Plus v-else-if="place === fields.length" class="size-4" />
-                <span v-else class="text-[10px]">{{ place + 1 }}</span>
-            </button>
+                <button
+                    type="button"
+                    class="absolute flex flex-col items-center justify-center gap-0.5 overflow-hidden border px-1 text-center text-[11px] leading-tight font-medium transition-colors"
+                    :class="[
+                        place === at && place < fields.length
+                            ? 'border-primary bg-background/85 text-primary ring-primary z-10 ring-2 ring-inset'
+                            : 'border-border bg-background/60',
+                        place > fields.length ||
+                        (place === fields.length && !editable)
+                            ? 'text-muted-foreground/50 cursor-default'
+                            : 'hover:bg-primary/10',
+                    ]"
+                    :style="{
+                        left: `${(x / 6) * 100}%`,
+                        top: `${(y / 2) * 100}%`,
+                        width: `${(wide / 6) * 100}%`,
+                        height: `${(high / 2) * 100}%`,
+                    }"
+                    :disabled="
+                        place > fields.length ||
+                        (place === fields.length && !editable)
+                    "
+                    :aria-pressed="place === at && place < fields.length"
+                    :data-place="place"
+                    @click="choose(place)"
+                >
+                    <template v-if="place < fields.length">
+                        <span class="text-muted-foreground text-[10px]">{{
+                            place + 1
+                        }}</span>
+                        <span class="line-clamp-2 break-words">{{
+                            fields[place].name || 'No name yet'
+                        }}</span>
+                    </template>
+                    <Plus v-else-if="place === fields.length" class="size-4" />
+                    <span v-else class="text-[10px]">{{ place + 1 }}</span>
+                </button>
+            </Tip>
         </div>
         <p v-if="spare" class="text-destructive text-xs">
             This layout has {{ places?.length }}
@@ -233,15 +237,16 @@ const spare = computed(() =>
                         change(index, { name: String($event) })
                     "
                 />
-                <Button
-                    v-if="editable"
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label="Remove value"
-                    @click="remove(index)"
-                >
-                    <X />
-                </Button>
+                <Tip v-if="editable" text="Remove value">
+                    <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Remove value"
+                        @click="remove(index)"
+                    >
+                        <X />
+                    </Button>
+                </Tip>
             </div>
             <div v-if="does.length" data-does>
                 <PickOne

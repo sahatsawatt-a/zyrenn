@@ -16,6 +16,7 @@ import type { ChatPlace } from './MessagePlace.vue';
 import SavedReplies from './SavedReplies.vue';
 import SuggestReply from './SuggestReply.vue';
 import type { Suggested } from './SuggestReply.vue';
+import Tip from '@/components/common/Tip.vue';
 
 // Writing the next message: its words, with emoji, a saved reply or one an
 // agent suggests, and a file or a place to go with them -- in a customer's
@@ -236,24 +237,26 @@ function onKey(event: KeyboardEvent) {
                 @keydown="onKey"
                 @paste="take($event.clipboardData?.files, $event)"
             />
-            <Button
-                v-if="sending"
-                type="button"
-                size="icon-sm"
-                aria-label="Stop"
-                @click="emit('stop')"
-            >
-                <Square />
-            </Button>
-            <Button
-                v-else
-                type="submit"
-                size="icon-sm"
-                aria-label="Send"
-                :disabled="!draft.trim() && !attached && !placed"
-            >
-                <Send />
-            </Button>
+            <Tip v-if="sending" text="Stop">
+                <Button
+                    type="button"
+                    size="icon-sm"
+                    aria-label="Stop"
+                    @click="emit('stop')"
+                >
+                    <Square />
+                </Button>
+            </Tip>
+            <Tip v-else text="Send">
+                <Button
+                    type="submit"
+                    size="icon-sm"
+                    aria-label="Send"
+                    :disabled="!draft.trim() && !attached && !placed"
+                >
+                    <Send />
+                </Button>
+            </Tip>
         </div>
         <p
             class="text-muted-foreground mt-1.5 hidden px-2 text-[11px] sm:block"

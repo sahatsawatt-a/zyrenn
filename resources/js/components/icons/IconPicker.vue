@@ -6,9 +6,11 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from '@/components/ui/popover';
+import SearchField from '@/components/common/SearchField.vue';
 import { DEFAULT_ICON, ICON_COLORS, ICON_GROUPS, iconNamed } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import IconByName from './IconByName.vue';
+import Tip from '@/components/common/Tip.vue';
 
 // The icon a thing shows, as a small button that opens the set to choose
 // another from -- searched by name -- and, if colorable, the colour it is
@@ -28,6 +30,23 @@ const name = defineModel<string | null>({ default: DEFAULT_ICON });
 const color = defineModel<string | null>('color');
 
 const open = ref(false);
+
+// Another colour than the swatches, typed as its code: #3b82f6 or 3b82f6
+const choosingOther = ref(false);
+const other = ref('');
+const otherHex = computed(() => {
+    const plain = other.value.trim().replace(/^#/, '');
+
+    return `#${plain.length === 3 ? [...plain].map((c) => c + c).join('') : plain}`.toLowerCase();
+});
+const otherValid = computed(() => /^#[0-9a-f]{6}$/.test(otherHex.value));
+
+function useOther() {
+    if (otherValid.value) {
+        color.value = otherHex.value;
+        choosingOther.value = false;
+    }
+}
 const term = ref('');
 
 const groups = computed(() => {
@@ -83,42 +102,77 @@ const pick = (picked: string) => {
                 class="mb-2 flex flex-wrap items-center gap-1"
                 data-test="icon-colors"
             >
-                <button
+                <Tip
                     v-for="each in ICON_COLORS"
                     :key="each"
-                    type="button"
-                    class="size-5 rounded-full"
-                    :class="
-                        each === color?.toLowerCase() &&
-                        'ring-ring ring-offset-background ring-2 ring-offset-1'
-                    "
-                    :style="{ background: each }"
-                    :aria-label="`Colour ${each}`"
-                    :aria-pressed="each === color?.toLowerCase()"
-                    :data-test="`color-${each}`"
-                    @click="color = each"
-                />
-                <label
-                    class="hover:bg-accent relative ml-auto flex size-6 cursor-pointer items-center justify-center rounded"
-                    title="Another colour"
+                    :text="`Colour ${each}`"
                 >
-                    <Palette class="text-muted-foreground size-4" />
-                    <input
-                        type="color"
-                        class="absolute inset-0 cursor-pointer opacity-0"
-                        aria-label="Another colour"
-                        :value="color ?? '#3b82f6'"
-                        @change="
-                            color = ($event.target as HTMLInputElement).value
+                    <button
+                        type="button"
+                        class="size-5 rounded-full"
+                        :class="
+                            each === color?.toLowerCase() &&
+                            'ring-ring ring-offset-background ring-2 ring-offset-1'
                         "
+                        :style="{ background: each }"
+                        :aria-label="`Colour ${each}`"
+                        :aria-pressed="each === color?.toLowerCase()"
+                        :data-test="`color-${each}`"
+                        @click="color = each"
                     />
-                </label>
+                </Tip>
+                <!-- Any colour, by its code: the app's own, not the system's window -->
+                <div class="relative ml-auto">
+                    <Tip text="Another colour">
+                        <button
+                            type="button"
+                            class="hover:bg-accent flex size-6 items-center justify-center rounded"
+                            aria-label="Another colour"
+                            :aria-expanded="choosingOther"
+                            data-test="color-other"
+                            @click="choosingOther = !choosingOther"
+                        >
+                            <Palette class="text-muted-foreground size-4" />
+                        </button>
+                    </Tip>
+                </div>
             </div>
-            <input
+            <form
+                v-if="choosingOther"
+                class="mb-2 flex items-center gap-2"
+                data-test="color-other-form"
+                @submit.prevent="useOther"
+            >
+                <span
+                    class="size-7 shrink-0 rounded border"
+                    :style="{
+                        background: otherValid ? otherHex : 'transparent',
+                    }"
+                    aria-hidden="true"
+                />
+                <input
+                    v-model="other"
+                    class="bg-background dark:bg-input/30 h-8 min-w-0 flex-1 rounded-md border px-2 font-mono text-sm"
+                    placeholder="#3b82f6"
+                    aria-label="A colour's code"
+                    maxlength="7"
+                    autocomplete="off"
+                    spellcheck="false"
+                    data-test="color-other-hex"
+                />
+                <button
+                    type="submit"
+                    class="bg-primary text-primary-foreground h-8 rounded-md px-3 text-sm disabled:opacity-50"
+                    :disabled="!otherValid"
+                >
+                    Use
+                </button>
+            </form>
+            <SearchField
                 v-model="term"
                 placeholder="Search icons"
-                aria-label="Search icons"
-                class="bg-background dark:bg-input/30 mb-2 h-8 w-full rounded-md border px-2 text-sm"
+                compact
+                class="mb-2"
             />
             <div class="max-h-72 overflow-y-auto">
                 <section v-for="group in groups" :key="group.label">
@@ -128,27 +182,30 @@ const pick = (picked: string) => {
                         {{ group.label }}
                     </h3>
                     <div class="grid grid-cols-8 gap-0.5">
-                        <button
+                        <Tip
                             v-for="each in group.icons"
                             :key="each.name"
-                            type="button"
-                            class="hover:bg-accent flex aspect-square items-center justify-center rounded"
-                            :class="
-                                each.name === current &&
-                                'bg-accent ring-ring ring-1'
-                            "
-                            :title="each.label"
-                            :aria-label="each.label"
-                            :aria-pressed="each.name === current"
-                            :data-test="`icon-${each.name}`"
-                            @click="pick(each.name)"
+                            :text="each.label"
                         >
-                            <component
-                                :is="each.icon"
-                                class="size-4"
-                                :style="{ color: color ?? undefined }"
-                            />
-                        </button>
+                            <button
+                                type="button"
+                                class="hover:bg-accent flex aspect-square items-center justify-center rounded"
+                                :class="
+                                    each.name === current &&
+                                    'bg-accent ring-ring ring-1'
+                                "
+                                :aria-label="each.label"
+                                :aria-pressed="each.name === current"
+                                :data-test="`icon-${each.name}`"
+                                @click="pick(each.name)"
+                            >
+                                <component
+                                    :is="each.icon"
+                                    class="size-4"
+                                    :style="{ color: color ?? undefined }"
+                                />
+                            </button>
+                        </Tip>
                     </div>
                 </section>
                 <p

@@ -13,6 +13,7 @@ import type { TripContent } from '@/features/maps/lib/trip';
 import { addDays, shortDate } from '@/features/maps/lib/trip';
 import type { TripSummary, TripTotals } from '@/lib/maps';
 import { listTrips, tripContent } from '@/lib/maps';
+import TicketPick from '@/features/tickets/components/TicketPick.vue';
 import { holdPrint } from '@/lib/printReady';
 import { show } from '@/routes/trips';
 
@@ -121,49 +122,45 @@ watch(
 const link = computed(() =>
     reference.value.ref ? show.url(reference.value.ref) : '',
 );
+
+const tripOptions = computed(() =>
+    trips.value.map((option) => ({
+        value: option.ref_id,
+        label: option.title || 'Untitled trip',
+    })),
+);
+
+const dayOptions = computed(() => [
+    { value: WHOLE_TRIP, label: 'Whole trip' },
+    ...days.value.map((each) => ({ value: each.id, label: each.label })),
+]);
 </script>
 
 <template>
     <NodeViewWrapper class="trip-block" data-test="trip-block">
         <!-- Toolbar: which trip, and which of its days -->
         <div class="trip-toolbar" contenteditable="false">
-            <select
-                class="trip-select"
-                aria-label="Trip"
+            <TicketPick
+                class="max-w-64 min-w-0 flex-1"
+                compact
+                label="Trip"
+                placeholder="Choose a trip…"
                 data-test="trip-choose"
-                :value="reference.ref"
-                @change="
-                    write({
-                        ref: ($event.target as HTMLSelectElement).value,
-                        day: WHOLE_TRIP,
-                    })
-                "
-            >
-                <option value="" disabled>Choose a trip…</option>
-                <option
-                    v-for="option in trips"
-                    :key="option.ref_id"
-                    :value="option.ref_id"
-                >
-                    {{ option.title || 'Untitled trip' }}
-                </option>
-            </select>
+                :model-value="reference.ref"
+                :options="tripOptions"
+                @update:model-value="write({ ref: $event, day: WHOLE_TRIP })"
+            />
 
-            <select
-                class="trip-select"
-                aria-label="Day"
+            <TicketPick
+                class="max-w-64 min-w-0 flex-1"
+                compact
+                label="Day"
                 data-test="day-choose"
-                :value="reference.day"
+                :model-value="reference.day"
+                :options="dayOptions"
                 :disabled="!days.length"
-                @change="
-                    write({ day: ($event.target as HTMLSelectElement).value })
-                "
-            >
-                <option :value="WHOLE_TRIP">Whole trip</option>
-                <option v-for="each in days" :key="each.id" :value="each.id">
-                    {{ each.label }}
-                </option>
-            </select>
+                @update:model-value="write({ day: $event })"
+            />
 
             <a
                 v-if="link"
@@ -212,23 +209,6 @@ const link = computed(() =>
     padding: 0.375rem 0.5rem;
     border-bottom: 1px solid var(--border);
     background-color: var(--muted);
-}
-
-.trip-select {
-    max-width: 16rem;
-    flex: 1;
-    height: 1.75rem;
-    padding: 0 0.375rem;
-    font-size: 0.75rem;
-    color: var(--foreground);
-    background-color: var(--background);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-}
-.trip-select:disabled {
-    opacity: 0.6;
-    cursor: default;
 }
 
 .trip-open {

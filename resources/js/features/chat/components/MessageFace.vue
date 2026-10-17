@@ -2,6 +2,7 @@
 import { Zap } from '@lucide/vue';
 import { colourOf, fromOutside, initialsOf, nameOver } from '../conversation';
 import type { Message, Room } from '../types';
+import Tip from '@/components/common/Tip.vue';
 
 // Beside someone else's turn: a workflow's mark, the face of someone
 // outside whose words a workflow carried in, or a person's initials. Only
@@ -24,38 +25,50 @@ const emit = defineEmits<{
 </script>
 
 <template>
-    <span
+    <Tip
         v-if="message.role === 'workflow' && !fromOutside(message)"
-        class="mb-4 flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400"
-        :class="{ invisible: !last }"
-        :title="`${nameOver(message, kind)}, a workflow`"
+        :text="`${nameOver(message, kind)}, a workflow`"
     >
-        <Zap class="size-3.5" />
-    </span>
-    <img
+        <span
+            class="mb-4 flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400"
+            :class="{ invisible: !last }"
+            :aria-label="`${nameOver(message, kind)}, a workflow`"
+        >
+            <Zap class="size-3.5" />
+        </span>
+    </Tip>
+    <Tip
         v-else-if="face"
-        :src="face"
-        :alt="message.sender?.name"
-        :title="`${message.sender?.name}: written outside, carried in by a workflow`"
-        class="mb-4 size-7 shrink-0 cursor-zoom-in rounded-full object-cover"
-        :class="{ invisible: !last }"
-        referrerpolicy="no-referrer"
-        loading="lazy"
-        data-chat-face
-        @error="emit('broken', face as string)"
-        @click="emit('view', face as string)"
-    />
-    <span
+        :text="`${message.sender?.name}: written outside, carried in by a workflow`"
+    >
+        <img
+            :src="face"
+            :alt="message.sender?.name"
+            class="mb-4 size-7 shrink-0 cursor-zoom-in rounded-full object-cover"
+            :class="{ invisible: !last }"
+            referrerpolicy="no-referrer"
+            loading="lazy"
+            data-chat-face
+            @error="emit('broken', face as string)"
+            @click="emit('view', face as string)"
+        />
+    </Tip>
+    <Tip
         v-else
-        class="mb-4 flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
-        :class="{ invisible: !last }"
-        :style="{ backgroundColor: colourOf(message) }"
-        :title="
+        :text="
             message.role === 'user'
                 ? message.author?.name
                 : `${message.sender?.name}: written outside, carried in by a workflow`
         "
     >
-        {{ initialsOf(message.author?.name ?? message.sender?.name ?? '?') }}
-    </span>
+        <span
+            class="mb-4 flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
+            :class="{ invisible: !last }"
+            :style="{ backgroundColor: colourOf(message) }"
+        >
+            {{
+                initialsOf(message.author?.name ?? message.sender?.name ?? '?')
+            }}
+        </span>
+    </Tip>
 </template>

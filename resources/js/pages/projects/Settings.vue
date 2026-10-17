@@ -26,11 +26,19 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { getInitials } from '@/composables/useInitials';
 import type { ProjectRole } from '@/lib/projects';
 import { destroy, edit, update } from '@/routes/projects';
 import { index as connectionsIndex } from '@/routes/projects/connections';
 import * as members from '@/routes/projects/members';
+import Tip from '@/components/common/Tip.vue';
 
 type Member = {
     // The membership's, for changing or ending it
@@ -134,6 +142,7 @@ const remove = () =>
             />
 
             <Form
+                novalidate
                 v-bind="update.form(settings.ref_id)"
                 class="flex flex-col gap-4 sm:flex-row sm:items-start"
                 :options="{ preserveScroll: true }"
@@ -170,6 +179,7 @@ const remove = () =>
             />
 
             <Form
+                novalidate
                 v-if="settings.can.manage_members"
                 v-bind="members.store.form(settings.ref_id)"
                 :options="{ preserveScroll: true }"
@@ -189,20 +199,24 @@ const remove = () =>
                         class="flex-1"
                     />
                     <Label for="member-role" class="sr-only">Role</Label>
-                    <select
-                        id="member-role"
-                        name="role"
-                        class="border-input bg-background h-9 rounded-md border px-3 text-sm"
-                    >
-                        <option
-                            v-for="role in roles"
-                            :key="role.value"
-                            :value="role.value"
-                            :selected="role.value === 'editor'"
+                    <Select name="role" default-value="editor">
+                        <SelectTrigger
+                            id="member-role"
+                            class="w-full sm:w-36"
+                            data-test="member-new-role"
                         >
-                            {{ role.label }}
-                        </option>
-                    </select>
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem
+                                v-for="role in roles"
+                                :key="role.value"
+                                :value="role.value"
+                            >
+                                {{ role.label }}
+                            </SelectItem>
+                        </SelectContent>
+                    </Select>
                     <Button :disabled="processing">Add</Button>
                 </div>
                 <InputError :message="errors.email ?? errors.role" />
@@ -236,37 +250,45 @@ const remove = () =>
                         </p>
                     </div>
                     <template v-if="settings.can.manage_members">
-                        <select
-                            :value="member.role"
-                            :aria-label="`${member.name}’s role`"
-                            class="border-input bg-background h-8 rounded-md border px-2 text-sm"
-                            data-test="member-role"
-                            @change="
-                                changeRole(
-                                    member,
-                                    ($event.target as HTMLSelectElement).value,
-                                )
+                        <Select
+                            :model-value="member.role"
+                            @update:model-value="
+                                changeRole(member, String($event))
                             "
                         >
-                            <option
-                                v-for="role in roles"
-                                :key="role.value"
-                                :value="role.value"
+                            <SelectTrigger
+                                size="sm"
+                                class="w-28"
+                                :aria-label="`${member.name}’s role`"
+                                data-test="member-role"
                             >
-                                {{ role.label }}
-                            </option>
-                        </select>
-                        <Button
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem
+                                    v-for="role in roles"
+                                    :key="role.value"
+                                    :value="role.value"
+                                >
+                                    {{ role.label }}
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Tip
                             v-if="!member.is_me"
-                            variant="ghost"
-                            size="icon"
-                            class="size-8"
-                            :title="`Remove ${member.name}`"
-                            data-test="remove-member"
-                            @click="removing = member"
+                            :text="`Remove ${member.name}`"
                         >
-                            <UserMinus />
-                        </Button>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                class="size-8"
+                                :aria-label="`Remove ${member.name}`"
+                                data-test="remove-member"
+                                @click="removing = member"
+                            >
+                                <UserMinus />
+                            </Button>
+                        </Tip>
                     </template>
                     <Badge v-else variant="secondary" class="capitalize">{{
                         member.role

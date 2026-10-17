@@ -1,5 +1,6 @@
 <script setup lang="ts" generic="T extends string">
 import type { Component } from 'vue';
+import Tip from '@/components/common/Tip.vue';
 
 // A few ways of looking at one list, side by side, one of them on: the kinds
 // of ticket, a list or a board, where a customer's chat stands.
@@ -23,29 +24,29 @@ const emit = defineEmits<{ 'update:modelValue': [value: T] }>();
 
 <template>
     <div class="segment-tabs" role="tablist" :aria-label="label">
-        <button
-            v-for="option in options"
-            :key="option.value"
-            type="button"
-            role="tab"
-            :title="option.title"
-            :aria-selected="modelValue === option.value"
-            :class="{ 'is-on': modelValue === option.value }"
-            :data-test="option.test"
-            @click="emit('update:modelValue', option.value)"
-        >
-            <component
-                :is="option.icon"
-                v-if="option.icon"
-                :class="[option.label ? 'size-3.5' : 'size-4', option.tone]"
-            />
-            <template v-if="option.label">{{ option.label }}</template>
-            <span
-                v-if="option.count !== undefined"
-                class="text-muted-foreground tabular-nums"
-                >{{ option.count }}</span
+        <Tip v-for="option in options" :key="option.value" :text="option.title">
+            <button
+                type="button"
+                role="tab"
+                :aria-label="option.label ? undefined : option.title"
+                :aria-selected="modelValue === option.value"
+                :class="{ 'is-on': modelValue === option.value }"
+                :data-test="option.test"
+                @click="emit('update:modelValue', option.value)"
             >
-        </button>
+                <component
+                    :is="option.icon"
+                    v-if="option.icon"
+                    :class="[option.label ? 'size-3.5' : 'size-4', option.tone]"
+                />
+                <template v-if="option.label">{{ option.label }}</template>
+                <span
+                    v-if="option.count !== undefined"
+                    class="text-muted-foreground tabular-nums"
+                    >{{ option.count }}</span
+                >
+            </button>
+        </Tip>
     </div>
 </template>
 

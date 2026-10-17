@@ -1,14 +1,7 @@
 <script setup lang="ts">
-import {
-    ArrowDownUp,
-    LayoutGrid,
-    List,
-    ListFilter,
-    Search,
-    X,
-} from '@lucide/vue';
+import { ArrowDownUp, LayoutGrid, List, ListFilter } from '@lucide/vue';
 import { computed } from 'vue';
-import { Input } from '@/components/ui/input';
+import SearchField from '@/components/common/SearchField.vue';
 import {
     Select,
     SelectContent,
@@ -16,6 +9,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import Tip from '@/components/common/Tip.vue';
 
 type Option = { value: string; label: string };
 
@@ -48,27 +42,12 @@ const filterValue = computed({
 
 <template>
     <div class="flex flex-col gap-2 sm:flex-row">
-        <div class="relative flex-1">
-            <Search
-                class="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
-            />
-            <Input
-                v-model="q"
-                type="search"
-                :placeholder="placeholder"
-                class="pr-9 pl-9 [&::-webkit-search-cancel-button]:hidden"
-                @keydown.esc="q = ''"
-            />
-            <button
-                v-if="q"
-                type="button"
-                class="text-muted-foreground hover:text-foreground absolute top-1/2 right-2.5 -translate-y-1/2"
-                title="Clear search"
-                @click="q = ''"
-            >
-                <X class="size-4" />
-            </button>
-        </div>
+        <SearchField
+            v-model="q"
+            class="flex-1"
+            :placeholder="placeholder"
+            :label="placeholder"
+        />
 
         <div class="flex gap-2">
             <Select v-model="sort">
@@ -110,23 +89,27 @@ const filterValue = computed({
                 role="radiogroup"
                 aria-label="Show as"
             >
-                <button
+                <Tip
                     v-for="option in VIEWS"
                     :key="option.value"
-                    type="button"
-                    role="radio"
-                    :aria-checked="view === option.value"
-                    :title="option.label"
-                    class="flex h-8 w-8 items-center justify-center rounded transition-colors"
-                    :class="
-                        view === option.value
-                            ? 'bg-background text-foreground shadow-xs'
-                            : 'text-muted-foreground hover:text-foreground'
-                    "
-                    @click="view = option.value"
+                    :text="option.label"
                 >
-                    <component :is="option.icon" class="size-4" />
-                </button>
+                    <button
+                        type="button"
+                        role="radio"
+                        :aria-checked="view === option.value"
+                        :aria-label="option.label"
+                        class="flex h-8 w-8 items-center justify-center rounded transition-colors"
+                        :class="
+                            view === option.value
+                                ? 'bg-background text-foreground shadow-xs'
+                                : 'text-muted-foreground hover:text-foreground'
+                        "
+                        @click="view = option.value"
+                    >
+                        <component :is="option.icon" class="size-4" />
+                    </button>
+                </Tip>
             </div>
         </div>
     </div>

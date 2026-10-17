@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useMediaViewer } from '@/composables/useMediaViewer';
 import VideoPlayer from '@/components/media/VideoPlayer.vue';
+import Tip from '@/components/common/Tip.vue';
 
 const { items, index, isOpen, current, close, step } = useMediaViewer();
 
@@ -338,113 +339,131 @@ useEventListener(
                 </p>
 
                 <template v-if="!playing">
-                    <button
-                        type="button"
-                        class="viewer-btn"
-                        title="Zoom out (−)"
-                        @click="zoomTo(view.scale / 1.25)"
-                    >
-                        <Minus class="size-4" />
-                    </button>
-                    <button
-                        type="button"
-                        class="viewer-btn w-16 tabular-nums"
-                        title="Actual size (1)"
-                        @click="zoomTo(1 / fit)"
-                    >
-                        {{ Math.round(actual * 100) }}%
-                    </button>
-                    <button
-                        type="button"
-                        class="viewer-btn"
-                        title="Zoom in (+)"
-                        @click="zoomTo(view.scale * 1.25)"
-                    >
-                        <Plus class="size-4" />
-                    </button>
-                    <button
-                        type="button"
-                        class="viewer-btn"
-                        title="Fit to screen (0)"
-                        @click="reset"
-                    >
-                        <Maximize class="size-4" />
-                    </button>
-                </template>
-                <DropdownMenu v-if="save" v-model:open="saveMenuOpen">
-                    <DropdownMenuTrigger as-child>
+                    <Tip text="Zoom out (−)">
                         <button
                             type="button"
-                            class="viewer-btn gap-1.5"
-                            title="Save as a picture"
-                            :disabled="saving"
-                            data-test="viewer-save"
+                            class="viewer-btn"
+                            aria-label="Zoom out (−)"
+                            @click="zoomTo(view.scale / 1.25)"
                         >
-                            <Download class="size-4" />
-                            Save
+                            <Minus class="size-4" />
                         </button>
-                    </DropdownMenuTrigger>
-                    <!-- Above the viewer, which sits over everything else -->
-                    <DropdownMenuContent align="end" class="z-[110] w-60">
-                        <DropdownMenuLabel>File type</DropdownMenuLabel>
-                        <DropdownMenuRadioGroup
-                            :model-value="imageType"
-                            @update:model-value="
-                                chooseImageType($event as ImageType)
-                            "
+                    </Tip>
+                    <Tip text="Actual size (1)">
+                        <button
+                            type="button"
+                            class="viewer-btn w-16 tabular-nums"
+                            @click="zoomTo(1 / fit)"
                         >
-                            <!-- Picking a type keeps the menu open for the save -->
-                            <DropdownMenuRadioItem
-                                v-for="type in imageTypes"
-                                :key="type.id"
-                                :value="type.id"
-                                :data-test="`viewer-save-type-${type.id}`"
-                                @select.prevent
+                            {{ Math.round(actual * 100) }}%
+                        </button>
+                    </Tip>
+                    <Tip text="Zoom in (+)">
+                        <button
+                            type="button"
+                            class="viewer-btn"
+                            aria-label="Zoom in (+)"
+                            @click="zoomTo(view.scale * 1.25)"
+                        >
+                            <Plus class="size-4" />
+                        </button>
+                    </Tip>
+                    <Tip text="Fit to screen (0)">
+                        <button
+                            type="button"
+                            class="viewer-btn"
+                            aria-label="Fit to screen (0)"
+                            @click="reset"
+                        >
+                            <Maximize class="size-4" />
+                        </button>
+                    </Tip>
+                </template>
+                <Tip v-if="save" text="Save as a picture">
+                    <span class="inline-flex">
+                        <DropdownMenu v-model:open="saveMenuOpen">
+                            <DropdownMenuTrigger as-child>
+                                <button
+                                    type="button"
+                                    class="viewer-btn gap-1.5"
+                                    :disabled="saving"
+                                    data-test="viewer-save"
+                                >
+                                    <Download class="size-4" />
+                                    Save
+                                </button>
+                            </DropdownMenuTrigger>
+                            <!-- Above the viewer, which sits over everything else -->
+                            <DropdownMenuContent
+                                align="end"
+                                class="z-[110] w-60"
                             >
-                                <span class="flex flex-col">
-                                    <span>{{ type.label }}</span>
-                                    <span class="text-muted-foreground text-xs">
-                                        {{ type.hint }}
-                                    </span>
-                                </span>
-                            </DropdownMenuRadioItem>
-                        </DropdownMenuRadioGroup>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                            data-test="viewer-save-download"
-                            @select="saveAs('download')"
-                        >
-                            <Download />
-                            Download {{ imageType.toUpperCase() }}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                            v-if="save.drive"
-                            data-test="viewer-save-drive"
-                            @select="saveAs('drive')"
-                        >
-                            <HardDrive />
-                            Save {{ imageType.toUpperCase() }} to Drive
-                        </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
-                <a
-                    v-if="current.type !== 'svg'"
-                    :href="current.src"
-                    target="_blank"
-                    rel="noopener"
-                    class="viewer-btn"
-                    title="Open original"
-                >
-                    <ExternalLink class="size-4" />
-                </a>
-                <button
-                    type="button"
-                    class="viewer-btn"
-                    title="Close (Esc)"
-                    @click="close"
-                >
-                    <X class="size-4" />
-                </button>
+                                <DropdownMenuLabel>File type</DropdownMenuLabel>
+                                <DropdownMenuRadioGroup
+                                    :model-value="imageType"
+                                    @update:model-value="
+                                        chooseImageType($event as ImageType)
+                                    "
+                                >
+                                    <!-- Picking a type keeps the menu open for the save -->
+                                    <DropdownMenuRadioItem
+                                        v-for="type in imageTypes"
+                                        :key="type.id"
+                                        :value="type.id"
+                                        :data-test="`viewer-save-type-${type.id}`"
+                                        @select.prevent
+                                    >
+                                        <span class="flex flex-col">
+                                            <span>{{ type.label }}</span>
+                                            <span
+                                                class="text-muted-foreground text-xs"
+                                            >
+                                                {{ type.hint }}
+                                            </span>
+                                        </span>
+                                    </DropdownMenuRadioItem>
+                                </DropdownMenuRadioGroup>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                    data-test="viewer-save-download"
+                                    @select="saveAs('download')"
+                                >
+                                    <Download />
+                                    Download {{ imageType.toUpperCase() }}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    v-if="save.drive"
+                                    data-test="viewer-save-drive"
+                                    @select="saveAs('drive')"
+                                >
+                                    <HardDrive />
+                                    Save {{ imageType.toUpperCase() }} to Drive
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </span>
+                </Tip>
+                <Tip v-if="current.type !== 'svg'" text="Open original">
+                    <a
+                        :href="current.src"
+                        target="_blank"
+                        rel="noopener"
+                        class="viewer-btn"
+                        aria-label="Open original"
+                    >
+                        <ExternalLink class="size-4" />
+                    </a>
+                </Tip>
+                <Tip text="Close (Esc)">
+                    <button
+                        type="button"
+                        class="viewer-btn"
+                        aria-label="Close (Esc)"
+                        @click="close"
+                    >
+                        <X class="size-4" />
+                    </button>
+                </Tip>
             </div>
 
             <!-- Stage: wheel to zoom, drag to pan, double-click to toggle 2× -->
@@ -511,24 +530,28 @@ useEventListener(
                 </div>
 
                 <template v-if="items.length > 1">
-                    <button
-                        type="button"
-                        class="viewer-btn absolute left-4 size-10!"
-                        title="Previous (←)"
-                        @pointerdown.stop
-                        @click="step(-1)"
-                    >
-                        <ChevronLeft class="size-5" />
-                    </button>
-                    <button
-                        type="button"
-                        class="viewer-btn absolute right-4 size-10!"
-                        title="Next (→)"
-                        @pointerdown.stop
-                        @click="step(1)"
-                    >
-                        <ChevronRight class="size-5" />
-                    </button>
+                    <Tip text="Previous (←)">
+                        <button
+                            type="button"
+                            class="viewer-btn absolute left-4 size-10!"
+                            aria-label="Previous (←)"
+                            @pointerdown.stop
+                            @click="step(-1)"
+                        >
+                            <ChevronLeft class="size-5" />
+                        </button>
+                    </Tip>
+                    <Tip text="Next (→)">
+                        <button
+                            type="button"
+                            class="viewer-btn absolute right-4 size-10!"
+                            aria-label="Next (→)"
+                            @pointerdown.stop
+                            @click="step(1)"
+                        >
+                            <ChevronRight class="size-5" />
+                        </button>
+                    </Tip>
                 </template>
             </div>
 

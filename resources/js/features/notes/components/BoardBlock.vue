@@ -14,6 +14,7 @@ import type { Item } from '@/features/boards/model/items';
 import { nameOf } from '@/features/boards/model/items';
 import type { BoardContent, BoardSummary } from '@/features/boards/lib/api';
 import { boardContent, listBoards } from '@/features/boards/lib/api';
+import TicketPick from '@/features/tickets/components/TicketPick.vue';
 import { holdPrint } from '@/lib/printReady';
 import { show } from '@/routes/boards';
 
@@ -117,15 +118,24 @@ watch(
     (refId) => void load(refId),
 );
 
-const onBoardChosen = (event: Event) => {
-    write({
-        ref: (event.target as HTMLSelectElement).value,
-        frame: WHOLE_BOARD,
-    });
-};
+const onBoardChosen = (ref: string) => write({ ref, frame: WHOLE_BOARD });
 
-const onFrameChosen = (event: Event) =>
-    write({ frame: (event.target as HTMLSelectElement).value });
+const onFrameChosen = (frame: string) => write({ frame });
+
+const boardOptions = computed(() =>
+    boards.value.map((option) => ({
+        value: option.ref_id,
+        label: option.title || 'Untitled board',
+    })),
+);
+
+const frameOptions = computed(() => [
+    { value: WHOLE_BOARD, label: 'Whole board' },
+    ...frames.value.map((frame, index) => ({
+        value: frame.id,
+        label: `${index + 1} · ${nameOf(frame)}`,
+    })),
+]);
 
 const shownFrame = computed(() =>
     reference.value.frame === WHOLE_BOARD ? null : reference.value.frame,
@@ -140,40 +150,27 @@ const link = computed(() =>
     <NodeViewWrapper class="board-block" data-test="board-block">
         <!-- Toolbar: which board, and which frame of it -->
         <div class="board-toolbar" contenteditable="false">
-            <select
-                class="board-select"
-                aria-label="Board"
+            <TicketPick
+                class="max-w-64 min-w-0 flex-1"
+                compact
+                label="Board"
+                placeholder="Choose a board…"
                 data-test="board-choose"
-                :value="reference.ref"
-                @change="onBoardChosen"
-            >
-                <option value="" disabled>Choose a board…</option>
-                <option
-                    v-for="option in boards"
-                    :key="option.ref_id"
-                    :value="option.ref_id"
-                >
-                    {{ option.title || 'Untitled board' }}
-                </option>
-            </select>
+                :model-value="reference.ref"
+                :options="boardOptions"
+                @update:model-value="onBoardChosen"
+            />
 
-            <select
-                class="board-select"
-                aria-label="Frame"
+            <TicketPick
+                class="max-w-64 min-w-0 flex-1"
+                compact
+                label="Frame"
                 data-test="frame-choose"
-                :value="reference.frame"
+                :model-value="reference.frame"
+                :options="frameOptions"
                 :disabled="!frames.length"
-                @change="onFrameChosen"
-            >
-                <option :value="WHOLE_BOARD">Whole board</option>
-                <option
-                    v-for="(frame, index) in frames"
-                    :key="frame.id"
-                    :value="frame.id"
-                >
-                    {{ index + 1 }} · {{ nameOf(frame) }}
-                </option>
-            </select>
+                @update:model-value="onFrameChosen"
+            />
 
             <a
                 v-if="link"
@@ -220,23 +217,6 @@ const link = computed(() =>
     padding: 0.375rem 0.5rem;
     border-bottom: 1px solid var(--border);
     background-color: var(--muted);
-}
-
-.board-select {
-    max-width: 16rem;
-    flex: 1;
-    height: 1.75rem;
-    padding: 0 0.375rem;
-    font-size: 0.75rem;
-    color: var(--foreground);
-    background-color: var(--background);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-}
-.board-select:disabled {
-    opacity: 0.6;
-    cursor: default;
 }
 
 .board-open {

@@ -34,6 +34,7 @@ import {
 } from '@/routes/chats/contact';
 import FaceViewer from './FaceViewer.vue';
 import SameAsDialog from './SameAsDialog.vue';
+import Tip from '@/components/common/Tip.vue';
 
 // About a chat, opened beside it like a contact's card: its face, what it
 // is linked to, and what is known about it. A workflow keeps some of that --
@@ -388,16 +389,17 @@ const service = computed(() =>
                                     Known as {{ contact.key }}
                                 </p>
                             </div>
-                            <button
-                                v-if="room.manage"
-                                type="button"
-                                class="text-muted-foreground hover:text-foreground rounded-md p-1.5"
-                                aria-label="Rename them"
-                                data-test="contact-rename"
-                                @click="startNaming"
-                            >
-                                <Pencil class="size-3.5" />
-                            </button>
+                            <Tip v-if="room.manage" text="Rename them">
+                                <button
+                                    type="button"
+                                    class="text-muted-foreground hover:text-foreground rounded-md p-1.5"
+                                    aria-label="Rename them"
+                                    data-test="contact-rename"
+                                    @click="startNaming"
+                                >
+                                    <Pencil class="size-3.5" />
+                                </button>
+                            </Tip>
                         </div>
                         <ul>
                             <li
@@ -484,19 +486,22 @@ const service = computed(() =>
                                     {{ shown(row) }}
                                 </dd>
                             </div>
-                            <button
-                                type="button"
-                                class="text-muted-foreground hover:text-foreground shrink-0 rounded-md p-1.5 opacity-60 group-hover:opacity-100"
-                                :aria-label="`Copy ${labelOf(row.name)}`"
-                                :title="copied === row.name ? 'Copied' : 'Copy'"
-                                @click="copy(row)"
+                            <Tip
+                                :text="copied === row.name ? 'Copied' : 'Copy'"
                             >
-                                <Check
-                                    v-if="copied === row.name"
-                                    class="size-3.5 text-emerald-600"
-                                />
-                                <Copy v-else class="size-3.5" />
-                            </button>
+                                <button
+                                    type="button"
+                                    class="text-muted-foreground hover:text-foreground shrink-0 rounded-md p-1.5 opacity-60 group-hover:opacity-100"
+                                    :aria-label="`Copy ${labelOf(row.name)}`"
+                                    @click="copy(row)"
+                                >
+                                    <Check
+                                        v-if="copied === row.name"
+                                        class="size-3.5 text-emerald-600"
+                                    />
+                                    <Copy v-else class="size-3.5" />
+                                </button>
+                            </Tip>
                         </div>
                     </dl>
                     <p class="text-muted-foreground mt-1.5 px-2 text-[11px]">
@@ -599,15 +604,17 @@ const service = computed(() =>
                                     class="h-8 min-w-0 flex-1 text-xs font-medium"
                                     aria-label="Name"
                                 />
-                                <Button
-                                    type="button"
-                                    size="icon-sm"
-                                    variant="ghost"
-                                    aria-label="Remove this note"
-                                    @click="rows.splice(at, 1)"
-                                >
-                                    <Trash2 />
-                                </Button>
+                                <Tip text="Remove this note">
+                                    <Button
+                                        type="button"
+                                        size="icon-sm"
+                                        variant="ghost"
+                                        aria-label="Remove this note"
+                                        @click="rows.splice(at, 1)"
+                                    >
+                                        <Trash2 />
+                                    </Button>
+                                </Tip>
                             </div>
                             <Input
                                 v-model="row.value"

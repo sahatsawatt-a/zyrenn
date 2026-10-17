@@ -27,6 +27,7 @@ import type {
 import TicketPick from '@/features/tickets/components/TicketPick.vue';
 import { update } from '@/routes/product/requirements';
 import { store as storeRequirement } from '@/routes/projects/product/requirements';
+import Tip from '@/components/common/Tip.vue';
 
 // One requirement, opened beside the list: what it must do and the need it
 // serves; how well it is understood, and what is still to be asked or is
@@ -343,14 +344,16 @@ const changing = () =>
                                 :class="{ 'text-muted-foreground': one.met }"
                                 >{{ one.text }}</span
                             >
-                            <button
-                                type="button"
-                                class="text-muted-foreground"
-                                :aria-label="`Take away: ${one.text}`"
-                                @click="dropCriterion(at)"
-                            >
-                                <X class="size-3.5" />
-                            </button>
+                            <Tip :text="`Take away: ${one.text}`">
+                                <button
+                                    type="button"
+                                    class="text-muted-foreground"
+                                    :aria-label="`Take away: ${one.text}`"
+                                    @click="dropCriterion(at)"
+                                >
+                                    <X class="size-3.5" />
+                                </button>
+                            </Tip>
                         </li>
                     </ul>
                     <form class="flex gap-2" @submit.prevent="addCriterion">
@@ -387,14 +390,16 @@ const changing = () =>
                                 list === 'questions' ? '?' : '~'
                             }}</span>
                             <span class="min-w-0 flex-1">{{ text }}</span>
-                            <button
-                                type="button"
-                                class="text-muted-foreground"
-                                aria-label="Take it away"
-                                @click="dropFrom(list, at)"
-                            >
-                                <X class="size-3.5" />
-                            </button>
+                            <Tip text="Take it away">
+                                <button
+                                    type="button"
+                                    class="text-muted-foreground"
+                                    aria-label="Take it away"
+                                    @click="dropFrom(list, at)"
+                                >
+                                    <X class="size-3.5" />
+                                </button>
+                            </Tip>
                         </li>
                     </ul>
                     <form class="flex gap-2" @submit.prevent="addTo(list)">
@@ -430,20 +435,22 @@ const changing = () =>
                             >
                                 {{ one.code }} {{ one.name }}
                             </button>
-                            <button
-                                type="button"
-                                class="text-muted-foreground"
-                                :aria-label="`Not about ${one.name}`"
-                                @click="
-                                    change(() => ({
-                                        elements: linkedElements.filter(
-                                            (r) => r !== one.ref_id,
-                                        ),
-                                    }))
-                                "
-                            >
-                                <X class="size-3" />
-                            </button>
+                            <Tip :text="`Not about ${one.name}`">
+                                <button
+                                    type="button"
+                                    class="text-muted-foreground"
+                                    :aria-label="`Not about ${one.name}`"
+                                    @click="
+                                        change(() => ({
+                                            elements: linkedElements.filter(
+                                                (r) => r !== one.ref_id,
+                                            ),
+                                        }))
+                                    "
+                                >
+                                    <X class="size-3" />
+                                </button>
+                            </Tip>
                         </span>
                     </div>
                     <TicketPick
@@ -484,22 +491,25 @@ const changing = () =>
                             <span class="text-muted-foreground text-[11px]">{{
                                 one.status.replace('_', ' ')
                             }}</span>
-                            <button
-                                type="button"
-                                class="text-muted-foreground"
-                                aria-label="Not for this"
-                                @click="
-                                    change(() => ({
-                                        tickets: requirement.tickets
-                                            .filter(
-                                                (t) => t.number !== one.number,
-                                            )
-                                            .map((t) => t.number),
-                                    }))
-                                "
-                            >
-                                <X class="size-3.5" />
-                            </button>
+                            <Tip text="Not for this">
+                                <button
+                                    type="button"
+                                    class="text-muted-foreground"
+                                    aria-label="Not for this"
+                                    @click="
+                                        change(() => ({
+                                            tickets: requirement.tickets
+                                                .filter(
+                                                    (t) =>
+                                                        t.number !== one.number,
+                                                )
+                                                .map((t) => t.number),
+                                        }))
+                                    "
+                                >
+                                    <X class="size-3.5" />
+                                </button>
+                            </Tip>
                         </li>
                     </ul>
                     <TicketPick

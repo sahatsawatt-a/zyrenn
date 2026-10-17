@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import type { Member } from '@/lib/live';
 import { update } from '@/routes/chats';
 import type { Room } from '../types';
+import Tip from '@/components/common/Tip.vue';
 
 // The top of a room: its face and name -- renamed in place by whoever may
 // -- what it is linked to, who else is here, and what can be done with it
@@ -91,35 +92,39 @@ function saveTitle() {
                 {{ people.map((person) => person.name).join(', ') }}
             </p>
         </div>
-        <span
+        <Tip
             v-if="room.link"
-            class="flex shrink-0 items-center gap-1 rounded-full bg-sky-500/10 px-2 py-0.5 text-xs text-sky-700 dark:text-sky-400"
-            :title="`What you write here can be sent on through ${room.link.service}, by a workflow`"
-            data-chat-link
+            :text="`What you write here can be sent on through ${room.link.service}, by a workflow`"
         >
-            <Link2 class="size-3" />
-            {{ room.link.service
-            }}<template v-if="room.link.through">
-                · {{ room.link.through }}</template
+            <span
+                class="flex shrink-0 items-center gap-1 rounded-full bg-sky-500/10 px-2 py-0.5 text-xs text-sky-700 dark:text-sky-400"
+                data-chat-link
             >
-        </span>
+                <Link2 class="size-3" />
+                {{ room.link.service
+                }}<template v-if="room.link.through">
+                    · {{ room.link.through }}</template
+                >
+            </span>
+        </Tip>
         <p
             v-if="room.manage && room.kind === 'group'"
             class="text-muted-foreground hidden max-w-48 truncate text-xs sm:block"
         >
             {{ people.length }} people
         </p>
-        <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="About this chat"
-            title="About this chat"
-            :aria-expanded="about"
-            data-chat-about-toggle
-            @click="about = !about"
-        >
-            <Info />
-        </Button>
+        <Tip text="About this chat">
+            <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="About this chat"
+                :aria-expanded="about"
+                data-chat-about-toggle
+                @click="about = !about"
+            >
+                <Info />
+            </Button>
+        </Tip>
         <PresenceAvatars :others="others" />
         <Button
             v-if="room.mine && agents"
@@ -142,14 +147,15 @@ function saveTitle() {
             <LogOut />
             <span class="hidden sm:inline">Leave</span>
         </Button>
-        <Button
-            v-if="room.remove"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Delete chat"
-            @click="emit('remove')"
-        >
-            <Trash2 />
-        </Button>
+        <Tip v-if="room.remove" text="Delete chat">
+            <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Delete chat"
+                @click="emit('remove')"
+            >
+                <Trash2 />
+            </Button>
+        </Tip>
     </header>
 </template>

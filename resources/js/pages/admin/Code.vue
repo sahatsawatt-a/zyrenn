@@ -19,6 +19,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { settings as saveSettings } from '@/routes/admin/code';
 import { destroy, store, update } from '@/routes/admin/code/libraries';
+import Tip from '@/components/common/Tip.vue';
 
 // What workflows' "Run code" may do, for the app's admins: the libraries each
 // language may use, whether Python may be written at all, and how long and
@@ -367,14 +368,16 @@ const examples = computed(() =>
                         :aria-label="`${library.name} may be used`"
                         @update:model-value="setEnabled(library, $event)"
                     />
-                    <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        :aria-label="`Take ${library.name} away`"
-                        @click="removing = library"
-                    >
-                        <Trash2 />
-                    </Button>
+                    <Tip :text="`Take ${library.name} away`">
+                        <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            :aria-label="`Take ${library.name} away`"
+                            @click="removing = library"
+                        >
+                            <Trash2 />
+                        </Button>
+                    </Tip>
                 </li>
             </ul>
             <p v-else class="text-muted-foreground py-6 text-center text-sm">

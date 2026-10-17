@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { BedDouble, X } from '@lucide/vue';
 import { ref } from 'vue';
+import DateTimeField from '@/components/common/DateTimeField.vue';
+import NumberField from '@/components/common/NumberField.vue';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
     DialogContent,
@@ -33,9 +36,6 @@ const book = (place: Parameters<TripPlan['addStay']>[0]) => {
     props.plan.addStay(place);
     searchText.value = '';
 };
-
-const field =
-    'h-9 w-full rounded-md border bg-background px-2 text-sm dark:bg-input/30 dark:[color-scheme:dark]';
 </script>
 
 <template>
@@ -80,42 +80,56 @@ const field =
                     </div>
                     <fieldset
                         :disabled="!editable"
-                        class="grid grid-cols-[1fr_1fr_6rem] gap-2"
+                        class="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_1fr_7.5rem]"
                     >
-                        <label class="text-muted-foreground space-y-1 text-xs">
-                            Check in
-                            <input
+                        <div
+                            class="text-muted-foreground min-w-0 space-y-1 text-xs"
+                        >
+                            <span class="block">Check in</span>
+                            <DateTimeField
                                 v-model="stay.checkIn"
-                                type="datetime-local"
-                                :class="field"
+                                kind="datetime"
+                                label="Check in"
+                                :disabled="!editable"
+                                compact
                                 data-test="check-in"
                             />
-                        </label>
-                        <label class="text-muted-foreground space-y-1 text-xs">
-                            Check out
-                            <input
+                        </div>
+                        <div
+                            class="text-muted-foreground min-w-0 space-y-1 text-xs"
+                        >
+                            <span class="block">Check out</span>
+                            <DateTimeField
                                 v-model="stay.checkOut"
-                                type="datetime-local"
-                                :class="field"
+                                kind="datetime"
+                                label="Check out"
+                                :min="stay.checkIn"
+                                :disabled="!editable"
+                                compact
                                 data-test="check-out"
                             />
-                        </label>
-                        <label class="text-muted-foreground space-y-1 text-xs">
-                            Cost{{
-                                plan.trip.currency
-                                    ? ` (${plan.trip.currency})`
-                                    : ''
-                            }}
-                            <input
-                                v-model.number="stay.cost"
-                                type="number"
-                                min="0"
-                                step="any"
+                        </div>
+                        <div class="text-muted-foreground space-y-1 text-xs">
+                            <span class="block"
+                                >Cost{{
+                                    plan.trip.currency
+                                        ? ` (${plan.trip.currency})`
+                                        : ''
+                                }}</span
+                            >
+                            <NumberField
+                                :model-value="stay.cost"
+                                label="Cost of the stay"
+                                :min="0"
+                                :step="0.01"
                                 placeholder="0"
-                                :class="field"
+                                :disabled="!editable"
+                                compact
+                                class="w-full"
                                 data-test="stay-cost"
+                                @update:model-value="stay.cost = $event ?? 0"
                             />
-                        </label>
+                        </div>
                     </fieldset>
                 </div>
                 <p
@@ -140,10 +154,10 @@ const field =
                     @pick="book"
                 />
                 <label class="flex items-center gap-2 text-sm">
-                    <input
-                        v-model="plan.trip.fromHotel"
-                        type="checkbox"
-                        class="size-4"
+                    <Checkbox
+                        :model-value="plan.trip.fromHotel"
+                        data-test="from-hotel"
+                        @update:model-value="plan.trip.fromHotel = !!$event"
                     />
                     Days start and end at the hotel
                 </label>

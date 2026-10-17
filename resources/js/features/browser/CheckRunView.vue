@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FoldSection from '@/components/common/FoldSection.vue';
 import {
     ChevronDown,
     CircleCheck,
@@ -17,6 +18,7 @@ import type { Chapter } from '@/components/media/VideoPlayer.vue';
 import PictureDialog from '@/features/chat/components/PictureDialog.vue';
 import { SPEEDS, seconds, shotUrl } from './steps';
 import type { CheckResult, CheckRun } from './steps';
+import Tip from '@/components/common/Tip.vue';
 
 // One run of a suite, said plainly: how it went in a sentence, then each check
 // -- passed or where it stopped and why -- with its film and its pictures. A
@@ -221,16 +223,19 @@ const show = (check: string, at: number) =>
                     </p>
                 </div>
             </div>
-            <Button
+            <Tip
                 v-if="going && !run.stop_asked"
-                variant="outline"
-                size="sm"
-                title="Stop it: one waiting never starts, one running stops after the step it is on, keeping what it has done"
-                data-test="check-run-stop"
-                @click="emit('stop')"
+                text="Stop it: one waiting never starts, one running stops after the step it is on, keeping what it has done"
             >
-                <CircleStop /> Stop run
-            </Button>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    data-test="check-run-stop"
+                    @click="emit('stop')"
+                >
+                    <CircleStop /> Stop run
+                </Button>
+            </Tip>
             <Link
                 v-if="run.folder"
                 :href="run.folder"
@@ -342,19 +347,24 @@ const show = (check: string, at: number) =>
                             >{{ verdict(check) }}</span
                         >
                     </span>
-                    <span
+                    <Tip
                         v-if="film && check.film_at !== undefined"
-                        role="button"
-                        tabindex="0"
-                        class="text-muted-foreground hover:text-foreground hover:bg-accent -my-0.5 rounded p-0.5"
-                        :aria-label="`Play ${check.title} in the film`"
-                        title="Play it in the film"
-                        data-test="check-play"
-                        @click.stop="playFrom(check.film_at)"
-                        @keydown.enter.stop.prevent="playFrom(check.film_at)"
+                        text="Play it in the film"
                     >
-                        <Play class="size-4" />
-                    </span>
+                        <span
+                            role="button"
+                            tabindex="0"
+                            class="text-muted-foreground hover:text-foreground hover:bg-accent -my-0.5 rounded p-0.5"
+                            :aria-label="`Play ${check.title} in the film`"
+                            data-test="check-play"
+                            @click.stop="playFrom(check.film_at)"
+                            @keydown.enter.stop.prevent="
+                                playFrom(check.film_at)
+                            "
+                        >
+                            <Play class="size-4" />
+                        </span>
+                    </Tip>
                     <ChevronDown
                         class="text-muted-foreground mt-0.5 size-4 shrink-0 transition-transform"
                         :class="{ 'rotate-180': isOpen(check) }"
@@ -410,16 +420,19 @@ const show = (check: string, at: number) =>
                                     >{{ step.error }}</span
                                 >
                             </span>
-                            <button
+                            <Tip
                                 v-if="film && step.at !== undefined"
-                                type="button"
-                                class="text-muted-foreground hover:text-foreground text-xs tabular-nums underline-offset-2 hover:underline"
-                                title="Play from this step in the film"
-                                data-test="step-play"
-                                @click="playFrom(step.at)"
+                                text="Play from this step in the film"
                             >
-                                {{ seconds(step.took) }}
-                            </button>
+                                <button
+                                    type="button"
+                                    class="text-muted-foreground hover:text-foreground text-xs tabular-nums underline-offset-2 hover:underline"
+                                    data-test="step-play"
+                                    @click="playFrom(step.at)"
+                                >
+                                    {{ seconds(step.took) }}
+                                </button>
+                            </Tip>
                             <span
                                 v-else
                                 class="text-muted-foreground text-xs tabular-nums"
@@ -465,19 +478,15 @@ const show = (check: string, at: number) =>
         </ul>
 
         <!-- What each step met in the browser: for the app's admins, folded -->
-        <details
+        <FoldSection
             v-if="run.log?.length"
-            class="rounded-lg border px-3 py-2 text-xs"
+            title="Log"
+            :hint="`${run.log.length} ${run.log.length === 1 ? 'step' : 'steps'}`"
+            boxed
+            class="text-xs"
             data-test="check-run-log"
         >
-            <summary class="text-muted-foreground cursor-pointer font-medium">
-                Log
-                <span class="font-normal"
-                    >· {{ run.log.length }}
-                    {{ run.log.length === 1 ? 'step' : 'steps' }}</span
-                >
-            </summary>
-            <ol class="mt-2 space-y-2">
+            <ol class="space-y-2">
                 <li
                     v-for="(entry, at) in run.log"
                     :key="at"
@@ -506,7 +515,7 @@ const show = (check: string, at: number) =>
                         >{{ entry.lines.join('\n') }}</pre>
                 </li>
             </ol>
-        </details>
+        </FoldSection>
 
         <PictureDialog
             :open="showing !== null"

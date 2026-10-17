@@ -10,6 +10,7 @@ import { computed, ref } from 'vue';
 import { Button } from '@/components/ui/button';
 import DataTree from '@/features/workflow/components/editor/DataTree.vue';
 import type { RunLog, RunStep } from '@/features/workflow/types';
+import Tip from '@/components/common/Tip.vue';
 
 // One step of a run, opened: what it was given and what it gave, side by
 // side, part by part; what its settings came to, there to open; and what it
@@ -118,29 +119,30 @@ const at = (time: string | null) =>
                         {{ one.title }}
                     </p>
                     <template v-if="index === sides.length - 1">
-                        <Button
-                            size="sm"
-                            variant="ghost"
-                            class="text-muted-foreground h-6 px-1.5 text-[11px]"
-                            :class="{ 'bg-muted': raw }"
-                            title="As it is kept, to copy out"
-                            data-run-raw
-                            @click="raw = !raw"
-                        >
-                            <Braces class="size-3" /> JSON
-                        </Button>
-                        <Button
-                            v-if="!large"
-                            size="sm"
-                            variant="ghost"
-                            class="text-muted-foreground h-6 px-1.5"
-                            aria-label="Open it larger"
-                            title="Open it larger"
-                            data-run-expand
-                            @click="emit('expand')"
-                        >
-                            <Maximize2 class="size-3" />
-                        </Button>
+                        <Tip text="As it is kept, to copy out">
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                class="text-muted-foreground h-6 px-1.5 text-[11px]"
+                                :class="{ 'bg-muted': raw }"
+                                data-run-raw
+                                @click="raw = !raw"
+                            >
+                                <Braces class="size-3" /> JSON
+                            </Button>
+                        </Tip>
+                        <Tip v-if="!large" text="Open it larger">
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                class="text-muted-foreground h-6 px-1.5"
+                                aria-label="Open it larger"
+                                data-run-expand
+                                @click="emit('expand')"
+                            >
+                                <Maximize2 class="size-3" />
+                            </Button>
+                        </Tip>
                     </template>
                 </div>
                 <div

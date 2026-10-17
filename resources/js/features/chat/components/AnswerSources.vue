@@ -7,6 +7,7 @@ import {
     TriangleAlert,
 } from '@lucide/vue';
 import { ref } from 'vue';
+import Tip from '@/components/common/Tip.vue';
 
 // What an agent was given to answer from -- the passages of its knowledge
 // base nearest the question -- shown beside its answer for whoever reads it
@@ -56,26 +57,29 @@ const iconOf = (kind: string) =>
         <template v-else>
             <div class="flex flex-wrap items-center gap-1">
                 <span class="text-muted-foreground">Sources</span>
-                <button
+                <Tip
                     v-for="(source, at) in sources"
                     :key="at"
-                    type="button"
-                    class="hover:bg-accent flex h-6 max-w-56 items-center gap-1 rounded-full border px-2"
-                    :class="{ 'bg-accent': open === at }"
-                    :aria-expanded="open === at"
-                    :title="`${Math.round(source.score * 100)}% near the question`"
-                    data-answer-source
-                    @click="open = open === at ? null : at"
+                    :text="`${Math.round(source.score * 100)}% near the question`"
                 >
-                    <component
-                        :is="iconOf(source.kind)"
-                        class="text-muted-foreground size-3 shrink-0"
-                    />
-                    <span class="truncate">{{ source.title }}</span>
-                    <span class="text-muted-foreground tabular-nums"
-                        >{{ Math.round(source.score * 100) }}%</span
+                    <button
+                        type="button"
+                        class="hover:bg-accent flex h-6 max-w-56 items-center gap-1 rounded-full border px-2"
+                        :class="{ 'bg-accent': open === at }"
+                        :aria-expanded="open === at"
+                        data-answer-source
+                        @click="open = open === at ? null : at"
                     >
-                </button>
+                        <component
+                            :is="iconOf(source.kind)"
+                            class="text-muted-foreground size-3 shrink-0"
+                        />
+                        <span class="truncate">{{ source.title }}</span>
+                        <span class="text-muted-foreground tabular-nums"
+                            >{{ Math.round(source.score * 100) }}%</span
+                        >
+                    </button>
+                </Tip>
             </div>
             <!-- What it says, opened to read against the answer -->
             <blockquote

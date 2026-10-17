@@ -12,6 +12,7 @@ import type { DriveFile } from '@/lib/drive';
 import DriveFileDialog from './DriveFileDialog.vue';
 import type { ChatPlace } from './MessagePlace.vue';
 import PlaceDialog from './PlaceDialog.vue';
+import Tip from '@/components/common/Tip.vue';
 
 // What can go with the next message: a file from this device or from the
 // Drive of whoever's chat this is, or a place -- chosen from the saved
@@ -47,35 +48,38 @@ function chosen(event: Event) {
         data-chat-file-input
         @change="chosen"
     />
-    <DropdownMenu>
-        <DropdownMenuTrigger as-child>
-            <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Attach a file or a place"
-                title="Attach a file or a place"
-                :disabled="disabled"
-                data-chat-attach
-            >
-                <Paperclip />
-            </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" side="top">
-            <DropdownMenuItem @select="picker?.click()">
-                <Upload />
-                From this device
-            </DropdownMenuItem>
-            <DropdownMenuItem @select="choosing = true">
-                <HardDrive />
-                From the Drive
-            </DropdownMenuItem>
-            <DropdownMenuItem @select="placing = true">
-                <MapPin />
-                A place
-            </DropdownMenuItem>
-        </DropdownMenuContent>
-    </DropdownMenu>
+    <Tip text="Attach a file or a place">
+        <span class="inline-flex">
+            <DropdownMenu>
+                <DropdownMenuTrigger as-child>
+                    <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Attach a file or a place"
+                        :disabled="disabled"
+                        data-chat-attach
+                    >
+                        <Paperclip />
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" side="top">
+                    <DropdownMenuItem @select="picker?.click()">
+                        <Upload />
+                        From this device
+                    </DropdownMenuItem>
+                    <DropdownMenuItem @select="choosing = true">
+                        <HardDrive />
+                        From the Drive
+                    </DropdownMenuItem>
+                    <DropdownMenuItem @select="placing = true">
+                        <MapPin />
+                        A place
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
+        </span>
+    </Tip>
     <DriveFileDialog
         v-model:open="choosing"
         :room="room"

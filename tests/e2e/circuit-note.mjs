@@ -92,7 +92,8 @@ await runBoard(
         );
 
         // --- an example over what was written: asked first, in the app
-        await drawn.locator('.diagram-type-select').selectOption('led');
+        await drawn.locator('.diagram-type-select').click();
+        await page.locator('[role="option"][data-value="led"]').click();
         const ask = page.getByRole('dialog');
         await ask.waitFor();
         check(
@@ -108,7 +109,8 @@ await runBoard(
             ).includes('R2'),
         );
 
-        await drawn.locator('.diagram-type-select').selectOption('led');
+        await drawn.locator('.diagram-type-select').click();
+        await page.locator('[role="option"][data-value="led"]').click();
         await page.locator('[data-test="diagram-replace"]').click();
         await page.waitForFunction(
             () =>

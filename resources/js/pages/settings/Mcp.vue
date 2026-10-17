@@ -410,6 +410,7 @@ async function copy(key: string, text: string): Promise<void> {
             />
 
             <Form
+                novalidate
                 v-bind="McpController.store.form()"
                 reset-on-success
                 @success="

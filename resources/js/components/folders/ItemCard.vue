@@ -6,6 +6,7 @@ import type { Component } from 'vue';
 import Highlight from '@/components/common/Highlight.vue';
 import ItemActions from './ItemActions.vue';
 import { formatRelativeTime } from '@/lib/utils';
+import Tip from '@/components/common/Tip.vue';
 
 // A note, board or table in a folder view, as a card in the grid or a row in
 // the list. Drag handlers bound on it fall through to the card.
@@ -86,9 +87,11 @@ defineEmits<{ rename: []; move: []; remove: [] }>();
                 >
                     <slot />
                     <span v-if="$slots.default" aria-hidden="true">·</span>
-                    <time :datetime="time" :title="timeLabel">
-                        {{ formatRelativeTime(time) }}
-                    </time>
+                    <Tip :text="timeLabel">
+                        <time :datetime="time">
+                            {{ formatRelativeTime(time) }}
+                        </time>
+                    </Tip>
                     <template v-if="by">
                         <span aria-hidden="true">·</span>
                         <span class="truncate" data-test="edited-by">{{

@@ -29,6 +29,7 @@ const inputEmail = ref(props.email);
     <Head title="Reset password" />
 
     <Form
+        novalidate
         v-bind="update.form()"
         :transform="(data) => ({ ...data, token, email })"
         :reset-on-success="['password', 'password_confirmation']"

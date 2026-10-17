@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RangeField from '@/components/common/RangeField.vue';
 import {
     Gauge,
     Loader2,
@@ -22,6 +23,7 @@ import {
     useAttrs,
     watch,
 } from 'vue';
+import Tip from '@/components/common/Tip.vue';
 
 // The app's one video player, wherever a video plays -- a note, a chat, the
 // Drive's viewer, a browser check's film: the picture, and over it controls
@@ -78,6 +80,8 @@ const volume = ref(1);
 const muted = ref(false);
 const rate = ref(1);
 const full = ref(false);
+// Fullscreen shows only the player: a tip of its buttons is drawn inside it then
+const fullTip = computed(() => (full.value && root.value) || undefined);
 const started = ref(false);
 const narrow = ref(false);
 
@@ -697,64 +701,65 @@ defineExpose({
 
             <!-- Buttons -->
             <div class="mt-1 flex items-center gap-1 text-sm">
-                <button
-                    type="button"
-                    class="vp-btn"
-                    :aria-label="playing ? 'Pause (k)' : 'Play (k)'"
-                    :title="playing ? 'Pause (k)' : 'Play (k)'"
-                    data-test="vp-play"
-                    @click="toggle"
-                >
-                    <Pause v-if="playing" class="size-5 fill-current" />
-                    <Play v-else class="size-5 fill-current" />
-                </button>
+                <Tip :text="playing ? 'Pause (k)' : 'Play (k)'" :to="fullTip">
+                    <button
+                        type="button"
+                        class="vp-btn"
+                        :aria-label="playing ? 'Pause (k)' : 'Play (k)'"
+                        data-test="vp-play"
+                        @click="toggle"
+                    >
+                        <Pause v-if="playing" class="size-5 fill-current" />
+                        <Play v-else class="size-5 fill-current" />
+                    </button>
+                </Tip>
                 <template v-if="!narrow">
-                    <button
-                        type="button"
-                        class="vp-btn"
-                        :aria-label="`Back ${SKIP} seconds (j)`"
-                        :title="`Back ${SKIP} s (j)`"
-                        @click="skip(-SKIP)"
-                    >
-                        <RotateCcw class="size-4" />
-                    </button>
-                    <button
-                        type="button"
-                        class="vp-btn"
-                        :aria-label="`On ${SKIP} seconds (l)`"
-                        :title="`On ${SKIP} s (l)`"
-                        @click="skip(SKIP)"
-                    >
-                        <RotateCw class="size-4" />
-                    </button>
+                    <Tip :text="`Back ${SKIP} s (j)`" :to="fullTip">
+                        <button
+                            type="button"
+                            class="vp-btn"
+                            :aria-label="`Back ${SKIP} seconds (j)`"
+                            @click="skip(-SKIP)"
+                        >
+                            <RotateCcw class="size-4" />
+                        </button>
+                    </Tip>
+                    <Tip :text="`On ${SKIP} s (l)`" :to="fullTip">
+                        <button
+                            type="button"
+                            class="vp-btn"
+                            :aria-label="`On ${SKIP} seconds (l)`"
+                            @click="skip(SKIP)"
+                        >
+                            <RotateCw class="size-4" />
+                        </button>
+                    </Tip>
                 </template>
                 <div class="group/vol flex items-center">
-                    <button
-                        type="button"
-                        class="vp-btn"
-                        :aria-label="muted ? 'Unmute (m)' : 'Mute (m)'"
-                        :title="muted ? 'Unmute (m)' : 'Mute (m)'"
-                        data-test="vp-mute"
-                        @click="toggleMute"
+                    <Tip
+                        :text="muted ? 'Unmute (m)' : 'Mute (m)'"
+                        :to="fullTip"
                     >
-                        <component :is="volumeIcon" class="size-5" />
-                    </button>
-                    <input
+                        <button
+                            type="button"
+                            class="vp-btn"
+                            :aria-label="muted ? 'Unmute (m)' : 'Mute (m)'"
+                            data-test="vp-mute"
+                            @click="toggleMute"
+                        >
+                            <component :is="volumeIcon" class="size-5" />
+                        </button>
+                    </Tip>
+                    <RangeField
                         v-if="!narrow"
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        :value="muted ? 0 : volume"
-                        class="vp-volume w-0 opacity-0 transition-[width,opacity] group-hover/vol:w-16 group-hover/vol:opacity-100 focus-visible:w-16 focus-visible:opacity-100"
-                        aria-label="Volume"
-                        @input="
-                            setVolume(
-                                Number(
-                                    ($event.target as HTMLInputElement).value,
-                                ),
-                            )
-                        "
+                        :model-value="muted ? 0 : volume"
+                        label="Volume"
+                        :min="0"
+                        :max="1"
+                        :step="0.05"
+                        :format="false"
+                        class="vp-volume w-0 opacity-0 transition-[width,opacity] group-focus-within/vol:w-16 group-focus-within/vol:opacity-100 group-hover/vol:w-16 group-hover/vol:opacity-100"
+                        @update:model-value="setVolume($event)"
                     />
                 </div>
                 <span
@@ -774,18 +779,19 @@ defineExpose({
 
                 <div class="ml-auto flex items-center gap-1">
                     <div class="relative">
-                        <button
-                            type="button"
-                            class="vp-btn gap-1 px-1.5 text-xs tabular-nums"
-                            :aria-expanded="speedOpen"
-                            aria-label="Speed"
-                            title="Speed"
-                            data-test="vp-speed"
-                            @click="speedOpen = !speedOpen"
-                        >
-                            <Gauge v-if="rate === 1" class="size-4" />
-                            <template v-else>{{ rate }}×</template>
-                        </button>
+                        <Tip text="Speed" :to="fullTip">
+                            <button
+                                type="button"
+                                class="vp-btn gap-1 px-1.5 text-xs tabular-nums"
+                                :aria-expanded="speedOpen"
+                                aria-label="Speed"
+                                data-test="vp-speed"
+                                @click="speedOpen = !speedOpen"
+                            >
+                                <Gauge v-if="rate === 1" class="size-4" />
+                                <template v-else>{{ rate }}×</template>
+                            </button>
+                        </Tip>
                         <div
                             v-if="speedOpen"
                             class="absolute right-0 bottom-9 z-10 min-w-24 rounded-lg bg-black/85 p-1 shadow-lg backdrop-blur-sm"
@@ -805,31 +811,41 @@ defineExpose({
                             </button>
                         </div>
                     </div>
-                    <button
+                    <Tip
                         v-if="canPip && !narrow"
-                        type="button"
-                        class="vp-btn"
-                        aria-label="Picture in picture"
-                        title="Picture in picture"
-                        @click="togglePip"
+                        text="Picture in picture"
+                        :to="fullTip"
                     >
-                        <PictureInPicture2 class="size-4" />
-                    </button>
-                    <button
-                        type="button"
-                        class="vp-btn"
-                        :aria-label="
+                        <button
+                            type="button"
+                            class="vp-btn"
+                            aria-label="Picture in picture"
+                            @click="togglePip"
+                        >
+                            <PictureInPicture2 class="size-4" />
+                        </button>
+                    </Tip>
+                    <Tip
+                        :text="
                             full ? 'Exit full screen (f)' : 'Full screen (f)'
                         "
-                        :title="
-                            full ? 'Exit full screen (f)' : 'Full screen (f)'
-                        "
-                        data-test="vp-full"
-                        @click="toggleFull"
+                        :to="fullTip"
                     >
-                        <Minimize v-if="full" class="size-4" />
-                        <Maximize v-else class="size-4" />
-                    </button>
+                        <button
+                            type="button"
+                            class="vp-btn"
+                            :aria-label="
+                                full
+                                    ? 'Exit full screen (f)'
+                                    : 'Full screen (f)'
+                            "
+                            data-test="vp-full"
+                            @click="toggleFull"
+                        >
+                            <Minimize v-if="full" class="size-4" />
+                            <Maximize v-else class="size-4" />
+                        </button>
+                    </Tip>
                 </div>
             </div>
         </div>
@@ -869,12 +885,6 @@ defineExpose({
 .vp-btn:focus-visible {
     outline: 2px solid rgb(56 189 248);
     outline-offset: 1px;
-}
-
-.vp-volume {
-    accent-color: rgb(56 189 248);
-    height: 0.25rem;
-    cursor: pointer;
 }
 
 /* Fullscreen: the picture as large as the screen lets it be */

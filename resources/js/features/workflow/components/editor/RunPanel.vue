@@ -29,6 +29,7 @@ import type {
     RunSummary,
     StepNode,
 } from '@/features/workflow/types';
+import Tip from '@/components/common/Tip.vue';
 
 // Under the editor: how a run went, read down the page -- each step on a
 // line with what it gave, in the order they ran. A step opened shows what it
@@ -334,17 +335,19 @@ watch(
                 <Square /> Stop
             </Button>
 
-            <Button
-                size="icon-sm"
-                variant="ghost"
-                :class="{
-                    'ml-auto': !(tab === 'run' && going && run?.can.act),
-                }"
-                aria-label="Close the run panel"
-                @click="emit('close')"
-            >
-                <X />
-            </Button>
+            <Tip text="Close the run panel">
+                <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    :class="{
+                        'ml-auto': !(tab === 'run' && going && run?.can.act),
+                    }"
+                    aria-label="Close the run panel"
+                    @click="emit('close')"
+                >
+                    <X />
+                </Button>
+            </Tip>
         </div>
 
         <!-- One run, read down the page -->

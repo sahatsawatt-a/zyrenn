@@ -32,6 +32,7 @@ import * as folderRoutes from '@/routes/drive/folders';
 import * as projectDriveRoutes from '@/routes/projects/drive';
 import * as projectFileRoutes from '@/routes/projects/drive/files';
 import * as projectFolderRoutes from '@/routes/projects/drive/folders';
+import Tip from '@/components/common/Tip.vue';
 
 // `path` is only there in search results, which span every folder
 type FolderRow = FolderRef & { path?: string };
@@ -229,16 +230,19 @@ const openFile = (file: DriveFile) => {
             :title="folder?.name ?? 'Drive'"
             :description="description"
         >
-            <Button
+            <Tip
                 v-if="!isEmpty && !isSearching"
-                variant="outline"
-                :title="`Download ${folder ? `“${folder.name}”` : 'the whole Drive'} as a zip`"
-                data-test="drive-zip"
-                @click="downloadZip(folder)"
+                :text="`Download ${folder ? `“${folder.name}”` : 'the whole Drive'} as a zip`"
             >
-                <Download />
-                <span class="max-sm:sr-only">Download</span>
-            </Button>
+                <Button
+                    variant="outline"
+                    data-test="drive-zip"
+                    @click="downloadZip(folder)"
+                >
+                    <Download />
+                    <span class="max-sm:sr-only">Download</span>
+                </Button>
+            </Tip>
             <Button v-if="editable" variant="outline" @click="newFolder">
                 <FolderPlus />
                 New folder

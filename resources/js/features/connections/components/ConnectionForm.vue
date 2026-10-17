@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SearchField from '@/components/common/SearchField.vue';
 import { useForm } from '@inertiajs/vue3';
 import {
     ArrowLeft,
@@ -271,20 +272,12 @@ async function save() {
     <!-- First, what to connect -->
     <div v-if="!service" class="flex min-h-0 flex-1 flex-col">
         <div class="px-4 pb-3">
-            <div class="relative">
-                <Search
-                    class="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
-                />
-                <Input
-                    id="connection-find"
-                    v-model="query"
-                    type="search"
-                    class="pl-8"
-                    placeholder="Find a service: Telegram, OpenAI, email…"
-                    autocomplete="off"
-                    aria-label="Find a service"
-                />
-            </div>
+            <SearchField
+                id="connection-find"
+                v-model="query"
+                placeholder="Find a service: Telegram, OpenAI, email…"
+                label="Find a service"
+            />
         </div>
         <div class="flex-1 space-y-5 overflow-y-auto px-4 pb-6">
             <section
@@ -343,6 +336,7 @@ async function save() {
 
     <!-- Then, what it needs -->
     <form
+        novalidate
         v-else
         class="flex min-h-0 flex-1 flex-col"
         data-connection-form

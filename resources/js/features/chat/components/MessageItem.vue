@@ -7,6 +7,7 @@ import type { Message, Room } from '../types';
 import AnswerSources from './AnswerSources.vue';
 import MessageBody from './MessageBody.vue';
 import MessageFace from './MessageFace.vue';
+import Tip from '@/components/common/Tip.vue';
 
 // One message in the conversation, where it stands in its speaker's turn:
 // one's own on the right; someone else's -- a person here, someone outside
@@ -60,15 +61,15 @@ const emit = defineEmits<{
                 ]"
             />
         </div>
-        <time
-            v-if="last && message.created_at"
-            class="text-muted-foreground mt-0.5 px-1 text-[11px] tabular-nums"
-            :datetime="message.created_at"
-            :title="whenOf(message)"
-            data-chat-time
-        >
-            {{ timeOf(message) }}
-        </time>
+        <Tip v-if="last && message.created_at" :text="whenOf(message)">
+            <time
+                class="text-muted-foreground mt-0.5 px-1 text-[11px] tabular-nums"
+                :datetime="message.created_at"
+                data-chat-time
+            >
+                {{ timeOf(message) }}
+            </time>
+        </Tip>
     </div>
 
     <div
@@ -125,37 +126,39 @@ const emit = defineEmits<{
                 :sources="message.sources"
                 class="mt-1 px-1"
             />
-            <time
-                v-if="last && message.created_at"
-                class="text-muted-foreground mt-0.5 block h-4 px-1 text-[11px] tabular-nums"
-                :datetime="message.created_at"
-                :title="whenOf(message)"
-                data-chat-time
-            >
-                {{ timeOf(message) }}
-            </time>
+            <Tip v-if="last && message.created_at" :text="whenOf(message)">
+                <time
+                    class="text-muted-foreground mt-0.5 block h-4 px-1 text-[11px] tabular-nums"
+                    :datetime="message.created_at"
+                    data-chat-time
+                >
+                    {{ timeOf(message) }}
+                </time>
+            </Tip>
         </div>
         <template v-if="canFile && fromOutside(message)">
-            <button
-                type="button"
-                class="text-muted-foreground hover:text-foreground mb-5 shrink-0 rounded-md p-1 opacity-50 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                title="Make a ticket of this"
-                aria-label="Make a ticket of this"
-                data-test="chat-promote"
-                @click="emit('promote', message)"
-            >
-                <TicketIcon class="size-4" />
-            </button>
-            <button
-                type="button"
-                class="text-muted-foreground hover:text-foreground mb-5 shrink-0 rounded-md p-1 opacity-50 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                title="Keep as a request of the product"
-                aria-label="Keep as a request of the product"
-                data-test="chat-request"
-                @click="emit('request', message)"
-            >
-                <Quote class="size-4" />
-            </button>
+            <Tip text="Make a ticket of this">
+                <button
+                    type="button"
+                    class="text-muted-foreground hover:text-foreground mb-5 shrink-0 rounded-md p-1 opacity-50 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                    aria-label="Make a ticket of this"
+                    data-test="chat-promote"
+                    @click="emit('promote', message)"
+                >
+                    <TicketIcon class="size-4" />
+                </button>
+            </Tip>
+            <Tip text="Keep as a request of the product">
+                <button
+                    type="button"
+                    class="text-muted-foreground hover:text-foreground mb-5 shrink-0 rounded-md p-1 opacity-50 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                    aria-label="Keep as a request of the product"
+                    data-test="chat-request"
+                    @click="emit('request', message)"
+                >
+                    <Quote class="size-4" />
+                </button>
+            </Tip>
         </template>
     </div>
 

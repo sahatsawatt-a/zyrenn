@@ -26,6 +26,7 @@ defineOptions({
     <Head title="Register" />
 
     <Form
+        novalidate
         v-bind="store.form()"
         :reset-on-success="['password', 'password_confirmation']"
         v-slot="{ errors, processing }"

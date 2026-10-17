@@ -39,6 +39,7 @@ import {
     update,
 } from '@/routes/agents';
 import { models } from '@/routes/connections';
+import Tip from '@/components/common/Tip.vue';
 
 // One agent, opened beside the list: what it is -- its model, instructions
 // and knowledge -- changed and kept as a new version; tried with a message;
@@ -487,19 +488,21 @@ const useAgain = (number: number) =>
                             placeholder="What a customer might write"
                             data-test="agent-try-message"
                         />
-                        <Button
-                            type="submit"
-                            size="icon"
-                            :disabled="!message.trim() || trying !== null"
-                            aria-label="Ask it"
-                            data-test="agent-try"
-                        >
-                            <LoaderCircle
-                                v-if="trying !== null"
-                                class="animate-spin"
-                            />
-                            <Send v-else />
-                        </Button>
+                        <Tip text="Ask it">
+                            <Button
+                                type="submit"
+                                size="icon"
+                                :disabled="!message.trim() || trying !== null"
+                                aria-label="Ask it"
+                                data-test="agent-try"
+                            >
+                                <LoaderCircle
+                                    v-if="trying !== null"
+                                    class="animate-spin"
+                                />
+                                <Send v-else />
+                            </Button>
+                        </Tip>
                     </form>
                     <p v-if="failed" class="text-destructive text-xs">
                         {{ failed }}
@@ -566,26 +569,30 @@ const useAgain = (number: number) =>
                                         ></span
                                     >
                                 </span>
-                                <button
-                                    type="button"
-                                    class="text-muted-foreground hover:text-foreground rounded-md p-1"
-                                    :aria-label="`Show version ${version.number}`"
-                                    :aria-expanded="shown === version.number"
-                                    @click="
-                                        shown =
+                                <Tip :text="`Show version ${version.number}`">
+                                    <button
+                                        type="button"
+                                        class="text-muted-foreground hover:text-foreground rounded-md p-1"
+                                        :aria-label="`Show version ${version.number}`"
+                                        :aria-expanded="
                                             shown === version.number
-                                                ? null
-                                                : version.number
-                                    "
-                                >
-                                    <ChevronDown
-                                        class="size-4 transition-transform"
-                                        :class="{
-                                            'rotate-180':
-                                                shown === version.number,
-                                        }"
-                                    />
-                                </button>
+                                        "
+                                        @click="
+                                            shown =
+                                                shown === version.number
+                                                    ? null
+                                                    : version.number
+                                        "
+                                    >
+                                        <ChevronDown
+                                            class="size-4 transition-transform"
+                                            :class="{
+                                                'rotate-180':
+                                                    shown === version.number,
+                                            }"
+                                        />
+                                    </button>
+                                </Tip>
                                 <Button
                                     v-if="
                                         canManage &&

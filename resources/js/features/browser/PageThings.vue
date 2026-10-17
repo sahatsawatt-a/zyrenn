@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { Look, Thing } from './steps';
+import Tip from '@/components/common/Tip.vue';
 
 // A page as the browser found it: a picture of it with each field, button,
 // link and piece of writing marked, and the same listed by the name a step
@@ -144,23 +145,26 @@ const place = (thing: Thing) => {
                         class="block w-full"
                         data-test="pick-picture"
                     />
-                    <button
+                    <Tip
                         v-for="(thing, index) in drawn"
                         :key="index"
-                        type="button"
-                        class="absolute rounded-sm border-2 transition-colors"
-                        :class="
-                            hovered === thing || isMarked(thing)
-                                ? 'border-sky-500 bg-sky-500/25'
-                                : 'border-sky-500/30 hover:border-sky-500 hover:bg-sky-500/20'
-                        "
-                        :style="place(thing)"
-                        :aria-label="`${KIND_SAID[thing.kind]} ${thing.name}`"
-                        :title="thing.name"
-                        @mouseenter="hovered = thing"
-                        @mouseleave="hovered = null"
-                        @click="emit('pick', thing)"
-                    />
+                        :text="thing.name"
+                    >
+                        <button
+                            type="button"
+                            class="absolute rounded-sm border-2 transition-colors"
+                            :class="
+                                hovered === thing || isMarked(thing)
+                                    ? 'border-sky-500 bg-sky-500/25'
+                                    : 'border-sky-500/30 hover:border-sky-500 hover:bg-sky-500/20'
+                            "
+                            :style="place(thing)"
+                            :aria-label="`${KIND_SAID[thing.kind]} ${thing.name}`"
+                            @mouseenter="hovered = thing"
+                            @mouseleave="hovered = null"
+                            @click="emit('pick', thing)"
+                        />
+                    </Tip>
                 </div>
             </div>
 
@@ -215,21 +219,27 @@ const place = (thing: Thing) => {
                                     <span class="min-w-0 flex-1">{{
                                         thing.name
                                     }}</span>
-                                    <span
-                                        class="text-muted-foreground shrink-0 text-[11px]"
-                                        :title="
+                                    <Tip
+                                        :text="
                                             thing.count > 1
                                                 ? `${thing.count} share this name: this is the one at number ${thing.nth}`
                                                 : undefined
                                         "
-                                        >{{ KIND_SAID[thing.kind]
-                                        }}{{ thing.frame ? ' · in a frame' : ''
-                                        }}{{
-                                            thing.count > 1
-                                                ? ` · ${thing.nth} of ${thing.count}`
-                                                : ''
-                                        }}</span
                                     >
+                                        <span
+                                            class="text-muted-foreground shrink-0 text-[11px]"
+                                            >{{ KIND_SAID[thing.kind]
+                                            }}{{
+                                                thing.frame
+                                                    ? ' · in a frame'
+                                                    : ''
+                                            }}{{
+                                                thing.count > 1
+                                                    ? ` · ${thing.nth} of ${thing.count}`
+                                                    : ''
+                                            }}</span
+                                        >
+                                    </Tip>
                                 </button>
                             </li>
                         </ul>

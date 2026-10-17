@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SearchField from '@/components/common/SearchField.vue';
 import { Head, Link, router, setLayoutProps, usePage } from '@inertiajs/vue3';
 import {
     Inbox,
@@ -213,18 +214,12 @@ const narrowed = computed(
                     @update:model-value="look({ assigned: $event })"
                 />
 
-                <div class="relative min-w-32 flex-1">
-                    <Search
-                        class="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
-                    />
-                    <Input
-                        v-model="search"
-                        type="search"
-                        class="pl-8"
-                        placeholder="Search by name"
-                        data-test="inbox-search"
-                    />
-                </div>
+                <SearchField
+                    v-model="search"
+                    class="min-w-32 flex-1"
+                    placeholder="Search by name"
+                    data-test="inbox-search"
+                />
             </div>
 
             <RoomList

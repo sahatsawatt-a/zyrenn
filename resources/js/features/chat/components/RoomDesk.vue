@@ -27,6 +27,7 @@ import type {
 import TicketPick from '@/features/tickets/components/TicketPick.vue';
 import { socketHeaders } from '@/lib/live';
 import { show, update } from '@/routes/chats';
+import Tip from '@/components/common/Tip.vue';
 
 // Under the header of a project's chat with a customer: where it stands,
 // who has taken it, and its tags -- each changed where it is shown.
@@ -106,23 +107,26 @@ const dropTag = (word: string) =>
             data-test="desk-status"
             @update:model-value="save({ status: $event })"
         />
-        <label
-            class="text-muted-foreground flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs"
-            :title="
+        <Tip
+            :text="
                 desk.assignee
                     ? 'AI keeps out of a chat someone has taken'
                     : 'Whether AI answers them here'
             "
         >
-            <Bot class="size-3.5" />
-            AI
-            <Switch
-                :model-value="desk.ai"
-                :disabled="!canChange"
-                data-test="desk-ai"
-                @update:model-value="save({ ai_answers: !!$event })"
-            />
-        </label>
+            <label
+                class="text-muted-foreground flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs"
+            >
+                <Bot class="size-3.5" />
+                AI
+                <Switch
+                    :model-value="desk.ai"
+                    :disabled="!canChange"
+                    data-test="desk-ai"
+                    @update:model-value="save({ ai_answers: !!$event })"
+                />
+            </label>
+        </Tip>
         <TicketPick
             compact
             :model-value="desk.assignee ? String(desk.assignee.id) : NOBODY"
@@ -142,45 +146,52 @@ const dropTag = (word: string) =>
             data-test="desk-tag"
         >
             {{ word }}
-            <button
-                v-if="canChange"
-                type="button"
-                class="text-muted-foreground hover:text-foreground rounded-full p-0.5"
-                :aria-label="`Take the tag ${word} off`"
-                @click="dropTag(word)"
-            >
-                <X class="size-3" />
-            </button>
+            <Tip v-if="canChange" :text="`Take the tag ${word} off`">
+                <button
+                    type="button"
+                    class="text-muted-foreground hover:text-foreground rounded-full p-0.5"
+                    :aria-label="`Take the tag ${word} off`"
+                    @click="dropTag(word)"
+                >
+                    <X class="size-3" />
+                </button>
+            </Tip>
         </span>
-        <Link
+        <Tip
             v-for="ticket in desk.tickets ?? []"
             :key="ticket.number"
-            :href="ticket.url"
-            class="hover:bg-accent flex h-6 items-center gap-1 rounded-full border px-2 text-xs"
-            :class="{
-                'text-muted-foreground line-through':
-                    ticket.status === 'done' || ticket.status === 'dropped',
-            }"
-            :title="ticket.title"
-            data-test="desk-ticket"
+            :text="ticket.title"
         >
-            <TicketIcon class="size-3" />#{{ ticket.number }}
-        </Link>
+            <Link
+                :href="ticket.url"
+                class="hover:bg-accent flex h-6 items-center gap-1 rounded-full border px-2 text-xs"
+                :class="{
+                    'text-muted-foreground line-through':
+                        ticket.status === 'done' || ticket.status === 'dropped',
+                }"
+                data-test="desk-ticket"
+            >
+                <TicketIcon class="size-3" />#{{ ticket.number }}
+            </Link>
+        </Tip>
         <template v-if="elsewhere.length">
             <span class="text-muted-foreground ml-1 text-xs">Also on</span>
-            <Link
+            <Tip
                 v-for="chat in elsewhere"
                 :key="chat.ref_id"
-                :href="show(chat.ref_id)"
-                class="flex h-6 items-center rounded-full bg-sky-500/10 px-2 text-xs text-sky-700 hover:bg-sky-500/20 dark:text-sky-400"
-                :title="chat.title"
-                data-test="desk-also"
-                >{{
-                    chat.service
-                        ? (SERVICES[chat.service] ?? chat.service)
-                        : chat.title
-                }}</Link
+                :text="chat.title"
             >
+                <Link
+                    :href="show(chat.ref_id)"
+                    class="flex h-6 items-center rounded-full bg-sky-500/10 px-2 text-xs text-sky-700 hover:bg-sky-500/20 dark:text-sky-400"
+                    data-test="desk-also"
+                    >{{
+                        chat.service
+                            ? (SERVICES[chat.service] ?? chat.service)
+                            : chat.title
+                    }}</Link
+                >
+            </Tip>
         </template>
         <Popover
             v-if="canChange && desk.tags.length < MAX_TAGS"

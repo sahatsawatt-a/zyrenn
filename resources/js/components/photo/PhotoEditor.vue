@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RangeField from '@/components/common/RangeField.vue';
 import {
     Aperture,
     Blend,
@@ -63,6 +64,7 @@ import {
 } from '@/lib/photo';
 import PhotoLooks from './PhotoLooks.vue';
 import PhotoStage from './PhotoStage.vue';
+import Tip from '@/components/common/Tip.vue';
 
 // A picture cropped, turned, flipped and lightened, wherever pictures are --
 // a note, a board, the Drive. Saving keeps a new picture in the Drive beside
@@ -475,25 +477,26 @@ watch(open, (now) => now && begin(), { immediate: true });
                         :comparing="comparing"
                         @settle="record"
                     >
-                        <button
-                            type="button"
-                            class="bg-background/90 hover:bg-background absolute top-2 right-2 flex touch-none items-center gap-1.5 rounded-md border px-2 py-1 text-xs shadow-sm select-none"
-                            :class="comparing && 'ring-primary ring-2'"
-                            :aria-pressed="comparing"
-                            title="Hold to see the original (or hold \)"
-                            data-test="photo-compare"
-                            @pointerdown="
-                                (
-                                    $event.currentTarget as Element
-                                ).setPointerCapture($event.pointerId);
-                                comparing = true;
-                            "
-                            @pointerup="comparing = false"
-                            @pointercancel="comparing = false"
-                        >
-                            <Eye class="size-3.5" />
-                            Hold to compare
-                        </button>
+                        <Tip text="Hold to see the original (or hold \)">
+                            <button
+                                type="button"
+                                class="bg-background/90 hover:bg-background absolute top-2 right-2 flex touch-none items-center gap-1.5 rounded-md border px-2 py-1 text-xs shadow-sm select-none"
+                                :class="comparing && 'ring-primary ring-2'"
+                                :aria-pressed="comparing"
+                                data-test="photo-compare"
+                                @pointerdown="
+                                    (
+                                        $event.currentTarget as Element
+                                    ).setPointerCapture($event.pointerId);
+                                    comparing = true;
+                                "
+                                @pointerup="comparing = false"
+                                @pointercancel="comparing = false"
+                            >
+                                <Eye class="size-3.5" />
+                                Hold to compare
+                            </button>
+                        </Tip>
                     </PhotoStage>
                 </div>
 
@@ -544,46 +547,50 @@ watch(open, (now) => now && begin(), { immediate: true });
                     <section>
                         <h3 class="mb-2 text-xs font-medium">Turn & flip</h3>
                         <div class="grid grid-cols-4 gap-1">
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                aria-label="Turn left"
-                                title="Turn left"
-                                data-test="turn-left"
-                                @click="turnBy(false)"
-                            >
-                                <RotateCcw class="size-4" />
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                aria-label="Turn right"
-                                title="Turn right"
-                                data-test="turn-right"
-                                @click="turnBy(true)"
-                            >
-                                <RotateCw class="size-4" />
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                aria-label="Flip left to right"
-                                title="Flip left to right"
-                                data-test="flip-x"
-                                @click="flipAcross('x')"
-                            >
-                                <FlipHorizontal2 class="size-4" />
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                aria-label="Flip upside down"
-                                title="Flip upside down"
-                                data-test="flip-y"
-                                @click="flipAcross('y')"
-                            >
-                                <FlipVertical2 class="size-4" />
-                            </Button>
+                            <Tip text="Turn left">
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    aria-label="Turn left"
+                                    data-test="turn-left"
+                                    @click="turnBy(false)"
+                                >
+                                    <RotateCcw class="size-4" />
+                                </Button>
+                            </Tip>
+                            <Tip text="Turn right">
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    aria-label="Turn right"
+                                    data-test="turn-right"
+                                    @click="turnBy(true)"
+                                >
+                                    <RotateCw class="size-4" />
+                                </Button>
+                            </Tip>
+                            <Tip text="Flip left to right">
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    aria-label="Flip left to right"
+                                    data-test="flip-x"
+                                    @click="flipAcross('x')"
+                                >
+                                    <FlipHorizontal2 class="size-4" />
+                                </Button>
+                            </Tip>
+                            <Tip text="Flip upside down">
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    aria-label="Flip upside down"
+                                    data-test="flip-y"
+                                    @click="flipAcross('y')"
+                                >
+                                    <FlipVertical2 class="size-4" />
+                                </Button>
+                            </Tip>
                         </div>
                         <label class="mt-3 block">
                             <span
@@ -595,22 +602,16 @@ watch(open, (now) => now && begin(), { immediate: true });
                                     }}{{ edit.angle }}°</span
                                 >
                             </span>
-                            <input
-                                type="range"
-                                min="-45"
-                                max="45"
-                                step="0.5"
-                                class="accent-primary w-full"
-                                :value="edit.angle"
+                            <RangeField
+                                :model-value="edit.angle"
+                                label="Straighten"
+                                :min="-45"
+                                :max="45"
+                                :step="0.5"
+                                :format="false"
+                                class="w-full"
                                 data-test="straighten"
-                                @input="
-                                    setAngle(
-                                        Number(
-                                            ($event.target as HTMLInputElement)
-                                                .value,
-                                        ),
-                                    )
-                                "
+                                @update:model-value="setAngle($event)"
                                 @change="record"
                                 @dblclick="
                                     setAngle(0);
@@ -667,21 +668,16 @@ watch(open, (now) => now && begin(), { immediate: true });
                                     {{ reading(slider.key) }}
                                 </span>
                             </span>
-                            <input
-                                type="range"
+                            <RangeField
+                                :model-value="edit[slider.key]"
+                                :label="slider.label"
                                 :min="slider.min"
                                 :max="slider.max"
-                                class="accent-primary w-full"
-                                :value="edit[slider.key]"
+                                :format="false"
+                                class="w-full"
                                 :data-test="`light-${slider.key}`"
-                                @input="
-                                    setLight(
-                                        slider.key,
-                                        Number(
-                                            ($event.target as HTMLInputElement)
-                                                .value,
-                                        ),
-                                    )
+                                @update:model-value="
+                                    setLight(slider.key, $event)
                                 "
                                 @change="record"
                                 @dblclick="
@@ -704,28 +700,30 @@ watch(open, (now) => now && begin(), { immediate: true });
 
             <DialogFooter class="gap-2 sm:justify-between">
                 <div class="flex gap-1">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Undo"
-                        title="Undo (Ctrl+Z)"
-                        :disabled="!canUndo"
-                        data-test="photo-undo"
-                        @click="undo"
-                    >
-                        <Undo2 class="size-4" />
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Redo"
-                        title="Redo (Ctrl+Shift+Z)"
-                        :disabled="!canRedo"
-                        data-test="photo-redo"
-                        @click="redo"
-                    >
-                        <Redo2 class="size-4" />
-                    </Button>
+                    <Tip text="Undo (Ctrl+Z)">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label="Undo"
+                            :disabled="!canUndo"
+                            data-test="photo-undo"
+                            @click="undo"
+                        >
+                            <Undo2 class="size-4" />
+                        </Button>
+                    </Tip>
+                    <Tip text="Redo (Ctrl+Shift+Z)">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label="Redo"
+                            :disabled="!canRedo"
+                            data-test="photo-redo"
+                            @click="redo"
+                        >
+                            <Redo2 class="size-4" />
+                        </Button>
+                    </Tip>
                     <Button
                         variant="ghost"
                         :disabled="!image || isUnedited(edit)"

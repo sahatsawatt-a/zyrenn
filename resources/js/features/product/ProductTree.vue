@@ -3,6 +3,7 @@ import { Box, Bug, ChevronRight, Plus, Share2, Sparkle } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import { ELEMENT_STATUSES } from '@/features/product/product';
 import type { Element, ElementStatus } from '@/features/product/product';
+import Tip from '@/components/common/Tip.vue';
 
 // The product as a tree of any depth: components, the capabilities under
 // them, and how each stands -- a component by its capabilities counted, not
@@ -126,27 +127,31 @@ const shared = computed(() =>
                     <span
                         class="ml-auto flex shrink-0 items-center gap-2 text-xs"
                     >
-                        <span
+                        <Tip
                             v-if="element.open_bugs"
-                            class="flex items-center gap-0.5 text-red-600 dark:text-red-400"
-                            :title="`${element.open_bugs} open bug tickets`"
+                            :text="`${element.open_bugs} open bug tickets`"
                         >
-                            <Bug class="size-3" />{{ element.open_bugs }}
-                        </span>
+                            <span
+                                class="flex items-center gap-0.5 text-red-600 dark:text-red-400"
+                            >
+                                <Bug class="size-3" />{{ element.open_bugs }}
+                            </span>
+                        </Tip>
                         <!-- A component: its capabilities counted by how they stand -->
                         <template v-if="element.kind === 'component'">
-                            <span
+                            <Tip
                                 v-for="{ status, n } in counted(element.counts)"
                                 :key="status"
-                                class="hidden items-center gap-1 sm:flex"
-                                :title="`${n} ${ELEMENT_STATUSES[status].label}`"
+                                :text="`${n} ${ELEMENT_STATUSES[status].label}`"
                             >
-                                <span
-                                    class="size-2 rounded-full"
-                                    :class="ELEMENT_STATUSES[status].dot"
-                                />
-                                <span class="tabular-nums">{{ n }}</span>
-                            </span>
+                                <span class="hidden items-center gap-1 sm:flex">
+                                    <span
+                                        class="size-2 rounded-full"
+                                        :class="ELEMENT_STATUSES[status].dot"
+                                    />
+                                    <span class="tabular-nums">{{ n }}</span>
+                                </span>
+                            </Tip>
                         </template>
                         <span
                             v-else
@@ -167,16 +172,17 @@ const shared = computed(() =>
                     </span>
                 </button>
                 <template v-if="canChange && element.kind === 'component'">
-                    <button
-                        type="button"
-                        class="text-muted-foreground hover:text-foreground rounded p-1 opacity-60 group-hover:opacity-100"
-                        :aria-label="`A capability under ${element.name}`"
-                        :title="`A capability under ${element.name}`"
-                        :data-test="`product-add-${element.code}`"
-                        @click="emit('add', element.ref_id, 'capability')"
-                    >
-                        <Plus class="size-3.5" />
-                    </button>
+                    <Tip :text="`A capability under ${element.name}`">
+                        <button
+                            type="button"
+                            class="text-muted-foreground hover:text-foreground rounded p-1 opacity-60 group-hover:opacity-100"
+                            :aria-label="`A capability under ${element.name}`"
+                            :data-test="`product-add-${element.code}`"
+                            @click="emit('add', element.ref_id, 'capability')"
+                        >
+                            <Plus class="size-3.5" />
+                        </button>
+                    </Tip>
                 </template>
             </li>
             <li

@@ -12,6 +12,7 @@ import {
     X,
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
+import FoldSection from '@/components/common/FoldSection.vue';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -250,17 +251,20 @@ const today = computed(() =>
                 <p v-else-if="!info.hours" class="text-muted-foreground">
                     No opening hours listed.
                 </p>
-                <details v-if="info.hours" class="text-muted-foreground">
-                    <summary class="cursor-pointer">Every day</summary>
+                <FoldSection
+                    v-if="info.hours"
+                    title="Every day"
+                    class="text-muted-foreground"
+                >
                     <p
                         v-for="weekday in WEEKDAYS"
                         :key="weekday"
-                        class="capitalize"
+                        class="text-xs capitalize"
                     >
                         {{ weekday.slice(0, 3) }}:
                         {{ info.hours[weekday] ?? '–' }}
                     </p>
-                </details>
+                </FoldSection>
             </div>
         </div>
     </div>

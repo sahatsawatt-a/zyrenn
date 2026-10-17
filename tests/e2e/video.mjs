@@ -1,11 +1,10 @@
 // Videos: played in the Drive, in a note and on a board, from a file that was
 // only ever uploaded once. Needs ffmpeg, to make that file.
-import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import {
     SHOTS,
     boardKept,
+    clip,
     open,
     removeAt,
     reopen,
@@ -17,37 +16,8 @@ import {
 } from './harness.mjs';
 
 const APP = process.env.APP_URL ?? 'http://127.0.0.1:8001';
-const CLIP = `${SHOTS}/clip.mp4`;
+const CLIP = clip();
 const NAME = `clip-${Date.now().toString().slice(-6)}.mp4`;
-
-await mkdir(SHOTS, { recursive: true });
-// Six seconds of moving colour bars and a tone: enough to seek about in.
-// Made once, and kept for the runs after.
-if (!existsSync(CLIP)) {
-    execFileSync('ffmpeg', [
-        '-loglevel',
-        'error',
-        '-y',
-        '-f',
-        'lavfi',
-        '-i',
-        'testsrc2=size=640x360:rate=25:duration=6',
-        '-f',
-        'lavfi',
-        '-i',
-        'sine=frequency=440:duration=6',
-        '-c:v',
-        'libx264',
-        '-pix_fmt',
-        'yuv420p',
-        '-c:a',
-        'aac',
-        '-shortest',
-        '-movflags',
-        '+faststart',
-        CLIP,
-    ]);
-}
 
 await runBoard(
     '/drive',
@@ -82,7 +52,7 @@ await runBoard(
         // This upload's own card, never one an earlier run left behind
         const card = page
             .locator('div.group', { has: page.locator(`[title="${NAME}"]`) })
-            .locator('[title="Play"]');
+            .locator('[aria-label="Play"]');
         // The thumbnail asks for a moment just in; the file is the rest
         const fileUrl = (await card.locator('video').getAttribute('src')).split(
             '#',
@@ -141,7 +111,7 @@ await runBoard(
         await page.locator('[data-test="open-video-picker"]').click();
         await page.getByRole('heading', { name: 'Add video' }).waitFor();
         await page.getByRole('button', { name: 'From Drive' }).click();
-        await page.locator(`button[title="${NAME}"]`).click();
+        await page.locator(`button[aria-label="${NAME}"]`).click();
         await page.getByRole('button', { name: /^Insert/ }).click();
         await soon(
             'a video from the Drive lands on the board',
@@ -369,7 +339,7 @@ await runBoard(
         check('/video asks for a video', true);
 
         await page.getByRole('button', { name: 'From Drive' }).click();
-        const pick = page.locator(`button[title="${NAME}"]`);
+        const pick = page.locator(`button[aria-label="${NAME}"]`);
         await pick.waitFor({ timeout: 8000 });
         check(
             'the Drive tab lists videos, not pictures',
@@ -456,9 +426,10 @@ await runBoard(
         await page.locator('.tiptap').press('Control+End');
         await page.keyboard.press('Enter');
         await slash(page, 'board');
+        await page.locator('[data-test="board-choose"]').click();
         await page
-            .locator('[data-test="board-choose"]')
-            .selectOption({ label: boardTitle });
+            .getByRole('option', { name: boardTitle, exact: true })
+            .click();
         const embedded = () =>
             page.evaluate(() => {
                 const stage =

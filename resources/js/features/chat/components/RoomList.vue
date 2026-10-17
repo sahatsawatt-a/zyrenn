@@ -5,6 +5,7 @@ import { getInitials } from '@/composables/useInitials';
 import { colourFor } from '@/lib/live';
 import { formatRelativeTime } from '@/lib/utils';
 import { show } from '@/routes/chats';
+import Tip from '@/components/common/Tip.vue';
 
 export type ListedRoom = {
     ref_id: string;
@@ -75,14 +76,17 @@ defineProps<{ rooms: ListedRoom[]; icon: Component }>();
                             data-room-linked
                             >{{ room.linked }}</span
                         >
-                        <span
+                        <Tip
                             v-for="service in room.also ?? []"
                             :key="service"
-                            class="hidden shrink-0 rounded-full border border-sky-500/30 px-1.5 py-0.5 text-[10px] text-sky-700 sm:inline dark:text-sky-400"
-                            :title="`Also writes on ${service}`"
-                            data-room-also
-                            >+ {{ service }}</span
+                            :text="`Also writes on ${service}`"
                         >
+                            <span
+                                class="hidden shrink-0 rounded-full border border-sky-500/30 px-1.5 py-0.5 text-[10px] text-sky-700 sm:inline dark:text-sky-400"
+                                data-room-also
+                                >+ {{ service }}</span
+                            >
+                        </Tip>
                         <span
                             v-for="tag in (room.tags ?? []).slice(0, 3)"
                             :key="tag"
@@ -111,15 +115,20 @@ defineProps<{ rooms: ListedRoom[]; icon: Component }>();
                 >
                     {{ room.unread > 99 ? '99+' : room.unread }}
                 </span>
-                <span
+                <Tip
                     v-if="room.assignee"
-                    class="flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-                    :style="{ backgroundColor: colourFor(room.assignee.id) }"
-                    :title="`Assigned to ${room.assignee.name}`"
-                    data-room-assignee
+                    :text="`Assigned to ${room.assignee.name}`"
                 >
-                    {{ getInitials(room.assignee.name) }}
-                </span>
+                    <span
+                        class="flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                        :style="{
+                            backgroundColor: colourFor(room.assignee.id),
+                        }"
+                        data-room-assignee
+                    >
+                        {{ getInitials(room.assignee.name) }}
+                    </span>
+                </Tip>
                 <span class="text-muted-foreground shrink-0 text-xs">
                     {{ formatRelativeTime(room.updated_at) }}
                 </span>

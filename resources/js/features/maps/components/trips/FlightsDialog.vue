@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Plane, X } from '@lucide/vue';
 import { ref } from 'vue';
+import DateTimeField from '@/components/common/DateTimeField.vue';
+import NumberField from '@/components/common/NumberField.vue';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -29,8 +31,6 @@ const open = defineModel<boolean>('open', { required: true });
 
 const arrivalText = ref('');
 const departureText = ref('');
-const field =
-    'h-9 w-full rounded-md border bg-background px-2 text-sm dark:bg-input/30 dark:[color-scheme:dark]';
 </script>
 
 <template>
@@ -77,38 +77,50 @@ const field =
                         @pick="plan.setAirport('arrival', $event)"
                     />
                     <div class="grid grid-cols-3 gap-2">
-                        <label
+                        <div
                             class="text-muted-foreground col-span-3 space-y-1 text-xs sm:col-span-1"
                         >
-                            Lands
-                            <input
+                            <span class="block">Lands</span>
+                            <DateTimeField
                                 v-model="plan.trip.arrival.at"
-                                type="datetime-local"
-                                :class="field"
+                                kind="datetime"
+                                label="Lands"
+                                :minute-step="5"
+                                compact
                                 data-test="lands"
                             />
-                        </label>
-                        <label class="text-muted-foreground space-y-1 text-xs">
-                            Immigration &amp; bags (min)
-                            <input
-                                v-model.number="plan.trip.arrival.clearMinutes"
-                                type="number"
-                                min="0"
-                                step="15"
-                                :class="field"
+                        </div>
+                        <div class="text-muted-foreground space-y-1 text-xs">
+                            <span class="block"
+                                >Immigration &amp; bags (min)</span
+                            >
+                            <NumberField
+                                :model-value="plan.trip.arrival.clearMinutes"
+                                label="Immigration and bags, in minutes"
+                                :min="0"
+                                :step="15"
+                                compact
+                                class="w-full"
+                                @update:model-value="
+                                    plan.trip.arrival.clearMinutes = $event ?? 0
+                                "
                             />
-                        </label>
-                        <label class="text-muted-foreground space-y-1 text-xs">
-                            Rest after check-in (min)
-                            <input
-                                v-model.number="plan.trip.arrival.restMinutes"
-                                type="number"
-                                min="0"
-                                step="30"
-                                :class="field"
+                        </div>
+                        <div class="text-muted-foreground space-y-1 text-xs">
+                            <span class="block">Rest after check-in (min)</span>
+                            <NumberField
+                                :model-value="plan.trip.arrival.restMinutes"
+                                label="Rest after check-in, in minutes"
+                                :min="0"
+                                :step="30"
+                                compact
+                                class="w-full"
                                 data-test="arrival-rest"
+                                @update:model-value="
+                                    plan.trip.arrival.restMinutes = $event ?? 0
+                                "
                             />
-                        </label>
+                        </div>
                     </div>
                 </section>
 
@@ -156,29 +168,34 @@ const field =
                         </button>
                     </template>
                     <div class="grid grid-cols-3 gap-2">
-                        <label
+                        <div
                             class="text-muted-foreground col-span-3 space-y-1 text-xs sm:col-span-2"
                         >
-                            Flight leaves
-                            <input
+                            <span class="block">Flight leaves</span>
+                            <DateTimeField
                                 v-model="plan.trip.departure.at"
-                                type="datetime-local"
-                                :class="field"
+                                kind="datetime"
+                                label="Flight leaves"
+                                :minute-step="5"
+                                compact
                                 data-test="flight-leaves"
                             />
-                        </label>
-                        <label class="text-muted-foreground space-y-1 text-xs">
-                            Be there early (min)
-                            <input
-                                v-model.number="
-                                    plan.trip.departure.earlyMinutes
+                        </div>
+                        <div class="text-muted-foreground space-y-1 text-xs">
+                            <span class="block">Be there early (min)</span>
+                            <NumberField
+                                :model-value="plan.trip.departure.earlyMinutes"
+                                label="Be there early, in minutes"
+                                :min="0"
+                                :step="30"
+                                compact
+                                class="w-full"
+                                @update:model-value="
+                                    plan.trip.departure.earlyMinutes =
+                                        $event ?? 0
                                 "
-                                type="number"
-                                min="0"
-                                step="30"
-                                :class="field"
                             />
-                        </label>
+                        </div>
                     </div>
                 </section>
             </fieldset>

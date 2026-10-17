@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import NumberField from '@/components/common/NumberField.vue';
 import { Play } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { SPEEDS } from './steps';
 import type { Check, Pace, RunChoice, Speed } from './steps';
+import Tip from '@/components/common/Tip.vue';
 
 // A run set up by hand, for what the two usual ones (a quick test, a demo
 // video) do not do: a speed or pace of one's own, captions, a film, pictures
@@ -143,42 +145,45 @@ function start() {
                     </p>
                     <div
                         v-if="speed === 'custom'"
-                        class="grid grid-cols-3 gap-2"
+                        class="grid grid-cols-1 gap-2 sm:grid-cols-3"
                     >
                         <label class="space-y-1 text-xs">
-                            <span class="text-muted-foreground"
-                                >Glide (ms)</span
-                            >
-                            <Input
-                                v-model.number="pace.glide"
-                                type="number"
-                                min="0"
-                                max="2000"
-                                class="h-8"
+                            <span class="text-muted-foreground">Glide</span>
+                            <NumberField
+                                v-model="pace.glide"
+                                label="Glide"
+                                :min="0"
+                                :max="2000"
+                                :step="50"
+                                unit="ms"
+                                compact
+                                class="w-full"
                             />
                         </label>
                         <label class="space-y-1 text-xs">
-                            <span class="text-muted-foreground"
-                                >Each key (ms)</span
-                            >
-                            <Input
-                                v-model.number="pace.typing"
-                                type="number"
-                                min="0"
-                                max="400"
-                                class="h-8"
+                            <span class="text-muted-foreground">Each key</span>
+                            <NumberField
+                                v-model="pace.typing"
+                                label="Each key"
+                                :min="0"
+                                :max="400"
+                                :step="10"
+                                unit="ms"
+                                compact
+                                class="w-full"
                             />
                         </label>
                         <label class="space-y-1 text-xs">
-                            <span class="text-muted-foreground"
-                                >Pause (ms)</span
-                            >
-                            <Input
-                                v-model.number="pace.pause"
-                                type="number"
-                                min="0"
-                                max="5000"
-                                class="h-8"
+                            <span class="text-muted-foreground">Pause</span>
+                            <NumberField
+                                v-model="pace.pause"
+                                label="Pause"
+                                :min="0"
+                                :max="5000"
+                                :step="100"
+                                unit="ms"
+                                compact
+                                class="w-full"
                             />
                         </label>
                     </div>
@@ -197,22 +202,34 @@ function start() {
                         Film it
                         <Switch v-model="record" data-test="run-record" />
                     </label>
-                    <label
+                    <Tip
                         v-if="record && checks.length > 1"
-                        class="flex items-center justify-between gap-3 px-3 py-2"
-                        title="Every check one after another in one browser -- what one leaves, the next finds -- as one film"
+                        text="Every check one after another in one browser -- what one leaves, the next finds -- as one film"
                     >
-                        All checks in one film
-                        <Switch v-model="oneFilm" data-test="run-one-film" />
-                    </label>
-                    <label
+                        <label
+                            class="flex items-center justify-between gap-3 px-3 py-2"
+                        >
+                            All checks in one film
+                            <Switch
+                                v-model="oneFilm"
+                                data-test="run-one-film"
+                            />
+                        </label>
+                    </Tip>
+                    <Tip
                         v-if="record"
-                        class="flex items-center justify-between gap-3 px-3 py-2"
-                        title="Waits of 2.5 s or more for the site -- a page loading, words coming -- left out of the film, with a note saying how long was skipped. Off: filmed as it happened."
+                        text="Waits of 2.5 s or more for the site -- a page loading, words coming -- left out of the film, with a note saying how long was skipped. Off: filmed as it happened."
                     >
-                        Cut out waiting for the page
-                        <Switch v-model="cutWaits" data-test="run-cut-waits" />
-                    </label>
+                        <label
+                            class="flex items-center justify-between gap-3 px-3 py-2"
+                        >
+                            Cut out waiting for the page
+                            <Switch
+                                v-model="cutWaits"
+                                data-test="run-cut-waits"
+                            />
+                        </label>
+                    </Tip>
                     <label
                         class="flex items-center justify-between gap-3 px-3 py-2"
                     >

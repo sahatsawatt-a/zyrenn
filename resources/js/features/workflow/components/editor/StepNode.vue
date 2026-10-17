@@ -12,6 +12,7 @@ import {
     TRIGGER_STRIP,
 } from '@/features/workflow/steps';
 import type { NodeType, StepNode, StepStatus } from '@/features/workflow/types';
+import Tip from '@/components/common/Tip.vue';
 
 // One step on the canvas: its kind's icon and colour, its name, and a dot
 // for each way in and out. A step with something to fix says how many. A
@@ -92,20 +93,24 @@ const canAdd = (handle: string) =>
             :class="type?.trigger ? TRIGGER_STRIP : tone.strip"
         />
 
-        <span
+        <Tip
             v-if="status && status !== 'pending'"
-            class="bg-card absolute -top-2 -right-2 z-10 flex size-5 items-center justify-center rounded-full border shadow-sm"
-            :title="statusLook(status).label"
+            :text="statusLook(status).label"
         >
-            <component
-                :is="statusLook(status).icon"
-                class="size-3.5"
-                :class="[
-                    statusLook(status).tone,
-                    { 'animate-spin': statusLook(status).spin },
-                ]"
-            />
-        </span>
+            <span
+                class="bg-card absolute -top-2 -right-2 z-10 flex size-5 items-center justify-center rounded-full border shadow-sm"
+                :aria-label="statusLook(status).label"
+            >
+                <component
+                    :is="statusLook(status).icon"
+                    class="size-3.5"
+                    :class="[
+                        statusLook(status).tone,
+                        { 'animate-spin': statusLook(status).spin },
+                    ]"
+                />
+            </span>
+        </Tip>
 
         <Handle
             v-for="input in type?.inputs ?? []"
@@ -138,15 +143,15 @@ const canAdd = (handle: string) =>
                     {{ type.label }}
                 </p>
             </div>
-            <span
-                v-if="data.problems.length"
-                class="text-destructive flex shrink-0 items-center gap-0.5 text-[11px] font-medium"
-                :title="data.problems.join('\n')"
-                data-step-problems
-            >
-                <CircleAlert class="size-3.5" />
-                {{ data.problems.length }}
-            </span>
+            <Tip v-if="data.problems.length" :text="data.problems.join('\n')">
+                <span
+                    class="text-destructive flex shrink-0 items-center gap-0.5 text-[11px] font-medium"
+                    data-step-problems
+                >
+                    <CircleAlert class="size-3.5" />
+                    {{ data.problems.length }}
+                </span>
+            </Tip>
         </div>
 
         <template v-for="(output, index) in outputs" :key="output">
@@ -167,15 +172,19 @@ const canAdd = (handle: string) =>
                 class="absolute left-full ml-3 flex -translate-y-1/2 items-center gap-1.5"
                 :style="{ top: top(index) }"
             >
-                <button
-                    type="button"
-                    class="step-next nodrag nopan bg-card text-muted-foreground hover:border-primary hover:text-primary flex size-5 items-center justify-center rounded-full border shadow-sm"
-                    :aria-label="`Add a step after ${data.step.label}${labelOf(output) ? `, ${labelOf(output)}` : ''}`"
-                    :data-step-next="output"
-                    @click.stop="emit('next', output)"
+                <Tip
+                    :text="`Add a step after ${data.step.label}${labelOf(output) ? `, ${labelOf(output)}` : ''}`"
                 >
-                    <Plus class="size-3" />
-                </button>
+                    <button
+                        type="button"
+                        class="step-next nodrag nopan bg-card text-muted-foreground hover:border-primary hover:text-primary flex size-5 items-center justify-center rounded-full border shadow-sm"
+                        :aria-label="`Add a step after ${data.step.label}${labelOf(output) ? `, ${labelOf(output)}` : ''}`"
+                        :data-step-next="output"
+                        @click.stop="emit('next', output)"
+                    >
+                        <Plus class="size-3" />
+                    </button>
+                </Tip>
                 <span
                     v-if="labelOf(output)"
                     class="pointer-events-none text-[10px] font-medium whitespace-nowrap"

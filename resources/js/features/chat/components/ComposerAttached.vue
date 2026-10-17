@@ -3,6 +3,7 @@ import { MapPin, Paperclip, X } from '@lucide/vue';
 import { onBeforeUnmount, ref, watch } from 'vue';
 import type { DriveFile } from '@/lib/drive';
 import type { ChatPlace } from './MessagePlace.vue';
+import Tip from '@/components/common/Tip.vue';
 
 // What goes with the next message, to look at or take back: a place, or a
 // file -- a picture shown small before it is sent
@@ -63,14 +64,16 @@ onBeforeUnmount(() => {
                 >{{ placed.address }}</span
             >
         </span>
-        <button
-            type="button"
-            class="text-muted-foreground hover:text-foreground shrink-0 rounded-full p-0.5"
-            aria-label="Remove the place"
-            @click="emit('unplace')"
-        >
-            <X class="size-4" />
-        </button>
+        <Tip text="Remove the place">
+            <button
+                type="button"
+                class="text-muted-foreground hover:text-foreground shrink-0 rounded-full p-0.5"
+                aria-label="Remove the place"
+                @click="emit('unplace')"
+            >
+                <X class="size-4" />
+            </button>
+        </Tip>
     </div>
     <div
         v-if="attached"
@@ -90,13 +93,15 @@ onBeforeUnmount(() => {
             <Paperclip class="size-4" />
         </span>
         <span class="min-w-0 truncate text-sm">{{ attached.name }}</span>
-        <button
-            type="button"
-            class="text-muted-foreground hover:text-foreground shrink-0 rounded-full p-0.5"
-            aria-label="Remove the file"
-            @click="emit('detach')"
-        >
-            <X class="size-4" />
-        </button>
+        <Tip text="Remove the file">
+            <button
+                type="button"
+                class="text-muted-foreground hover:text-foreground shrink-0 rounded-full p-0.5"
+                aria-label="Remove the file"
+                @click="emit('detach')"
+            >
+                <X class="size-4" />
+            </button>
+        </Tip>
     </div>
 </template>

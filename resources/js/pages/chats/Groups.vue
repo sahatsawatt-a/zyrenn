@@ -119,7 +119,7 @@ const joinGroup = (ref_id: string) => router.post(join(ref_id).url);
                     </DialogDescription>
                 </DialogHeader>
 
-                <form class="space-y-4" @submit.prevent="start">
+                <form novalidate class="space-y-4" @submit.prevent="start">
                     <div class="grid gap-2">
                         <Label for="group-title">Name</Label>
                         <Input

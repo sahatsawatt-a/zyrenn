@@ -47,6 +47,7 @@ import { KIND_ICONS, KIND_TONE } from './icons';
 import PageThings from './PageThings.vue';
 import { KEYS, say } from './steps';
 import type { LivePage, LiveStep, Look, Size, Step, Thing } from './steps';
+import Tip from '@/components/common/Tip.vue';
 
 // Building a check by clicking through the page, as a customer would. The
 // page is kept open in the browser on the server while it is built, so each
@@ -610,133 +611,156 @@ const SCREEN_ICONS = SCREENS.map(({ value, icon, label, test }) => ({
                     />
                     <div class="bg-border hidden h-6 w-px sm:block" />
                     <div class="flex">
+                        <Tip text="Press Enter">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                class="rounded-r-none"
+                                :disabled="!!doing || !pageId"
+                                data-test="build-enter"
+                                @click="attempt({ do: 'press', key: 'Enter' })"
+                            >
+                                <CornerDownLeft /> Enter
+                            </Button>
+                        </Tip>
+                        <Tip text="Press another key">
+                            <span class="inline-flex">
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger as-child>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            class="rounded-l-none border-l-0 px-1.5"
+                                            :disabled="!!doing || !pageId"
+                                            aria-label="Press another key"
+                                            data-test="build-key"
+                                        >
+                                            <ChevronDown />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="start">
+                                        <DropdownMenuItem
+                                            v-for="key in KEYS"
+                                            :key="key"
+                                            @select="
+                                                attempt({ do: 'press', key })
+                                            "
+                                            ><Keyboard /> Press
+                                            {{ key }}</DropdownMenuItem
+                                        >
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            </span>
+                        </Tip>
+                    </div>
+                    <Tip text="Go back to the page before">
                         <Button
                             variant="outline"
                             size="sm"
-                            class="rounded-r-none"
                             :disabled="!!doing || !pageId"
-                            title="Press Enter"
-                            data-test="build-enter"
-                            @click="attempt({ do: 'press', key: 'Enter' })"
+                            data-test="build-back"
+                            @click="attempt({ do: 'back' })"
                         >
-                            <CornerDownLeft /> Enter
+                            <ArrowLeft /> Back
                         </Button>
-                        <DropdownMenu>
-                            <DropdownMenuTrigger as-child>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    class="rounded-l-none border-l-0 px-1.5"
-                                    :disabled="!!doing || !pageId"
-                                    aria-label="Press another key"
-                                    data-test="build-key"
-                                >
-                                    <ChevronDown />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="start">
-                                <DropdownMenuItem
-                                    v-for="key in KEYS"
-                                    :key="key"
-                                    @select="attempt({ do: 'press', key })"
-                                    ><Keyboard /> Press
-                                    {{ key }}</DropdownMenuItem
-                                >
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                    </div>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        :disabled="!!doing || !pageId"
-                        title="Go back to the page before"
-                        data-test="build-back"
-                        @click="attempt({ do: 'back' })"
+                    </Tip>
+                    <Tip
+                        text="Expect something not to be on the page: an error, a spinner"
                     >
-                        <ArrowLeft /> Back
-                    </Button>
-                    <Popover v-model:open="goneOpen">
-                        <PopoverTrigger as-child>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                :disabled="!!doing || !pageId"
-                                title="Expect something not to be on the page: an error, a spinner"
-                                data-test="build-gone"
-                            >
-                                <EyeOff /> Expect gone
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent class="w-72" align="start">
-                            <form
-                                class="space-y-2"
-                                @submit.prevent="expectGone"
-                            >
-                                <p class="text-sm font-medium">
-                                    Expect not to see
-                                </p>
-                                <Input
-                                    v-model="goneText"
-                                    placeholder="An error, “Loading…”"
-                                    class="h-8"
-                                    data-test="build-gone-text"
-                                />
-                                <Button
-                                    type="submit"
-                                    size="sm"
-                                    class="w-full"
-                                    :disabled="!goneText.trim() || !!doing"
-                                    >Add</Button
-                                >
-                            </form>
-                        </PopoverContent>
-                    </Popover>
-                    <Popover v-model:open="addressOpen">
-                        <PopoverTrigger as-child>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                :disabled="!!doing || !pageId"
-                                title="Expect the page's address to have some words in it"
-                                data-test="build-address-check"
-                            >
-                                <AtSign /> Expect address
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent class="w-72" align="start">
-                            <form
-                                class="space-y-2"
-                                @submit.prevent="expectAddress"
-                            >
-                                <p class="text-sm font-medium">
-                                    Expect the address to have
-                                </p>
-                                <Input
-                                    v-model="addressText"
-                                    placeholder="/thank-you"
-                                    class="h-8 font-mono text-xs"
-                                    data-test="build-address-text"
-                                />
-                                <Button
-                                    type="submit"
-                                    size="sm"
-                                    class="w-full"
-                                    :disabled="!addressText.trim() || !!doing"
-                                    >Add</Button
-                                >
-                            </form>
-                        </PopoverContent>
-                    </Popover>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        :disabled="!!doing"
-                        title="Take a picture of the page here"
-                        data-test="build-shot"
-                        @click="picture"
+                        <span class="inline-flex">
+                            <Popover v-model:open="goneOpen">
+                                <PopoverTrigger as-child>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        :disabled="!!doing || !pageId"
+                                        data-test="build-gone"
+                                    >
+                                        <EyeOff /> Expect gone
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent class="w-72" align="start">
+                                    <form
+                                        class="space-y-2"
+                                        @submit.prevent="expectGone"
+                                    >
+                                        <p class="text-sm font-medium">
+                                            Expect not to see
+                                        </p>
+                                        <Input
+                                            v-model="goneText"
+                                            placeholder="An error, “Loading…”"
+                                            class="h-8"
+                                            data-test="build-gone-text"
+                                        />
+                                        <Button
+                                            type="submit"
+                                            size="sm"
+                                            class="w-full"
+                                            :disabled="
+                                                !goneText.trim() || !!doing
+                                            "
+                                            >Add</Button
+                                        >
+                                    </form>
+                                </PopoverContent>
+                            </Popover>
+                        </span>
+                    </Tip>
+                    <Tip
+                        text="Expect the page's address to have some words in it"
                     >
-                        <Camera /> Picture
-                    </Button>
+                        <span class="inline-flex">
+                            <Popover v-model:open="addressOpen">
+                                <PopoverTrigger as-child>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        :disabled="!!doing || !pageId"
+                                        data-test="build-address-check"
+                                    >
+                                        <AtSign /> Expect address
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent class="w-72" align="start">
+                                    <form
+                                        class="space-y-2"
+                                        @submit.prevent="expectAddress"
+                                    >
+                                        <p class="text-sm font-medium">
+                                            Expect the address to have
+                                        </p>
+                                        <Input
+                                            v-model="addressText"
+                                            placeholder="/thank-you"
+                                            class="h-8 font-mono text-xs"
+                                            data-test="build-address-text"
+                                        />
+                                        <Button
+                                            type="submit"
+                                            size="sm"
+                                            class="w-full"
+                                            :disabled="
+                                                !addressText.trim() || !!doing
+                                            "
+                                            >Add</Button
+                                        >
+                                    </form>
+                                </PopoverContent>
+                            </Popover>
+                        </span>
+                    </Tip>
+                    <Tip text="Take a picture of the page here">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            :disabled="!!doing"
+                            data-test="build-shot"
+                            @click="picture"
+                        >
+                            <Camera /> Picture
+                        </Button>
+                    </Tip>
                     <Button
                         variant="ghost"
                         size="sm"

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { cellText } from '@/features/tables/composables/cellText';
 import { toneOf } from '@/features/tables/composables/tones';
 import type { Tone } from '@/features/tables/composables/tones';
+import TicketPick from '@/features/tickets/components/TicketPick.vue';
 import type { ColumnMeta, LocationValue, RowData } from '@/types';
 
 // A table's rows on a map: each row with a place is a dot, coloured by one of
@@ -203,8 +204,8 @@ const fieldsOf = (row: RowData) =>
         .filter((field) => field.text !== '')
         .slice(0, 6);
 
-const select =
-    'h-8 rounded-md border bg-background px-2 text-xs dark:bg-input/30 dark:[color-scheme:dark]';
+// "Colour by" nothing: a dropdown's choice can't be empty
+const NOTHING = '-';
 </script>
 
 <template>
@@ -221,36 +222,39 @@ const select =
         >
             <label v-if="places.length > 1" class="flex items-center gap-1.5">
                 Place
-                <select
+                <TicketPick
                     v-model="placeColumn"
-                    :class="select"
+                    compact
+                    label="Place"
+                    class="bg-background"
                     data-test="map-place-column"
-                >
-                    <option
-                        v-for="column in places"
-                        :key="column.name"
-                        :value="column.name"
-                    >
-                        {{ column.label }}
-                    </option>
-                </select>
+                    :options="
+                        places.map((column) => ({
+                            value: column.name,
+                            label: column.label,
+                        }))
+                    "
+                />
             </label>
             <label v-if="choices.length" class="flex items-center gap-1.5">
                 Colour by
-                <select
-                    v-model="colourColumn"
-                    :class="select"
+                <TicketPick
+                    compact
+                    label="Colour by"
+                    class="bg-background"
                     data-test="map-colour-column"
-                >
-                    <option value="">Nothing</option>
-                    <option
-                        v-for="column in choices"
-                        :key="column.name"
-                        :value="column.name"
-                    >
-                        {{ column.label }}
-                    </option>
-                </select>
+                    :model-value="colourColumn || NOTHING"
+                    :options="[
+                        { value: NOTHING, label: 'Nothing' },
+                        ...choices.map((column) => ({
+                            value: column.name,
+                            label: column.label,
+                        })),
+                    ]"
+                    @update:model-value="
+                        colourColumn = $event === NOTHING ? '' : $event
+                    "
+                />
             </label>
             <span class="text-muted-foreground" data-test="map-count">
                 {{ placed.length }} of {{ rows.length }}

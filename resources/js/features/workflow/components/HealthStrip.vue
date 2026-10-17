@@ -4,6 +4,7 @@ import { CircleAlert, ChevronDown } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import { duration } from '@/features/workflow/steps';
 import { show as showWorkflow } from '@/routes/workflows';
+import Tip from '@/components/common/Tip.vue';
 
 // How these workflows have been doing lately (App\Support\Workflow\Health):
 // a line of numbers, and what failed, a click away.
@@ -74,18 +75,22 @@ const ms = (value: number | null) => (value === null ? '–' : duration(value));
                 {{ health.runs.waiting }} waiting</span
             >
             <!-- How fast, where there is room to say it -->
-            <span
-                class="max-sm:hidden"
-                title="Half of runs took less, and 95 in 100 less than the second"
-                >Run time {{ ms(health.duration_ms.p50) }} /
-                {{ ms(health.duration_ms.p95) }}</span
+            <Tip
+                text="Half of runs took less, and 95 in 100 less than the second"
             >
-            <span
-                class="max-sm:hidden"
-                title="How long a step waited for a worker: half, and 95 in 100, waited less"
-                >Wait {{ ms(health.queue_ms.p50) }} /
-                {{ ms(health.queue_ms.p95) }}</span
+                <span class="max-sm:hidden"
+                    >Run time {{ ms(health.duration_ms.p50) }} /
+                    {{ ms(health.duration_ms.p95) }}</span
+                >
+            </Tip>
+            <Tip
+                text="How long a step waited for a worker: half, and 95 in 100, waited less"
             >
+                <span class="max-sm:hidden"
+                    >Wait {{ ms(health.queue_ms.p50) }} /
+                    {{ ms(health.queue_ms.p95) }}</span
+                >
+            </Tip>
             <span v-if="health.retried">{{ health.retried }} tried again</span>
             <span
                 v-if="health.unsure"

@@ -39,6 +39,7 @@ import PickDialog from './PickDialog.vue';
 import PointerFields from './PointerFields.vue';
 import { GROUPS, KEYS, KINDS, lingers, say } from './steps';
 import type { Look, Step, StepGroup, StepKind, Thing } from './steps';
+import Tip from '@/components/common/Tip.vue';
 
 // How long a demo film stays on a step, and how long a step may wait, as
 // choices: "Auto" (its caption's time, or the pace's) and "the suite's" are
@@ -305,59 +306,66 @@ function filed(file: DriveFile) {
                     :title="`Says in a demo video: ${step.note}`"
                     data-test="step-has-note"
                 />
-                <span
-                    v-if="step.frame"
-                    class="text-muted-foreground hidden items-center gap-1 text-[11px] sm:inline-flex"
-                    title="Inside a frame of the page"
-                >
-                    <Frame class="size-3" /> in a frame
-                </span>
-                <span
+                <Tip v-if="step.frame" text="Inside a frame of the page">
+                    <span
+                        class="text-muted-foreground hidden items-center gap-1 text-[11px] sm:inline-flex"
+                    >
+                        <Frame class="size-3" /> in a frame
+                    </span>
+                </Tip>
+                <Tip
                     v-else-if="step.selector"
-                    class="text-muted-foreground hidden text-[11px] sm:inline"
-                    title="Picked on the page: found by where it is there"
-                    >picked</span
+                    text="Picked on the page: found by where it is there"
                 >
+                    <span
+                        class="text-muted-foreground hidden text-[11px] sm:inline"
+                        >picked</span
+                    >
+                </Tip>
                 <ChevronDown
                     class="text-muted-foreground hidden size-4 shrink-0 transition-transform sm:block"
                     :class="{ 'rotate-180': opened.has(step) }"
                     @click="toggle(step)"
                 />
-                <DropdownMenu v-if="!readonly">
-                    <DropdownMenuTrigger as-child>
-                        <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            class="shrink-0"
-                            aria-label="More for this step"
-                            data-test="step-menu"
-                        >
-                            <EllipsisVertical />
-                        </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                            :disabled="at === 0"
-                            @select="move(at, -1)"
-                            ><ArrowUp /> Move up</DropdownMenuItem
-                        >
-                        <DropdownMenuItem
-                            :disabled="at === steps.length - 1"
-                            @select="move(at, 1)"
-                            ><ArrowDown /> Move down</DropdownMenuItem
-                        >
-                        <DropdownMenuItem @select="copy(at)"
-                            ><Copy /> Do it twice</DropdownMenuItem
-                        >
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                            variant="destructive"
-                            :disabled="steps.length === 1"
-                            @select="remove(at)"
-                            ><Trash2 /> Remove</DropdownMenuItem
-                        >
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                <Tip v-if="!readonly" text="More for this step">
+                    <span class="inline-flex">
+                        <DropdownMenu>
+                            <DropdownMenuTrigger as-child>
+                                <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    class="shrink-0"
+                                    aria-label="More for this step"
+                                    data-test="step-menu"
+                                >
+                                    <EllipsisVertical />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                    :disabled="at === 0"
+                                    @select="move(at, -1)"
+                                    ><ArrowUp /> Move up</DropdownMenuItem
+                                >
+                                <DropdownMenuItem
+                                    :disabled="at === steps.length - 1"
+                                    @select="move(at, 1)"
+                                    ><ArrowDown /> Move down</DropdownMenuItem
+                                >
+                                <DropdownMenuItem @select="copy(at)"
+                                    ><Copy /> Do it twice</DropdownMenuItem
+                                >
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                    variant="destructive"
+                                    :disabled="steps.length === 1"
+                                    @select="remove(at)"
+                                    ><Trash2 /> Remove</DropdownMenuItem
+                                >
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </span>
+                </Tip>
             </div>
 
             <!-- The step, to change -->
@@ -415,18 +423,18 @@ function filed(file: DriveFile) {
                             data-test="step-target"
                             @update:model-value="wrote(step)"
                         />
-                        <Button
-                            v-if="canPick(at)"
-                            variant="outline"
-                            size="sm"
-                            class="h-8 shrink-0"
-                            title="Pick it from the page"
-                            data-test="step-pick"
-                            @click="startPicking(at)"
-                        >
-                            <Crosshair />
-                            <span class="hidden sm:inline">Pick</span>
-                        </Button>
+                        <Tip v-if="canPick(at)" text="Pick it from the page">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                class="h-8 shrink-0"
+                                data-test="step-pick"
+                                @click="startPicking(at)"
+                            >
+                                <Crosshair />
+                                <span class="hidden sm:inline">Pick</span>
+                            </Button>
+                        </Tip>
                     </div>
                     <Input
                         v-if="
@@ -576,15 +584,18 @@ function filed(file: DriveFile) {
                                     emit('change');
                                 "
                             >
-                                <SelectTrigger
-                                    size="sm"
-                                    class="w-full"
-                                    aria-label="How long a demo film stays on this step"
-                                    title="How long a demo film stays on this step once it is done"
-                                    data-test="step-wait"
+                                <Tip
+                                    text="How long a demo film stays on this step once it is done"
                                 >
-                                    <SelectValue />
-                                </SelectTrigger>
+                                    <SelectTrigger
+                                        size="sm"
+                                        class="w-full"
+                                        aria-label="How long a demo film stays on this step"
+                                        data-test="step-wait"
+                                    >
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                </Tip>
                                 <SelectContent>
                                     <SelectItem :value="AUTO"
                                         >Auto · {{ autoStay(step) }}</SelectItem
@@ -616,15 +627,18 @@ function filed(file: DriveFile) {
                                     emit('change');
                                 "
                             >
-                                <SelectTrigger
-                                    size="sm"
-                                    class="w-full"
-                                    aria-label="How long this step waits for the site before it fails"
-                                    :title="`How long this step waits for the site before it fails, up to ${stepMost ?? 60} s`"
-                                    data-test="step-timeout"
+                                <Tip
+                                    :text="`How long this step waits for the site before it fails, up to ${stepMost ?? 60} s`"
                                 >
-                                    <SelectValue />
-                                </SelectTrigger>
+                                    <SelectTrigger
+                                        size="sm"
+                                        class="w-full"
+                                        aria-label="How long this step waits for the site before it fails"
+                                        data-test="step-timeout"
+                                    >
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                </Tip>
                                 <SelectContent>
                                     <SelectItem :value="AUTO"
                                         >Suite's

@@ -12,6 +12,7 @@ import {
 } from '@lucide/vue';
 import { useLocalStorage } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
+import NumberField from '@/components/common/NumberField.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -34,6 +35,7 @@ import {
 } from '@/routes/connections';
 import { page as codeAdmin } from '@/routes/admin/code';
 import { index as projectConnections } from '@/routes/projects/connections';
+import Tip from '@/components/common/Tip.vue';
 
 // One step's settings, beside the canvas: its name and whatever its kind is
 // set up with. What is seldom changed -- the key formulas know it by, what a
@@ -461,14 +463,18 @@ async function copyHook(token: unknown) {
         :style="compact ? undefined : { width: `${bounded(width)}px` }"
         data-step-settings
     >
-        <div
+        <Tip
             v-if="!compact"
-            class="hover:bg-primary active:bg-primary absolute inset-y-0 -left-px z-10 w-1 cursor-col-resize transition-colors"
-            title="Drag to resize, double-click for its usual width"
-            data-resize-settings
-            @pointerdown.prevent="startResize"
-            @dblclick="width = USUAL_WIDTH"
-        />
+            text="Drag to resize, double-click for its usual width"
+        >
+            <div
+                class="hover:bg-primary active:bg-primary absolute inset-y-0 -left-px z-10 w-1 cursor-col-resize transition-colors"
+                aria-label="Drag to resize, double-click for its usual width"
+                data-resize-settings
+                @pointerdown.prevent="startResize"
+                @dblclick="width = USUAL_WIDTH"
+            />
+        </Tip>
         <div class="flex items-start gap-3 border-b p-4">
             <span
                 class="flex size-9 shrink-0 items-center justify-center rounded-lg"
@@ -491,27 +497,31 @@ async function copyHook(token: unknown) {
                     {{ type?.description }}
                 </p>
             </div>
-            <Button
+            <Tip
                 v-if="!dataShown"
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Show the test data"
-                title="Test data: what a run gave, to set this up from"
-                data-show-test-data
-                @click="emit('showData')"
+                text="Test data: what a run gave, to set this up from"
             >
-                <Braces />
-            </Button>
+                <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label="Show the test data"
+                    data-show-test-data
+                    @click="emit('showData')"
+                >
+                    <Braces />
+                </Button>
+            </Tip>
             <!-- Over the canvas, its tabs close it -->
-            <Button
-                v-if="!compact"
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Close"
-                @click="emit('close')"
-            >
-                <X />
-            </Button>
+            <Tip v-if="!compact" text="Close">
+                <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label="Close"
+                    @click="emit('close')"
+                >
+                    <X />
+                </Button>
+            </Tip>
         </div>
 
         <div class="flex-1 space-y-5 overflow-x-hidden overflow-y-auto p-4">
@@ -777,15 +787,17 @@ async function copyHook(token: unknown) {
                             data-hook-url
                             >{{ hookUrl(value(setting)) }}</code
                         >
-                        <Button
-                            size="icon-sm"
-                            variant="outline"
-                            aria-label="Copy the address"
-                            @click="copyHook(value(setting))"
-                        >
-                            <Check v-if="copied" />
-                            <Copy v-else />
-                        </Button>
+                        <Tip text="Copy the address">
+                            <Button
+                                size="icon-sm"
+                                variant="outline"
+                                aria-label="Copy the address"
+                                @click="copyHook(value(setting))"
+                            >
+                                <Check v-if="copied" />
+                                <Copy v-else />
+                            </Button>
+                        </Tip>
                     </div>
                     <p
                         v-if="!options.hooks"
@@ -804,16 +816,22 @@ async function copyHook(token: unknown) {
                     <Label :for="`setting-${setting.name}`">{{
                         setting.label
                     }}</Label>
-                    <Input
+                    <NumberField
                         :id="`setting-${setting.name}`"
-                        type="number"
-                        min="1"
-                        :model-value="String(value(setting) ?? '')"
-                        class="text-xs"
-                        :disabled="!editable"
-                        @update:model-value="
-                            set(setting, $event === '' ? null : Number($event))
+                        :model-value="
+                            value(setting) === null ||
+                            value(setting) === undefined ||
+                            value(setting) === ''
+                                ? null
+                                : Number(value(setting))
                         "
+                        :label="setting.label"
+                        :min="1"
+                        nullable
+                        compact
+                        class="w-40"
+                        :disabled="!editable"
+                        @update:model-value="set(setting, $event)"
                     />
                 </div>
 
@@ -847,36 +865,39 @@ async function copyHook(token: unknown) {
                 >
                     <Label>{{ setting.label }}</Label>
                     <div v-if="libraries.length" class="flex flex-wrap gap-1.5">
-                        <button
+                        <Tip
                             v-for="library in libraries"
                             :key="library.name"
-                            type="button"
-                            class="inline-flex h-7 items-center gap-1 rounded-full border px-2.5 font-mono text-xs transition-colors"
-                            :class="
-                                library.gone
-                                    ? 'border-destructive/50 text-destructive line-through'
-                                    : library.on
-                                      ? 'border-primary bg-primary/10 text-primary'
-                                      : 'text-muted-foreground hover:text-foreground'
-                            "
-                            :aria-pressed="library.on"
-                            :title="
+                            :text="
                                 library.gone
                                     ? 'Not there any more: take it off'
                                     : library.version
                                       ? `${library.name} ${library.version}`
                                       : library.name
                             "
-                            :disabled="!editable"
-                            :data-library="library.name"
-                            @click="toggleLibrary(setting, library.name)"
                         >
-                            <Check
-                                v-if="library.on && !library.gone"
-                                class="size-3"
-                            />
-                            {{ library.name }}
-                        </button>
+                            <button
+                                type="button"
+                                class="inline-flex h-7 items-center gap-1 rounded-full border px-2.5 font-mono text-xs transition-colors"
+                                :class="
+                                    library.gone
+                                        ? 'border-destructive/50 text-destructive line-through'
+                                        : library.on
+                                          ? 'border-primary bg-primary/10 text-primary'
+                                          : 'text-muted-foreground hover:text-foreground'
+                                "
+                                :aria-pressed="library.on"
+                                :disabled="!editable"
+                                :data-library="library.name"
+                                @click="toggleLibrary(setting, library.name)"
+                            >
+                                <Check
+                                    v-if="library.on && !library.gone"
+                                    class="size-3"
+                                />
+                                {{ library.name }}
+                            </button>
+                        </Tip>
                     </div>
                     <p v-else class="text-muted-foreground text-xs">
                         None added for this language yet.

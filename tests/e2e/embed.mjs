@@ -109,9 +109,8 @@ await runBoard(
             (await page.locator('[data-test="frame-choose"]').count()) === 1,
         );
 
-        await page
-            .locator('[data-test="board-choose"]')
-            .selectOption({ label: title });
+        await page.locator('[data-test="board-choose"]').click();
+        await page.getByRole('option', { name: title, exact: true }).click();
         await soon(
             'choosing a board draws it in the note',
             async () =>
@@ -141,18 +140,20 @@ await runBoard(
         );
         await page.screenshot({ path: `${SHOTS}/embed-whole.png` });
 
-        const options = () =>
-            page.locator('[data-test="frame-choose"] option').allInnerTexts();
-        await until(async () => (await options()).length > 1);
-        const frames = await options();
+        // The frames offered, once the board has come: the dropdown is
+        // opened to read them
+        const frameChoose = page.locator('[data-test="frame-choose"]');
+        await until(async () => !(await frameChoose.isDisabled()));
+        await frameChoose.click();
+        const frames = await page.getByRole('option').allInnerTexts();
+        await page.keyboard.press('Escape');
         check(
             'the frames of that board are offered',
             frames.length > 1,
             frames.join(' | '),
         );
-        await page
-            .locator('[data-test="frame-choose"]')
-            .selectOption({ index: 1 });
+        await page.locator('[data-test="frame-choose"]').click();
+        await page.getByRole('option').nth(1).click();
         // (drawn again, as that frame alone)
         await steady(drawnIn);
         check(
@@ -181,8 +182,11 @@ await runBoard(
             async () =>
                 (await page
                     .locator('[data-test="board-choose"]')
-                    .inputValue()) === boardUrl.split('/').pop(),
-            () => page.locator('[data-test="board-choose"]').inputValue(),
+                    .getAttribute('data-value')) === boardUrl.split('/').pop(),
+            () =>
+                page
+                    .locator('[data-test="board-choose"]')
+                    .getAttribute('data-value'),
         );
         await soon(
             'and still drawing it',

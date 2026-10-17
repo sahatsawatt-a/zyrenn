@@ -7,6 +7,7 @@ import {
     DialogDescription,
     DialogTitle,
 } from '@/components/ui/dialog';
+import Tip from '@/components/common/Tip.vue';
 
 // A picture from a chat, opened larger over it. One of several sent
 // together says which it is, and steps to the one before or after -- by
@@ -62,28 +63,32 @@ function onKey(event: KeyboardEvent) {
                     class="max-h-[78vh] max-w-full rounded-lg object-contain"
                 />
                 <template v-if="place">
-                    <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="secondary"
-                        class="absolute top-1/2 left-2 -translate-y-1/2 opacity-80 hover:opacity-100"
-                        aria-label="The picture before"
-                        data-chat-picture-before
-                        @click="emit('step', -1)"
-                    >
-                        <ChevronLeft />
-                    </Button>
-                    <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="secondary"
-                        class="absolute top-1/2 right-2 -translate-y-1/2 opacity-80 hover:opacity-100"
-                        aria-label="The picture after"
-                        data-chat-picture-after
-                        @click="emit('step', 1)"
-                    >
-                        <ChevronRight />
-                    </Button>
+                    <Tip text="The picture before">
+                        <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="secondary"
+                            class="absolute top-1/2 left-2 -translate-y-1/2 opacity-80 hover:opacity-100"
+                            aria-label="The picture before"
+                            data-chat-picture-before
+                            @click="emit('step', -1)"
+                        >
+                            <ChevronLeft />
+                        </Button>
+                    </Tip>
+                    <Tip text="The picture after">
+                        <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="secondary"
+                            class="absolute top-1/2 right-2 -translate-y-1/2 opacity-80 hover:opacity-100"
+                            aria-label="The picture after"
+                            data-chat-picture-after
+                            @click="emit('step', 1)"
+                        >
+                            <ChevronRight />
+                        </Button>
+                    </Tip>
                 </template>
             </div>
             <!-- A picture held in the page (a data: URL) is saved as it is -->

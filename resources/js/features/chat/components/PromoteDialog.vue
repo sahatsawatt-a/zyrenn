@@ -113,7 +113,12 @@ function make() {
                 </DialogDescription>
             </DialogHeader>
 
-            <form id="promote-form" class="grid gap-4" @submit.prevent="make">
+            <form
+                novalidate
+                id="promote-form"
+                class="grid gap-4"
+                @submit.prevent="make"
+            >
                 <SegmentTabs v-model="type" :options="TYPE_OPTIONS" />
                 <div class="grid gap-2">
                     <Label for="promote-title">Title</Label>

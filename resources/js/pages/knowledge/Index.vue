@@ -12,6 +12,7 @@ import {
 } from '@lucide/vue';
 import { computed, onBeforeUnmount, ref, watch, watchEffect } from 'vue';
 import DeleteDialog from '@/components/common/DeleteDialog.vue';
+import InputError from '@/components/common/InputError.vue';
 import EmptyState from '@/components/common/EmptyState.vue';
 import PageHeader from '@/components/common/PageHeader.vue';
 import { Button } from '@/components/ui/button';
@@ -36,6 +37,7 @@ import { ask, destroy, read, update } from '@/routes/knowledge';
 import { index as ownKnowledge } from '@/routes/knowledge';
 import { index as projectKnowledge } from '@/routes/projects/knowledge';
 import { owned } from '@/lib/projects';
+import Tip from '@/components/common/Tip.vue';
 
 type Kind = 'notes' | 'table' | 'drive';
 type Source = { kind: Kind; ref: string; label: string };
@@ -90,8 +92,18 @@ const where = computed(() => page.props.project?.name ?? 'your own');
 // ------------------------------------------------------------ Making one
 const making = ref(false);
 const title = ref('');
+// What is wrong with the name, said under it
+const titleError = ref('');
+
+watch([title, making], () => (titleError.value = ''));
 
 function make() {
+    if (!title.value.trim()) {
+        titleError.value = 'Give it a name.';
+
+        return;
+    }
+
     router.post(
         props.urls.store,
         { title: title.value },
@@ -101,6 +113,7 @@ function make() {
                 making.value = false;
                 title.value = '';
             },
+            onError: (problems) => (titleError.value = problems.title ?? ''),
         },
     );
 }
@@ -325,15 +338,16 @@ const settingsOpen = ref<Record<string, boolean>>({});
                 >
                     <RefreshCw /> Read now
                 </Button>
-                <Button
-                    v-if="can.manage"
-                    variant="ghost"
-                    size="icon-sm"
-                    :aria-label="`Delete ${base.title}`"
-                    @click="removing = base"
-                >
-                    <Trash2 />
-                </Button>
+                <Tip v-if="can.manage" :text="`Delete ${base.title}`">
+                    <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        :aria-label="`Delete ${base.title}`"
+                        @click="removing = base"
+                    >
+                        <Trash2 />
+                    </Button>
+                </Tip>
             </div>
 
             <!-- What it reads -->
@@ -345,15 +359,19 @@ const settingsOpen = ref<Record<string, boolean>>({});
                     data-test="knowledge-source"
                 >
                     {{ source.label }}
-                    <button
+                    <Tip
                         v-if="can.manage"
-                        type="button"
-                        class="text-muted-foreground hover:text-foreground rounded-full p-0.5"
-                        :aria-label="`Stop reading ${source.label}`"
-                        @click="dropSource(base, at)"
+                        :text="`Stop reading ${source.label}`"
                     >
-                        <X class="size-3" />
-                    </button>
+                        <button
+                            type="button"
+                            class="text-muted-foreground hover:text-foreground rounded-full p-0.5"
+                            :aria-label="`Stop reading ${source.label}`"
+                            @click="dropSource(base, at)"
+                        >
+                            <X class="size-3" />
+                        </button>
+                    </Tip>
                 </span>
                 <Popover
                     v-if="can.manage"
@@ -530,7 +548,7 @@ const settingsOpen = ref<Record<string, boolean>>({});
                         reads after.
                     </DialogDescription>
                 </DialogHeader>
-                <form id="knowledge-form" @submit.prevent="make">
+                <form id="knowledge-form" novalidate @submit.prevent="make">
                     <Label for="knowledge-title" class="sr-only">Name</Label>
                     <Input
                         id="knowledge-title"
@@ -540,6 +558,7 @@ const settingsOpen = ref<Record<string, boolean>>({});
                         placeholder="e.g. Shop answers"
                         data-test="knowledge-title"
                     />
+                    <InputError :message="titleError" class="mt-2" />
                 </form>
                 <DialogFooter>
                     <Button

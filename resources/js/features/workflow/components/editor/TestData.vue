@@ -8,6 +8,7 @@ import PickOne from '@/features/workflow/components/editor/PickOne.vue';
 import type { Sample } from '@/features/workflow/composables/useTestData';
 import { statusLook } from '@/features/workflow/steps';
 import type { RunSummary } from '@/features/workflow/types';
+import Tip from '@/components/common/Tip.vue';
 
 // What a step can read, as a real run had it, beside its settings: a card
 // for the trigger, for what came in, and for each step before it, under
@@ -85,15 +86,17 @@ const runOptions = computed(() =>
             <!-- On a narrow screen its tab says what it is, and closes it -->
             <div v-if="!compact" class="flex items-center gap-2">
                 <p class="flex-1 text-sm font-medium">Test data</p>
-                <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    class="-my-1 -mr-1.5"
-                    aria-label="Hide the test data"
-                    @click="emit('close')"
-                >
-                    <X />
-                </Button>
+                <Tip text="Hide the test data">
+                    <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        class="-my-1 -mr-1.5"
+                        aria-label="Hide the test data"
+                        @click="emit('close')"
+                    >
+                        <X />
+                    </Button>
+                </Tip>
             </div>
             <PickOne
                 :model-value="run"

@@ -11,6 +11,7 @@ import {
 } from '@lucide/vue';
 import { computed, onBeforeUnmount, ref } from 'vue';
 import type { Component } from 'vue';
+import Tip from '@/components/common/Tip.vue';
 
 // What a step was given or gave, as its parts: each on a line under what
 // holds it, with a mark for the kind of thing it is, folded and opened.
@@ -330,162 +331,178 @@ onBeforeUnmount(dropped);
             "
         >
             <!-- The card's top: whose data it is, and how a formula names it -->
-            <div
+            <Tip
                 v-if="!bare"
-                class="group flex items-center gap-2 px-2"
-                :class="[
-                    roomy ? 'py-2.5' : 'py-1.5',
-                    group.head?.path && pick
-                        ? 'hover:bg-primary/5 cursor-pointer active:cursor-grabbing'
-                        : '',
-                ]"
-                :draggable="!!group.head?.path && pick"
-                :title="pick ? (group.head?.path ?? undefined) : undefined"
-                :data-sample="pick ? group.head?.path : undefined"
-                @dragstart="drag($event, group.head?.path ?? null)"
-                @dragend="dropped"
-                @click="
-                    group.head?.path && pick && emit('pick', group.head.path)
-                "
-            >
-                <button
-                    v-if="group.head?.holds"
-                    type="button"
-                    class="text-muted-foreground hover:text-foreground -mx-0.5 shrink-0"
-                    :aria-label="`${group.head.folded ? 'Open' : 'Fold'} ${group.root.name}`"
-                    :aria-expanded="!group.head.folded"
-                    @click.stop="toggle(group.head)"
-                >
-                    <ChevronRight
-                        class="transition-transform"
-                        :class="[
-                            roomy ? 'size-4' : 'size-3.5',
-                            { 'rotate-90': !group.head.folded },
-                        ]"
-                    />
-                </button>
-                <span
-                    v-if="group.root.icon"
-                    class="flex size-5 shrink-0 items-center justify-center rounded"
-                    :class="[
-                        group.root.tile ?? 'bg-muted text-muted-foreground',
-                        { 'opacity-50': group.off },
-                    ]"
-                >
-                    <component :is="group.root.icon" class="size-3" />
-                </span>
-                <span
-                    class="min-w-0 truncate font-medium"
-                    :class="{ 'text-muted-foreground': group.off }"
-                    >{{ group.root.title ?? group.root.name }}</span
-                >
-                <!-- What a formula calls it, where its title does not say -->
-                <code
-                    v-if="
-                        group.root.title &&
-                        group.root.title.toLowerCase() !== group.root.name
-                    "
-                    class="text-muted-foreground shrink-0 font-mono text-[10px]"
-                    >{{ group.root.name }}</code
-                >
-                <span
-                    class="text-muted-foreground ml-auto min-w-0 shrink truncate text-[11px]"
-                    :class="{ italic: group.off }"
-                    >{{
-                        group.root.note ??
-                        (group.head?.holds ? '' : group.head?.shown)
-                    }}</span
-                >
-            </div>
-
-            <div
-                v-if="group.parts.length"
-                :class="bare ? '' : 'bg-muted/20 border-t py-1'"
+                :text="pick ? (group.head?.path ?? undefined) : undefined"
             >
                 <div
-                    v-for="row in group.parts"
-                    :key="row.id"
-                    class="group flex items-stretch pr-2 pl-2"
-                    :class="
-                        row.path && pick
+                    class="group flex items-center gap-2 px-2"
+                    :class="[
+                        roomy ? 'py-2.5' : 'py-1.5',
+                        group.head?.path && pick
                             ? 'hover:bg-primary/5 cursor-pointer active:cursor-grabbing'
-                            : ''
-                    "
-                    :draggable="!!row.path && pick"
-                    :title="
-                        pick
-                            ? (row.path ?? 'A formula cannot name this part')
-                            : undefined
-                    "
-                    :data-sample="pick ? row.path : undefined"
-                    @dragstart="drag($event, row.path)"
+                            : '',
+                    ]"
+                    :draggable="!!group.head?.path && pick"
+                    :data-sample="pick ? group.head?.path : undefined"
+                    @dragstart="drag($event, group.head?.path ?? null)"
                     @dragend="dropped"
-                    @click="row.path && pick && emit('pick', row.path)"
+                    @click="
+                        group.head?.path &&
+                        pick &&
+                        emit('pick', group.head.path)
+                    "
                 >
-                    <span
-                        v-for="rule in rules(row)"
-                        :key="rule"
-                        class="border-border/70 ml-[6px] w-[8px] shrink-0 border-l"
-                    />
-                    <div
-                        class="flex min-w-0 flex-1 gap-1.5"
-                        :class="[
-                            full ? 'items-start' : 'items-center',
-                            roomy ? 'py-1.5' : 'py-[3px]',
-                        ]"
+                    <Tip
+                        v-if="group.head?.holds"
+                        :text="`${group.head.folded ? 'Open' : 'Fold'} ${group.root.name}`"
                     >
                         <button
-                            v-if="row.holds"
                             type="button"
-                            class="text-muted-foreground hover:text-foreground shrink-0"
-                            :class="{ 'mt-0.5': full }"
-                            :aria-label="`${row.folded ? 'Open' : 'Fold'} ${row.label}`"
-                            :aria-expanded="!row.folded"
-                            @click.stop="toggle(row)"
+                            class="text-muted-foreground hover:text-foreground -mx-0.5 shrink-0"
+                            :aria-label="`${group.head.folded ? 'Open' : 'Fold'} ${group.root.name}`"
+                            :aria-expanded="!group.head.folded"
+                            @click.stop="toggle(group.head)"
                         >
                             <ChevronRight
                                 class="transition-transform"
                                 :class="[
                                     roomy ? 'size-4' : 'size-3.5',
-                                    { 'rotate-90': !row.folded },
+                                    { 'rotate-90': !group.head.folded },
                                 ]"
                             />
                         </button>
-                        <component
-                            :is="LOOKS[row.kind].icon"
-                            v-else
-                            class="text-muted-foreground/60 shrink-0"
-                            :class="[
-                                roomy ? 'size-4 p-0.5' : 'size-3.5 p-px',
-                                { 'mt-0.5': full },
-                            ]"
-                        />
-                        <span
-                            v-if="row.label"
-                            class="max-w-[55%] shrink-0 truncate"
-                            :class="
-                                pick
-                                    ? 'bg-muted/70 group-hover:bg-background rounded px-1.5 py-px font-medium'
-                                    : 'text-muted-foreground'
-                            "
-                            >{{ row.label }}</span
-                        >
-                        <span
-                            class="min-w-0 flex-1"
-                            :class="[
-                                LOOKS[row.kind].value,
-                                full
-                                    ? 'break-words whitespace-pre-wrap'
-                                    : 'truncate',
-                            ]"
-                            >{{ row.shown }}</span
-                        >
-                        <GripVertical
-                            v-if="row.path && pick"
-                            class="text-muted-foreground size-3 shrink-0 opacity-0 group-hover:opacity-100"
-                        />
-                    </div>
+                    </Tip>
+                    <span
+                        v-if="group.root.icon"
+                        class="flex size-5 shrink-0 items-center justify-center rounded"
+                        :class="[
+                            group.root.tile ?? 'bg-muted text-muted-foreground',
+                            { 'opacity-50': group.off },
+                        ]"
+                    >
+                        <component :is="group.root.icon" class="size-3" />
+                    </span>
+                    <span
+                        class="min-w-0 truncate font-medium"
+                        :class="{ 'text-muted-foreground': group.off }"
+                        >{{ group.root.title ?? group.root.name }}</span
+                    >
+                    <!-- What a formula calls it, where its title does not say -->
+                    <code
+                        v-if="
+                            group.root.title &&
+                            group.root.title.toLowerCase() !== group.root.name
+                        "
+                        class="text-muted-foreground shrink-0 font-mono text-[10px]"
+                        >{{ group.root.name }}</code
+                    >
+                    <span
+                        class="text-muted-foreground ml-auto min-w-0 shrink truncate text-[11px]"
+                        :class="{ italic: group.off }"
+                        >{{
+                            group.root.note ??
+                            (group.head?.holds ? '' : group.head?.shown)
+                        }}</span
+                    >
                 </div>
+            </Tip>
+
+            <div
+                v-if="group.parts.length"
+                :class="bare ? '' : 'bg-muted/20 border-t py-1'"
+            >
+                <Tip
+                    v-for="row in group.parts"
+                    :key="row.id"
+                    :text="
+                        pick
+                            ? (row.path ?? 'A formula cannot name this part')
+                            : undefined
+                    "
+                >
+                    <div
+                        class="group flex items-stretch pr-2 pl-2"
+                        :class="
+                            row.path && pick
+                                ? 'hover:bg-primary/5 cursor-pointer active:cursor-grabbing'
+                                : ''
+                        "
+                        :draggable="!!row.path && pick"
+                        :data-sample="pick ? row.path : undefined"
+                        @dragstart="drag($event, row.path)"
+                        @dragend="dropped"
+                        @click="row.path && pick && emit('pick', row.path)"
+                    >
+                        <span
+                            v-for="rule in rules(row)"
+                            :key="rule"
+                            class="border-border/70 ml-[6px] w-[8px] shrink-0 border-l"
+                        />
+                        <div
+                            class="flex min-w-0 flex-1 gap-1.5"
+                            :class="[
+                                full ? 'items-start' : 'items-center',
+                                roomy ? 'py-1.5' : 'py-[3px]',
+                            ]"
+                        >
+                            <Tip
+                                v-if="row.holds"
+                                :text="`${row.folded ? 'Open' : 'Fold'} ${row.label}`"
+                            >
+                                <button
+                                    type="button"
+                                    class="text-muted-foreground hover:text-foreground shrink-0"
+                                    :class="{ 'mt-0.5': full }"
+                                    :aria-label="`${row.folded ? 'Open' : 'Fold'} ${row.label}`"
+                                    :aria-expanded="!row.folded"
+                                    @click.stop="toggle(row)"
+                                >
+                                    <ChevronRight
+                                        class="transition-transform"
+                                        :class="[
+                                            roomy ? 'size-4' : 'size-3.5',
+                                            { 'rotate-90': !row.folded },
+                                        ]"
+                                    />
+                                </button>
+                            </Tip>
+                            <component
+                                :is="LOOKS[row.kind].icon"
+                                v-else
+                                class="text-muted-foreground/60 shrink-0"
+                                :class="[
+                                    roomy ? 'size-4 p-0.5' : 'size-3.5 p-px',
+                                    { 'mt-0.5': full },
+                                ]"
+                            />
+                            <span
+                                v-if="row.label"
+                                class="max-w-[55%] shrink-0 truncate"
+                                :class="
+                                    pick
+                                        ? 'bg-muted/70 group-hover:bg-background rounded px-1.5 py-px font-medium'
+                                        : 'text-muted-foreground'
+                                "
+                                >{{ row.label }}</span
+                            >
+                            <span
+                                class="min-w-0 flex-1"
+                                :class="[
+                                    LOOKS[row.kind].value,
+                                    full
+                                        ? 'break-words whitespace-pre-wrap'
+                                        : 'truncate',
+                                ]"
+                                >{{ row.shown }}</span
+                            >
+                            <GripVertical
+                                v-if="row.path && pick"
+                                class="text-muted-foreground size-3 shrink-0 opacity-0 group-hover:opacity-100"
+                            />
+                        </div>
+                    </div>
+                </Tip>
             </div>
         </div>
     </div>

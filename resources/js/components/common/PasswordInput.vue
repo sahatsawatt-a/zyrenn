@@ -4,6 +4,7 @@ import { ref, useTemplateRef } from 'vue';
 import type { HTMLAttributes } from 'vue';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import Tip from '@/components/common/Tip.vue';
 
 defineOptions({ inheritAttrs: false });
 
@@ -28,19 +29,21 @@ defineExpose({
             :class="cn('pr-10', props.class)"
             v-bind="$attrs"
         />
-        <button
-            type="button"
-            @click="showPassword = !showPassword"
-            :class="
-                cn(
-                    'text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute inset-y-0 right-0 flex items-center rounded-r-md px-3 focus-visible:ring-[3px] focus-visible:outline-none',
-                )
-            "
-            :aria-label="showPassword ? 'Hide password' : 'Show password'"
-            :tabindex="-1"
-        >
-            <EyeOff v-if="showPassword" class="size-4" />
-            <Eye v-else class="size-4" />
-        </button>
+        <Tip :text="showPassword ? 'Hide password' : 'Show password'">
+            <button
+                type="button"
+                @click="showPassword = !showPassword"
+                :class="
+                    cn(
+                        'text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute inset-y-0 right-0 flex items-center rounded-r-md px-3 focus-visible:ring-[3px] focus-visible:outline-none',
+                    )
+                "
+                :aria-label="showPassword ? 'Hide password' : 'Show password'"
+                :tabindex="-1"
+            >
+                <EyeOff v-if="showPassword" class="size-4" />
+                <Eye v-else class="size-4" />
+            </button>
+        </Tip>
     </div>
 </template>

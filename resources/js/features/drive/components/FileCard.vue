@@ -21,6 +21,7 @@ import type { DriveFile } from '@/lib/drive';
 import { canChange } from '@/lib/projects';
 import { formatBytes, formatRelativeTime } from '@/lib/utils';
 import { show } from '@/routes/drive/files';
+import Tip from '@/components/common/Tip.vue';
 
 // A file in the Drive grid. Drag handlers bound on it fall through to the card.
 const props = defineProps<{
@@ -65,39 +66,41 @@ const icon = computed(
         class="group bg-card hover:border-primary/40 relative flex flex-col overflow-hidden rounded-xl border transition-all hover:shadow-sm"
         :class="{ 'opacity-50': dragging }"
     >
-        <button
-            type="button"
-            class="bg-muted flex aspect-[4/3] items-center justify-center overflow-hidden"
-            :title="action"
-            @click="$emit('open')"
-        >
-            <!-- A frame from just in stands in for a thumbnail -->
-            <div v-if="file.is_video" class="relative size-full">
-                <video
-                    :src="`${file.url}#t=0.5`"
-                    preload="metadata"
-                    muted
-                    class="size-full bg-black object-cover"
+        <Tip :text="action">
+            <button
+                type="button"
+                class="bg-muted flex aspect-[4/3] items-center justify-center overflow-hidden"
+                :aria-label="action"
+                @click="$emit('open')"
+            >
+                <!-- A frame from just in stands in for a thumbnail -->
+                <div v-if="file.is_video" class="relative size-full">
+                    <video
+                        :src="`${file.url}#t=0.5`"
+                        preload="metadata"
+                        muted
+                        class="size-full bg-black object-cover"
+                    />
+                    <span
+                        class="absolute top-1/2 left-1/2 flex size-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-white transition-transform group-hover:scale-110"
+                    >
+                        <Play class="size-5 fill-current" />
+                    </span>
+                </div>
+                <img
+                    v-else-if="file.is_image"
+                    :src="file.url"
+                    :alt="file.name"
+                    loading="lazy"
+                    class="size-full object-cover transition-transform group-hover:scale-[1.02]"
                 />
-                <span
-                    class="absolute top-1/2 left-1/2 flex size-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-white transition-transform group-hover:scale-110"
-                >
-                    <Play class="size-5 fill-current" />
-                </span>
-            </div>
-            <img
-                v-else-if="file.is_image"
-                :src="file.url"
-                :alt="file.name"
-                loading="lazy"
-                class="size-full object-cover transition-transform group-hover:scale-[1.02]"
-            />
-            <component
-                :is="icon"
-                v-else
-                class="text-muted-foreground size-10"
-            />
-        </button>
+                <component
+                    :is="icon"
+                    v-else
+                    class="text-muted-foreground size-10"
+                />
+            </button>
+        </Tip>
 
         <div class="flex items-center gap-1 py-2 pr-1 pl-3">
             <div class="min-w-0 flex-1">

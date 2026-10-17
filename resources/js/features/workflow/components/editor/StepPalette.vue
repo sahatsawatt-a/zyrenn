@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SearchField from '@/components/common/SearchField.vue';
 import {
     ArrowLeft,
     ChevronRight,
@@ -13,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { iconOf, toneOf, TRIGGER_STRIP } from '@/features/workflow/steps';
 import type { NodeType } from '@/features/workflow/types';
 import PaletteStep from './PaletteStep.vue';
+import Tip from '@/components/common/Tip.vue';
 
 // The kinds of step, found three ways: by searching -- always on top, by
 // name, what it does, its group or its kind -- by group, a short list of
@@ -277,31 +279,28 @@ function back() {
         data-step-palette
     >
         <div class="flex items-center gap-1.5 border-b p-2">
-            <div class="relative min-w-0 flex-1">
-                <Search
-                    class="text-muted-foreground absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2"
-                />
-                <input
-                    v-model="query"
-                    type="search"
-                    placeholder="Find a step"
-                    aria-label="Find a step"
-                    class="bg-muted/40 focus-visible:ring-ring/50 h-8 w-full rounded-md border pr-2 pl-8 text-sm outline-none focus-visible:ring-[3px]"
-                    data-palette-search
-                    @keydown.enter.prevent="pickFirst"
-                    @keydown.esc="back"
-                />
-            </div>
-            <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Hide the steps"
-                data-palette-close
-                @click="emit('close')"
-            >
-                <X v-if="compact" />
-                <PanelLeftClose v-else />
-            </Button>
+            <SearchField
+                v-model="query"
+                class="flex-1"
+                placeholder="Find a step"
+                compact
+                :esc-clears="false"
+                data-palette-search
+                @keydown.enter.prevent="pickFirst"
+                @keydown.esc="back"
+            />
+            <Tip text="Hide the steps">
+                <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label="Hide the steps"
+                    data-palette-close
+                    @click="emit('close')"
+                >
+                    <X v-if="compact" />
+                    <PanelLeftClose v-else />
+                </Button>
+            </Tip>
         </div>
 
         <p
@@ -313,15 +312,17 @@ function back() {
                 Next after <b class="font-medium">{{ after.label }}</b>
                 <template v-if="after.way"> · {{ after.way }}</template>
             </span>
-            <Button
-                size="icon-sm"
-                variant="ghost"
-                class="size-6"
-                aria-label="Add it on its own instead"
-                @click="emit('forget')"
-            >
-                <X />
-            </Button>
+            <Tip text="Add it on its own instead">
+                <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    class="size-6"
+                    aria-label="Add it on its own instead"
+                    @click="emit('forget')"
+                >
+                    <X />
+                </Button>
+            </Tip>
         </p>
 
         <div class="flex-1 overflow-y-auto p-2">
@@ -358,16 +359,18 @@ function back() {
             <!-- One group opened: its steps, in its parts -->
             <section v-else-if="opened" :data-palette-open="opened">
                 <div class="mb-1 flex items-center gap-1">
-                    <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        class="size-7"
-                        aria-label="All the groups"
-                        data-palette-back
-                        @click="opened = null"
-                    >
-                        <ArrowLeft />
-                    </Button>
+                    <Tip text="All the groups">
+                        <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            class="size-7"
+                            aria-label="All the groups"
+                            data-palette-back
+                            @click="opened = null"
+                        >
+                            <ArrowLeft />
+                        </Button>
+                    </Tip>
                     <h3 class="min-w-0 flex-1 truncate text-sm font-medium">
                         {{ titleOf(opened) }}
                     </h3>

@@ -40,6 +40,7 @@ const user = computed(() => page.props.auth.user);
         />
 
         <Form
+            novalidate
             v-bind="ProfileController.update.form()"
             class="space-y-6"
             v-slot="{ errors, processing }"

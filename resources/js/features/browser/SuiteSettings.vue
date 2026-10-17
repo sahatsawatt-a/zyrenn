@@ -23,6 +23,7 @@ import { Switch } from '@/components/ui/switch';
 import { ask } from './http';
 import type { Every, Limits, SignIn, Suite } from './steps';
 import TimeLimits from './TimeLimits.vue';
+import Tip from '@/components/common/Tip.vue';
 
 // How a suite goes on by itself: when it runs without being asked, whether a
 // failure files a ticket in its project, and the hidden values its steps
@@ -355,18 +356,19 @@ function addValue() {
                             >
                         </SelectContent>
                     </Select>
-                    <Button
-                        v-if="canChange"
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label="Stop signing in as this"
-                        @click="
-                            signIns.splice(at, 1);
-                            saveSignIns();
-                        "
-                    >
-                        <Trash2 />
-                    </Button>
+                    <Tip v-if="canChange" text="Stop signing in as this">
+                        <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="Stop signing in as this"
+                            @click="
+                                signIns.splice(at, 1);
+                                saveSignIns();
+                            "
+                        >
+                            <Trash2 />
+                        </Button>
+                    </Tip>
                 </div>
                 <Button
                     v-if="canChange && signIns.length < 5"
@@ -431,18 +433,19 @@ function addValue() {
                         data-test="value-value"
                         @update:model-value="saveValues"
                     />
-                    <Button
-                        v-if="canChange"
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label="Remove the value"
-                        @click="
-                            values.splice(at, 1);
-                            saveValues();
-                        "
-                    >
-                        <Trash2 />
-                    </Button>
+                    <Tip v-if="canChange" text="Remove the value">
+                        <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="Remove the value"
+                            @click="
+                                values.splice(at, 1);
+                                saveValues();
+                            "
+                        >
+                            <Trash2 />
+                        </Button>
+                    </Tip>
                 </div>
                 <Button
                     v-if="canChange"

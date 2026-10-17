@@ -29,6 +29,7 @@ import {
     PopoverTrigger,
 } from '@/components/ui/popover';
 import { columnIcon } from '@/features/tables/composables/columnTypes';
+import TicketPick from '@/features/tickets/components/TicketPick.vue';
 import { useTableStore } from '@/features/tables/composables/useTableStore';
 import type { FilterOperator, TableDensity } from '@/types';
 
@@ -78,6 +79,13 @@ const sortBy = (column: string) => {
         store.setSort(column, store.sort.value?.direction ?? 'asc');
     }
 };
+
+const columnOptions = computed(() =>
+    store.visibleColumns.value.map((column) => ({
+        value: column.name,
+        label: column.label,
+    })),
+);
 
 const rowCount = computed(() => {
     const shown = store.filteredRows.value.length;
@@ -165,30 +173,23 @@ const field =
                         :key="filter.id"
                         class="flex items-center gap-1.5"
                     >
-                        <select
+                        <TicketPick
                             v-model="filter.column"
-                            :class="[field, 'min-w-0 flex-1']"
-                        >
-                            <option
-                                v-for="column in store.visibleColumns.value"
-                                :key="column.name"
-                                :value="column.name"
-                            >
-                                {{ column.label }}
-                            </option>
-                        </select>
-                        <select
-                            v-model="filter.operator"
-                            :class="[field, 'w-32']"
-                        >
-                            <option
-                                v-for="operator in OPERATORS"
-                                :key="operator.value"
-                                :value="operator.value"
-                            >
-                                {{ operator.label }}
-                            </option>
-                        </select>
+                            compact
+                            label="Column"
+                            class="min-w-0 flex-1"
+                            :options="columnOptions"
+                        />
+                        <TicketPick
+                            compact
+                            label="How it compares"
+                            class="w-32"
+                            :model-value="filter.operator"
+                            :options="OPERATORS"
+                            @update:model-value="
+                                filter.operator = $event as FilterOperator
+                            "
+                        />
                         <input
                             v-if="
                                 !['is_empty', 'is_not_empty'].includes(
@@ -255,20 +256,16 @@ const field =
                         Clear
                     </button>
                 </div>
-                <select
-                    :value="store.sort.value?.column ?? ''"
-                    :class="[field, 'w-full']"
-                    @change="sortBy(($event.target as HTMLSelectElement).value)"
-                >
-                    <option value="" disabled>Pick a column</option>
-                    <option
-                        v-for="column in store.visibleColumns.value"
-                        :key="column.name"
-                        :value="column.name"
-                    >
-                        {{ column.label }}
-                    </option>
-                </select>
+                <TicketPick
+                    compact
+                    label="Sort by"
+                    placeholder="Pick a column"
+                    class="w-full"
+                    data-test="table-sort-column"
+                    :model-value="store.sort.value?.column ?? ''"
+                    :options="columnOptions"
+                    @update:model-value="sortBy"
+                />
                 <div
                     v-if="store.sort.value"
                     class="bg-muted mt-2 grid grid-cols-2 gap-1 rounded-md p-1"

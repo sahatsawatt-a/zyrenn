@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { CircleAlert, Wrench } from '@lucide/vue';
 import { ref } from 'vue';
+import Tip from '@/components/common/Tip.vue';
 
 // What an agent did with its tools before it answered -- each tool it used,
 // with what it asked and what came back -- shown beside the answer, so
@@ -23,24 +24,30 @@ const open = ref<number | null>(null);
     <div v-if="actions.length" class="grid gap-1 text-xs" data-answer-actions>
         <div class="flex flex-wrap items-center gap-1">
             <span class="text-muted-foreground">Used</span>
-            <button
+            <Tip
                 v-for="(action, at) in actions"
                 :key="at"
-                type="button"
-                class="hover:bg-accent flex h-6 max-w-56 items-center gap-1 rounded-full border px-2"
-                :class="{
-                    'bg-accent': open === at,
-                    'border-destructive/40 text-destructive': !action.ok,
-                }"
-                :aria-expanded="open === at"
-                :title="`${action.tool}, on ${action.server}`"
-                data-answer-action
-                @click="open = open === at ? null : at"
+                :text="`${action.tool}, on ${action.server}`"
             >
-                <CircleAlert v-if="!action.ok" class="size-3 shrink-0" />
-                <Wrench v-else class="text-muted-foreground size-3 shrink-0" />
-                <span class="truncate">{{ action.tool }}</span>
-            </button>
+                <button
+                    type="button"
+                    class="hover:bg-accent flex h-6 max-w-56 items-center gap-1 rounded-full border px-2"
+                    :class="{
+                        'bg-accent': open === at,
+                        'border-destructive/40 text-destructive': !action.ok,
+                    }"
+                    :aria-expanded="open === at"
+                    data-answer-action
+                    @click="open = open === at ? null : at"
+                >
+                    <CircleAlert v-if="!action.ok" class="size-3 shrink-0" />
+                    <Wrench
+                        v-else
+                        class="text-muted-foreground size-3 shrink-0"
+                    />
+                    <span class="truncate">{{ action.tool }}</span>
+                </button>
+            </Tip>
         </div>
         <div
             v-if="open !== null && actions[open]"
